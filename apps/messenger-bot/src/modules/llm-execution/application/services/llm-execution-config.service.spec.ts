@@ -12,6 +12,36 @@ function makeConfigService(
 }
 
 describe('LlmExecutionConfigService', () => {
+  describe('compatibility aliases', () => {
+    it('does not apply an implicit model fallback', () => {
+      const svc = new LlmExecutionConfigService(makeConfigService({}));
+      expect(svc.getModel()).toBeUndefined();
+    });
+
+    it('accepts matching generic and canonical values', () => {
+      const svc = new LlmExecutionConfigService(
+        makeConfigService({
+          LLM_MODEL: 'gpt-5.4',
+          OPENAI_MODEL: 'gpt-5.4',
+        }),
+      );
+      expect(() => svc.assertAliasConsistency()).not.toThrow();
+      expect(svc.getModel()).toBe('gpt-5.4');
+    });
+
+    it('rejects conflicting generic and canonical values', () => {
+      const svc = new LlmExecutionConfigService(
+        makeConfigService({
+          LLM_BASE_URL: 'https://one.example.com/v1',
+          OPENAI_BASE_URL: 'https://two.example.com/v1',
+        }),
+      );
+      expect(() => svc.assertAliasConsistency()).toThrow(
+        /LLM_BASE_URL and OPENAI_BASE_URL must agree/i,
+      );
+    });
+  });
+
   describe('getFailoverOrder', () => {
     it('returns empty array when unset', () => {
       const svc = new LlmExecutionConfigService(makeConfigService({}));

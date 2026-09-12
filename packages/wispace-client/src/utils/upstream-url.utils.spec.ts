@@ -3,6 +3,27 @@ import { validateUpstreamUrl } from './upstream-url.utils';
 const CONTEXT = 'WISPACE_API_TEST_URL';
 
 describe('validateUpstreamUrl', () => {
+  it('rejects a missing required allowlist', () => {
+    expect(() =>
+      validateUpstreamUrl('https://api.example.com/v1', {
+        context: 'TEST_URL',
+        nodeEnv: 'production',
+        allowedHosts: [],
+        requireAllowedHosts: true,
+      }),
+    ).toThrow(/TEST_URL requires a non-empty host allowlist/i);
+  });
+
+  it('rejects a bare fragment delimiter', () => {
+    expect(() =>
+      validateUpstreamUrl('https://api.example.com/v1#', {
+        context: CONTEXT,
+        nodeEnv: 'production',
+        allowedHosts: ['api.example.com'],
+      }),
+    ).toThrow(/must not contain a fragment/i);
+  });
+
   it('accepts a valid HTTPS URL', () => {
     expect(
       validateUpstreamUrl('https://backend.example.com/api/User/goals', {

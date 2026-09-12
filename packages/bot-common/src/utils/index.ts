@@ -7,6 +7,11 @@ export { readResponseText } from './read-response-text';
 export { readBoundedJson } from './read-bounded-json';
 export { isPrivateNetworkHost } from './network-utils';
 export {
+  validateUpstreamUrl,
+  buildUpstreamUrlPolicy,
+  type UpstreamUrlPolicy,
+} from './upstream-url.utils';
+export {
   parseEncryptionKey,
   encryptAesGcm,
   decryptAesGcm,

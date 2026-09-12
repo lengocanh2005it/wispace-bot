@@ -94,27 +94,41 @@ export class LlmExecutionConfigService {
   }
 
   getApiKey(): string | undefined {
-    return (
-      this.configService.get<string>('LLM_API_KEY')?.trim() ||
-      this.configService.get<string>('OPENAI_API_KEY')?.trim() ||
-      undefined
-    );
+    return this.getAliasedValue('LLM_API_KEY', 'OPENAI_API_KEY');
   }
 
-  getModel(): string {
-    return (
-      this.configService.get<string>('LLM_MODEL')?.trim() ||
-      this.configService.get<string>('OPENAI_MODEL')?.trim() ||
-      'gpt-5.4'
-    );
+  getModel(): string | undefined {
+    return this.getAliasedValue('LLM_MODEL', 'OPENAI_MODEL');
   }
 
   getBaseUrl(): string | undefined {
-    return this.configService.get<string>('LLM_BASE_URL')?.trim() || undefined;
+    return this.getAliasedValue('LLM_BASE_URL', 'OPENAI_BASE_URL');
   }
 
   getProvider(): string | undefined {
     return this.configService.get<string>('LLM_PROVIDER')?.trim() || undefined;
+  }
+
+  /** Fail closed instead of relying on precedence when aliases disagree. */
+  assertAliasConsistency(): void {
+    this.getAliasedValue('LLM_API_KEY', 'OPENAI_API_KEY');
+    this.getAliasedValue('LLM_MODEL', 'OPENAI_MODEL');
+    this.getAliasedValue('LLM_BASE_URL', 'OPENAI_BASE_URL');
+  }
+
+  private getAliasedValue(
+    aliasKey: string,
+    canonicalKey: string,
+  ): string | undefined {
+    const alias = this.configService.get<string>(aliasKey)?.trim() || undefined;
+    const canonical =
+      this.configService.get<string>(canonicalKey)?.trim() || undefined;
+    if (alias && canonical && alias !== canonical) {
+      throw new Error(
+        `LLM configuration conflict: ${aliasKey} and ${canonicalKey} must agree`,
+      );
+    }
+    return alias ?? canonical;
   }
 
   getFailoverOrder(): string[] {

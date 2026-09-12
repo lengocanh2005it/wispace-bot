@@ -47,6 +47,8 @@ describe('env provider failover → execution port → student report', () => {
       OPENAI_MODEL: 'gpt-primary',
       OPENROUTER_API_KEY: 'secondary-key',
       OPENROUTER_MODEL: 'openrouter/secondary',
+      LLM_ALLOWED_BASE_URLS: 'api.openai.com,openrouter.ai',
+      LLM_ALLOWED_MODELS: 'openai:gpt-primary,openrouter:openrouter/secondary',
       LLM_OPENAI_RETRY_MAX_ATTEMPTS: '1',
       LLM_FAILOVER_COOLDOWN_SHORT_MS: '1',
     };

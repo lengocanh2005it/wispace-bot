@@ -4,73 +4,104 @@ import {
   FailoverLlmProviderAdapter,
   type FailoverCircuitEvent,
 } from './failover/failover-adapter';
+import {
+  validateLlmProviderConfiguration,
+  type LlmProviderPolicy,
+} from './provider-policy';
 
 export type LlmProviderType = string;
 
 export interface LlmProviderEntryConfig {
   provider: string;
   getApiKey: () => string | undefined;
-  getModel: () => string;
+  apiKeyEnvKey?: string;
+  getModel: () => string | undefined;
   getBaseUrl?: () => string | undefined;
+  modelEnvKey?: string;
+  baseUrlEnvKey?: string;
 }
 
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
+const DEFAULT_BASE_URLS: Record<string, string | undefined> = {
+  openai: OPENAI_BASE_URL,
+  openrouter: OPENROUTER_BASE_URL,
+  minimax: MINIMAX_BASE_URL,
+  'openai-compatible': undefined,
+};
+const BASE_URL_ENV_KEYS: Record<string, string> = {
+  openai: 'OPENAI_BASE_URL',
+  openrouter: 'OPENROUTER_BASE_URL',
+  minimax: 'MINIMAX_BASE_URL',
+  'openai-compatible': 'OPENAI_COMPATIBLE_BASE_URL',
+};
+const MODEL_ENV_KEYS: Record<string, string> = {
+  openai: 'OPENAI_MODEL',
+  openrouter: 'OPENROUTER_MODEL',
+  minimax: 'MINIMAX_MODEL',
+  'openai-compatible': 'OPENAI_COMPATIBLE_MODEL',
+};
 
 /**
- * Factory to create the appropriate LlmProviderAdapter based on the
- * LLM_PROVIDER environment variable.
+ * Factory to create the appropriate LlmProviderAdapter after validating its
+ * resolved endpoint and provider/model policy.
  */
 export function createLlmProviderAdapter(config: {
   getApiKey: () => string | undefined;
-  getModel: () => string;
+  getModel: () => string | undefined;
   getBaseUrl?: () => string | undefined;
   provider?: LlmProviderType;
+  policy?: LlmProviderPolicy;
+  modelEnvKey?: string;
+  baseUrlEnvKey?: string;
 }): LlmProviderAdapter {
-  const provider = (config.provider ?? 'openai').trim().toLowerCase();
+  const provider = assertSupportedLlmProvider(config.provider ?? 'openai');
 
-  switch (provider) {
-    case 'openai':
-      return new OpenAiAdapter(
-        config.getApiKey,
-        config.getModel,
-        config.getBaseUrl,
-      );
-
-    case 'openai-compatible':
-      if (!config.getBaseUrl?.()?.trim()) {
-        throw new Error(
-          'OPENAI-compatible provider requires a base URL (OPENAI_COMPATIBLE_BASE_URL)',
-        );
-      }
-      return new OpenAiAdapter(
-        config.getApiKey,
-        config.getModel,
-        config.getBaseUrl,
-        'openai-compatible',
-      );
-
-    case 'openrouter':
-      return new OpenAiAdapter(
-        config.getApiKey,
-        config.getModel,
-        () => config.getBaseUrl?.()?.trim() || OPENROUTER_BASE_URL,
-        'openrouter',
-      );
-
-    case 'minimax':
-      return new OpenAiAdapter(
-        config.getApiKey,
-        config.getModel,
-        () => config.getBaseUrl?.()?.trim() || MINIMAX_BASE_URL,
-        'minimax',
-      );
-
-    default:
+  const defaultBaseUrl = DEFAULT_BASE_URLS[provider];
+  const baseUrl = config.getBaseUrl?.()?.trim() || defaultBaseUrl;
+  const baseUrlEnvKey =
+    config.baseUrlEnvKey ?? BASE_URL_ENV_KEYS[provider] ?? 'base URL';
+  const modelEnvKey = config.modelEnvKey ?? MODEL_ENV_KEYS[provider] ?? 'model';
+  if (!baseUrl) {
+    if (provider === 'openai-compatible') {
       throw new Error(
-        `Unsupported LLM provider configuration: ${provider || '<empty>'}`,
+        `OPENAI-compatible provider requires a base URL (${baseUrlEnvKey})`,
       );
+    }
+    throw new Error(
+      `LLM provider ${provider} requires a base URL (${baseUrlEnvKey})`,
+    );
   }
+
+  const validated = validateLlmProviderConfiguration(
+    {
+      provider,
+      model: config.getModel(),
+      baseUrl,
+      modelEnvKey,
+      baseUrlEnvKey,
+    },
+    config.policy,
+  );
+
+  return new OpenAiAdapter(
+    config.getApiKey,
+    () => validated.model,
+    () => validated.baseUrl,
+    provider,
+    config.policy,
+  );
+}
+
+export function assertSupportedLlmProvider(providerValue: string): string {
+  const provider = providerValue.trim().toLowerCase();
+  if (!(provider in DEFAULT_BASE_URLS)) {
+    throw new Error(
+      `Unsupported LLM provider configuration: ${provider || '<empty>'}`,
+    );
+  }
+  return provider;
 }
 
 /**
@@ -85,26 +116,38 @@ export function createFailoverProviderEntries(
     openai: () => ({
       provider: 'openai',
       getApiKey: () => get('OPENAI_API_KEY'),
-      getModel: () => get('OPENAI_MODEL') ?? 'gpt-5.4',
+      apiKeyEnvKey: 'OPENAI_API_KEY',
+      getModel: () => get('OPENAI_MODEL'),
       getBaseUrl: () => get('OPENAI_BASE_URL'),
+      modelEnvKey: 'OPENAI_MODEL',
+      baseUrlEnvKey: 'OPENAI_BASE_URL',
     }),
     openrouter: () => ({
       provider: 'openrouter',
       getApiKey: () => get('OPENROUTER_API_KEY'),
-      getModel: () => get('OPENROUTER_MODEL') ?? 'openai/gpt-4o-mini',
-      getBaseUrl: () => get('OPENROUTER_BASE_URL') ?? OPENROUTER_BASE_URL,
+      apiKeyEnvKey: 'OPENROUTER_API_KEY',
+      getModel: () => get('OPENROUTER_MODEL'),
+      getBaseUrl: () => get('OPENROUTER_BASE_URL'),
+      modelEnvKey: 'OPENROUTER_MODEL',
+      baseUrlEnvKey: 'OPENROUTER_BASE_URL',
     }),
     minimax: () => ({
       provider: 'minimax',
       getApiKey: () => get('MINIMAX_API_KEY'),
-      getModel: () => get('MINIMAX_MODEL') ?? 'MiniMax-Text-01',
-      getBaseUrl: () => get('MINIMAX_BASE_URL') ?? MINIMAX_BASE_URL,
+      apiKeyEnvKey: 'MINIMAX_API_KEY',
+      getModel: () => get('MINIMAX_MODEL'),
+      getBaseUrl: () => get('MINIMAX_BASE_URL'),
+      modelEnvKey: 'MINIMAX_MODEL',
+      baseUrlEnvKey: 'MINIMAX_BASE_URL',
     }),
     'openai-compatible': () => ({
       provider: 'openai-compatible',
       getApiKey: () => get('OPENAI_COMPATIBLE_API_KEY'),
-      getModel: () => get('OPENAI_COMPATIBLE_MODEL') ?? 'gpt-5.4',
+      apiKeyEnvKey: 'OPENAI_COMPATIBLE_API_KEY',
+      getModel: () => get('OPENAI_COMPATIBLE_MODEL'),
       getBaseUrl: () => get('OPENAI_COMPATIBLE_BASE_URL'),
+      modelEnvKey: 'OPENAI_COMPATIBLE_MODEL',
+      baseUrlEnvKey: 'OPENAI_COMPATIBLE_BASE_URL',
     }),
   };
 
@@ -139,6 +182,7 @@ export function createFailoverLlmProviderAdapter(
   order: string[],
   logger?: { warn: (msg: string) => void },
   failoverConfig?: FailoverConfig,
+  policy?: LlmProviderPolicy,
 ): LlmProviderAdapter {
   const byProvider = new Map(entries.map((e) => [e.provider, e]));
   const orderedAdapters = order.map((name) => {
@@ -148,12 +192,13 @@ export function createFailoverLlmProviderAdapter(
         `LLM provider ${name} is listed in failover order but has no configuration`,
       );
     }
-    const adapter = createLlmProviderAdapter(entry);
-    if (!adapter.isConfigured()) {
+    assertSupportedLlmProvider(entry.provider);
+    if (!entry.getApiKey()?.trim()) {
       throw new Error(
-        `LLM provider ${name} is listed in failover order but missing API key`,
+        `LLM provider ${name} is listed in failover order but missing API key (${entry.apiKeyEnvKey ?? 'API key'})`,
       );
     }
+    const adapter = createLlmProviderAdapter({ ...entry, policy });
     return adapter;
   });
 

@@ -368,6 +368,42 @@ _Avoid_: tool definition JSON, hand-written schema, three representations
 String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `'STUDY_REMINDER'`. Used for usage tracking and metrics.
 _Avoid_: use case, purpose
 
+**LLM provider**:
+An external service and model endpoint that executes prompts for the bots. A provider is identified by its adapter name and may be one link in a failover chain.
+_Avoid_: vendor, backend
+
+**effective endpoint**:
+The base URL that a configured LLM provider will actually use after applying an explicit or vendor-default endpoint. It is the endpoint that startup security checks evaluate.
+_Avoid_: provider URL, API URL
+
+**endpoint allowlist**:
+The required set of exact hostnames permitted for LLM provider calls. Matching is case-insensitive and does not imply wildcard subdomains; this is distinct from the quota `whitelist`.
+_Avoid_: allowlist (without "endpoint"), trusted URL list
+
+**configured provider**:
+An LLM provider named in the resolved primary/failover order and therefore eligible to receive a request. Environment variables for providers outside that order do not make them configured.
+_Avoid_: enabled provider, available provider
+
+**failover candidate**:
+A configured provider that may receive a request after an earlier provider in the failover order fails. An invalid candidate prevents the provider chain from starting.
+_Avoid_: fallback provider, backup vendor
+
+**model allowlist**:
+The exact set of approved provider/model pairs that configured providers may run. Every configured provider must name a listed pair; there is no implicit model fallback.
+_Avoid_: approved models, model whitelist
+
+**provider/model policy**:
+The rules that map an LLM feature and data class to the provider/model pairs it may use. The policy chooses what is approved; startup validation enforces that the resolved configuration stays inside it.
+_Avoid_: routing policy (when referring only to the approved set), model preference
+
+**classifier model**:
+The model used by the optional input-classifier tier to label a fresh learner message as safe or unsafe. It is a separate configured model from the main chat/report/reminder model.
+_Avoid_: moderation model, guard model
+
+**model override**:
+A model value supplied for one LLM request instead of the adapter's configured default. It is still subject to the same provider/model policy before any provider call.
+_Avoid_: per-request model, ad-hoc model
+
 **correlationId**:
 Identifier that pairs an LLM call with its triggering event; when available, it is the inbound event identity used by clarification replay handling. It is optional, and the system does not infer identity from message text when it is absent.
 _Avoid_: trace ID, request ID

@@ -33,6 +33,14 @@ loop around that action.
   must be known and configured; unknown names and incomplete entries fail
   startup. A single configured provider emits a startup warning because no
   redundancy is available.
+- Active providers also require non-empty `LLM_ALLOWED_BASE_URLS` (exact host
+  names) and `LLM_ALLOWED_MODELS` (exact `provider:model` pairs). Explicit and
+  vendor-default endpoints are validated before the SDK is created; a bad
+  failover candidate fails the whole chain.
+- `LLM_EXECUTION_ENABLED=false` keeps the existing deterministic fallback path,
+  but the startup binding supplies an unconfigured adapter so no provider
+  request can be issued while the gate is off. Active providers are always
+  subject to the URL/model policy; the execution gate does not weaken it.
 - Chat queue retry is for recovering the queued user turn only. It never
   re-enqueues a fixed fallback as a new turn. Report and reminder retry is
   owned by the durable outbox/lease, not by a second platform send loop.
@@ -72,9 +80,10 @@ raising retry counts first.
    Discord, then Zalo while watching provider exhaustion, admission, outbox,
    and ambiguous-delivery signals.
 2. To shed LLM work immediately, set `LLM_EXECUTION_ENABLED=false` and keep
-   deterministic report/reminder paths enabled. To remove one provider, edit
-   the approved failover order and redeploy; do not leave an unknown or
-   keyless entry in the order.
+   deterministic report/reminder paths enabled. This leaves the provider
+   policy enforced for the next enabled boot. To remove one provider, edit the
+   approved failover order and redeploy; do not leave an unknown or keyless
+   entry in the order.
 3. Roll back the application image if fallback rates, duplicate delivery, or
    lease backlog regress. Existing durable jobs remain the recovery source;
    do not manually resend an ambiguous Zalo item without confirming delivery

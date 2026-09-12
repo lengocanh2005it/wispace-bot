@@ -51,6 +51,7 @@ export {
   createLlmProviderAdapter,
   createFailoverLlmProviderAdapter,
   createFailoverProviderEntries,
+  assertSupportedLlmProvider,
 } from './provider/index';
 export type {
   LlmProvider,
@@ -69,6 +70,13 @@ export type {
   LlmProviderError,
   LlmProviderEntryConfig,
   FailoverConfig,
+  LlmProviderPolicy,
+  LlmProviderValidationInput,
+} from './provider/index';
+export {
+  buildLlmProviderPolicyFromEnv,
+  validateLlmProviderConfiguration,
+  validateLlmProviderModel,
 } from './provider/index';
 
 // Tools — agent tool definitions and helpers

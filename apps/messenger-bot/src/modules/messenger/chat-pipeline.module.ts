@@ -22,11 +22,12 @@ import {
   PlatformLlmUsageRecorderAdapter,
   toUsageRecorderMetrics,
 } from '@wispace/chat-metering';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import type { LlmProviderAdapter } from '@wispace/llm-agent/core';
+import { PrivacyStateService } from '@wispace/llm-agent/adapters';
 import {
   sanitizeUntrustedTextForLlm,
-  PrivacyStateService,
-} from '@wispace/llm-agent';
+  buildWriteToolDailyBudgetMessage,
+} from '@wispace/llm-agent/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
   ADVISORY_LOCKS,
@@ -72,10 +73,13 @@ import {
   MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
 } from './application/agent/messenger-agent-tools.service';
 import { PlatformWriteToolBudgetService } from '@wispace/chat-metering';
-import { buildWriteToolDailyBudgetMessage } from '@wispace/llm-agent';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';
+import {
+  buildMessengerClassifierConfig,
+  resolveMessengerClassifierModel,
+} from './classifier-config';
 import { MessengerChatProcessorService } from './application/services/messenger-chat-processor.service';
 import { MessengerRescheduleConfirmationService } from './application/services/messenger-reschedule-confirmation.service';
 import { ChatHistoryStoreStartupService } from './application/services/chat-history-store-startup.service';
@@ -90,9 +94,7 @@ import {
   type StudyReminderOperationsPort,
 } from '../study-reminder/domain/ports/study-reminder-operations.port';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
-
-/** Fallback model id for the #649 input classifier (see `.env.example`). */
-const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
+import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -259,14 +261,23 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
         // Always constructed (the constructor does no I/O). Whether it runs is
         // decided by LLM_INPUT_CLASSIFIER_ENABLED inside PlatformAgentService —
         // one source of truth for the flag (#649).
+        const classifierConfig = buildMessengerClassifierConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        const classifierModel = resolveMessengerClassifierModel({
+          ...classifierConfig,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+        });
         const classifierTimeoutRaw = Number(
           configService.get<string>('LLM_INPUT_CLASSIFIER_TIMEOUT_MS'),
         );
         const contentClassifier = new LlmContentClassifier({
           adapter,
-          model:
-            configService.get<string>('LLM_INPUT_CLASSIFIER_MODEL')?.trim() ||
-            DEFAULT_CLASSIFIER_MODEL,
+          model: classifierModel,
           timeoutMs:
             Number.isFinite(classifierTimeoutRaw) && classifierTimeoutRaw > 0
               ? Math.floor(classifierTimeoutRaw)

@@ -38,6 +38,10 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LLM_INPUT_CLASSIFIER_MODEL: ${{ vars.CLASSIFIER_EVAL_MODEL }}
+          OPENROUTER_MODEL: ${{ vars.CLASSIFIER_EVAL_MODEL || 'google/gemini-2.0-flash-lite' }}
+          OPENAI_MODEL: ${{ vars.CLASSIFIER_EVAL_MODEL || 'google/gemini-2.0-flash-lite' }}
+          LLM_INPUT_CLASSIFIER_MODEL: ${{ vars.CLASSIFIER_EVAL_MODEL || 'google/gemini-2.0-flash-lite' }}
+          LLM_ALLOWED_BASE_URLS: 'api.openai.com,openrouter.ai'
+          LLM_ALLOWED_MODELS: "openai:${{ vars.CLASSIFIER_EVAL_MODEL || 'google/gemini-2.0-flash-lite' }},openrouter:${{ vars.CLASSIFIER_EVAL_MODEL || 'google/gemini-2.0-flash-lite' }}"
           CLASSIFIER_EVAL_MIN_ACCURACY: ${{ vars.CLASSIFIER_EVAL_MIN_ACCURACY }}
         run: npm run classifier:eval --workspace=@wispace/llm-agent

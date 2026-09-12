@@ -614,7 +614,7 @@ describe('FailoverLlmProviderAdapter', () => {
   });
 
   describe('model override', () => {
-    it('overrides request.model with candidate defaultModel', async () => {
+    it('rejects request.model when multiple providers make the target ambiguous', async () => {
       const models: string[] = [];
       const candidateA = makeCandidate({
         name: 'a',
@@ -636,12 +636,13 @@ describe('FailoverLlmProviderAdapter', () => {
       });
 
       const adapter = new FailoverLlmProviderAdapter([candidateA, candidateB]);
-      await adapter.generateJson({
-        ...makeJsonRequest(),
-        model: 'caller-model',
-      });
-      // candidate A: server_error → QUICK_RETRY → 2 attempts, then candidate B: 1 attempt
-      expect(models).toEqual(['model-a', 'model-a', 'model-b']);
+      await expect(
+        adapter.generateJson({
+          ...makeJsonRequest(),
+          model: 'caller-model',
+        }),
+      ).rejects.toThrow(/multiple providers/i);
+      expect(models).toEqual([]);
     });
   });
 

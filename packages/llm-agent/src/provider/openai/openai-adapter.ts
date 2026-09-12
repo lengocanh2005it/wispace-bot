@@ -22,6 +22,10 @@ import {
   fromOpenAiToolCalls,
   fromOpenAiUsage,
 } from './openai.mapper';
+import {
+  validateLlmProviderModel,
+  type LlmProviderPolicy,
+} from '../provider-policy';
 
 const DEFAULT_MODEL = 'gpt-5.4';
 
@@ -36,19 +40,20 @@ export class OpenAiAdapter implements LlmProviderAdapter {
 
   constructor(
     private readonly getApiKey: () => string | undefined,
-    private readonly getModel: () => string = () => DEFAULT_MODEL,
+    private readonly getModel: () => string | undefined = () => DEFAULT_MODEL,
     private readonly getBaseUrl?: () => string | undefined,
     providerName?: string,
+    private readonly policy?: LlmProviderPolicy,
   ) {
     this.providerName = providerName ?? 'openai';
   }
 
   isConfigured(): boolean {
-    return Boolean(this.getApiKey());
+    return Boolean(this.getApiKey()?.trim());
   }
 
   getDefaultModel(): string {
-    return this.getModel();
+    return this.resolveModel();
   }
 
   // -----------------------------------------------------------------------
@@ -56,8 +61,8 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   // -----------------------------------------------------------------------
 
   async generateJson(request: LlmJsonRequest): Promise<LlmJsonResponse> {
+    const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
-    const model = request.model ?? this.getDefaultModel();
 
     const response = await client.chat.completions.create(
       {
@@ -100,8 +105,8 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   async chatWithTools(
     request: LlmToolChatRequest,
   ): Promise<LlmToolChatResponse> {
+    const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
-    const model = request.model ?? this.getDefaultModel();
 
     const response = await client.chat.completions.create(
       {
@@ -129,8 +134,8 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   async *chatStream(
     request: LlmToolChatRequest,
   ): AsyncIterable<LlmStreamEvent> {
+    const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
-    const model = request.model ?? this.getDefaultModel();
 
     const stream = await client.chat.completions.create(
       {
@@ -296,7 +301,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
 
   private getClientOrThrow(): OpenAI {
     if (!this.client) {
-      const apiKey = this.getApiKey();
+      const apiKey = this.getApiKey()?.trim();
       if (!apiKey) {
         throw new Error('LLM provider not configured: missing API key');
       }
@@ -306,6 +311,16 @@ export class OpenAiAdapter implements LlmProviderAdapter {
       });
     }
     return this.client;
+  }
+
+  private resolveModel(requestModel?: string): string {
+    const model = (requestModel ?? this.getModel())?.trim();
+    if (!model) {
+      throw new Error(`LLM provider ${this.providerName} model is empty`);
+    }
+    return this.policy
+      ? validateLlmProviderModel(this.providerName, model, this.policy, 'model')
+      : model;
   }
 
   private isServerError(error: unknown): boolean {

@@ -89,6 +89,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   async *chatStream(
     request: LlmToolChatRequest,
   ): AsyncIterable<LlmStreamEvent> {
+    this.validateRequestModelOverride(request.model);
     const { ordered, suppressed } = this.pickOrdered();
     this.emitSkips(suppressed);
     let lastError: unknown;
@@ -97,7 +98,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       if (request.signal?.aborted) {
         throw request.signal.reason ?? new Error('Aborted');
       }
-      const req = { ...request, model: candidate.getDefaultModel() };
+      const req = this.requestForCandidate(request, candidate);
       try {
         this.onProviderAttempt?.(candidate.providerName, request.feature);
         yield* candidate.chatStream(req);
@@ -212,6 +213,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     call: (c: LlmProviderAdapter, req: Req) => Promise<Res>,
     request: Req & { model?: string },
   ): Promise<Res> {
+    this.validateRequestModelOverride(request.model);
     const { ordered, suppressed, degraded } = this.pickOrdered();
     this.emitSkips(suppressed);
     let lastError: unknown;
@@ -220,7 +222,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       if (request.signal?.aborted) {
         throw request.signal.reason ?? new Error('Aborted');
       }
-      const req = { ...request, model: candidate.getDefaultModel() };
+      const req = this.requestForCandidate(request, candidate);
       const maxAttempts = degraded ? 1 : this.maxAttemptsFor(candidate);
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -284,5 +286,28 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     // already open a long circuit and break the inner loop after one
     // attempt. The attempt budget is uniform per request.
     return this.maxAttempts;
+  }
+
+  private validateRequestModelOverride(model: string | undefined): void {
+    if (
+      model !== undefined &&
+      this.candidates.length > 1 &&
+      model.trim() !== this.candidates[0].getDefaultModel()
+    ) {
+      throw new Error(
+        'LLM failover does not accept request model overrides with multiple providers',
+      );
+    }
+  }
+
+  private requestForCandidate<T extends { model?: string }>(
+    request: T,
+    candidate: LlmProviderAdapter,
+  ): T & { model: string } {
+    const model =
+      this.candidates.length > 1
+        ? candidate.getDefaultModel()
+        : (request.model ?? candidate.getDefaultModel());
+    return { ...request, model };
   }
 }
