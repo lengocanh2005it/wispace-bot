@@ -114,8 +114,8 @@ export class WispaceCalendarService {
   private getScheduleClient(): UserCalendarScheduleClient {
     if (!this.scheduleClient) {
       this.scheduleClient = new UserCalendarScheduleClient(
-        (idHeader, externalId) =>
-          this.getApiClient().listCalendars(idHeader, externalId),
+        (idHeader, externalId, options) =>
+          this.getApiClient().listCalendars(idHeader, externalId, options),
         this.configService.getTimezone(),
         { warn: (m) => this.logger.warn(m), log: (m) => this.logger.log(m) },
       );
