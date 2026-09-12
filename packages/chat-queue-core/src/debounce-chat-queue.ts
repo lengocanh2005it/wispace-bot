@@ -162,13 +162,26 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
       }
       await Promise.allSettled(users.map((user) => this.flushOrWait(user)));
 
-      const hasWork = [...this.queues.values()].some(
-        (state) =>
+      let hasWork = false;
+      for (const state of this.queues.values()) {
+        if (
           state.processing ||
           state.texts.length > 0 ||
-          state.pendingWhileProcessing.length > 0 ||
-          state.debounceTimer != null,
-      );
+          state.pendingWhileProcessing.length > 0
+        ) {
+          hasWork = true;
+          continue;
+        }
+        // Nothing buffered. A pending debounce timer can only re-flush an
+        // empty buffer, so it must not count as work: the loop below is a
+        // chain of already-resolved promises, which starves the event loop
+        // and stops that (unref'd) timer from ever firing — the drain would
+        // otherwise spin until the deadline, burning CPU for drainTimeoutMs.
+        if (state.debounceTimer) {
+          clearTimeout(state.debounceTimer);
+          state.debounceTimer = undefined;
+        }
+      }
       if (!hasWork) {
         return;
       }
