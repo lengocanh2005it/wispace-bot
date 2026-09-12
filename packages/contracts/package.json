@@ -8,7 +8,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "check:types": "tsc -p tsconfig.build.json --noEmit",
     "lint": "oxlint",
     "format:check": "oxfmt --check",
     "format": "oxfmt"
