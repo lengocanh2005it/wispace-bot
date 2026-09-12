@@ -51,6 +51,7 @@ describe('MessengerAgentToolsService', () => {
     const rescheduleConfirmationService: jest.Mocked<MessengerRescheduleConfirmationService> =
       {
         stage: overrides.stage ?? jest.fn(),
+        cancelPending: overrides.cancelPending ?? jest.fn(),
       } as unknown as jest.Mocked<MessengerRescheduleConfirmationService>;
 
     const exerciseClient: jest.Mocked<PrecreateExerciseApiClient> = {
@@ -110,6 +111,25 @@ describe('MessengerAgentToolsService', () => {
       const { service, ctx } = createService();
       const result = await service.execute('unknown_tool', '{}', ctx);
       expect(result).toEqual({ error: 'Unknown tool: unknown_tool' });
+    });
+
+    it('does not convert cancellation after identity lookup into a tool result', async () => {
+      const controller = new AbortController();
+      const { service, ctx } = createService({
+        currentIdentityProvider: jest.fn().mockImplementation(async () => {
+          controller.abort();
+          return { userId: 42, mappingVersion: 'test:psid-123' };
+        }),
+      });
+
+      await expect(
+        service.execute(
+          'get_learning_progress_report',
+          '{}',
+          ctx,
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
     });
 
     it('returns error for invalid JSON', async () => {
@@ -375,6 +395,49 @@ describe('MessengerAgentToolsService', () => {
         sessionLabel: 'IELTS Writing',
       });
       expect(ctx.richFollowUps).toHaveLength(1);
+    });
+
+    it('aborts the normal reschedule path before returning a prompt', async () => {
+      const controller = new AbortController();
+      const { service, ctx, studyPort, rescheduleConfirmationService } =
+        createService({
+          listEntries: jest.fn().mockResolvedValue({
+            entries: [{ calendarId: 1, scheduledTimeLabel: 'Thứ 2, 08:00' }],
+            total: 1,
+          }),
+          stage: jest
+            .fn()
+            .mockImplementation(async (input: { signal?: AbortSignal }) => {
+              expect(input.signal).toBe(controller.signal);
+              controller.abort();
+              return {
+                sessionLabel: 'IELTS Writing',
+                summary: 'Đổi lịch từ Thứ 2 sang Thứ 3',
+                richFollowUp: { type: 'button', title: 'Xác nhận' },
+                confirmationToken: 'nonce-1',
+              };
+            }),
+        });
+      ctx.userText = 'mình muốn đổi lịch học';
+
+      await expect(
+        service.execute(
+          'reschedule_study_session',
+          '{"calendarId":1,"schedulingMode":"default_next_day_same_time"}',
+          ctx,
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      expect(studyPort.listEntries).toHaveBeenCalledWith('psid-123', 42, {
+        timeRange: 'upcoming',
+        signal: controller.signal,
+      });
+      expect(rescheduleConfirmationService.cancelPending).toHaveBeenCalledWith(
+        'psid-123',
+        'nonce-1',
+      );
+      expect(ctx.richFollowUps).toHaveLength(0);
     });
   });
 
@@ -683,6 +746,46 @@ describe('MessengerAgentToolsService', () => {
       expect(result.text).toContain('Xác nhận đổi lịch');
       expect(result.richFollowUps).toHaveLength(1);
     });
+
+    it('forwards cancellation through the fast path and cleans before returning the prompt', async () => {
+      const controller = new AbortController();
+      const { messengerTools, ctx, studyPort, rescheduleConfirmationService } =
+        createService({
+          listEntries: jest.fn().mockResolvedValue({
+            entries: [{ calendarId: 1, scheduledTimeLabel: 'Thứ 2, 08:00' }],
+            total: 1,
+          }),
+          stage: jest
+            .fn()
+            .mockImplementation(async (input: { signal?: AbortSignal }) => {
+              expect(input.signal).toBe(controller.signal);
+              controller.abort();
+              return {
+                sessionLabel: 'IELTS Writing',
+                summary: 'Đổi lịch từ Thứ 2 sang Thứ 3',
+                richFollowUp: { type: 'button', title: 'Xác nhận' },
+                confirmationToken: 'nonce-1',
+              };
+            }),
+        });
+
+      await expect(
+        messengerTools.tryFastDefaultReschedule(
+          { ...ctx, userText: 'đổi lịch giúp mình' },
+          'đổi lịch giúp mình',
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      expect(studyPort.listEntries).toHaveBeenCalledWith('psid-123', 42, {
+        timeRange: 'upcoming',
+        signal: controller.signal,
+      });
+      expect(rescheduleConfirmationService.cancelPending).toHaveBeenCalledWith(
+        'psid-123',
+        'nonce-1',
+      );
+    });
   });
   describe('write-tool budget (#626)', () => {
     it('precreate: consumes a daily unit before calling the exercise port', async () => {
@@ -734,6 +837,33 @@ describe('MessengerAgentToolsService', () => {
         messageHint:
           'Bạn đã dùng hết số lần tạo bài tập mới trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.',
       });
+      expect(precreateNextExercise).not.toHaveBeenCalled();
+    });
+
+    it('does not turn cancellation during the budget gate into a denial', async () => {
+      const controller = new AbortController();
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockImplementation(async () => {
+          controller.abort();
+          return false;
+        }),
+        refundDaily: jest.fn(),
+      };
+      const precreateNextExercise = jest.fn();
+      const { service, ctx } = createService(
+        { precreateNextExercise },
+        { writeToolBudget: budget },
+      );
+
+      await expect(
+        service.execute(
+          'precreate_next_exercise',
+          '{}',
+          ctx,
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
       expect(precreateNextExercise).not.toHaveBeenCalled();
     });
 

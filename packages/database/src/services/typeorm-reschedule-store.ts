@@ -27,7 +27,10 @@ export class TypeormRescheduleStore<
     private readonly repo: Repository<RescheduleConfirmationEntity>,
   ) {}
 
-  async save(pending: PendingRescheduleRecord<TExternalId>): Promise<boolean> {
+  async save(
+    pending: PendingRescheduleRecord<TExternalId>,
+    _options?: { signal?: AbortSignal },
+  ): Promise<boolean> {
     const key = this.key(pending.externalId);
     // Do NOT swallow — a failed persist must not report
     // pendingConfirmation: true while nothing was stored.
@@ -150,14 +153,20 @@ export class TypeormRescheduleStore<
     );
   }
 
-  async cancelPending(externalId: TExternalId): Promise<void> {
+  async cancelPending(externalId: TExternalId, nonce?: string): Promise<void> {
+    const nonceCondition = nonce === undefined ? '' : ' AND nonce = $2';
+    const params =
+      nonce === undefined
+        ? [this.key(externalId)]
+        : [this.key(externalId), nonce];
     await this.repo.query(
       `
       DELETE FROM reschedule_confirmations
       WHERE external_id = $1
         AND status IN ('pending', 'confirmed', 'cancelled')
+        ${nonceCondition}
     `,
-      [this.key(externalId)],
+      params,
     );
   }
 

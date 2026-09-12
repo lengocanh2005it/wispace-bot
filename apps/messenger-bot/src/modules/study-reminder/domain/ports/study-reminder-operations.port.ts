@@ -52,6 +52,7 @@ export interface StudyReminderOperationsPort {
       timeRange?: CalendarSessionTimeRange;
       limit?: number;
       pastDays?: number;
+      signal?: AbortSignal;
     },
   ): Promise<{
     timeRange: CalendarSessionTimeRange;

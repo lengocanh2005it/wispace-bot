@@ -4,7 +4,11 @@
 // ---------------------------------------------------------------------------
 
 // Core agent
-export { LlmAgentService, LlmRetryExhaustedError } from './agent.service';
+export {
+  DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
+  LlmAgentService,
+  LlmRetryExhaustedError,
+} from './agent.service';
 export type { LlmAgentPorts } from './agent.service';
 export {
   CHAT_SYSTEM_PROMPT_CORE,

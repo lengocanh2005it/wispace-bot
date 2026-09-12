@@ -436,9 +436,16 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         studyCalendarCommandService: PlatformStudyCalendarCommandService,
       ): CalendarPort<string> => ({
-        listUpcomingEntries: (externalId: string, _userId: number) =>
+        listUpcomingEntries: (
+          externalId: string,
+          _userId: number,
+          options?: { signal?: AbortSignal },
+        ) =>
           studyCalendarCommandService
-            .listEntries(externalId, { timeRange: 'upcoming' })
+            .listEntries(externalId, {
+              timeRange: 'upcoming',
+              ...(options?.signal ? { signal: options.signal } : {}),
+            })
             .then((result) =>
               result.entries.map((entry) => ({
                 calendarId: entry.calendarId,

@@ -2,6 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest mock internal access */
 
+import { Logger } from '@nestjs/common';
 import {
   RescheduleScopeError,
   RescheduleConfirmationService,
@@ -242,6 +243,195 @@ describe('RescheduleConfirmationService', () => {
           'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
       });
       expect(calendar.listUpcomingEntries).not.toHaveBeenCalled();
+    });
+
+    it('rejects before reading the calendar when the stage signal is already aborted', async () => {
+      const calendar = mockCalendarPort();
+      const store = mockStore(true);
+      const service = new RescheduleConfirmationService(
+        calendar,
+        mockReschedulePort(),
+        store,
+      );
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        service.stage({
+          externalId: 'user-1',
+          userId: 42,
+          calendarId: 1,
+          schedulingMode: 'explicit',
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      expect(calendar.listUpcomingEntries).not.toHaveBeenCalled();
+      expect(store.save).not.toHaveBeenCalled();
+    });
+
+    it('stops after a cancelled calendar read and forwards the signal', async () => {
+      let release!: (
+        entries: Array<{
+          calendarId: number;
+          scheduledTimeLabel: string;
+          ownerUserId: number;
+        }>,
+      ) => void;
+      const calendar = {
+        listUpcomingEntries: jest.fn(
+          () =>
+            new Promise((resolve) => {
+              release = resolve;
+            }),
+        ),
+      } as unknown as CalendarPort<string>;
+      const store = mockStore(true);
+      const service = new RescheduleConfirmationService(
+        calendar,
+        mockReschedulePort(),
+        store,
+      );
+      const controller = new AbortController();
+      const pending = service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        signal: controller.signal,
+      });
+
+      await Promise.resolve();
+      expect(calendar.listUpcomingEntries).toHaveBeenCalledWith('user-1', 42, {
+        signal: controller.signal,
+      });
+      controller.abort();
+      release([
+        { calendarId: 1, scheduledTimeLabel: 'Hôm nay 14:00', ownerUserId: 42 },
+      ]);
+
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      expect(store.save).not.toHaveBeenCalled();
+    });
+
+    it('conditionally cleans a late save after cancellation', async () => {
+      let release!: (saved: boolean) => void;
+      const calendar = mockCalendarPort();
+      const store = mockStore(true);
+      (store.save as jest.Mock).mockImplementation(
+        (_pending: unknown, options: { signal?: AbortSignal }) => {
+          expect(options.signal).toBeInstanceOf(AbortSignal);
+          return new Promise<boolean>((resolve) => {
+            release = resolve;
+          });
+        },
+      );
+      const service = new RescheduleConfirmationService(
+        calendar,
+        mockReschedulePort(),
+        store,
+      );
+      const controller = new AbortController();
+      const pending = service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        signal: controller.signal,
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+      controller.abort();
+      release(true);
+
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      expect(store.cancelPending).toHaveBeenCalledWith(
+        'user-1',
+        expect.stringMatching(/^[0-9a-f-]{36}$/),
+      );
+    });
+
+    it('forwards the signal on the normal stage path', async () => {
+      const calendar = mockCalendarPort();
+      const store = mockStore(true);
+      const service = new RescheduleConfirmationService(
+        calendar,
+        mockReschedulePort(),
+        store,
+      );
+      const controller = new AbortController();
+
+      await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        signal: controller.signal,
+      });
+
+      expect(calendar.listUpcomingEntries).toHaveBeenCalledWith('user-1', 42, {
+        signal: controller.signal,
+      });
+      expect(store.save).toHaveBeenCalledWith(
+        expect.objectContaining({ calendarId: 1 }),
+        { signal: controller.signal },
+      );
+    });
+  });
+
+  describe('abort cleanup', () => {
+    it('retries cleanup once after a transient failure', async () => {
+      const store = mockStore(true);
+      (store.cancelPending as jest.Mock)
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce(undefined);
+      const service = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        mockReschedulePort(),
+        store,
+      );
+
+      await expect(
+        service.cancelPending('user-1', 'nonce-1'),
+      ).resolves.toBeUndefined();
+      expect(store.cancelPending).toHaveBeenCalledTimes(2);
+      expect(store.cancelPending).toHaveBeenNthCalledWith(
+        1,
+        'user-1',
+        'nonce-1',
+      );
+      expect(store.cancelPending).toHaveBeenNthCalledWith(
+        2,
+        'user-1',
+        'nonce-1',
+      );
+    });
+
+    it('logs and swallows a cleanup failure after the bounded retry', async () => {
+      const store = mockStore(true);
+      (store.cancelPending as jest.Mock).mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        const service = new RescheduleConfirmationService(
+          mockCalendarPort(),
+          mockReschedulePort(),
+          store,
+        );
+
+        await expect(
+          service.cancelPending('user-1', 'nonce-1'),
+        ).resolves.toBeUndefined();
+        expect(store.cancelPending).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('RESCHEDULE_ABORT_CLEANUP_FAILED'),
+        );
+      } finally {
+        warn.mockRestore();
+      }
     });
   });
 

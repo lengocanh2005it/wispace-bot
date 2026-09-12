@@ -18,6 +18,7 @@ import type {
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import type { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type { PlatformAgentToolsService } from './platform-agent-tools.service';
+import type { PlatformAgentOptions } from './platform-agent.types';
 import { PlatformAgentService } from './platform-agent.service';
 import { createChatPipelineAdapters } from '../chat-pipeline-adapters';
 import type {
@@ -56,6 +57,8 @@ describe('PlatformAgentService', () => {
       ) => Promise<{ userId: number; mappingVersion: string } | undefined>;
       systemPromptSuffix?: () => Promise<string | undefined>;
       contentClassifier?: { classify: jest.Mock };
+      tryFastReschedule?: PlatformAgentOptions['tryFastReschedule'];
+      toolExecutionTimeoutMs?: number;
       config?: Record<string, string>;
       safetyEventService?: Partial<PlatformLlmSafetyEventAdapter>;
       llmExecution?: { run: jest.Mock };
@@ -92,6 +95,8 @@ describe('PlatformAgentService', () => {
         metrics: overrides.metrics,
         systemPromptSuffix: overrides.systemPromptSuffix,
         contentClassifier: overrides.contentClassifier,
+        tryFastReschedule: overrides.tryFastReschedule,
+        toolExecutionTimeoutMs: overrides.toolExecutionTimeoutMs,
         ...(overrides.llmExecution
           ? {
               llmExecution:
@@ -150,6 +155,96 @@ describe('PlatformAgentService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('passes the caller signal together with the configured deadline to fast reschedule', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const fastReschedule = jest
+      .fn<
+        ReturnType<NonNullable<PlatformAgentOptions['tryFastReschedule']>>,
+        Parameters<NonNullable<PlatformAgentOptions['tryFastReschedule']>>
+      >()
+      .mockResolvedValue(null);
+    const service = buildService(historyService, {
+      tryFastReschedule: fastReschedule,
+      toolExecutionTimeoutMs: 30_000,
+    });
+    const controller = new AbortController();
+
+    await service.reply({
+      externalUserId: 'messenger-user-1',
+      userText: 'đổi lịch giúp mình',
+      signal: controller.signal,
+    });
+
+    expect(fastReschedule).toHaveBeenCalledWith(
+      expect.objectContaining({ externalUserId: 'messenger-user-1' }),
+      'đổi lịch giúp mình',
+      expect.any(AbortSignal),
+    );
+    const fastSignal = fastReschedule.mock.calls[0]?.[2];
+    expect(fastSignal).toBeInstanceOf(AbortSignal);
+    expect(fastSignal).not.toBe(controller.signal);
+    expect(fastSignal?.aborted).toBe(false);
+    controller.abort();
+  });
+
+  it('consumes an aborted fast reschedule without producing a fallback', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const abortError = new Error('cancelled');
+    abortError.name = 'AbortError';
+    const fastReschedule = jest.fn().mockRejectedValue(abortError);
+    const service = buildService(historyService, {
+      tryFastReschedule: fastReschedule,
+    });
+
+    const reply = await service.reply({
+      externalUserId: 'messenger-user-1',
+      userText: 'đổi lịch giúp mình',
+    });
+
+    expect(reply).toEqual(
+      expect.objectContaining({
+        text: '',
+        skipDelivery: true,
+        skipHistory: true,
+        clarification: true,
+      }),
+    );
+    expect(mockLlmReply).not.toHaveBeenCalled();
+    expect(historyService.appendTurn).not.toHaveBeenCalled();
+  });
+
+  it('consumes an aborted LLM turn without producing a fallback', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const abortError = new Error('cancelled');
+    abortError.name = 'AbortError';
+    mockLlmReply.mockRejectedValue(abortError);
+    const service = buildService(historyService);
+
+    const reply = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'continue',
+    });
+
+    expect(reply).toEqual(
+      expect.objectContaining({
+        text: '',
+        skipDelivery: true,
+        skipHistory: true,
+        clarification: true,
+      }),
+    );
+    expect(historyService.appendTurn).not.toHaveBeenCalled();
   });
 
   it('composes the system prompt through the shared composer — runtime output is byte-identical to the harness path (#646)', async () => {

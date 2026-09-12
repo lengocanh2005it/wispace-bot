@@ -55,17 +55,29 @@ export class PlatformStudyCalendarCommandService {
 
   async listEntries(
     externalUserId: string,
-    options?: { timeRange?: CalendarSessionTimeRange; limit?: number },
+    options?: {
+      timeRange?: CalendarSessionTimeRange;
+      limit?: number;
+      signal?: AbortSignal;
+    },
   ): Promise<{
     timeRange: CalendarSessionTimeRange;
     entries: StudyCalendarEntryView[];
   }> {
     const timeRange = options?.timeRange ?? 'upcoming';
-    const records = await this.calendarService.listCalendars(externalUserId);
+    const records = options?.signal
+      ? await this.calendarService.listCalendars(externalUserId, {
+          signal: options.signal,
+        })
+      : await this.calendarService.listCalendars(externalUserId);
     const recordById = new Map(records.map((record) => [record.id, record]));
     const sessions = await this.calendarService.getCalendarSessions(
       externalUserId,
-      { timeRange, limit: options?.limit },
+      {
+        timeRange,
+        limit: options?.limit,
+        ...(options?.signal ? { signal: options.signal } : {}),
+      },
     );
 
     const entries = sessions

@@ -35,6 +35,7 @@ export class MessengerRescheduleConfirmationService extends RescheduleConfirmati
     mappingVersion?: string;
     intent?: string;
     canonicalArgs?: string;
+    signal?: AbortSignal;
   }): Promise<MessengerStageResult | { error: string }> {
     const result = await super.stage(input);
     if ('error' in result) {

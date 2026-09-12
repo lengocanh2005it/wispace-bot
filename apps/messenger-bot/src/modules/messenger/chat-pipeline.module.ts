@@ -342,8 +342,8 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
               learnerProfileStore,
               'messenger',
             ),
-            tryFastReschedule: (ctx, userText) =>
-              messengerTools.tryFastDefaultReschedule(ctx, userText),
+            tryFastReschedule: (ctx, userText, signal) =>
+              messengerTools.tryFastDefaultReschedule(ctx, userText, signal),
             contentClassifier,
           },
           redisClient,
@@ -378,9 +378,16 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
         operations: StudyReminderOperationsPort,
       ): CalendarPort<string> => ({
         // Keep the stage lookup scoped to the caller's WISPACE user.
-        listUpcomingEntries: (psid: string, userId: number) =>
+        listUpcomingEntries: (
+          psid: string,
+          userId: number,
+          options?: { signal?: AbortSignal },
+        ) =>
           operations
-            .listEntries(psid, userId, { timeRange: 'upcoming' })
+            .listEntries(psid, userId, {
+              timeRange: 'upcoming',
+              ...(options?.signal ? { signal: options.signal } : {}),
+            })
             .then((result) =>
               result.entries.map((entry) => ({
                 calendarId: entry.calendarId,

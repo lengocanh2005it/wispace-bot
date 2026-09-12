@@ -52,13 +52,18 @@ export class StudyCalendarCommandService {
       timeRange?: CalendarSessionTimeRange;
       limit?: number;
       pastDays?: number;
+      signal?: AbortSignal;
     },
   ): Promise<{
     timeRange: CalendarSessionTimeRange;
     entries: StudyCalendarEntryView[];
   }> {
     const timeRange = options?.timeRange ?? 'upcoming';
-    const records = await this.calendarData.listCalendars(psid);
+    const records = options?.signal
+      ? await this.calendarData.listCalendars(psid, {
+          signal: options.signal,
+        })
+      : await this.calendarData.listCalendars(psid);
     const recordById = new Map(records.map((record) => [record.id, record]));
     const { syncHorizonHours } =
       this.studyReminderScheduleService.getOutboxSettings();
@@ -71,6 +76,7 @@ export class StudyCalendarCommandService {
         userId,
         pastDays: options?.pastDays,
         limit: options?.limit,
+        ...(options?.signal ? { signal: options.signal } : {}),
       },
     );
 

@@ -38,7 +38,10 @@ export interface RescheduleStorePort<TExternalId> {
   /** Production stores require the opaque token carried by the UI action. */
   readonly requiresApprovalToken?: boolean;
   /** Returns false when an in-flight confirmation prevents replacement. */
-  save(pending: PendingRescheduleRecord<TExternalId>): Promise<boolean>;
+  save(
+    pending: PendingRescheduleRecord<TExternalId>,
+    options?: { signal?: AbortSignal },
+  ): Promise<boolean>;
   /** Atomically claims a valid (unexpired) pending confirmation for the user. */
   takeValid(
     externalId: TExternalId,
@@ -47,8 +50,8 @@ export interface RescheduleStorePort<TExternalId> {
   ): Promise<PendingRescheduleRecord<TExternalId> | null>;
   /** Puts a claimed record back to pending (confirm failed — user can retry). */
   revertToPending(externalId: TExternalId, leaseToken: string): Promise<void>;
-  /** Deletes a user-cancelled row without accepting a confirmation lease token. */
-  cancelPending(externalId: TExternalId): Promise<void>;
+  /** Deletes a user-cancelled row, optionally guarded by its staging nonce. */
+  cancelPending(externalId: TExternalId, nonce?: string): Promise<void>;
   /** Deletes only the row still owned by the claimed lease. */
   cancelClaimed(externalId: TExternalId, leaseToken: string): Promise<void>;
   hasPending(externalId: TExternalId): Promise<boolean>;
@@ -71,7 +74,10 @@ export class MemoryRescheduleStore<
     MemoryEntry<TExternalId>
   >();
 
-  save(pending: PendingRescheduleRecord<TExternalId>): Promise<boolean> {
+  save(
+    pending: PendingRescheduleRecord<TExternalId>,
+    _options?: { signal?: AbortSignal },
+  ): Promise<boolean> {
     const key = String(pending.externalId);
     if (this.pendingByExternalId.get(key)?.claimed) {
       return Promise.resolve(false);
@@ -139,10 +145,14 @@ export class MemoryRescheduleStore<
     return Promise.resolve();
   }
 
-  cancelPending(externalId: TExternalId): Promise<void> {
+  cancelPending(externalId: TExternalId, nonce?: string): Promise<void> {
     const key = String(externalId);
     const entry = this.pendingByExternalId.get(key);
-    if (!entry?.claimed) {
+    if (
+      entry &&
+      !entry.claimed &&
+      (nonce === undefined || entry.record.nonce === nonce)
+    ) {
       this.pendingByExternalId.delete(key);
     }
     return Promise.resolve();

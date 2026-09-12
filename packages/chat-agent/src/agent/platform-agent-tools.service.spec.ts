@@ -121,7 +121,7 @@ describe('PlatformAgentToolsService', () => {
     Pick<CalendarCapabilityPort, 'getCalendarSessions'>
   >;
   let exerciseClient: jest.Mocked<ExerciseCapabilityPort>;
-  let stagePort: { stage: jest.Mock };
+  let stagePort: { stage: jest.Mock; cancelPending: jest.Mock };
   let confirmSender: jest.Mock;
   let service: PlatformAgentToolsService;
 
@@ -136,7 +136,10 @@ describe('PlatformAgentToolsService', () => {
     exerciseClient = {
       precreateNextExercise: jest.fn(),
     } as unknown as jest.Mocked<ExerciseCapabilityPort>;
-    stagePort = { stage: jest.fn() };
+    stagePort = {
+      stage: jest.fn(),
+      cancelPending: jest.fn().mockResolvedValue(undefined),
+    };
     confirmSender = jest.fn().mockResolvedValue(undefined);
   });
 
@@ -157,6 +160,34 @@ describe('PlatformAgentToolsService', () => {
       });
 
       expect(result).toEqual({ error: 'Unknown tool: not_a_real_tool' });
+    });
+
+    it('does not convert cancellation after identity lookup into a tool result', async () => {
+      const controller = new AbortController();
+      const currentIdentityProvider = jest.fn().mockImplementation(async () => {
+        controller.abort();
+        return { userId: 143, mappingVersion: 'test:discord-1' };
+      });
+      service = new PlatformAgentToolsService(
+        goalsService,
+        calendarService,
+        stagePort,
+        {
+          ...buildDiscordOptions(confirmSender),
+          currentIdentityProvider,
+        },
+        exerciseClient,
+      );
+
+      await expect(
+        service.execute(
+          'get_user_goals',
+          '{}',
+          { externalUserId: 'discord-1' },
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(goalsService.getUserGoals).not.toHaveBeenCalled();
     });
 
     it('returns available=false for every WISPACE tool when the account is unlinked', async () => {
@@ -575,6 +606,60 @@ describe('PlatformAgentToolsService', () => {
         });
         expect(confirmSender).not.toHaveBeenCalled();
       });
+
+      it('forwards the abort signal and cleans the staged nonce before confirmation', async () => {
+        const controller = new AbortController();
+        stagePort.stage.mockImplementation(
+          async (input: { signal?: AbortSignal }) => {
+            expect(input.signal).toBe(controller.signal);
+            controller.abort();
+            return {
+              pendingConfirmation: true,
+              sessionLabel: 'Ngày mai lúc 19:00',
+              summary: 'Dời buổi học?',
+              confirmationToken: 'nonce-1',
+            };
+          },
+        );
+
+        await expect(
+          service.execute(
+            'reschedule_study_session',
+            JSON.stringify({
+              calendarId: 42,
+              schedulingMode: 'default_next_day_same_time',
+            }),
+            { externalUserId: 'discord-1', userId: 143 },
+            controller.signal,
+          ),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(stagePort.cancelPending).toHaveBeenCalledWith(
+          'discord-1',
+          'nonce-1',
+        );
+        expect(confirmSender).not.toHaveBeenCalled();
+      });
+
+      it('does not start staging when the tool signal is already aborted', async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(
+          service.execute(
+            'reschedule_study_session',
+            JSON.stringify({
+              calendarId: 42,
+              schedulingMode: 'default_next_day_same_time',
+            }),
+            { externalUserId: 'discord-1', userId: 143 },
+            controller.signal,
+          ),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(stagePort.stage).not.toHaveBeenCalled();
+        expect(confirmSender).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -907,6 +992,29 @@ describe('PlatformAgentToolsService', () => {
         messageHint:
           'Bạn đã dùng hết số lần tạo bài tập mới trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.',
       });
+      expect(exerciseClient.precreateNextExercise).not.toHaveBeenCalled();
+    });
+
+    it('does not turn cancellation during the budget gate into a denial', async () => {
+      const controller = new AbortController();
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockImplementation(async () => {
+          controller.abort();
+          return false;
+        }),
+        refundDaily: jest.fn(),
+      };
+      const svc = makeService({ writeToolBudget: budget });
+
+      await expect(
+        svc.execute(
+          'precreate_next_exercise',
+          '{}',
+          makeCtx({ userText: 'cho mình bài tập mới' }),
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
       expect(exerciseClient.precreateNextExercise).not.toHaveBeenCalled();
     });
 

@@ -141,6 +141,7 @@ export interface PlatformAgentOptions {
   tryFastReschedule?: (
     ctx: PlatformAgentToolContext,
     userText: string,
+    signal?: AbortSignal,
   ) => Promise<PlatformAgentReply | null>;
   /** Prometheus/OTel agent metrics (default: no-op). */
   metrics?: AgentMetricsPort;
@@ -181,6 +182,8 @@ export interface PlatformAgentOptions {
  */
 export interface RescheduleStagePort {
   stage(input: StageInput<string>): Promise<StageResult | { error: string }>;
+  /** Conditional cleanup for a staged request abandoned before confirmation. */
+  cancelPending?: (externalId: string, nonce?: string) => Promise<void>;
 }
 
 /**

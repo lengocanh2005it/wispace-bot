@@ -477,8 +477,14 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (
         calendarService: WispaceCalendarService,
       ): CalendarPort<string> => ({
-        listUpcomingEntries: async (zaloUserId: string) => {
-          const records = await calendarService.listCalendars(zaloUserId);
+        listUpcomingEntries: async (
+          zaloUserId: string,
+          _userId: number,
+          options?: { signal?: AbortSignal },
+        ) => {
+          const records = options
+            ? await calendarService.listCalendars(zaloUserId, options)
+            : await calendarService.listCalendars(zaloUserId);
           return records.map((record) => ({
             calendarId: record.id,
             scheduledTimeLabel:

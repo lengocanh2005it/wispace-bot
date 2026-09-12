@@ -31,18 +31,23 @@ export class UserCalendarScheduleService {
     psid: string,
     horizonEnd: Date,
     userId?: number,
+    options?: { signal?: AbortSignal },
   ): Promise<NormalizedStudySession[]> {
     return this.getCalendarSessions(psid, horizonEnd, {
       timeRange: 'upcoming',
       userId,
+      ...(options?.signal ? { signal: options.signal } : {}),
     });
   }
 
   async findCalendarRecord(
     psid: string,
     calendarId: number,
+    options?: { signal?: AbortSignal },
   ): Promise<UserCalendarRecord | null> {
-    const records = await this.userCalendarApiService.listCalendars(psid);
+    const records = options
+      ? await this.userCalendarApiService.listCalendars(psid, options)
+      : await this.userCalendarApiService.listCalendars(psid);
     return records.find((record) => record.id === calendarId) ?? null;
   }
 
@@ -54,6 +59,7 @@ export class UserCalendarScheduleService {
       userId?: number;
       pastDays?: number;
       limit?: number;
+      signal?: AbortSignal;
     } = {},
   ): Promise<NormalizedStudySession[]> {
     return this.getClient().getCalendarSessions(ID_HEADER, psid, horizonEnd, {
@@ -61,6 +67,7 @@ export class UserCalendarScheduleService {
       pastDays: options.pastDays,
       limit: options.limit,
       userId: options.userId,
+      ...(options.signal ? { signal: options.signal } : {}),
       // Swallow only for unlinked accounts (no data is expected there). For
       // linked users an API failure must propagate: sync skips cancellation
       // and agent tools surface an error to the LLM instead of a fake empty list.
@@ -75,8 +82,10 @@ export class UserCalendarScheduleService {
       this.client = new UserCalendarScheduleClient(
         // The wrapped service already implements `listCalendars(psid)`;
         // adapt it to the package's `(idHeader, externalId)` client shape.
-        (_idHeader, externalId) =>
-          this.userCalendarApiService.listCalendars(externalId),
+        (_idHeader, externalId, options) =>
+          options
+            ? this.userCalendarApiService.listCalendars(externalId, options)
+            : this.userCalendarApiService.listCalendars(externalId),
         timezone,
         { warn: (m) => this.logger.warn(m), log: (m) => this.logger.log(m) },
       );

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CHAT_SYSTEM_PROMPT_CORE,
+  DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
   LlmAgentService,
   LlmAgentPorts,
   NOOP_METRICS_PORT,
@@ -42,6 +43,7 @@ import {
 } from '@wispace/bot-common/masking';
 import { buildUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import { isAbortError } from '@wispace/bot-common/utils';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type {
   PlatformAgentInput,
@@ -60,7 +62,6 @@ import {
 } from '../clarification/clarification-state';
 
 const FEATURE = 'FREE_FORM_CHAT';
-
 // Execution-control defaults — same contract and env keys as the Messenger
 // app's `LlmExecutionConfigService`, so all three bots share one documented
 // configuration surface (`LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`,
@@ -204,12 +205,32 @@ export class PlatformAgentService {
       linkContext: effectiveInput.linkContext,
     };
 
-    const fastReschedule = this.options.tryFastReschedule
-      ? await this.options.tryFastReschedule(
-          toolContext,
-          resolvedInput.userText,
-        )
-      : null;
+    let fastReschedule: PlatformAgentReply | null = null;
+    try {
+      fastReschedule = this.options.tryFastReschedule
+        ? await this.options.tryFastReschedule(
+            toolContext,
+            resolvedInput.userText,
+            resolvedInput.signal
+              ? AbortSignal.any([
+                  resolvedInput.signal,
+                  AbortSignal.timeout(
+                    this.options.toolExecutionTimeoutMs ??
+                      DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
+                  ),
+                ])
+              : AbortSignal.timeout(
+                  this.options.toolExecutionTimeoutMs ??
+                    DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
+                ),
+          )
+        : null;
+    } catch (error) {
+      if (resolvedInput.signal?.aborted || isAbortError(error)) {
+        return this.abortedReply();
+      }
+      throw error;
+    }
     if (fastReschedule) {
       return {
         ...fastReschedule,
@@ -242,20 +263,30 @@ export class PlatformAgentService {
       return classifierBlock;
     }
 
-    const result = await this.agent.reply(
-      {
-        externalUserId: resolvedInput.externalUserId,
-        userId: resolvedInput.userId,
-        userText: resolvedInput.userText,
-        systemPrompt: await this.buildSystemPrompt(resolvedInput),
-        history: history as Parameters<
-          LlmAgentService<PlatformAgentToolContext>['reply']
-        >[0]['history'],
-        correlationId: resolvedInput.correlationId,
-        signal: resolvedInput.signal,
-      },
-      toolContext,
-    );
+    let result: Awaited<
+      ReturnType<LlmAgentService<PlatformAgentToolContext>['reply']>
+    >;
+    try {
+      result = await this.agent.reply(
+        {
+          externalUserId: resolvedInput.externalUserId,
+          userId: resolvedInput.userId,
+          userText: resolvedInput.userText,
+          systemPrompt: await this.buildSystemPrompt(resolvedInput),
+          history: history as Parameters<
+            LlmAgentService<PlatformAgentToolContext>['reply']
+          >[0]['history'],
+          correlationId: resolvedInput.correlationId,
+          signal: resolvedInput.signal,
+        },
+        toolContext,
+      );
+    } catch (error) {
+      if (resolvedInput.signal?.aborted || isAbortError(error)) {
+        return this.abortedReply();
+      }
+      throw error;
+    }
     // Generic pinned-facts merge (#207 item 6): server-derived facts from
     // tools (e.g. the created exercise URL) are appended deterministically
     // when the model's reply omits them.
@@ -679,6 +710,18 @@ export class PlatformAgentService {
           }
         : {}),
       ...(skipDelivery ? { skipDelivery: true } : {}),
+    };
+  }
+
+  /** A cancelled turn is consumed without producing fallback or history. */
+  private abortedReply(): PlatformAgentReply {
+    return {
+      text: '',
+      privateDataFetched: false,
+      richFollowUps: [],
+      skipHistory: true,
+      clarification: true,
+      skipDelivery: true,
     };
   }
 

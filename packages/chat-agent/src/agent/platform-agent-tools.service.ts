@@ -25,6 +25,8 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
+import { RescheduleStageAbortedError } from '@wispace/reschedule-confirm';
 import type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,
@@ -37,6 +39,12 @@ import type {
   RescheduleStagePort,
 } from './platform-agent.types';
 import { executePrecreateExerciseTool } from './precreate-exercise-result';
+
+function throwIfToolAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  }
+}
 
 /**
  * Shared WISPACE tool executor for the agent loop — implements the Discord
@@ -63,6 +71,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
   ): Promise<unknown> {
+    throwIfToolAborted(signal);
     if (!isAgentToolName(toolName)) {
       return { error: `Unknown tool: ${toolName}` };
     }
@@ -92,7 +101,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     }
 
     if (capability.identity === 'linked_wispace_account') {
-      const identity = await this.resolveCurrentIdentity(ctx, toolName);
+      const identity = await this.resolveCurrentIdentity(ctx, toolName, signal);
       if (!identity) {
         return {
           available: false,
@@ -113,12 +122,16 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         perMessageCaps: this.options.writeToolPerMessageCaps,
         deniedInc: this.options.writeToolBudgetDeniedInc,
       });
+      throwIfToolAborted(signal);
       if (denial) return denial;
     }
 
     try {
       return await this.dispatch(toolName, parsed.args, ctx, signal);
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
       const safeError = this.safeErrorMessage(error, ctx.externalUserId);
       this.logger.warn(
         `Tool ${toolName} failed for externalUserId=${maskExternalId(
@@ -158,6 +171,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private async resolveCurrentIdentity(
     ctx: PlatformAgentToolContext,
     toolName: AgentToolName,
+    signal?: AbortSignal,
   ): Promise<{ userId: number; mappingVersion: string } | undefined> {
     const provider = this.options.currentIdentityProvider;
     if (typeof provider !== 'function') {
@@ -166,6 +180,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     }
     try {
       const identity = await provider(ctx.externalUserId);
+      throwIfToolAborted(signal);
       if (
         !identity ||
         !Number.isInteger(identity.userId) ||
@@ -178,6 +193,9 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       }
       return identity;
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
       const safeError = this.safeErrorMessage(error, ctx.externalUserId);
       this.logger.warn(
         `Current-mapping lookup failed for ${maskExternalId(ctx.externalUserId)}: ${safeError}`,
@@ -202,9 +220,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     signal?: AbortSignal,
   ): Promise<unknown> {
     // Tool execution timed out (agent moved on) — do not start new side effects.
-    if (signal?.aborted) {
-      return { error: 'Tool execution aborted (timeout)' };
-    }
+    throwIfToolAborted(signal);
 
     switch (toolName) {
       case 'get_user_goals':
@@ -285,6 +301,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           this.rescheduleStudySession(
             ctx,
             args as Partial<RescheduleStudySessionArgs>,
+            signal,
           ),
         );
       case 'register_exam_report_notifications':
@@ -381,7 +398,9 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private async rescheduleStudySession(
     ctx: PlatformAgentToolContext,
     args: Partial<RescheduleStudySessionArgs>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
+    this.throwIfAborted(signal);
     const calendarId = readPositiveInteger(args.calendarId);
     if (!calendarId) {
       return { error: this.options.reschedule.messages.calendarIdRequired };
@@ -442,6 +461,9 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           resolvedUserId = freshUserId;
         }
       } catch (error) {
+        if (signal?.aborted || isAbortError(error)) {
+          throw error;
+        }
         const safeError = this.safeErrorMessage(error, ctx.externalUserId);
         this.logger.error(
           `Fresh-mapping query failed during reschedule for ${maskExternalId(ctx.externalUserId)}: ${safeError} — rejecting to prevent stale-identity staging`,
@@ -449,6 +471,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         return { error: this.options.getNotLinkedMessage() };
       }
     }
+    this.throwIfAborted(signal);
 
     const stageInput = {
       externalId: ctx.externalUserId,
@@ -457,6 +480,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       schedulingMode,
       newLocalDate,
       newTime,
+      ...(signal ? { signal } : {}),
       ...(this.options.platform || ctx.mappingVersion || ctx.userText
         ? {
             platform: this.options.platform,
@@ -475,6 +499,16 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
 
     if ('error' in staged) {
       return staged;
+    }
+
+    if (signal?.aborted) {
+      if (staged.confirmationToken) {
+        await this.stagePort.cancelPending?.(
+          ctx.externalUserId,
+          staged.confirmationToken,
+        );
+      }
+      throw new RescheduleStageAbortedError(signal.reason);
     }
 
     if (staged.confirmationToken) {
@@ -497,5 +531,11 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       pendingConfirmation: true,
       sessionLabel: staged.sessionLabel,
     };
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new RescheduleStageAbortedError(signal.reason);
+    }
   }
 }

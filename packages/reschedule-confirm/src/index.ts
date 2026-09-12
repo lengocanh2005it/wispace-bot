@@ -1,5 +1,6 @@
 export {
   RescheduleConfirmationService,
+  RescheduleStageAbortedError,
   PENDING_RESCHEDULE_TTL_MS,
   RESCHEDULE_SCOPE_ERROR_MESSAGE,
   RescheduleScopeError,

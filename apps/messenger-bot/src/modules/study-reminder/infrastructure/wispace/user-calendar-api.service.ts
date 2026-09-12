@@ -20,20 +20,33 @@ export class UserCalendarApiService {
     private readonly metrics: BotMetricsService,
   ) {}
 
-  async listCalendars(psid: string): Promise<UserCalendarRecord[]> {
-    return this.getClient().listCalendars(ID_HEADER, psid);
+  async listCalendars(
+    psid: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserCalendarRecord[]> {
+    return options
+      ? this.getClient().listCalendars(ID_HEADER, psid, options)
+      : this.getClient().listCalendars(ID_HEADER, psid);
   }
 
   async createCalendar(
     psid: string,
     input: CreateUserCalendarInput,
-    options?: { userId?: number },
+    options?: { userId?: number; signal?: AbortSignal },
   ): Promise<UserCalendarRecord> {
-    return this.getClient().createCalendar(ID_HEADER, psid, input, options);
+    return options
+      ? this.getClient().createCalendar(ID_HEADER, psid, input, options)
+      : this.getClient().createCalendar(ID_HEADER, psid, input);
   }
 
-  async deleteCalendar(psid: string, calendarId: number): Promise<void> {
-    return this.getClient().deleteCalendar(ID_HEADER, psid, calendarId);
+  async deleteCalendar(
+    psid: string,
+    calendarId: number,
+    options?: { signal?: AbortSignal },
+  ): Promise<void> {
+    return options
+      ? this.getClient().deleteCalendar(ID_HEADER, psid, calendarId, options)
+      : this.getClient().deleteCalendar(ID_HEADER, psid, calendarId);
   }
 
   private getClient(): UserCalendarApiClient {

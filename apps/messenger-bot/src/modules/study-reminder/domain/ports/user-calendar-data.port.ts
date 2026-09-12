@@ -8,6 +8,7 @@ export interface CalendarSessionsQuery {
   userId?: number;
   pastDays?: number;
   limit?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -16,13 +17,20 @@ export interface CalendarSessionsQuery {
  * `infrastructure/wispace/`; application code depends only on this port.
  */
 export interface UserCalendarDataPort {
-  listCalendars(psid: string): Promise<UserCalendarRecord[]>;
+  listCalendars(
+    psid: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserCalendarRecord[]>;
   createCalendar(
     psid: string,
     input: { eventDate: string; time: string },
-    options: { userId: number },
+    options: { userId: number; signal?: AbortSignal },
   ): Promise<UserCalendarRecord>;
-  deleteCalendar(psid: string, calendarId: number): Promise<void>;
+  deleteCalendar(
+    psid: string,
+    calendarId: number,
+    options?: { signal?: AbortSignal },
+  ): Promise<void>;
   getCalendarSessions(
     psid: string,
     horizonEnd: Date,
@@ -31,6 +39,7 @@ export interface UserCalendarDataPort {
   findCalendarRecord(
     psid: string,
     calendarId: number,
+    options?: { signal?: AbortSignal },
   ): Promise<UserCalendarRecord | null>;
 }
 

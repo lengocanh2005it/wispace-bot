@@ -153,6 +153,22 @@ describe('TypeormRescheduleStore', () => {
       );
     });
 
+    it('guards abort cleanup by the staged nonce when one is provided', async () => {
+      const repo = mockRepo();
+      const store = new TypeormRescheduleStore('messenger', repo as never);
+
+      await store.cancelPending('psid1', 'nonce-1');
+
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql.replace(/\s+/g, ' ')).toContain(
+        "WHERE external_id = $1 AND status IN ('pending', 'confirmed', 'cancelled') AND nonce = $2",
+      );
+      expect(repo.query.mock.calls[0][1]).toEqual([
+        'messenger:psid1',
+        'nonce-1',
+      ]);
+    });
+
     it('requires the exact lease when deleting a claimed row', async () => {
       const repo = mockRepo();
       const store = new TypeormRescheduleStore('messenger', repo as never);

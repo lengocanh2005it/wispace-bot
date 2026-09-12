@@ -4,13 +4,17 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import type {
   PlatformAgentReply,
   PlatformAgentToolContext,
   PlatformToolExecutorPort,
   CurrentPlatformIdentity,
 } from '@wispace/chat-agent';
-import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm';
+import {
+  RESCHEDULE_SCOPE_ERROR_MESSAGE,
+  RescheduleStageAbortedError,
+} from '@wispace/reschedule-confirm';
 import {
   executePrecreateExerciseTool,
   isWriteToolName,
@@ -67,6 +71,12 @@ import { MessengerRescheduleConfirmationService } from '../services/messenger-re
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/messenger-report-subscription-intent.utils';
+
+function throwIfToolAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  }
+}
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
@@ -142,6 +152,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
   ): Promise<unknown> {
+    throwIfToolAborted(signal);
     if (!isAgentToolName(toolName)) {
       return { error: `Unknown tool: ${toolName}` };
     }
@@ -162,6 +173,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     if (this.currentIdentityProvider) {
       try {
         const identity = await this.currentIdentityProvider(ctx.externalUserId);
+        throwIfToolAborted(signal);
         if (
           !identity ||
           !Number.isInteger(identity.userId) ||
@@ -175,6 +187,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         ctx.userId = identity.userId;
         ctx.mappingVersion = identity.mappingVersion;
       } catch (error) {
+        if (signal?.aborted || isAbortError(error)) {
+          throw error;
+        }
         const safeError = this.safeErrorMessage(error, ctx.externalUserId);
         this.logger.warn(
           `Current-mapping lookup failed for ${maskExternalId(ctx.externalUserId)}: ${safeError}`,
@@ -190,6 +205,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         perMessageCaps: this.writeToolPerMessageCaps,
         deniedInc: this.writeToolBudgetDeniedInc,
       });
+      throwIfToolAborted(signal);
       if (denial) return denial;
     }
 
@@ -202,6 +218,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         parsed.canonicalArgs,
       );
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
       const safeError = this.safeErrorMessage(error, ctx.externalUserId);
       this.logger.warn(
         `Tool ${toolName} failed for externalUserId=${maskExternalId(
@@ -230,9 +249,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     canonicalArgs?: string,
   ): Promise<unknown> {
     // Tool execution timed out (agent moved on) — do not start new side effects.
-    if (signal?.aborted) {
-      return { error: 'Tool execution aborted (timeout)' };
-    }
+    throwIfToolAborted(signal);
 
     switch (toolName) {
       case 'get_learning_progress_report':
@@ -256,6 +273,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
           ctx,
           args as Partial<RescheduleStudySessionArgs>,
           canonicalArgs,
+          signal,
         );
       case 'register_exam_report_notifications':
         return this.registerExamReportNotifications(ctx);
@@ -284,7 +302,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   async tryFastDefaultReschedule(
     ctx: PlatformAgentToolContext,
     userText: string,
+    signal?: AbortSignal,
   ): Promise<PlatformAgentReply | null> {
+    this.throwIfAborted(signal);
     if (!ctx.userId || !isRescheduleIntent(userText)) {
       return null;
     }
@@ -296,8 +316,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     const list = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
-      { timeRange: 'upcoming' },
+      { timeRange: 'upcoming', signal },
     );
+    this.throwIfAborted(signal);
 
     if (list.entries.length !== 1) {
       return null;
@@ -313,6 +334,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       platform: 'messenger',
       mappingVersion: ctx.mappingVersion,
       intent: userText,
+      ...(signal ? { signal } : {}),
       canonicalArgs: JSON.stringify({
         calendarId: entry.calendarId,
         schedulingMode: 'default_next_day_same_time',
@@ -323,6 +345,16 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
 
     if ('error' in staged) {
       return null;
+    }
+
+    if (signal?.aborted) {
+      if (staged.confirmationToken) {
+        await this.rescheduleConfirmationService.cancelPending(
+          ctx.externalUserId,
+          staged.confirmationToken,
+        );
+      }
+      throw new RescheduleStageAbortedError(signal.reason);
     }
 
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
@@ -490,7 +522,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     ctx: PlatformAgentToolContext,
     args: Partial<RescheduleStudySessionArgs>,
     canonicalArgs?: string,
+    signal?: AbortSignal,
   ): Promise<unknown> {
+    this.throwIfAborted(signal);
     if (ctx.userText !== undefined && !isRescheduleIntent(ctx.userText)) {
       return { error: 'intent_unclear' };
     }
@@ -516,8 +550,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     const upcoming = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
-      { timeRange: 'upcoming' },
+      { timeRange: 'upcoming', signal },
     );
+    this.throwIfAborted(signal);
     const matchedEntry = upcoming.entries.find(
       (entry) => entry.calendarId === calendarId,
     );
@@ -553,10 +588,21 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       mappingVersion: ctx.mappingVersion,
       intent: ctx.userText,
       canonicalArgs,
+      ...(signal ? { signal } : {}),
     });
 
     if ('error' in staged) {
       return staged;
+    }
+
+    if (signal?.aborted) {
+      if (staged.confirmationToken) {
+        await this.rescheduleConfirmationService.cancelPending(
+          ctx.externalUserId,
+          staged.confirmationToken,
+        );
+      }
+      throw new RescheduleStageAbortedError(signal.reason);
     }
 
     this.pushRichFollowUp(ctx, staged.richFollowUp);
@@ -614,6 +660,12 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       alreadyActive: false,
       message: getPocSubscriptionConfirmationMessage(),
     };
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new RescheduleStageAbortedError(signal.reason);
+    }
   }
 
   private async resolveLinkContext(

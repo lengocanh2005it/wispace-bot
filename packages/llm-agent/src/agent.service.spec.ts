@@ -1623,6 +1623,26 @@ describe('LlmAgentService', () => {
       expect(parsed.error).toBe('API timeout');
     });
 
+    it('does not turn an aborted tool into a model observation', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse(
+          'reschedule_study_session',
+          '{"calendarId":1,"schedulingMode":"default_next_day_same_time"}',
+        ),
+        makeTextResponse('Không được tiếp tục.'),
+      ]);
+      const abortError = Object.assign(new Error('cancelled'), {
+        name: 'AbortError',
+      });
+      const execute = jest.fn().mockRejectedValue(abortError);
+      const { service } = buildService({ adapter, execute });
+
+      await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toBe(
+        abortError,
+      );
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+    });
+
     it('does not treat a failed tool call as grounding for personal data', async () => {
       const adapter = makeAdapter([
         makeToolCallResponse('get_user_goals'),

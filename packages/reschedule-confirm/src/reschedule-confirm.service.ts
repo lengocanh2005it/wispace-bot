@@ -5,6 +5,7 @@ import {
   maskExternalId,
   sanitizeLogValue,
 } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import type {
   RescheduleSchedulingMode,
   UserCalendarRecord,
@@ -42,6 +43,25 @@ export class RescheduleScopeError extends Error {
   constructor(readonly reason: RescheduleScopeFailureReason) {
     super(`Calendar scope ${reason}`);
     this.name = RescheduleScopeError.name;
+  }
+}
+
+/** Internal cancellation marker for an abandoned staging attempt. */
+export class RescheduleStageAbortedError extends Error {
+  readonly cause?: unknown;
+
+  constructor(cause?: unknown) {
+    super('Reschedule staging aborted');
+    this.name = 'AbortError';
+    if (cause !== undefined) {
+      this.cause = cause;
+    }
+  }
+}
+
+function throwIfStageAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new RescheduleStageAbortedError(signal.reason);
   }
 }
 
@@ -121,6 +141,7 @@ export interface StageInput<TExternalId> {
   mappingVersion?: string;
   intent?: string;
   canonicalArgs?: string;
+  signal?: AbortSignal;
 }
 
 export interface StageResult {
@@ -153,6 +174,7 @@ export interface CalendarPort<TExternalId> {
   listUpcomingEntries(
     externalId: TExternalId,
     userId: number,
+    options?: { signal?: AbortSignal },
   ): Promise<CalendarEntryView[]>;
 }
 
@@ -228,6 +250,7 @@ export class RescheduleConfirmationService<TExternalId> {
   async stage(
     input: StageInput<TExternalId>,
   ): Promise<StageResult | { error: string }> {
+    throwIfStageAborted(input.signal);
     if (
       this.store.requiresApprovalToken &&
       (!input.platform?.trim() ||
@@ -241,10 +264,25 @@ export class RescheduleConfirmationService<TExternalId> {
       };
     }
 
-    const upcoming = await this.calendarPort.listUpcomingEntries(
-      input.externalId,
-      input.userId,
-    );
+    let upcoming: CalendarEntryView[];
+    try {
+      upcoming = input.signal
+        ? await this.calendarPort.listUpcomingEntries(
+            input.externalId,
+            input.userId,
+            { signal: input.signal },
+          )
+        : await this.calendarPort.listUpcomingEntries(
+            input.externalId,
+            input.userId,
+          );
+    } catch (error) {
+      if (input.signal?.aborted || isAbortError(error)) {
+        throw new RescheduleStageAbortedError(error);
+      }
+      throw error;
+    }
+    throwIfStageAborted(input.signal);
     const matchedEntry = upcoming.find(
       (entry) => entry.calendarId === input.calendarId,
     );
@@ -285,7 +323,9 @@ export class RescheduleConfirmationService<TExternalId> {
         }),
     );
 
-    const saved = await this.store.save({
+    throwIfStageAborted(input.signal);
+
+    const pendingRecord = {
       externalId: input.externalId,
       userId: input.userId,
       calendarId: matchedEntry.calendarId,
@@ -294,13 +334,30 @@ export class RescheduleConfirmationService<TExternalId> {
       newTime: input.newTime,
       sessionLabel,
       expiresAt: Date.now() + PENDING_RESCHEDULE_TTL_MS,
-      toolName: 'reschedule_study_session',
+      toolName: 'reschedule_study_session' as const,
       platform: input.platform,
       mappingVersion: input.mappingVersion,
       intentHash,
       argsHash,
       nonce,
-    });
+    };
+    let saved: boolean;
+    try {
+      saved = input.signal
+        ? await this.store.save(pendingRecord, { signal: input.signal })
+        : await this.store.save(pendingRecord);
+    } catch (error) {
+      if (input.signal?.aborted || isAbortError(error)) {
+        await this.cancelPending(input.externalId, nonce);
+        throw new RescheduleStageAbortedError(error);
+      }
+      throw error;
+    }
+
+    if (input.signal?.aborted) {
+      await this.cancelPending(input.externalId, nonce);
+      throw new RescheduleStageAbortedError(input.signal.reason);
+    }
 
     if (!saved) {
       return { error: RESCHEDULE_IN_PROGRESS_MESSAGE };
@@ -469,9 +526,37 @@ export class RescheduleConfirmationService<TExternalId> {
     return 'Đã hủy yêu cầu đổi lịch. Lịch học giữ nguyên nhé.';
   }
 
+  /** Removes only the staged request owned by the optional nonce. */
+  async cancelPending(externalId: TExternalId, nonce?: string): Promise<void> {
+    try {
+      await this.cancelPendingOnce(externalId, nonce);
+      return;
+    } catch {
+      try {
+        await this.cancelPendingOnce(externalId, nonce);
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `RESCHEDULE_ABORT_CLEANUP_FAILED externalId=${maskExternalId(
+            String(externalId),
+          )}: ${sanitizeLogValue(errorMessage(error), 200)}`,
+        );
+      }
+    }
+  }
+
   /** Whether a valid (unexpired) pending reschedule exists for this user. */
   hasPending(externalId: TExternalId): Promise<boolean> {
     return this.store.hasPending(externalId);
+  }
+
+  private cancelPendingOnce(
+    externalId: TExternalId,
+    nonce?: string,
+  ): Promise<void> {
+    return nonce === undefined
+      ? this.store.cancelPending(externalId)
+      : this.store.cancelPending(externalId, nonce);
   }
 
   private async runOnConfirmed(externalId: TExternalId): Promise<void> {

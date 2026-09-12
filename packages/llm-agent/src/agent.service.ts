@@ -91,7 +91,7 @@ const DEFAULT_MAX_TOOL_EXECUTIONS_PER_TURN = 8;
 const DEFAULT_MAX_TOOL_RUNS_PER_NAME_PER_TURN = 3;
 const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
-const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
+export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
 const DEFAULT_GLOBAL_AGENT_TIMEOUT_MS = 60_000;
 const DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS = 500;
 const DEFAULT_COMPACTION_RECENT_TURNS = 2;
@@ -1908,6 +1908,27 @@ Summary:`;
           succeeded: true,
         });
       } catch (err) {
+        // Cancellation is control flow, not learner-facing tool data. A local
+        // tool timeout aborts its controller before `withTimeout` rejects;
+        // reschedule must therefore escape the observation path as well.
+        if (parentSignal?.aborted) {
+          throw parentSignal.reason ?? err;
+        }
+        if (
+          isAbortError(err) ||
+          (toolName === 'reschedule_study_session' && controller.signal.aborted)
+        ) {
+          if (
+            toolName === 'reschedule_study_session' &&
+            controller.signal.aborted &&
+            !isAbortError(err)
+          ) {
+            const abortError = new Error('Reschedule tool execution aborted');
+            abortError.name = 'AbortError';
+            throw abortError;
+          }
+          throw err;
+        }
         const message = maskExternalIdInText(
           sanitizeUntrustedTextForLlm(errorMessage(err), {
             maxChars: 500,

@@ -165,15 +165,22 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         calendarApi: UserCalendarApiService,
         calendarSchedule: UserCalendarScheduleService,
       ): UserCalendarDataPort => ({
-        listCalendars: (psid) => calendarApi.listCalendars(psid),
+        listCalendars: (psid, options) =>
+          options
+            ? calendarApi.listCalendars(psid, options)
+            : calendarApi.listCalendars(psid),
         createCalendar: (psid, input, options) =>
           calendarApi.createCalendar(psid, input, options),
-        deleteCalendar: (psid, calendarId) =>
-          calendarApi.deleteCalendar(psid, calendarId),
+        deleteCalendar: (psid, calendarId, options) =>
+          options
+            ? calendarApi.deleteCalendar(psid, calendarId, options)
+            : calendarApi.deleteCalendar(psid, calendarId),
         getCalendarSessions: (psid, horizonEnd, options) =>
           calendarSchedule.getCalendarSessions(psid, horizonEnd, options),
-        findCalendarRecord: (psid, calendarId) =>
-          calendarSchedule.findCalendarRecord(psid, calendarId),
+        findCalendarRecord: (psid, calendarId, options) =>
+          options
+            ? calendarSchedule.findCalendarRecord(psid, calendarId, options)
+            : calendarSchedule.findCalendarRecord(psid, calendarId),
       }),
       inject: [UserCalendarApiService, UserCalendarScheduleService],
     },
