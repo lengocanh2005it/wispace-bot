@@ -118,6 +118,16 @@ _Avoid_: calendar event
 Normalized representation of a study session: `{ sessionKey, scheduledAt, topic, durationMinutes }`. Created from UserCalendar records.
 _Avoid_: CalendarEvent, SessionRecord
 
+### Reschedule Confirmation
+
+**staged reschedule**:
+Pending request created after validating a learner's UserCalendar session and before the learner confirms. It is not a calendar mutation.
+_Avoid_: rescheduled session, completed reschedule
+
+**confirmation boundary**:
+Point at which the bot commits to delivering the reschedule confirmation prompt. Cancellation before this boundary removes only the matching staged reschedule; after it, an outbound attempt cannot be retracted.
+_Avoid_: confirmation complete, send completion
+
 ### Student Report
 
 **StudentCapacityInput**:
