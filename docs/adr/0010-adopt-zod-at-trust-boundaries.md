@@ -34,7 +34,7 @@ Adopt **zod v4** as the runtime schema library at exactly three trust boundaries
 
 ### Failure semantics differ per boundary — this is intentional
 
-- **WISPACE responses — fail-closed.** A required field missing or mistyped throws into the existing error/retry path. **Extra fields are tolerated** (additive upstream changes must not break the bot); only declared required fields and their types are enforced.
+- **WISPACE responses — fail-closed.** A required field missing or mistyped throws into the existing error/retry path. **Extra fields are tolerated** (additive upstream changes must not break the bot): they never fail validation, but the parsed output strips undeclared keys — consumers read declared fields only.
 - **LLM structured output — degraded.** A zod parse failure keeps the existing template fallback + log + metric. WISPACE data must be right; LLM output must be sent. Zod replaces the validation layer, not the degradation semantics.
 - **LLM tool arguments — unchanged.** Invalid args return an error to the model (current `parseAndValidateToolArguments` behavior); zod is the single validator, not a behavior change.
 
