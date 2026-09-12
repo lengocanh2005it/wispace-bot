@@ -3,19 +3,33 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.spec.ts",
+        "!**/*.test.ts",
+        "!src/**/__mocks__/**",
+        "!**/jest.config.*"
+      ],
       "outputs": ["dist/**"]
     },
-    "lint": {},
+    "lint": {
+      "inputs": ["src/**", "package.json"]
+    },
     "format": {
       "cache": false
     },
-    "format:check": {},
+    "format:check": {
+      "inputs": ["src/**", "package.json"]
+    },
     "typecheck": {
       "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/jest.config.*"],
       "outputs": ["**/*.tsbuildinfo"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "package.json", "tsconfig.json", "jest.config.*"],
+      "outputs": []
     },
     "start:dev": {
       "cache": false,

@@ -15,6 +15,7 @@
   "ignorePatterns": [
     "test/**/*.ts",
     "apps/*/test/**/*.ts",
+    ".github/scripts/**",
     "**/*.mjs",
     "**/tsconfig*.json",
     "**/dist/**",

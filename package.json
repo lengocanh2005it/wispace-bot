@@ -11,9 +11,9 @@
   "scripts": {
     "prepare": "husky",
     "build": "turbo run build",
-    "lint": "turbo run lint",
-    "format": "turbo run format",
-    "format:check": "turbo run format:check",
+    "lint": "oxlint",
+    "format": "oxfmt apps packages",
+    "format:check": "oxfmt --check apps packages",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:affected": "turbo run test --affected",
@@ -26,8 +26,8 @@
     "database:entity-discovery:test": "node --test scripts/database-entity-discovery.test.mjs",
     "architecture:check": "node scripts/check-architecture.mjs",
     "architecture:test": "node --test scripts/check-architecture.test.mjs",
-    "verify:affected": "npm run architecture:check && turbo run format:check lint typecheck test build --affected",
-    "verify": "npm run architecture:check && turbo run format:check lint typecheck test build"
+    "verify:affected": "npm run architecture:check && npm run format:check && npm run lint && turbo run typecheck test build --affected",
+    "verify": "npm run architecture:check && npm run format:check && npm run lint && turbo run typecheck test build"
   },
   "devDependencies": {
     "@nestjs/platform-express": "^12.0.1",
