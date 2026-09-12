@@ -165,21 +165,21 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             ctx.externalUserId,
           )}${refundError}`,
         );
+        try {
+          if (!ctx.deliveryAmbiguous) {
+            await this.options.clarificationDeliveryFailure?.(
+              ctx.externalUserId,
+              ctx.idempotencyKey,
+            );
+          }
+        } catch {
+          // Recovery must never change delivery/retry behavior.
+        }
         if (ctx.reply?.clarification) {
           try {
             this.options.clarificationOutcomeInc?.('delivery_failure');
           } catch {
             // Telemetry must never change delivery/retry behavior.
-          }
-          try {
-            if (!ctx.deliveryAmbiguous) {
-              await this.options.clarificationDeliveryFailure?.(
-                ctx.externalUserId,
-                ctx.idempotencyKey,
-              );
-            }
-          } catch {
-            // Recovery must never change delivery/retry behavior.
           }
           // Re-open only the failed event's state; a generic fallback would
           // be a second user-visible reply for the same bounded flow.

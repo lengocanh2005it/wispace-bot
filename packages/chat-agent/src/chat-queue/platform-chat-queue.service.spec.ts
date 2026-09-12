@@ -309,6 +309,35 @@ describe('PlatformChatQueueService', () => {
     expect(getQueueMock(service).enqueue).not.toHaveBeenCalled();
   });
 
+  it('marks a consumed clarification choice failed when its normal answer cannot be delivered', async () => {
+    const clarificationDeliveryFailure = jest.fn().mockResolvedValue(undefined);
+    const pendingTextSender = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+    };
+    buildService(pendingTextSender, { clarificationDeliveryFailure });
+    const hooks = jest.mocked(ChatPipeline).mock.calls[0][4] as {
+      onError: (context: {
+        externalUserId: string;
+        idempotencyKey?: string;
+        error: Error;
+        reply: { text: string; clarification?: boolean };
+      }) => Promise<void>;
+    };
+
+    await hooks.onError({
+      externalUserId: 'zalo-1',
+      idempotencyKey: 'event-choice-1',
+      error: new Error('delivery unavailable'),
+      reply: { text: 'Lịch học của bạn...', clarification: false },
+    });
+
+    expect(clarificationDeliveryFailure).toHaveBeenCalledWith(
+      'zalo-1',
+      'event-choice-1',
+    );
+    expect(pendingTextSender.sendText).toHaveBeenCalledTimes(1);
+  });
+
   it('does not reopen a clarification when the provider delivery is ambiguous', async () => {
     const clarificationDeliveryFailure = jest.fn().mockResolvedValue(undefined);
     buildService(

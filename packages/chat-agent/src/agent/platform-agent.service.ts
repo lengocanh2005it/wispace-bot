@@ -343,7 +343,10 @@ export class PlatformAgentService {
     return hadIdentity;
   }
 
-  private async handleClarification(input: PlatformAgentInput): Promise<{
+  private async handleClarification(
+    input: PlatformAgentInput,
+    retryOnVersionConflict = true,
+  ): Promise<{
     input?: PlatformAgentInput;
     reply?: PlatformAgentReply;
     /** #649 — the message was a clarification-menu choice, rewritten to a
@@ -380,11 +383,16 @@ export class PlatformAgentService {
         state &&
         input.correlationId &&
         state.lastEventId === input.correlationId &&
-        state.lastReplyText &&
-        state.lastDeliveryFailed !== true
+        state.lastDeliveryFailed !== true &&
+        (state.lastReplyText || state.phase === 'consumed')
       ) {
+        this.recordClarificationOutcome('replayed');
         return {
-          reply: this.staticReply(state.lastReplyText, input, true),
+          reply: this.staticReply(
+            state.lastReplyText ?? buildClarificationMessage(),
+            input,
+            true,
+          ),
         };
       }
 
@@ -403,22 +411,29 @@ export class PlatformAgentService {
       }
 
       if (state?.phase === 'consumed') {
-        if (this.clarificationMachine.parseChoice(input.userText)) {
-          this.recordClarificationOutcome('blocked_tool');
-          this.recordClarificationOutcome('replayed');
-          return {
-            reply: this.staticReply(
-              state.lastReplyText ?? buildClarificationMessage(),
-              input,
-              true,
-            ),
-          };
-        }
+        const failedChoice =
+          state.lastDeliveryFailed === true &&
+          input.correlationId === state.lastEventId
+            ? state.lastChoice
+            : undefined;
         const cleared = await this.clarificationStore.clear(key, state.version);
         if (cleared === false) {
+          if (retryOnVersionConflict) {
+            return this.handleClarification(input, false);
+          }
           throw new Error('Clarification state version conflict');
         }
         state = null;
+        if (failedChoice) {
+          this.recordClarificationOutcome('choice');
+          return {
+            input: {
+              ...input,
+              userText: this.buildChoicePrompt(failedChoice),
+            },
+            choiceConsumed: true,
+          };
+        }
       }
 
       if (this.clarificationMachine.isCancel(input.userText)) {
@@ -448,7 +463,12 @@ export class PlatformAgentService {
       if (state && choice) {
         const consumed = await this.clarificationStore.set(
           key,
-          this.clarificationMachine.consume(state, input.correlationId, now),
+          this.clarificationMachine.consume(
+            state,
+            input.correlationId,
+            now,
+            choice,
+          ),
           state.version,
         );
         if (consumed === false) {
@@ -646,6 +666,7 @@ export class PlatformAgentService {
     input: PlatformAgentInput,
     skipDelivery = false,
   ): PlatformAgentReply {
+    if (skipDelivery) this.recordClarificationOutcome('skip_delivery');
     return {
       text,
       privateDataFetched: false,

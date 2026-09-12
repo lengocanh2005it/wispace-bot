@@ -316,7 +316,7 @@ export interface PlatformChatQueueOptions {
   >;
   /** Clears pending clarification when unlink/relink changes identity. */
   clarificationStateClearer?: (externalUserId: string) => Promise<void>;
-  /** Re-opens a clarification only when its known outbound attempt failed. */
+  /** Re-opens a clarification-associated event when its outbound attempt failed. */
   clarificationDeliveryFailure?: (
     externalUserId: string,
     eventId?: string,

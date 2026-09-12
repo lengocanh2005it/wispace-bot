@@ -55,8 +55,12 @@ describe('MessengerChatProcessorService', () => {
     const reply = jest.fn(() =>
       Promise.resolve({ text: 'Bot reply', richFollowUps: [] as [] }),
     );
+    const markClarificationDeliveryFailedForEvent = jest.fn(() =>
+      Promise.resolve(),
+    );
     const messengerAgentService = {
       reply,
+      markClarificationDeliveryFailedForEvent,
     } as unknown as MessengerAgentService;
 
     const getHistory = jest.fn(() => []);
@@ -169,6 +173,7 @@ describe('MessengerChatProcessorService', () => {
       appendTurn,
       appendToolSummary,
       reply,
+      markClarificationDeliveryFailedForEvent,
       reserveFreeFormSlot,
       markDelivered,
       markCompleted,
@@ -460,6 +465,30 @@ describe('MessengerChatProcessorService', () => {
 
     expect(appendTurn).not.toHaveBeenCalled();
     expect(appendToolSummary).not.toHaveBeenCalled();
+  });
+
+  it('marks a clarification-associated event retryable when its normal answer fails', async () => {
+    const {
+      service,
+      sendTextBubblesViaPsid,
+      markClarificationDeliveryFailedForEvent,
+    } = createService();
+    sendTextBubblesViaPsid.mockRejectedValue(
+      new MessengerApiError('Send failed', 500, 'Error', '{}'),
+    );
+
+    await expect(
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'lịch học',
+        idempotencyKey: 'mid-choice',
+      }),
+    ).rejects.toThrow('Send failed');
+
+    expect(markClarificationDeliveryFailedForEvent).toHaveBeenCalledWith(
+      'psid-1',
+      'mid-choice',
+    );
   });
 
   it('keeps quota when at least one main bubble was delivered (H4)', async () => {

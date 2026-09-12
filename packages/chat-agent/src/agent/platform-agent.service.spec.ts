@@ -332,6 +332,34 @@ describe('PlatformAgentService', () => {
     expect(clarificationStore.set).toHaveBeenCalledTimes(1);
   });
 
+  it('records skip_delivery for a replayed event', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const outcomes: string[] = [];
+    const service = buildService(historyService, {
+      clarificationStore,
+      clarificationOutcomeInc: (outcome) => outcomes.push(outcome),
+    });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-401-1',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-401-1',
+    });
+
+    expect(outcomes).toEqual(
+      expect.arrayContaining(['replayed', 'skip_delivery']),
+    );
+  });
+
   it('blocks an out-of-order clarification event from executing a tool', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),
@@ -361,7 +389,62 @@ describe('PlatformAgentService', () => {
     expect(mockLlmReply).not.toHaveBeenCalled();
   });
 
-  it('keeps a consumed clarification tombstone so a concurrent choice cannot call tools twice', async () => {
+  it('answers a new choice after a consumed clarification state', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-menu',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'lịch học',
+      correlationId: 'event-choice-1',
+    });
+    const secondChoice = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'lịch học',
+      correlationId: 'event-choice-2',
+    });
+
+    expect(secondChoice.skipDelivery).toBeUndefined();
+    expect(mockLlmReply).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers a new choice without a correlation id after a consumed clarification state', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-menu',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'tiến độ',
+      correlationId: 'event-choice-1',
+    });
+    const secondChoice = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'tiến độ',
+    });
+
+    expect(secondChoice.skipDelivery).toBeUndefined();
+    expect(mockLlmReply).toHaveBeenCalledTimes(2);
+  });
+
+  it('suppresses a replayed choice even when its text changes', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),
       appendTurn: jest.fn().mockResolvedValue(undefined),
@@ -379,14 +462,139 @@ describe('PlatformAgentService', () => {
       userText: '1',
       correlationId: 'event-choice-1',
     });
-    const secondChoice = await service.reply({
+    const replay = await service.reply({
       externalUserId: 'zalo-user-1',
-      userText: '3',
+      userText: 'lịch học',
+      correlationId: 'event-choice-1',
+    });
+
+    expect(replay.skipDelivery).toBe(true);
+    expect(mockLlmReply).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses a replayed choice after its answer was generated', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-menu',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '1',
+      correlationId: 'event-choice-1',
+    });
+    const replay = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '1',
+      correlationId: 'event-choice-1',
+    });
+
+    expect(replay.skipDelivery).toBe(true);
+    expect(mockLlmReply).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed choice by event identity even when its text changes', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-menu',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '1',
+      correlationId: 'event-choice-1',
+    });
+    await service.markClarificationDeliveryFailedForEvent(
+      'zalo-user-1',
+      'event-choice-1',
+    );
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'đổi lịch',
+      correlationId: 'event-choice-1',
+    });
+
+    expect(mockLlmReply).toHaveBeenCalledTimes(2);
+    expect(mockLlmReply.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        userText: expect.stringMatching(/tiến độ học/i),
+      }),
+    );
+  });
+
+  it('retries a consumed-state clear after a compare-and-set conflict', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    let state: ClarificationState | null = null;
+    let conflictNextClear = false;
+    const clarificationStore: ClarificationStateStore = {
+      get: jest.fn(async () => state),
+      set: jest.fn(async (_key, next, expectedVersion) => {
+        if (
+          expectedVersion !== undefined &&
+          expectedVersion !== (state?.version ?? 0)
+        ) {
+          return false;
+        }
+        state = next;
+        return true;
+      }),
+      clear: jest.fn(async (_key, expectedVersion) => {
+        if (conflictNextClear) {
+          conflictNextClear = false;
+          state = null;
+          return false;
+        }
+        if (
+          expectedVersion !== undefined &&
+          expectedVersion !== state?.version
+        ) {
+          return false;
+        }
+        state = null;
+        return true;
+      }),
+    };
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-menu',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '1',
+      correlationId: 'event-choice-1',
+    });
+    conflictNextClear = true;
+
+    const next = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'lịch học',
       correlationId: 'event-choice-2',
     });
 
-    expect(secondChoice.clarification).toBe(true);
-    expect(mockLlmReply).toHaveBeenCalledTimes(1);
+    expect(next.skipDelivery).toBeUndefined();
+    expect(next.text).toBe('next answer');
+    expect(mockLlmReply).toHaveBeenCalledTimes(2);
   });
 
   it('reopens a clarification after a known failed delivery for that event', async () => {
@@ -840,6 +1048,7 @@ describe('PlatformAgentService', () => {
         'irrelevant_clarify',
         'started_offtopic',
         'started_ambiguous',
+        'skip_delivery',
         'unavailable',
       ]).toContain(outcome);
     }

@@ -4,6 +4,8 @@ export const CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 export const MAX_CLARIFICATION_ATTEMPTS = 2;
 export const MAX_CLARIFICATION_MENU_RESETS = 1;
 const MAX_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CLARIFICATION_ATTEMPTS_CAP = 10;
+const MAX_CLARIFICATION_MENU_RESETS_CAP = 5;
 const MAX_CLARIFICATION_EVENT_HISTORY = 8;
 
 export interface ClarificationLimits {
@@ -64,13 +66,13 @@ function normalizeLimits(limits: ClarificationLimits): ClarificationLimits {
       Number.isFinite(limits.maxAttempts) && limits.maxAttempts >= 0
         ? Math.floor(limits.maxAttempts)
         : MAX_CLARIFICATION_ATTEMPTS,
-      10,
+      MAX_CLARIFICATION_ATTEMPTS_CAP,
     ),
     maxMenuResets: Math.min(
       Number.isFinite(limits.maxMenuResets) && limits.maxMenuResets >= 0
         ? Math.floor(limits.maxMenuResets)
         : MAX_CLARIFICATION_MENU_RESETS,
-      5,
+      MAX_CLARIFICATION_MENU_RESETS_CAP,
     ),
   };
 }
@@ -85,10 +87,12 @@ export interface ClarificationState {
   createdAt: number;
   expiresAt: number;
   userId?: number;
-  /** The inbound event that produced the last canned reply. */
+  /** The most recent inbound event in the clarification lifecycle. */
   lastEventId?: string;
   /** Recent event ids form a bounded tombstone for delayed/replayed replies. */
   recentEventIds?: string[];
+  /** Choice accepted for the most recent consumed event, if any. */
+  lastChoice?: ClarificationChoice;
   /** Canned text cached so a redelivery can be suppressed deterministically. */
   lastReplyText?: string;
   /** A definitive outbound failure keeps the state retryable without deleting it. */
@@ -436,6 +440,7 @@ export class ClarificationStateMachine {
     state: ClarificationState,
     eventId: string | undefined,
     now = Date.now(),
+    choice?: ClarificationChoice,
   ): ClarificationState {
     const recentEventIds = eventId
       ? [...(state.recentEventIds ?? []), eventId].slice(
@@ -447,7 +452,9 @@ export class ClarificationStateMachine {
       phase: 'consumed',
       version: state.version + 1,
       expiresAt: now + this.limits.ttlMs,
+      ...(eventId ? { lastEventId: eventId } : {}),
       ...(recentEventIds ? { recentEventIds } : {}),
+      ...(choice ? { lastChoice: choice } : {}),
     };
   }
 
@@ -620,11 +627,12 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
       ) ||
       !Number.isInteger((parsed as { attempts?: unknown }).attempts) ||
       (parsed as { attempts: number }).attempts < 0 ||
-      (parsed as { attempts: number }).attempts > this.limits.maxAttempts ||
+      (parsed as { attempts: number }).attempts >
+        MAX_CLARIFICATION_ATTEMPTS_CAP ||
       !Number.isInteger((parsed as { menuResets?: unknown }).menuResets) ||
       (parsed as { menuResets: number }).menuResets < 0 ||
       (parsed as { menuResets: number }).menuResets >
-        this.limits.maxMenuResets ||
+        MAX_CLARIFICATION_MENU_RESETS_CAP ||
       !Number.isInteger((parsed as { version?: unknown }).version) ||
       (parsed as { version: number }).version < 1 ||
       !Number.isFinite((parsed as { createdAt?: unknown }).createdAt) ||
@@ -632,7 +640,8 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
       (parsed as { expiresAt: number }).expiresAt <=
         (parsed as { createdAt: number }).createdAt ||
       (parsed as { expiresAt: number }).expiresAt >
-        (parsed as { createdAt: number }).createdAt + this.limits.ttlMs ||
+        (parsed as { createdAt: number }).createdAt +
+          MAX_CLARIFICATION_TTL_MS ||
       ('userId' in parsed &&
         (parsed as { userId?: unknown }).userId !== undefined &&
         (!Number.isInteger((parsed as { userId?: unknown }).userId) ||
@@ -643,6 +652,11 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
           'string' ||
           (parsed as { lastEventId: string }).lastEventId.length === 0 ||
           (parsed as { lastEventId: string }).lastEventId.length > 255)) ||
+      ('lastChoice' in parsed &&
+        (parsed as { lastChoice?: unknown }).lastChoice !== undefined &&
+        !(['progress', 'schedule', 'reschedule'] as unknown[]).includes(
+          (parsed as { lastChoice?: unknown }).lastChoice,
+        )) ||
       ('lastReplyText' in parsed &&
         (parsed as { lastReplyText?: unknown }).lastReplyText !== undefined &&
         (typeof (parsed as { lastReplyText?: unknown }).lastReplyText !==

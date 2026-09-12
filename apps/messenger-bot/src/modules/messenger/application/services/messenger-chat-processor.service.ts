@@ -130,21 +130,21 @@ export class MessengerChatProcessorService {
             ctx.externalUserId,
           )}`,
         );
+        try {
+          if (!ctx.deliveryAmbiguous) {
+            await this.messengerAgentService.markClarificationDeliveryFailedForEvent(
+              ctx.externalUserId,
+              ctx.idempotencyKey,
+            );
+          }
+        } catch {
+          // Recovery must not change the durable inbox outcome.
+        }
         if (ctx.reply?.clarification) {
           try {
             this.metrics.incClarificationOutcome('delivery_failure');
           } catch {
             // Telemetry must never change delivery/retry behavior.
-          }
-          try {
-            if (!ctx.deliveryAmbiguous) {
-              await this.messengerAgentService.markClarificationDeliveryFailedForEvent(
-                ctx.externalUserId,
-                ctx.idempotencyKey,
-              );
-            }
-          } catch {
-            // Recovery must not change the durable inbox outcome.
           }
           // Re-open only the failed event's state; a generic fallback would
           // be a duplicate user-visible response for the same inbound event.

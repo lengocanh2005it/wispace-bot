@@ -474,6 +474,25 @@ Meta may **retry webhooks** with the same payload (same `message.mid`). The syst
 
 Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota.
 
+#### Clarification menu replay (#1035)
+
+The shared `@wispace/chat-agent` clarification state is a bounded menu
+workflow, not a text lock. After a choice is accepted, the consumed state is a
+tombstone for event identities:
+
+| Inbound event                                        | Result                                                   |
+| ---------------------------------------------------- | -------------------------------------------------------- |
+| Same `correlationId` replay (even with changed text) | `skipDelivery`, no LLM/tool call                         |
+| New `correlationId`, same text                       | Fresh turn; normal quota/LLM flow                        |
+| No `correlationId`                                   | Fresh turn; never silently dropped by the consumed state |
+
+When the choice's non-ambiguous outbound attempt fails, the queue marks that
+event retryable so the same event can be processed again. Suppressed sends are
+counted as `<prefix>_clarification_outcomes_total{outcome=skip_delivery}`;
+`delivery_failure` remains the delivery outcome. Redis state parsing accepts
+live states written with older, higher limits and validates only the hard
+attempt/menu-reset caps plus the absolute TTL ceiling.
+
 | Dedupe           | Single instance (`CHAT_QUEUE_STORE=memory`) | Multi-pod (`CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true`) |
 | ---------------- | ------------------------------------------- | ---------------------------------------------------------------- |
 | Webhook `mid`    | Durable inbox `webhook_inbound_events`      | Same shared PostgreSQL inbox                                     |

@@ -145,6 +145,18 @@ describe('ClarificationStateMachine', () => {
     await expect(store.clear('u1', consumed.version)).resolves.toBe(false);
   });
 
+  it('persists the consumed choice for a delivery retry', () => {
+    const machine = new ClarificationStateMachine();
+    const state = machine.consume(
+      machine.start(Date.now()),
+      'choice-1',
+      Date.now(),
+      'schedule',
+    );
+
+    expect(state.lastChoice).toBe('schedule');
+  });
+
   it('fails closed when configured Redis is disabled or native client is missing', async () => {
     const machine = new ClarificationStateMachine();
     const state = machine.start(Date.now());
@@ -195,6 +207,37 @@ describe('ClarificationStateMachine', () => {
     await expect(notConfiguredDirectStore.clear('u1')).rejects.toThrow(
       'unavailable',
     );
+  });
+
+  it('accepts Redis state written under higher limits and a longer TTL', async () => {
+    const createdAt = Date.now();
+    const raw = JSON.stringify({
+      phase: 'awaiting_choice',
+      attempts: 2,
+      menuResets: 1,
+      version: 1,
+      createdAt,
+      expiresAt: createdAt + 30_000,
+      lastChoice: 'schedule',
+    });
+    const client = {
+      get: jest.fn().mockResolvedValue(raw),
+    };
+    const store = new RedisClarificationStateStore(
+      {
+        isConfiguredEnabled: () => true,
+        isEnabled: () => true,
+        getNativeClient: () => client,
+      },
+      'chat:clarification:test',
+      { ttlMs: 1_000, maxAttempts: 1, maxMenuResets: 0 },
+    );
+
+    await expect(store.get('u1')).resolves.toMatchObject({
+      attempts: 2,
+      menuResets: 1,
+      expiresAt: createdAt + 30_000,
+    });
   });
 
   it('creates memory store when Redis is not configured, and Redis store when configured', () => {

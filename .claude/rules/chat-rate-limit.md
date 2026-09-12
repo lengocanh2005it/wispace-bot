@@ -24,6 +24,17 @@ Reserve is **not** called from webhook — only from `MessengerChatProcessorServ
 
 Menu postback, reminder cron, proactive reports do **not** go through this module.
 
+## Clarification menu replay (#1035)
+
+Clarification state lives in shared `@wispace/chat-agent`. A consumed state is
+an event-identity tombstone, not a text lock: the same `correlationId` is
+suppressed with `skipDelivery`, a new id with the same text is processed as a
+fresh turn, and an event without an id is never suppressed by this state. A
+non-ambiguous delivery failure marks the consumed choice retryable so the same
+event can run again. Monitor
+`<prefix>_clarification_outcomes_total{outcome=skip_delivery}` alongside the
+existing `replayed`, `stale_reply`, and `delivery_failure` outcomes.
+
 The separate shared outbound backstop (#622) is enforced immediately before
 learner-facing delivery. It is not inbound quota: use the canonical WISPACE
 `userId` bucket when available, keep the platform/external-id fallback before

@@ -244,6 +244,28 @@ _Avoid_: chat queue — class name is `DebounceChatQueue`
 Messages that arrive while the queue is flushing a batch. They are buffered and flushed after the current batch completes.
 _Avoid_: queued messages
 
+### Clarification & Event Delivery
+
+**clarification state**:
+Short-lived per-learner state used while the bot waits for one bounded menu choice.
+_Avoid_: chat session, menu cache
+
+**consumed state**:
+Clarification state after a choice has been accepted; it is a tombstone window for already-seen event identities, not a ban on the same text in a new message.
+_Avoid_: completed state, locked menu
+
+**event identity**:
+Stable identifier of one inbound platform event, normally the platform message id carried as `correlationId`.
+_Avoid_: message text, timestamp
+
+**redelivery**:
+Later delivery of the same inbound event, recognized by the same event identity.
+_Avoid_: repeated question, duplicate text
+
+**skipDelivery**:
+Reply outcome meaning an already-attempted canned clarification must not be sent again.
+_Avoid_: ignored message, dropped message
+
 ### Messenger-Specific
 
 **postback**:
@@ -313,7 +335,7 @@ String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `
 _Avoid_: use case, purpose
 
 **correlationId**:
-Unique identifier that pairs an LLM call with its triggering event (usually `message.mid` or userId). Used for tracing and usage telemetry.
+Identifier that pairs an LLM call with its triggering event; when available, it is the inbound event identity used by clarification replay handling. It is optional, and the system does not infer identity from message text when it is absent.
 _Avoid_: trace ID, request ID
 
 **prompt injection**:
