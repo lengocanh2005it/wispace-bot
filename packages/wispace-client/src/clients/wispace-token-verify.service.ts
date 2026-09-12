@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   Injectable,
   InternalServerErrorException,
@@ -8,6 +9,7 @@ import { maskExternalId } from '@wispace/bot-common/masking';
 import { readResponseText } from '@wispace/bot-common/utils';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
+import { validateShape } from '../utils/validate-shape';
 import {
   validateUpstreamUrl,
   buildUpstreamUrlPolicy,
@@ -24,6 +26,9 @@ const VERIFY_FAILURE_REASONS: WispaceLinkVerifyFailureReason[] = [
   'USED',
   'INVALID_FORMAT',
 ];
+
+/** Wire envelope only — userId/reason coercion below stays intentional leniency for the verify contract. */
+const linkVerifyBodySchema = z.record(z.string(), z.unknown());
 
 /**
  * Calls WISPACE's shared account-link verify API — the same
@@ -140,13 +145,14 @@ export class WispaceTokenVerifyService {
   }
 
   private parseSuccessPayload(payload: unknown): WispaceLinkVerifyResult {
-    if (!payload || typeof payload !== 'object') {
+    let record: Record<string, unknown>;
+    try {
+      record = validateShape(linkVerifyBodySchema, payload);
+    } catch {
       throw new InternalServerErrorException(
         `WISPACE verify-${this.platform}-token returned invalid JSON body`,
       );
     }
-
-    const record = payload as Record<string, unknown>;
 
     if (record.success === false || record.valid === false) {
       const failure = this.parseFailurePayload(payload);
@@ -173,11 +179,12 @@ export class WispaceTokenVerifyService {
   private parseFailurePayload(
     payload: unknown,
   ): WispaceLinkVerifyResult | undefined {
-    if (!payload || typeof payload !== 'object') {
+    let record: Record<string, unknown>;
+    try {
+      record = validateShape(linkVerifyBodySchema, payload);
+    } catch {
       return undefined;
     }
-
-    const record = payload as Record<string, unknown>;
     const reason = this.readFailureReason(record.reason ?? record.error);
     if (!reason) {
       return undefined;

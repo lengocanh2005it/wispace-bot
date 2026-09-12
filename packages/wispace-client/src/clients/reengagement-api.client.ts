@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
@@ -10,12 +11,7 @@ import { withRetry } from '../utils/with-retry';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
-import {
-  validateShape,
-  isNonEmptyString,
-  isNonNegativeNumber,
-  isDateString,
-} from '../utils/validate-shape';
+import { validateShape } from '../utils/validate-shape';
 import type {
   ReengagementCandidatesResult,
   ReengagementClientConfig,
@@ -24,7 +20,6 @@ import type {
   ReengagementMarkSentResult,
   ReengagementPayload,
   ReengagementPlatform,
-  ReengagementVariant,
 } from '../types/reengagement.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -41,24 +36,44 @@ interface CandidateQuery {
   limit: number;
 }
 
-function isVariant(value: unknown): value is ReengagementVariant {
-  return value === 'a' || value === 'b';
-}
+const nullableString = z.union([z.string(), z.null()]);
+const jsonObject = z.record(z.string(), z.unknown());
+const dateString = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'ISO date string');
 
-function isPlatform(value: unknown): value is ReengagementPlatform {
-  return value === 'discord' || value === 'messenger';
-}
+const candidateSchema = z.object({
+  userId: z.string().min(1),
+  discordId: nullableString.optional(),
+  psid: nullableString.optional(),
+  email: nullableString.optional(),
+  userName: z.string().min(1),
+  platform: z.enum(['discord', 'messenger']),
+  lastActiveAt: dateString,
+  daysInactive: z.number().nonnegative(),
+  variant: z.enum(['a', 'b']),
+});
 
-function isArrayOfObjects(value: unknown): boolean {
-  return (
-    Array.isArray(value) &&
-    value.every((item) => item !== null && typeof item === 'object')
-  );
-}
+const candidatesSchema = z.object({
+  totalCandidates: z.number().nonnegative(),
+  candidates: z.array(candidateSchema),
+});
 
-function isNullableString(value: unknown): boolean {
-  return value === null || typeof value === 'string';
-}
+const payloadSchema = z.object({
+  variant: z.enum(['a', 'b']),
+  period: z.string().min(1),
+  is_fallback: z.boolean(),
+  summary: jsonObject,
+  discord_payload: z.object({
+    embeds: z.array(jsonObject),
+    components: z.array(jsonObject),
+  }),
+});
+
+const markSentSchema = z.object({
+  success: z.boolean(),
+  logId: nullableString.optional(),
+});
 
 export class ReengagementApiClient {
   private readonly breaker: CircuitBreaker<any[], unknown>;
@@ -244,160 +259,44 @@ export class ReengagementApiClient {
   }
 
   private normalizeCandidates(raw: unknown): ReengagementCandidatesResult {
-    const root = validateShape<{
-      totalCandidates: number;
-      candidates: unknown;
-    }>(raw, [
-      {
-        name: 'totalCandidates',
-        validate: isNonNegativeNumber,
-        expected: 'non-negative number',
-      },
-      { name: 'candidates', validate: Array.isArray, expected: 'array' },
-    ]);
-
-    const candidates = (root.candidates as unknown[]).map((item) => {
-      const c = validateShape<{
-        userId: string;
-        discordId: unknown;
-        psid: unknown;
-        email: unknown;
-        userName: string;
-        platform: string;
-        lastActiveAt: string;
-        daysInactive: number;
-        variant: string;
-      }>(item, [
-        {
-          name: 'userId',
-          validate: isNonEmptyString,
-          expected: 'non-empty string',
-        },
-        {
-          name: 'discordId',
-          validate: isNullableString,
-          expected: 'string or null',
-          required: false,
-        },
-        {
-          name: 'psid',
-          validate: isNullableString,
-          expected: 'string or null',
-          required: false,
-        },
-        {
-          name: 'email',
-          validate: isNullableString,
-          expected: 'string or null',
-          required: false,
-        },
-        {
-          name: 'userName',
-          validate: isNonEmptyString,
-          expected: 'non-empty string',
-        },
-        {
-          name: 'platform',
-          validate: isPlatform,
-          expected: "'discord' | 'messenger'",
-        },
-        {
-          name: 'lastActiveAt',
-          validate: isDateString,
-          expected: 'ISO date string',
-        },
-        {
-          name: 'daysInactive',
-          validate: isNonNegativeNumber,
-          expected: 'non-negative number',
-        },
-        { name: 'variant', validate: isVariant, expected: "'a' | 'b'" },
-      ]);
-      return {
-        userId: c.userId,
-        discordId: (c.discordId ?? null) as string | null,
-        psid: (c.psid ?? null) as string | null,
-        email: (c.email ?? null) as string | null,
-        userName: c.userName,
-        platform: c.platform as ReengagementPlatform,
-        lastActiveAt: c.lastActiveAt,
-        daysInactive: c.daysInactive,
-        variant: c.variant as ReengagementVariant,
-      };
-    });
+    const root = validateShape(candidatesSchema, raw);
+    const candidates = root.candidates.map((c) => ({
+      userId: c.userId,
+      discordId: c.discordId ?? null,
+      psid: c.psid ?? null,
+      email: c.email ?? null,
+      userName: c.userName,
+      platform: c.platform,
+      lastActiveAt: c.lastActiveAt,
+      daysInactive: c.daysInactive,
+      variant: c.variant,
+    }));
 
     return { totalCandidates: root.totalCandidates, candidates };
   }
 
   private normalizePayload(raw: unknown): ReengagementPayload {
-    const root = validateShape<{
-      variant: string;
-      period: string;
-      is_fallback: boolean;
-      summary: unknown;
-      discord_payload: unknown;
-    }>(raw, [
-      { name: 'variant', validate: isVariant, expected: "'a' | 'b'" },
-      {
-        name: 'period',
-        validate: isNonEmptyString,
-        expected: 'non-empty string',
-      },
-      {
-        name: 'is_fallback',
-        validate: (v) => typeof v === 'boolean',
-        expected: 'boolean',
-      },
-      {
-        name: 'summary',
-        validate: (v) => v !== null && typeof v === 'object',
-        expected: 'object',
-      },
-      {
-        name: 'discord_payload',
-        validate: (v) => v !== null && typeof v === 'object',
-        expected: 'object',
-      },
-    ]);
-
-    const discord = root.discord_payload as Record<string, unknown>;
-    const embeds = discord.embeds;
-    const components = discord.components;
-    if (!isArrayOfObjects(embeds) || !isArrayOfObjects(components)) {
-      throw new Error(
-        'Reengagement payload API returned invalid discord_payload arrays',
-      );
-    }
+    const root = validateShape(payloadSchema, raw);
 
     return {
-      variant: root.variant as ReengagementVariant,
+      variant: root.variant,
       period: root.period,
       is_fallback: root.is_fallback,
-      summary: root.summary as Record<string, unknown>,
+      summary: root.summary,
       discord_payload: {
-        embeds: embeds as ReengagementDiscordPayload['embeds'],
-        components: components as ReengagementDiscordPayload['components'],
+        embeds: root.discord_payload
+          .embeds as ReengagementDiscordPayload['embeds'],
+        components: root.discord_payload
+          .components as ReengagementDiscordPayload['components'],
       },
     };
   }
 
   private normalizeMarkSent(raw: unknown): ReengagementMarkSentResult {
-    const root = validateShape<{ success: boolean; logId: unknown }>(raw, [
-      {
-        name: 'success',
-        validate: (v) => typeof v === 'boolean',
-        expected: 'boolean',
-      },
-      {
-        name: 'logId',
-        validate: isNullableString,
-        expected: 'string or null',
-        required: false,
-      },
-    ]);
+    const root = validateShape(markSentSchema, raw);
     return {
       success: root.success,
-      logId: (root.logId ?? null) as string | null,
+      logId: root.logId ?? null,
     };
   }
 }

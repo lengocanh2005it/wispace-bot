@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { PrecreateExerciseApiClient } from './precreate-exercise-api.client';
 import { WispaceApiError } from '../errors/wispace-api.error';
+import { ShapeValidationError } from '../utils/validate-shape';
 
 const URL = 'https://backend.example.com/api/roadmap/precreate-exercise';
 
@@ -105,6 +106,39 @@ describe('PrecreateExerciseApiClient', () => {
     ).resolves.toMatchObject({
       status,
     });
+  });
+
+  it('bounds oversized response bodies through the shared JSON reader (#656)', async () => {
+    const oversized = `{"hasRoadmap":true,"finishedAllExercises":false,"alreadyExists":true,"pad":"${'x'.repeat(20_000)}"}`;
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(new Response(oversized, { status: 200 }));
+    const client = new PrecreateExerciseApiClient({
+      url: URL,
+      internalKey: 'internal-key',
+      requestTimeoutMs: 30_000,
+    });
+
+    await expect(
+      client.precreateNextExercise('x-psid', 'psid-1'),
+    ).rejects.toThrow(/not valid JSON/);
+  });
+
+  it('throws ShapeValidationError when status flags are malformed (#656)', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        response({ hasRoadmap: 'yes', finishedAllExercises: false }),
+      );
+    const client = new PrecreateExerciseApiClient({
+      url: URL,
+      internalKey: 'internal-key',
+      requestTimeoutMs: 30_000,
+    });
+
+    await expect(
+      client.precreateNextExercise('x-psid', 'psid-1'),
+    ).rejects.toThrow(ShapeValidationError);
   });
 
   it.each([

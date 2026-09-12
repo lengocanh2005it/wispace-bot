@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
@@ -12,11 +13,7 @@ import {
   buildWispaceHeaders,
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
-import {
-  validateShape,
-  isNonEmptyString,
-  isDateString,
-} from '../utils/validate-shape';
+import { validateShape } from '../utils/validate-shape';
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
 import type { UserGoalsRecord } from '../types/user-goals.types';
@@ -25,6 +22,13 @@ import {
   type WispaceApiClientConfig,
   type WispaceClientLogger,
 } from './wispace-client-types';
+
+const userGoalsResponseSchema = z.object({
+  targetScore: z.string().min(1),
+  examDate: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), 'ISO date string'),
+});
 
 export class UserGoalsApiClient {
   private readonly breaker: CircuitBreaker<any[], UserGoalsRecord>;
@@ -105,21 +109,7 @@ export class UserGoalsApiClient {
 
     const rawData = await fetchWispaceJson(response);
 
-    const data = validateShape<{ targetScore: string; examDate: string }>(
-      rawData,
-      [
-        {
-          name: 'targetScore',
-          validate: isNonEmptyString,
-          expected: 'non-empty string',
-        },
-        {
-          name: 'examDate',
-          validate: isDateString,
-          expected: 'ISO date string',
-        },
-      ],
-    );
+    const data = validateShape(userGoalsResponseSchema, rawData);
 
     const targetScore = Number(data.targetScore);
     this.logger.log(

@@ -1,12 +1,15 @@
+import { z } from 'zod';
+
 /**
- * Minimal runtime shape validator for WISPACE API responses.
+ * Runtime shape validation for WISPACE API responses (ADR 0010).
  *
- * Validates that a JSON value matches an expected structure at the client
- * boundary, before it reaches business logic. Catches provider contract
- * drift (HTTP 200 with changed/malformed shape) early.
+ * Each client carries one zod schema per response; validation is fail-closed
+ * on missing/extra-typed fields and tolerant of extra fields (additive
+ * upstream changes must not break the bot). Catches contract drift (HTTP 200
+ * with changed/malformed shape) before it reaches business logic.
  *
- * No external dependencies — uses plain typeof checks like the existing
- * normalizer pattern in user-calendar-record.normalizer.ts.
+ * ShapeValidationError is kept as the thrown type so app-side retry/terminal
+ * classification is unchanged from the pre-zod implementation.
  */
 
 export class ShapeValidationError extends Error {
@@ -21,112 +24,68 @@ export class ShapeValidationError extends Error {
   }
 }
 
-type ValidatorFn = (value: unknown) => boolean;
+export function validateShape<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return result.data;
+  }
 
-interface FieldSpec {
-  /** Field name for error messages. */
-  name: string;
-  /** Validation function. */
-  validate: ValidatorFn;
-  /** Human-readable expected type for error messages. */
-  expected: string;
-  /** Whether the field is required (default: true). */
-  required?: boolean;
-}
-
-/**
- * Validate that a JSON object matches an expected shape.
- * Returns the typed value if valid, throws ShapeValidationError if not.
- *
- * @example
- * const goals = validateShape(raw, [
- *   { name: 'targetScore', validate: v => typeof v === 'string', expected: 'string' },
- *   { name: 'examDate', validate: v => typeof v === 'string', expected: 'string' },
- * ]);
- */
-export function validateShape<T>(value: unknown, fields: FieldSpec[]): T {
-  if (value === null || value === undefined || typeof value !== 'object') {
+  const issue = result.error.issues[0];
+  if (!issue) {
     throw new ShapeValidationError(
-      `Expected object, received ${typeof value}`,
+      'Invalid WISPACE response shape',
       '(root)',
-      'object',
+      'valid object',
       value,
     );
   }
 
-  const obj = value as Record<string, unknown>;
+  const field =
+    issue.path.length > 0 ? issue.path.map(String).join('.') : '(root)';
+  const received = readPath(value, issue.path);
+  const expected = 'expected' in issue ? String(issue.expected) : 'valid value';
 
-  for (const field of fields) {
-    const fieldValue = obj[field.name];
-
-    if (
-      field.required !== false &&
-      (fieldValue === undefined || fieldValue === null)
-    ) {
-      throw new ShapeValidationError(
-        `Missing required field "${field.name}"`,
-        field.name,
-        field.expected,
-        fieldValue,
-      );
-    }
-
-    if (
-      fieldValue !== undefined &&
-      fieldValue !== null &&
-      !field.validate(fieldValue)
-    ) {
-      throw new ShapeValidationError(
-        `Invalid field "${field.name}": expected ${field.expected}, received ${typeof fieldValue}`,
-        field.name,
-        field.expected,
-        fieldValue,
-      );
-    }
+  if (issue.path.length === 0) {
+    throw new ShapeValidationError(
+      `Expected ${expected}, received ${describe(received)}`,
+      field,
+      expected,
+      received,
+    );
   }
 
-  return value as T;
-}
-
-/**
- * Validate that a value is a non-empty string.
- */
-export function isNonEmptyString(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0;
-}
-
-/**
- * Validate that a value is a positive number.
- */
-export function isPositiveNumber(value: unknown): boolean {
-  return typeof value === 'number' && value > 0 && Number.isFinite(value);
-}
-
-/**
- * Validate that a value is a non-negative number (>= 0).
- */
-export function isNonNegativeNumber(value: unknown): boolean {
-  return typeof value === 'number' && value >= 0 && Number.isFinite(value);
-}
-
-/**
- * Validate that a value is a valid ISO date string.
- */
-export function isDateString(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  const time = Date.parse(value);
-  return !Number.isNaN(time);
-}
-
-/**
- * Validate that a value is a valid HTTPS URL.
- */
-export function isHttpsUrl(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:';
-  } catch {
-    return false;
+  if (issue.code === 'invalid_type' && isMissing(received)) {
+    throw new ShapeValidationError(
+      `Missing required field "${field}"`,
+      field,
+      expected,
+      received,
+    );
   }
+
+  throw new ShapeValidationError(
+    `Invalid field "${field}": ${issue.message}`,
+    field,
+    expected,
+    received,
+  );
+}
+
+function isMissing(value: unknown): boolean {
+  return value === undefined || value === null;
+}
+
+function readPath(value: unknown, path: (string | number | symbol)[]): unknown {
+  let current = value;
+  for (const segment of path) {
+    if (current === undefined || current === null) return current;
+    if (typeof current !== 'object') return undefined;
+    current = (current as Record<string | number | symbol, unknown>)[segment];
+  }
+  return current;
+}
+
+function describe(value: unknown): string {
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
 }

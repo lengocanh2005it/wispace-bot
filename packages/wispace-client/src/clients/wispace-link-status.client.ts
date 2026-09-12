@@ -1,9 +1,11 @@
+import { z } from 'zod';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { isAbortError } from '@wispace/bot-common/utils';
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
 import { buildWispaceHeaders } from '../utils/wispace-headers';
+import { validateShape } from '../utils/validate-shape';
 import { isWispaceRetryable, withRetry } from '../utils/with-retry';
 import type {
   WispaceLinkStatusClientConfig,
@@ -15,6 +17,9 @@ export interface WispaceLinkStatusLogger {
 }
 
 const NOOP_LOGGER: WispaceLinkStatusLogger = { warn: () => undefined };
+
+/** Wire envelope only — the multi-style status mapping stays a contract translation, not a shape check. */
+const linkStatusBodySchema = z.record(z.string(), z.unknown());
 
 /**
  * Reads the canonical WISPACE ownership state for one platform identity.
@@ -139,11 +144,12 @@ export class WispaceLinkStatusClient {
   }
 
   private parseResult(body: unknown): WispaceLinkStatusResult {
-    if (!body || typeof body !== 'object') {
+    let value: Record<string, unknown>;
+    try {
+      value = validateShape(linkStatusBodySchema, body);
+    } catch {
       return { kind: 'unknown', reason: 'invalid_response' };
     }
-
-    const value = body as Record<string, unknown>;
     const status =
       typeof value.status === 'string' ? value.status.toLowerCase() : '';
     const revoked =

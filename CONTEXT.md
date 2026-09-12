@@ -502,6 +502,10 @@ _Avoid_: goals API without "User/" prefix
 Wispace API endpoint for reading average IELTS writing scores. Returns `TaskScoreAverageRecord`.
 _Avoid_: scores API without "TaskScoreAverage" prefix
 
+**contract drift**:
+WISPACE upstream changing response shape without notice — an HTTP 200 whose body no longer matches the expected record. Caught at the client boundary by each client's zod schema (ADR-0010): missing or wrongly-typed required fields fail closed; extra fields are tolerated. The alternative — coercing or dropping malformed data silently — corrupts downstream state (e.g. a dropped calendar row cancels a study job that should exist).
+_Avoid_: schema mismatch, bad payload — name the direction: the upstream drifted
+
 **x-psid**:
 HTTP header sent to the Wispace API to identify the user. Is the PSID of the Messenger user.
 _Avoid_: user header, auth header

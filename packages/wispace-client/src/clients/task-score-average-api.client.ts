@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
@@ -12,12 +13,7 @@ import {
   buildWispaceHeaders,
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
-import {
-  validateShape,
-  isPositiveNumber,
-  isNonNegativeNumber,
-  isNonEmptyString,
-} from '../utils/validate-shape';
+import { validateShape } from '../utils/validate-shape';
 import { fetchWispaceJson, ARRAY_MAX_BYTES } from '../utils/fetch-wispace-json';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
 import type { TaskScoreAverageRecord } from '../types/task-score-average.types';
@@ -26,6 +22,26 @@ import {
   type WispaceApiClientConfig,
   type WispaceClientLogger,
 } from './wispace-client-types';
+
+const positiveNumber = z.number().positive();
+const nonNegativeNumber = z.number().nonnegative();
+
+const taskScoreRecordSchema = z.object({
+  id: positiveNumber,
+  userId: positiveNumber,
+  task: z.string().min(1),
+  avgTaskAchievement: positiveNumber,
+  avgCoherenceCohesion: positiveNumber,
+  avgLexicalResource: positiveNumber,
+  avgGrammaticalRangeAccuracy: positiveNumber,
+  avgTotalScore: positiveNumber,
+  task1Count: nonNegativeNumber,
+  task2Count: nonNegativeNumber,
+  totalTasks: nonNegativeNumber,
+  currentStreak: nonNegativeNumber,
+  highestStreak: nonNegativeNumber,
+  totalPracticeTimeMinutes: nonNegativeNumber,
+});
 
 export class TaskScoreAverageApiClient {
   private readonly breaker: CircuitBreaker<any[], TaskScoreAverageRecord[]>;
@@ -122,80 +138,7 @@ export class TaskScoreAverageApiClient {
     const data: TaskScoreAverageRecord[] = [];
     for (const [index, item] of rawData.entries()) {
       try {
-        data.push(
-          validateShape<TaskScoreAverageRecord>(item, [
-            {
-              name: 'id',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'userId',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'task',
-              validate: isNonEmptyString,
-              expected: 'non-empty string',
-            },
-            {
-              name: 'avgTaskAchievement',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'avgCoherenceCohesion',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'avgLexicalResource',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'avgGrammaticalRangeAccuracy',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'avgTotalScore',
-              validate: isPositiveNumber,
-              expected: 'positive number',
-            },
-            {
-              name: 'task1Count',
-              validate: isNonNegativeNumber,
-              expected: 'non-negative number',
-            },
-            {
-              name: 'task2Count',
-              validate: isNonNegativeNumber,
-              expected: 'non-negative number',
-            },
-            {
-              name: 'totalTasks',
-              validate: isNonNegativeNumber,
-              expected: 'non-negative number',
-            },
-            {
-              name: 'currentStreak',
-              validate: isNonNegativeNumber,
-              expected: 'non-negative number',
-            },
-            {
-              name: 'highestStreak',
-              validate: isNonNegativeNumber,
-              expected: 'non-negative number',
-            },
-            {
-              name: 'totalPracticeTimeMinutes',
-              validate: isNonNegativeNumber,
-              expected: 'non-negative number',
-            },
-          ]),
-        );
+        data.push(validateShape(taskScoreRecordSchema, item));
       } catch (error) {
         throw new WispaceApiError(
           `TaskScoreAverage API returned invalid shape at index ${index}: ${error instanceof Error ? error.message : 'unknown error'}`,

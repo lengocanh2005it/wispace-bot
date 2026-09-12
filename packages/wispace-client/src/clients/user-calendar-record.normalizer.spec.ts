@@ -2,6 +2,7 @@ import {
   normalizeUserCalendarRecord,
   normalizeUserCalendarRecords,
 } from './user-calendar-record.normalizer';
+import { ShapeValidationError } from '../utils/validate-shape';
 
 describe('user-calendar-record.normalizer', () => {
   it('normalizes a raw record with PascalCase fallback fields', () => {
@@ -34,7 +35,18 @@ describe('user-calendar-record.normalizer', () => {
     expect(records[0].id).toBe(1);
   });
 
-  it('returns an empty array for an unrecognized payload shape', () => {
-    expect(normalizeUserCalendarRecords({ foo: 'bar' })).toEqual([]);
+  it('throws for an unrecognized payload shape (fail closed, #656)', () => {
+    expect(() => normalizeUserCalendarRecords({ foo: 'bar' })).toThrow(
+      ShapeValidationError,
+    );
+  });
+
+  it('throws for a garbage row instead of silently dropping it (#656)', () => {
+    expect(() =>
+      normalizeUserCalendarRecords([
+        { id: 1, eventDate: '2026-08-01', time: '10:00' },
+        { eventDate: '2026-08-02' },
+      ]),
+    ).toThrow(/index 1/);
   });
 });

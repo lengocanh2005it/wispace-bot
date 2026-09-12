@@ -192,6 +192,22 @@ describe('WispaceTokenVerifyService', () => {
     ).rejects.toThrow('missing userId in success response');
   });
 
+  it('throws invalid JSON body when a 200 payload is not an object (#656)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('[1,2]'),
+    });
+
+    const service = new WispaceTokenVerifyService(
+      buildConfigService(),
+      'discord',
+    );
+
+    await expect(
+      service.verifyToken('token', 'discord-user-1'),
+    ).rejects.toThrow('invalid JSON body');
+  });
+
   it('#108: never logs link-token material, including prefixes', async () => {
     const logSpy = jest
       .spyOn(Logger.prototype, 'log')
