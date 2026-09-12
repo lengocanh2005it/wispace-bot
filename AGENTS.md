@@ -14,11 +14,11 @@ Deploy hardening updates for #271/#284 must keep `vps-deploy.sh` fail-closed on 
 
 |                |                                                                                                                                      |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Stack**      | NestJS 11, TypeScript, TypeORM, PostgreSQL, LLM Provider Abstraction (adapter pattern)                                               |
+| **Stack**      | NestJS 12, TypeScript, TypeORM, PostgreSQL, LLM Provider Abstraction (adapter pattern)                                               |
 | **Goal**       | Link IELTS students `m.me` ↔ WISPACE, deliver progress reports and study session reminders via Messenger                             |
 | **Scope**      | Small backend service — **not** full-stack, **not** a standalone microservice                                                        |
 | **DB**         | PostgreSQL **`ai_chat_bot_db`** (dedicated database); Wispace data via **HTTP API**; user name cache: `users` table + `"Users"` view |
-| **Principles** | Small diffs, reuse existing modules, config via `.env`; Redis optional (R0–R4) for scale / VPS                                       |
+| **Principles** | Small diffs, reuse existing modules, config via `.env`; Redis provisioned for all three bots in production (the R0–R4 "optional" window is complete) — HA/failover still open, #409 |
 
 ---
 
@@ -355,7 +355,7 @@ domain/entities|repositories/ → application/services|ports/ → infrastructure
 
 ## Code style & conventions
 
-- **Language:** TypeScript, NestJS 11, TypeORM.
+- **Language:** TypeScript, NestJS 12, TypeORM.
 - **User-facing messages:** Vietnamese.
 - **Logs / comments:** English or short Vietnamese — only when logic is not self-evident.
 - **Config:** `ConfigService` + `.env`; add new variable → update `.env.example`.
@@ -580,7 +580,7 @@ Self-pull CI gate (#694): `deploy-bots.yml` runs for every `main` SHA so the VPS
 | DB: report claims retention                                                         | ✓ `${platform}-report-claims-cleanup` (Discord/Zalo, 03:45 ICT, advisory-lock, 90 ngày) — AGENTS.md dev tip đã spec sẵn                                                                                                                                                                                                                                                                  |
 | DB: batch study-reminder sync                                                       | ✓ `upsertPendingJobs` — 1 SELECT cho cả user thay vì findOne+save per session                                                                                                                                                                                                                                                                                                            |
 | DB: Zalo report cron pre-query                                                      | ✓ `listUserIdsWithSentReportToday` → 1 query thay N query per user                                                                                                                                                                                                                                                                                                                       |
-| Discord/Zalo multi-pod chat history                                                 | ✓ `CHAT_HISTORY_STORE=redis` via shared `PlatformChatHistoryService` (`chat-history:discord:` / `chat-history:zalo:` keys) — memory default, Redis optional (same as Messenger)                                                                                                                                                                                                          |
+| Discord/Zalo multi-pod chat history                                                 | ✓ `CHAT_HISTORY_STORE=redis` via shared `PlatformChatHistoryService` (`chat-history:discord:` / `chat-history:zalo:` keys) — memory default, Redis provisioned in production (same as Messenger)                                                                                                                                                                                                          |
 | Learner profile (#207 item 3)                                                       | ✓ `learner_profiles` table (target_score, exam_date + per-field fetched_at) — v1 source `get_user_goals`, injected via `systemPromptSuffix` with 24h freshness; weakAreas deferred (no server-derived source yet)                                                                                                                                                                        |
 | Project-wide gaps (link, reports, reminders, ops)                                   | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md)                                                                                                                                                                                                                                                                                                                            |
 | Vault runtime secret contract (#653/#654)                                           | Shared/per-bot KV v2 bootstrap plus Vault-only production delivery — [vault-secrets.md](docs/vault-secrets.md)                                                                                                                                                                                                                                                                           |

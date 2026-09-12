@@ -132,4 +132,4 @@ npx turbo run format:check lint typecheck test build
 
 ## Stack
 
-Turborepo + npm workspaces · NestJS 11 · TypeORM · PostgreSQL (shared across bots) · Redis (optional) · OpenAI + OpenRouter + MiniMax · Facebook Graph API · Discord.js · Zalo OA API
+Turborepo + npm workspaces · NestJS 12 · TypeORM · PostgreSQL (shared across bots) · Redis (provisioned in production) · OpenAI + OpenRouter + MiniMax · Facebook Graph API · Discord.js · Zalo OA API

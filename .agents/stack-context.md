@@ -3,8 +3,8 @@
 Generated: 2026-09-05
 
 ## Stack
-- **Language**: TypeScript (Node.js 22 in CI; TypeScript 6 package)
-- **Framework**: NestJS 11, TypeORM, PostgreSQL; Redis optional via ioredis
+- **Language**: TypeScript (Node.js 22/24 in CI, 26 in production; TypeScript 6 package)
+- **Framework**: NestJS 12, TypeORM, PostgreSQL; Redis provisioned for all three bots via ioredis (through `@wispace/bot-common`)
 - **Build**: npm 10.9.7 workspaces + Turborepo
 - **Test**: Jest 30 (`*.spec.ts`), Node test runner for selected smoke scripts
 - **Lint**: oxlint (CI gate: yes)
