@@ -556,6 +556,15 @@ _Avoid_: implementation, service implementation
 Pattern used for `study_reminder_jobs` and `report_send_jobs`: write job rows first, then process asynchronously. Provides durability and retry.
 _Avoid_: queue pattern, task queue
 
+**fan-out**:
+Ambiguous in this repo — always qualify it. Four unrelated meanings are in active use:
+_upstream fan-out_, one scheduled tick making one WISPACE call per learner, the linear-cost concern behind the scheduled crons;
+_delivery fan-out_, the same logical message reaching a learner more than once (a second channel, a second tick, a retry storm), the defect class the per-learner claim boundaries exist to prevent;
+_erasure fan-out_, a privacy deletion deliberately crossing every platform for one learner;
+_alert fan-out_, the Alertmanager routing tree dispatching one alert to several receivers.
+The first two pull in opposite directions — fewer per-learner upstream calls is a goal, any delivery fan-out is a bug — so an unqualified "fan-out" in an issue title reads as either.
+_Avoid_: bare `fan-out`; also do not read it as the social-feed read/write distribution pattern, which this domain has no use for — every message has exactly one recipient.
+
 **Turborepo monorepo**:
 Project structure: `apps/` (Messenger, Discord, Zalo bots) + `packages/` (shared code). Built with Turborepo.
 _Avoid_: monorepo without "Turborepo"
@@ -589,3 +598,4 @@ _Avoid_: "pure package", "no dependencies" — the claim is about framework coup
 | `cadence`            | `frequency`                                           | Matches code and type names                                 |
 | `postback`           | `buttonClick`                                         | Messenger platform terminology                              |
 | `dead letter`        | `failed queue`                                        | Standard messaging pattern                                  |
+| qualified `fan-out`  | bare `fan-out`                                        | Four meanings in this repo, two of them opposite            |
