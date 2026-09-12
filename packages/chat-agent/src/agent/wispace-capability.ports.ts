@@ -19,7 +19,7 @@ export interface WispaceTaskScoreView {
   task2Count: number;
 }
 
-/** Same union as wispace-client `CalendarSessionTimeRange` / llm-agent `readCalendarTimeRange`. */
+/** Same union as wispace-client `CalendarSessionTimeRange` / the `list_study_calendar_entries` tool schema. */
 export type WispaceCalendarTimeRange = 'upcoming' | 'past' | 'all';
 
 /** Subset of wispace-client `NormalizedStudySession` consumed by session mapping. */

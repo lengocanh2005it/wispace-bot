@@ -23,13 +23,14 @@ import {
   parseAndValidateToolArguments,
   sanitizeUntrustedTextForLlm,
   type AgentToolName,
+  type GetUpcomingStudySessionsArgs,
+  type ListStudyCalendarEntriesArgs,
+  type RescheduleStudySessionArgs,
 } from '@wispace/llm-agent';
 import {
-  readCalendarTimeRange,
   readPastDays,
   readPositiveInteger,
   readPositiveLimit,
-  readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
 } from '@wispace/llm-agent';
@@ -239,13 +240,23 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       case 'get_user_goals':
         return this.getUserGoals(ctx);
       case 'get_upcoming_study_sessions':
-        return this.getUpcomingStudySessions(ctx, args);
+        return this.getUpcomingStudySessions(
+          ctx,
+          args as GetUpcomingStudySessionsArgs,
+        );
       case 'list_study_calendar_entries':
-        return this.listStudyCalendarEntries(ctx, args);
+        return this.listStudyCalendarEntries(
+          ctx,
+          args as ListStudyCalendarEntriesArgs,
+        );
       case 'preview_next_study_reminder':
         return this.previewNextStudyReminder(ctx);
       case 'reschedule_study_session':
-        return this.rescheduleStudySession(ctx, args, canonicalArgs);
+        return this.rescheduleStudySession(
+          ctx,
+          args as Partial<RescheduleStudySessionArgs>,
+          canonicalArgs,
+        );
       case 'register_exam_report_notifications':
         return this.registerExamReportNotifications(ctx);
       case 'precreate_next_exercise': {
@@ -369,9 +380,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
 
   private async listStudyCalendarEntries(
     ctx: PlatformAgentToolContext,
-    args: Record<string, unknown>,
+    args: ListStudyCalendarEntriesArgs,
   ): Promise<unknown> {
-    const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
+    const timeRange = args.timeRange ?? 'upcoming';
     const list = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
@@ -399,7 +410,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
 
   private async getUpcomingStudySessions(
     ctx: PlatformAgentToolContext,
-    args: Record<string, unknown>,
+    args: GetUpcomingStudySessionsArgs,
   ): Promise<unknown> {
     const limit = readPositiveLimit(args.limit, 5);
     const sessions = await this.studyPort.getUpcomingSessions({
@@ -477,7 +488,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
 
   private async rescheduleStudySession(
     ctx: PlatformAgentToolContext,
-    args: Record<string, unknown>,
+    args: Partial<RescheduleStudySessionArgs>,
     canonicalArgs?: string,
   ): Promise<unknown> {
     if (ctx.userText !== undefined && !isRescheduleIntent(ctx.userText)) {
@@ -495,7 +506,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       return { error: 'calendarId is required' };
     }
 
-    const schedulingMode = readSchedulingMode(args.schedulingMode);
+    const schedulingMode = args.schedulingMode;
     if (!schedulingMode) {
       return {
         error: 'schedulingMode must be default_next_day_same_time or explicit',
@@ -523,15 +534,11 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     const newLocalDate = readValidatedDate(args.newLocalDate);
     const newTime = readValidatedTime(args.newTime);
 
-    if (
-      args.newLocalDate !== undefined &&
-      args.newLocalDate !== null &&
-      !newLocalDate
-    ) {
+    if (args.newLocalDate !== undefined && !newLocalDate) {
       return { error: 'newLocalDate must be in YYYY-MM-DD format' };
     }
 
-    if (args.newTime !== undefined && args.newTime !== null && !newTime) {
+    if (args.newTime !== undefined && !newTime) {
       return { error: 'newTime must be in HH:MM format' };
     }
 

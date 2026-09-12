@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { LlmToolDefinition } from './provider/types';
 
 export type ToolEffect =
@@ -28,8 +29,12 @@ export interface AgentToolCapability {
   providerGuaranteeRequired: boolean;
 }
 
+/** The one tool schema (ADR 0010): provider JSON Schema, arg types, and runtime validation all derive from it. */
+export type AgentToolArgsSchema = z.ZodObject<z.ZodRawShape>;
+
 export interface AgentToolDefinition extends LlmToolDefinition {
   capability: AgentToolCapability;
+  args: AgentToolArgsSchema;
 }
 
 export const AGENT_TOOL_NAMES = [
@@ -104,138 +109,132 @@ function exposeCapabilityVocabulary(
   };
 }
 
-export const AGENT_TOOLS: AgentToolDefinition[] = [
+const noArgs = z.object({}).strict();
+
+const getUpcomingStudySessionsArgs = z
+  .object({
+    limit: z
+      .number()
+      .describe('Số buổi tối đa trả về (mặc định 5).')
+      .optional(),
+  })
+  .strict();
+
+const listStudyCalendarEntriesArgs = z
+  .object({
+    timeRange: z
+      .enum(['upcoming', 'past', 'all'])
+      .describe('upcoming = sắp tới (mặc định); past = đã qua; all = cả hai.')
+      .optional(),
+    limit: z.number().describe('Số buổi tối đa (mặc định 10).').optional(),
+    pastDays: z
+      .number()
+      .describe(
+        'Với past/all: chỉ lấy buổi trong N ngày gần đây (mặc định 90).',
+      )
+      .optional(),
+  })
+  .strict();
+
+const rescheduleStudySessionArgs = z
+  .object({
+    calendarId: z
+      .number()
+      .describe('Id buổi học cần dời (từ list_study_calendar_entries).'),
+    schedulingMode: z
+      .enum(['default_next_day_same_time', 'explicit'])
+      .describe(
+        'default_next_day_same_time khi học viên không nói rõ giờ/ngày mới; explicit khi có yêu cầu cụ thể.',
+      ),
+    newLocalDate: z
+      .string()
+      .describe(
+        'Ngày mới theo lịch VN, định dạng YYYY-MM-DD. Chỉ dùng khi schedulingMode=explicit.',
+      )
+      .optional(),
+    newTime: z
+      .string()
+      .describe('Giờ mới HH:mm (24h). Chỉ dùng khi schedulingMode=explicit.')
+      .optional(),
+  })
+  .strict();
+
+export type GetUpcomingStudySessionsArgs = z.infer<
+  typeof getUpcomingStudySessionsArgs
+>;
+export type ListStudyCalendarEntriesArgs = z.infer<
+  typeof listStudyCalendarEntriesArgs
+>;
+export type RescheduleStudySessionArgs = z.infer<
+  typeof rescheduleStudySessionArgs
+>;
+
+function toProviderSchema(args: AgentToolArgsSchema): Record<string, unknown> {
+  const { $schema: _schema, ...parameters } = z.toJSONSchema(args);
+  return parameters as Record<string, unknown>;
+}
+
+const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
   {
     name: 'get_learning_progress_report',
     description:
       'Lấy báo cáo tiến độ học IELTS Writing đầy đủ: điểm task 1/2, mục tiêu, số bài đã làm, gợi ý cải thiện.',
-    parameters: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
+    args: noArgs,
     capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'get_user_goals',
     description: 'Lấy mục tiêu band và ngày thi IELTS của học viên từ WISPACE.',
-    parameters: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
+    args: noArgs,
     capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'get_upcoming_study_sessions',
     description:
       'Danh sách buổi học IELTS Writing sắp tới từ lịch UserCalendar của học viên. Dùng để hiển thị lịch. Nếu cần calendarId để đổi lịch, dùng list_study_calendar_entries thay thế.',
-    parameters: {
-      type: 'object',
-      properties: {
-        limit: {
-          type: 'number',
-          description: 'Số buổi tối đa trả về (mặc định 5).',
-        },
-      },
-      additionalProperties: false,
-    },
+    args: getUpcomingStudySessionsArgs,
     capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'list_study_calendar_entries',
     description:
       'Liệt kê lịch học UserCalendar (calendarId, scheduledTimeLabel). timeRange=upcoming (mặc định) cho lịch sắp tới và đổi lịch; past cho lịch đã qua; all cho cả hai. Học viên hỏi lịch đã qua/history → timeRange=past hoặc all (mặc định lấy trong 90 ngày gần). Không từ chối khi học viên hỏi lịch quá khứ — dữ liệu lấy từ UserCalendar. Dùng tool này (không dùng get_upcoming_study_sessions) khi đổi lịch.',
-    parameters: {
-      type: 'object',
-      properties: {
-        timeRange: {
-          type: 'string',
-          enum: ['upcoming', 'past', 'all'],
-          description:
-            'upcoming = sắp tới (mặc định); past = đã qua; all = cả hai.',
-        },
-        limit: {
-          type: 'number',
-          description: 'Số buổi tối đa (mặc định 10).',
-        },
-        pastDays: {
-          type: 'number',
-          description:
-            'Với past/all: chỉ lấy buổi trong N ngày gần đây (mặc định 90).',
-        },
-      },
-      additionalProperties: false,
-    },
+    args: listStudyCalendarEntriesArgs,
     capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'reschedule_study_session',
     description:
       'Luôn gọi list_study_calendar_entries trước để lấy calendarId. Tool KHÔNG đổi lịch ngay — chỉ gửi yêu cầu xác nhận (nút hoặc keyword tùy platform); lịch chỉ thay đổi sau khi học viên xác nhận. Sau khi gọi: báo ngắn gọn đã gửi yêu cầu xác nhận; KHÔNG nói «đã dời» cho tới khi học viên xác nhận (kết quả không về trong cùng lượt tool). Chỉ đúng 1 buổi học và học viên muốn dời mà không nêu ngày/giờ mới → schedulingMode=default_next_day_same_time (cùng giờ, +1 ngày so với buổi đang dời; buổi ngày mai → ngày kia). Nhiều buổi học → hỏi buổi nào (vd "buổi ngày mai", "buổi 15/6") dựa trên scheduledTimeLabel trong danh sách. Học viên không nêu ngày/giờ mới rõ ràng → default_next_day_same_time; nêu rõ ngày/giờ → explicit kèm newLocalDate (YYYY-MM-DD) và/hoặc newTime (HH:mm).',
-    parameters: {
-      type: 'object',
-      properties: {
-        calendarId: {
-          type: 'number',
-          description: 'Id buổi học cần dời (từ list_study_calendar_entries).',
-        },
-        schedulingMode: {
-          type: 'string',
-          enum: ['default_next_day_same_time', 'explicit'],
-          description:
-            'default_next_day_same_time khi học viên không nói rõ giờ/ngày mới; explicit khi có yêu cầu cụ thể.',
-        },
-        newLocalDate: {
-          type: 'string',
-          description:
-            'Ngày mới theo lịch VN, định dạng YYYY-MM-DD. Chỉ dùng khi schedulingMode=explicit.',
-        },
-        newTime: {
-          type: 'string',
-          description:
-            'Giờ mới HH:mm (24h). Chỉ dùng khi schedulingMode=explicit.',
-        },
-      },
-      required: ['calendarId', 'schedulingMode'],
-      additionalProperties: false,
-    },
+    args: rescheduleStudySessionArgs,
     capability: RESCHEDULE_CAPABILITY,
   },
   {
     name: 'preview_next_study_reminder',
     description:
       'Chỉ dùng khi học viên TỰ yêu cầu xem trước nội dung tin nhắn nhắc buổi học. Không gọi sau khi xem lịch học; không gọi để xem trước tin nhắn nhắc tự động (reminderNotice) khi tool lịch trả về — lúc đó chỉ nhắc lại đúng nội dung reminderNotice.',
-    parameters: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
+    args: noArgs,
     capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'register_exam_report_notifications',
     description:
       'Chỉ gọi khi học viên yêu cầu rõ ràng đăng ký nhận báo cáo AI tự động, ví dụ "đăng ký nhận báo cáo" hoặc "muốn nhận báo cáo tự động". Không gọi khi học viên chỉ muốn xem báo cáo, nói báo cáo cho mình, nói đăng ký chung hoặc nhận thông tin.',
-    parameters: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
+    args: noArgs,
     capability: EXPLICIT_INTENT_CAPABILITY,
   },
   {
     name: 'precreate_next_exercise',
     description:
       'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap (vd "tạo bài tập cho mình", "cho mình bài tập mới"). Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn hay id tài nguyên — endpoint tự lấy bài tiếp theo theo identity đã liên kết.',
-    parameters: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
+    args: noArgs,
     capability: EXPLICIT_INTENT_CAPABILITY,
   },
-].map(exposeCapabilityVocabulary);
+];
+
+export const AGENT_TOOLS: AgentToolDefinition[] = agentToolSpecs
+  .map((spec) => ({ ...spec, parameters: toProviderSchema(spec.args) }))
+  .map(exposeCapabilityVocabulary);
 
 const EFFECTS = new Set<ToolEffect>([
   'read_only',
@@ -357,7 +356,7 @@ export function canonicalizeToolArguments(value: unknown): string {
   return JSON.stringify(normalize(value)) ?? 'null';
 }
 
-/** Strict, dependency-free subset of JSON Schema used by the tool registry. */
+/** Validates tool arguments through the tool's zod schema (ADR 0010). */
 export function parseAndValidateToolArguments(
   toolName: string,
   argsJson: string,
@@ -378,61 +377,62 @@ export function parseAndValidateToolArguments(
     return { ok: false, error: 'Tool arguments must be a JSON object' };
   }
 
-  const parameters = tool.parameters;
-  const properties = isRecord(parameters.properties)
-    ? parameters.properties
-    : {};
-  if (parameters.additionalProperties === false) {
-    const unknown = Object.keys(value).find(
-      (key) => !Object.prototype.hasOwnProperty.call(properties, key),
-    );
-    if (unknown) {
-      return { ok: false, error: `Unknown tool argument: ${unknown}` };
-    }
+  // allowMissingRequired skips only the required-presence check: unknown
+  // keys, types, and enums stay enforced — matching the partial schema.
+  const schema = options.allowMissingRequired ? tool.args.partial() : tool.args;
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return {
+      ok: true,
+      args: value,
+      canonicalArgs: canonicalizeToolArguments(value),
+    };
   }
-
-  for (const [key, propertyValue] of Object.entries(value)) {
-    const property = properties[key];
-    if (!isRecord(property)) continue;
-    const type = property.type;
-    const validType =
-      type === 'string'
-        ? typeof propertyValue === 'string'
-        : type === 'number'
-          ? typeof propertyValue === 'number' && Number.isFinite(propertyValue)
-          : type === 'integer'
-            ? typeof propertyValue === 'number' &&
-              Number.isInteger(propertyValue)
-            : type === 'boolean'
-              ? typeof propertyValue === 'boolean'
-              : true;
-    if (!validType)
-      return { ok: false, error: `Invalid tool argument: ${key}` };
-    if (
-      Array.isArray(property.enum) &&
-      !property.enum.some((option) => Object.is(option, propertyValue))
-    ) {
-      return { ok: false, error: `Invalid tool argument: ${key}` };
-    }
-  }
-
-  const required = Array.isArray(parameters.required)
-    ? parameters.required.filter(
-        (key): key is string => typeof key === 'string',
-      )
-    : [];
-  const missing = required.find(
-    (key) => !Object.prototype.hasOwnProperty.call(value, key),
-  );
-  if (missing && !options.allowMissingRequired) {
-    return { ok: false, error: `Missing tool argument: ${missing}` };
-  }
-
   return {
-    ok: true,
-    args: value,
-    canonicalArgs: canonicalizeToolArguments(value),
+    ok: false,
+    error: toolArgumentsErrorMessage(tool.args, value, result.error.issues),
   };
+}
+
+/**
+ * Maps zod issues onto the pre-migration error strings, keeping the old
+ * precedence: first unknown key, then first invalid present key (both in
+ * input key order), then first missing required key (in schema order).
+ */
+function toolArgumentsErrorMessage(
+  schema: AgentToolArgsSchema,
+  value: Record<string, unknown>,
+  issues: z.ZodIssue[],
+): string {
+  const unknownKeys = new Set<string>();
+  const invalidKeys = new Set<string>();
+  for (const issue of issues) {
+    if (issue.code === 'unrecognized_keys') {
+      for (const key of issue.keys) unknownKeys.add(key);
+      continue;
+    }
+    const [key] = issue.path;
+    if (typeof key !== 'string') continue;
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      invalidKeys.add(key);
+    }
+  }
+  const inputKeys = Object.keys(value);
+  const unknown = inputKeys.find((key) => unknownKeys.has(key));
+  if (unknown) return `Unknown tool argument: ${unknown}`;
+  const invalid = inputKeys.find((key) => invalidKeys.has(key));
+  if (invalid) return `Invalid tool argument: ${invalid}`;
+  const shape = schema.shape;
+  const missing = Object.keys(shape)
+    .filter((key) => !(shape[key] as z.ZodType).isOptional())
+    .find((key) => !invalidKeys.has(key) && !hasArgValue(value, key));
+  return missing
+    ? `Missing tool argument: ${missing}`
+    : 'Invalid tool arguments';
+}
+
+function hasArgValue(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 export function readPositiveLimit(value: unknown, fallback: number): number {
@@ -447,25 +447,10 @@ export function readPastDays(value: unknown): number {
   return Math.min(Math.floor(parsed), 365);
 }
 
-export function readCalendarTimeRange(
-  value: unknown,
-): 'upcoming' | 'past' | 'all' | undefined {
-  if (value === 'upcoming' || value === 'past' || value === 'all') return value;
-  return undefined;
-}
-
 export function readPositiveInteger(value: unknown): number | undefined {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
   return Math.floor(parsed);
-}
-
-export function readSchedulingMode(
-  value: unknown,
-): 'default_next_day_same_time' | 'explicit' | undefined {
-  if (value === 'default_next_day_same_time' || value === 'explicit')
-    return value;
-  return undefined;
 }
 
 function readOptionalString(value: unknown): string | undefined {

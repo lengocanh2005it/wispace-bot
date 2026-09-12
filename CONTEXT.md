@@ -330,6 +330,10 @@ _Avoid_: chat service, AI service, "the OpenAI loop"
 One iteration of the LLM function-calling loop. The agent can invoke multiple tools per user message, up to `maxToolRounds` (default 6).
 _Avoid_: iteration, loop count
 
+**tool schema**:
+The single zod schema per agent tool (ADR-0010). The provider-facing JSON Schema, the argument type, and runtime argument validation all derive from it — never hand-written separately. Capability metadata (effect/identity/authorization/confirmation/idempotency) sits alongside it, not inside it.
+_Avoid_: tool definition JSON, hand-written schema, three representations
+
 **feature**:
 String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `'STUDY_REMINDER'`. Used for usage tracking and metrics.
 _Avoid_: use case, purpose

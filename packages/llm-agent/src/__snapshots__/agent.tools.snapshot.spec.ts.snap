@@ -1,0 +1,94 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`agent tool provider-facing JSON Schema (ADR 0010) matches the committed snapshot of the zod-derived registry 1`] = `
+{
+  "get_learning_progress_report": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object",
+  },
+  "get_upcoming_study_sessions": {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Số buổi tối đa trả về (mặc định 5).",
+        "type": "number",
+      },
+    },
+    "type": "object",
+  },
+  "get_user_goals": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object",
+  },
+  "list_study_calendar_entries": {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Số buổi tối đa (mặc định 10).",
+        "type": "number",
+      },
+      "pastDays": {
+        "description": "Với past/all: chỉ lấy buổi trong N ngày gần đây (mặc định 90).",
+        "type": "number",
+      },
+      "timeRange": {
+        "description": "upcoming = sắp tới (mặc định); past = đã qua; all = cả hai.",
+        "enum": [
+          "upcoming",
+          "past",
+          "all",
+        ],
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "precreate_next_exercise": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object",
+  },
+  "preview_next_study_reminder": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object",
+  },
+  "register_exam_report_notifications": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object",
+  },
+  "reschedule_study_session": {
+    "additionalProperties": false,
+    "properties": {
+      "calendarId": {
+        "description": "Id buổi học cần dời (từ list_study_calendar_entries).",
+        "type": "number",
+      },
+      "newLocalDate": {
+        "description": "Ngày mới theo lịch VN, định dạng YYYY-MM-DD. Chỉ dùng khi schedulingMode=explicit.",
+        "type": "string",
+      },
+      "newTime": {
+        "description": "Giờ mới HH:mm (24h). Chỉ dùng khi schedulingMode=explicit.",
+        "type": "string",
+      },
+      "schedulingMode": {
+        "description": "default_next_day_same_time khi học viên không nói rõ giờ/ngày mới; explicit khi có yêu cầu cụ thể.",
+        "enum": [
+          "default_next_day_same_time",
+          "explicit",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "calendarId",
+      "schedulingMode",
+    ],
+    "type": "object",
+  },
+}
+`;

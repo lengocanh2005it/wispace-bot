@@ -2,11 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   isAgentToolName,
   type AgentToolName,
+  type GetUpcomingStudySessionsArgs,
+  type ListStudyCalendarEntriesArgs,
+  type RescheduleStudySessionArgs,
   readPositiveLimit,
   readPastDays,
-  readCalendarTimeRange,
   readPositiveInteger,
-  readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
   parseAndValidateToolArguments,
@@ -231,10 +232,16 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       case 'get_upcoming_study_sessions':
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
-          const limit = readPositiveLimit(args.limit, 5);
+          const { limit } = args as GetUpcomingStudySessionsArgs;
+          const sessionLimit = readPositiveLimit(limit, 5);
           const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
-            { timeRange: 'upcoming', limit, userId: ctx.userId, signal },
+            {
+              timeRange: 'upcoming',
+              limit: sessionLimit,
+              userId: ctx.userId,
+              signal,
+            },
           );
           return {
             count: sessions.length,
@@ -244,13 +251,17 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       case 'list_study_calendar_entries':
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
-          const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
+          const {
+            timeRange = 'upcoming',
+            limit,
+            pastDays,
+          } = args as ListStudyCalendarEntriesArgs;
           const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             {
               timeRange,
-              limit: readPositiveLimit(args.limit, 10),
-              pastDays: readPastDays(args.pastDays),
+              limit: readPositiveLimit(limit, 10),
+              pastDays: readPastDays(pastDays),
               userId: ctx.userId,
               signal,
             },
@@ -271,7 +282,10 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         });
       case 'reschedule_study_session':
         return this.withLinkedAccount(ctx, () =>
-          this.rescheduleStudySession(ctx, args),
+          this.rescheduleStudySession(
+            ctx,
+            args as Partial<RescheduleStudySessionArgs>,
+          ),
         );
       case 'register_exam_report_notifications':
         // No side effect on Discord/Zalo: the report cron covers every linked
@@ -366,14 +380,14 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
 
   private async rescheduleStudySession(
     ctx: PlatformAgentToolContext,
-    args: Record<string, unknown>,
+    args: Partial<RescheduleStudySessionArgs>,
   ): Promise<unknown> {
     const calendarId = readPositiveInteger(args.calendarId);
     if (!calendarId) {
       return { error: this.options.reschedule.messages.calendarIdRequired };
     }
 
-    const schedulingMode = readSchedulingMode(args.schedulingMode);
+    const schedulingMode = args.schedulingMode;
     if (!schedulingMode) {
       return {
         error: this.options.reschedule.messages.schedulingModeInvalid,
@@ -384,17 +398,13 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     const newTime = readValidatedTime(args.newTime);
 
     if (this.options.reschedule.validateDateAndTime) {
-      if (
-        args.newLocalDate !== undefined &&
-        args.newLocalDate !== null &&
-        !newLocalDate
-      ) {
+      if (args.newLocalDate !== undefined && !newLocalDate) {
         return {
           error: this.options.reschedule.messages.newLocalDateInvalid,
         };
       }
 
-      if (args.newTime !== undefined && args.newTime !== null && !newTime) {
+      if (args.newTime !== undefined && !newTime) {
         return { error: this.options.reschedule.messages.newTimeInvalid };
       }
     }
