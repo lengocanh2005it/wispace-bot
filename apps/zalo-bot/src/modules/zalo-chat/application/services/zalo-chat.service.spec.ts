@@ -162,6 +162,43 @@ describe('ZaloChatService', () => {
     );
   });
 
+  it.each([
+    'Mã: 00000000-0000-4000-8000-000000000000',
+    'xác nhận 00000000-0000-4000-8000-000000000000 nhé',
+    'xác nhận không-phải-mã',
+  ])(
+    'rejects malformed confirmation syntax without a proposal: %s',
+    async (text) => {
+      const sendText = jest.fn().mockResolvedValue(undefined);
+      const enqueue = jest.fn();
+      const reschedule = {
+        getPendingState: jest.fn().mockResolvedValue('none'),
+        confirm: jest.fn(),
+      } as unknown as RescheduleConfirmationService<string>;
+
+      const service = new ZaloChatService(
+        buildConfig(),
+        { sendText } as unknown as ZaloOutboundService,
+        {
+          findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+        } as unknown as ZaloAccountLinkService,
+        { enqueue } as unknown as PlatformChatQueueService,
+        reschedule,
+        makePrefs(),
+      );
+
+      await service.handleIncomingMessage('zalo-1', text);
+
+      expect(reschedule.confirm).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(sendText).toHaveBeenCalledWith(
+        'zalo-1',
+        expect.stringContaining('xác thực'),
+        { userId: 42 },
+      );
+    },
+  );
+
   it('rejects a token followed by trailing prose', async () => {
     const token = '00000000-0000-4000-8000-000000000000';
     const sendText = jest.fn().mockResolvedValue(undefined);

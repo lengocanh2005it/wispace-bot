@@ -192,7 +192,10 @@ export class ZaloChatService {
           return;
         }
 
-        if (interaction.kind === 'confirm' && interaction.approvalToken) {
+        if (
+          interaction.kind === 'confirm' &&
+          (interaction.approvalToken || interaction.invalid)
+        ) {
           await this.outboundService.sendText(
             zaloUserId,
             RESCHEDULE_INVALID_TOKEN_MESSAGE,
@@ -270,7 +273,7 @@ export class ZaloChatService {
   private parseRescheduleInteraction(
     text: string,
   ):
-    | { kind: 'confirm'; approvalToken?: string }
+    | { kind: 'confirm'; approvalToken?: string; invalid?: boolean }
     | { kind: 'cancel' }
     | undefined {
     const normalized = text.toLowerCase().trim();
@@ -285,7 +288,7 @@ export class ZaloChatService {
     }
     const firstToken = normalized.split(/\s+/, 1)[0];
     if (firstToken !== normalized && isValidApprovalToken(firstToken)) {
-      return { kind: 'confirm' };
+      return { kind: 'confirm', invalid: true };
     }
     if (RESCHEDULE_CONFIRM_KEYWORDS.includes(normalized)) {
       return { kind: 'confirm' };
@@ -295,7 +298,9 @@ export class ZaloChatService {
         const token = normalized.slice(prefix.length).trim();
         return {
           kind: 'confirm',
-          ...(isValidApprovalToken(token) ? { approvalToken: token } : {}),
+          ...(isValidApprovalToken(token)
+            ? { approvalToken: token }
+            : { invalid: true }),
         };
       }
     }
@@ -303,7 +308,10 @@ export class ZaloChatService {
       /^(?:ok|oke|okay|yes|confirm|xác nhận|đồng ý)\s+/i.test(normalized) ||
       /^(?:mã|ma)\s*[:：]/i.test(normalized)
     ) {
-      return { kind: 'confirm' };
+      return {
+        kind: 'confirm',
+        ...(/^(?:mã|ma)\s*[:：]/i.test(normalized) ? { invalid: true } : {}),
+      };
     }
     return undefined;
   }
