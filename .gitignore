@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.shared
 .claude/settings.local.json
+.workbuddy-ai/
 npm-debug.log*
 dist/
 coverage/
