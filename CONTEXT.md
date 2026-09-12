@@ -121,12 +121,28 @@ _Avoid_: CalendarEvent, SessionRecord
 ### Reschedule Confirmation
 
 **staged reschedule**:
-Pending request created after validating a learner's UserCalendar session and before the learner confirms. It is not a calendar mutation.
+Pending request created after validating a learner's UserCalendar session and before the learner confirms. It is not a calendar mutation; at most one active proposal exists per platform-scoped external identity, and a newer proposal supersedes the older token.
 _Avoid_: rescheduled session, completed reschedule
 
 **confirmation boundary**:
 Point at which the bot commits to delivering the reschedule confirmation prompt. Cancellation before this boundary removes only the matching staged reschedule; after it, an outbound attempt cannot be retracted.
 _Avoid_: confirmation complete, send completion
+
+**approval token**:
+One-time opaque token shown with a staged reschedule and required for text approval. It binds approval to the offered proposal; a token-less, mismatched, or superseded confirmation is not consent.
+_Avoid_: confirmation code, approval code
+
+**stop request**:
+An explicit learner request to stop. In free-form chat it clears clarification state and any staged reschedule, but it does not cancel reminders, privacy actions, or account linking.
+_Avoid_: ambiguous cancel, undo
+
+**reschedule cancellation**:
+Disarming a staged reschedule before it is claimed for the calendar write. It cannot undo a calendar write that has already started.
+_Avoid_: rollback, reverse
+
+**staged reschedule expiry**:
+The end of the ten-minute validity window after which a staged reschedule cannot be confirmed. Expiry is reported on the next related interaction rather than through a background message.
+_Avoid_: confirmation timeout
 
 ### Student Report
 
