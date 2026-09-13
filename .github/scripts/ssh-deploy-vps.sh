@@ -55,6 +55,7 @@ chmod 600 "$payload_file"
 cat > "$payload_file"
 . "$payload_file"
 rm -f "$payload_file"
+cd "$(dirname "$1")"
 exec bash "$1" </dev/null
 '
 REMOTE_COMMAND="bash -c $(shell_quote "$REMOTE_WRAPPER") -- $(shell_quote "$REMOTE_SCRIPT")"

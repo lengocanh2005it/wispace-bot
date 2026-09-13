@@ -62,6 +62,7 @@ run_script "$dir" /home/ngoc_anh/messenger-bot/vps-deploy.sh
   || fail "deploy token leaked into argv or log"
 grep -Fq 'super-secret-token' "$dir/capture/stdin-1" || fail "deploy token missing from stdin payload"
 grep -Fq 'exec bash "$1" </dev/null' "$dir/capture/argv.log" || fail "remote wrapper does not detach deploy stdin"
+grep -Fq 'cd "$(dirname "$1")"' "$dir/capture/argv.log" || fail "remote wrapper does not enter deploy directory"
 [ "$(find "$dir/capture" -name 'stdin-*' | wc -l)" -eq 1 ] || fail "unexpected SSH attempt count"
 pass "payload is isolated from SSH command and logs"
 
