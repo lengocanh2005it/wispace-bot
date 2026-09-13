@@ -86,6 +86,15 @@ answer — but it should be answered deliberately rather than by omission,
 because the retention windows were chosen for operational reasons and not as
 a privacy commitment.
 
+**Most of this shortfall already has an owner**, found by searching the open
+backlog after this table was built: #908 for the raw payloads, #540 for
+`reschedule_confirmations`, #556 for `llm_safety_events` plus the unbounded
+per-user tables, #541 for `chat_quota_events`, #522 for NULL-`user_id` rows,
+and #448 for pre-link usage rows. Only `message_logs` and
+`chat_tool_daily_usage` were named by none of them; #1125 covers those two.
+The value of this catalog is therefore the consolidated map rather than the
+individual gaps — several of which were already known.
+
 ### 2. Two of those tables hold the learner's own message text
 
 `webhook_inbound_events.raw_payload` and `webhook_dead_letters.raw_payload`
@@ -228,10 +237,16 @@ These need a decision, not more reading:
    `platform_link_audit_events`' approach more widely would shrink the erasure
    surface rather than expand the erasure code.
 5. Should `report_send_jobs` and `chat_daily_usage` have a retention bound?
+   (#556 covers this one.)
+
+Questions 1–4 have partial owners listed under finding 1; none of them owns
+the *policy* answer, which is what these questions ask for.
 
 ## Related
 
 - #693 — audit coverage map
-- #541 — raw `user_id` and historical pseudonyms in `chat_quota_events`
+- #915 and [`threat-model-wispace-data-and-outbound.md`](./threat-model-wispace-data-and-outbound.md) — the flows this data moves along
+- #1125 — `message_logs` and `chat_tool_daily_usage`, the two tables no other erasure issue names
+- #908, #540, #556, #541, #522, #448 — the erasure and retention gaps that already had owners
 - #596 — notification consent state
 - `docs/research/security-coverage-audit-2026-09-11.md` — the report that named this gap

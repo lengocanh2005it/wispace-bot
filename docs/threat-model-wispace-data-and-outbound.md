@@ -190,19 +190,27 @@ Each has an owner or an explicit decision, per #915's criteria.
 | # | Risk | Disposition |
 | --- | --- | --- |
 | R1 | The bot cannot verify that returned data belongs to the learner it asked about; the ACL is upstream | **Accepted, upstream.** WISPACE owns it. Needs a maintainer to record the acceptance |
-| R2 | `WISPACE_INTERNAL_KEY` is an unscoped, unrotatable master key for all learner data | #690 covers rotation. **Scoping has no owner** — see below |
+| R2 | `WISPACE_INTERNAL_KEY` is an unscoped, unrotatable master key for all learner data | #1123 (scope and blast radius); #690 covers rotation separately |
 | R3 | Learner data sent to the LLM provider is governed by configuration and contract, not code | #620, #1077, #1100 |
-| R4 | Platform user-id reuse that does not change the mapping generation defeats the reminder fence | **No owner.** See below |
+| R4 | Platform user-id reuse that does not change the mapping generation defeats the reminder fence | #1124 |
 | R5 | Report retry can deliver to a recipient who is no longer the queued learner | #1000 |
 | R6 | Cache survives relink and erasure; keys carry no platform segment | #877 |
 | R7 | One ops key, no actor attribution | #770, #641 |
-| R8 | Erasure does not reach seven tables carrying learner identifiers, two holding raw message text | `data-catalog.md` findings 1–2. **No owner** |
+| R8 | Erasure does not reach seven tables carrying learner identifiers, two holding raw message text | Owned in pieces: #908 (raw payloads), #540 (`reschedule_confirmations`), #556 (`llm_safety_events` and the unbounded per-user tables), #541 (`chat_quota_events`), #522, #448. #1125 closes the remainder — `message_logs` and `chat_tool_daily_usage` |
 
-**Three residuals have no issue.** Per #915's acceptance criteria they need one
-before it closes: R2's scoping question (is a per-learner or per-bot WISPACE
-credential possible upstream?), R4 (is platform id reuse a real case for Meta,
-Discord, and Zalo, and does each produce a new generation?), and R8 (the
-erasure coverage decision from the data catalog).
+**Every residual now has an owner**, which is what #915's criteria require
+before it closes. The three that had none when this model was first written
+were filed as #1123 (is a per-learner or per-bot WISPACE credential possible
+upstream, and what is the blast radius if not?), #1124 (is platform id reuse a
+real case for Meta, Discord, and Zalo, and does each produce a new
+generation?), and #1125 (the two tables the existing erasure issues do not
+name).
+
+Two of those three are questions whose answer may be "no change needed" —
+#1123 depends on what WISPACE can issue, and #1124 on what the three platforms
+actually do with identifiers. A documented "not reachable, here is the
+citation" closes them just as well as code, and stops the question being
+re-derived by the next pass.
 
 ## What this model does not cover
 
