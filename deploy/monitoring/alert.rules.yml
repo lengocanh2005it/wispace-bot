@@ -158,6 +158,36 @@ groups:
           description: '{{ $labels.job }} is failing study reminder dispatches.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#studyreminderfailureshigh'
 
+      - alert: PrivacyCleanupIncomplete
+        expr: |
+          max by (job, platform) (
+            {__name__=~"(messenger|discord|zalo)_privacy_cleanup_pending_jobs"}
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} has incomplete privacy cleanup work'
+          description: '{{ $labels.job }} still has pending or processing own-platform privacy cleanup jobs; inspect the cleanup id and reconciler logs without exposing external identities.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#privacycleanupincomplete'
+
+      - alert: PrivacyCleanupRecoveryStuck
+        expr: |
+          max by (job, platform) (
+            {__name__=~"(messenger|discord|zalo)_privacy_cleanup_pending_job_age_seconds"}
+          ) > 900
+          or
+          sum by (job, platform) (
+            rate({__name__=~"(messenger|discord|zalo)_privacy_cleanup_attempts_total", outcome="failure"}[15m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} privacy cleanup recovery is stuck'
+          description: '{{ $labels.job }} has privacy cleanup older than 15 minutes or repeated failures; verify Redis, the own-platform worker lease, and the database writer.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#privacycleanuprecoverystuck'
+
       - alert: PlatformLinkStatusUnknown
         expr: |
           (

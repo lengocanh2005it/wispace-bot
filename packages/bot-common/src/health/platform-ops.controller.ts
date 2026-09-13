@@ -1,4 +1,4 @@
-import { Body, HttpCode, Post } from '@nestjs/common';
+import { Body, HttpCode, Post, Res } from '@nestjs/common';
 import { IsString } from 'class-validator';
 
 export class PrivacyActionBody {
@@ -13,6 +13,15 @@ export interface PlatformOpsHandlers {
   deleteUser(externalUserId: string): unknown;
   exportUser(externalUserId: string): unknown;
   clearClarification(externalUserId: string): unknown;
+}
+
+export interface PrivacyResponseStatus {
+  status?: 'complete' | 'incomplete';
+  conflict?: boolean;
+}
+
+export interface PrivacyResponse {
+  status(code: number): unknown;
 }
 
 export abstract class PlatformOpsController {
@@ -38,19 +47,42 @@ export abstract class PlatformOpsController {
 
   @Post('privacy/unlink')
   @HttpCode(200)
-  unlinkUser(@Body() body: PrivacyActionBody) {
-    return this.ops.unlinkUser(body.externalUserId);
+  async unlinkUser(
+    @Body() body: PrivacyActionBody,
+    @Res({ passthrough: true }) response?: PrivacyResponse,
+  ) {
+    const result = await this.ops.unlinkUser(body.externalUserId);
+    setPrivacyResponseStatus(response, result);
+    return result;
   }
 
   @Post('privacy/delete')
   @HttpCode(200)
-  deleteUser(@Body() body: PrivacyActionBody) {
-    return this.ops.deleteUser(body.externalUserId);
+  async deleteUser(
+    @Body() body: PrivacyActionBody,
+    @Res({ passthrough: true }) response?: PrivacyResponse,
+  ) {
+    const result = await this.ops.deleteUser(body.externalUserId);
+    setPrivacyResponseStatus(response, result);
+    return result;
   }
 
   @Post('privacy/export')
   @HttpCode(200)
   exportUser(@Body() body: PrivacyActionBody) {
     return this.ops.exportUser(body.externalUserId);
+  }
+}
+
+export function setPrivacyResponseStatus(
+  response: PrivacyResponse | undefined,
+  result: unknown,
+): void {
+  if (!response || !result || typeof result !== 'object') return;
+  const outcome = result as PrivacyResponseStatus;
+  if (outcome.conflict) {
+    response.status(409);
+  } else if (outcome.status === 'incomplete') {
+    response.status(202);
   }
 }

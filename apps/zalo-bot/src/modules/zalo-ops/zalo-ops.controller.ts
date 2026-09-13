@@ -1,4 +1,11 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Optional,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
@@ -8,7 +15,12 @@ import {
   StudyReminderSyncService,
 } from '@wispace/study-reminder-shared';
 import { WispaceCalendarService } from '@wispace/wispace-client';
-import { PrivacyDataService } from '@wispace/database';
+import {
+  PrivacyDataService,
+  PRIVACY_CLEANUP_STORES,
+  type PrivacyStateCleanup,
+} from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import {
   PlatformAgentService,
@@ -39,6 +51,7 @@ export class ZaloOpsController extends PlatformOpsController {
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
+    @Optional() metrics?: BotMetricsService,
   ) {
     super({
       sendReports: (body?: SendReportsBody) =>
@@ -51,21 +64,31 @@ export class ZaloOpsController extends PlatformOpsController {
           getSessions: createCalendarGetSessions(calendarService),
         }),
       unlinkUser: async (externalUserId) => {
-        const result = await privacyService.unlink('zalo', externalUserId, {
-          clearHistory: (id) => historyService.clear(id),
-          clearQueuedWork: (id) => queueService.clear(id),
-          clearClarification: (id) =>
-            clarificationAgent.clearClarificationState(id),
-        });
+        const result = await privacyService.unlink(
+          'zalo',
+          externalUserId,
+          zaloPrivacyCleanup(
+            historyService,
+            queueService,
+            clarificationAgent,
+            metrics,
+            'unlink',
+          ),
+        );
         return result;
       },
       deleteUser: async (externalUserId) => {
-        await privacyService.delete('zalo', externalUserId, {
-          clearHistory: (id) => historyService.clear(id),
-          clearQueuedWork: (id) => queueService.clear(id),
-          clearClarification: (id) =>
-            clarificationAgent.clearClarificationState(id),
-        });
+        return privacyService.delete(
+          'zalo',
+          externalUserId,
+          zaloPrivacyCleanup(
+            historyService,
+            queueService,
+            clarificationAgent,
+            metrics,
+            'delete',
+          ),
+        );
       },
       exportUser: (externalUserId) =>
         privacyService.export('zalo', externalUserId),
@@ -90,4 +113,24 @@ export class ZaloOpsController extends PlatformOpsController {
       getSessions: createCalendarGetSessions(this.calendarService),
     });
   }
+}
+
+function zaloPrivacyCleanup(
+  historyService: PlatformChatHistoryService,
+  queueService: PlatformChatQueueService,
+  clarificationAgent: PlatformAgentService,
+  metrics: BotMetricsService | undefined,
+  operation: 'unlink' | 'delete',
+): PrivacyStateCleanup {
+  return {
+    platform: 'zalo',
+    applicableStores: PRIVACY_CLEANUP_STORES.filter(
+      (store) => store !== 'display_name_cache',
+    ),
+    clearHistory: (id) => historyService.clear(id),
+    clearQueuedWork: (id) => queueService.clear(id),
+    clearClarification: (id) => clarificationAgent.clearClarificationState(id),
+    onAttempt: (store, outcome) =>
+      metrics?.incPrivacyCleanupAttempt('zalo', operation, store, outcome),
+  };
 }

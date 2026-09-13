@@ -48,6 +48,42 @@ tests:
 
   - interval: 1m
     input_series:
+      - series: 'messenger_privacy_cleanup_pending_jobs{job="messenger_bot",platform="messenger"}'
+        values: '0 0 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PrivacyCleanupIncomplete
+        exp_alerts:
+          - exp_labels:
+              alertname: PrivacyCleanupIncomplete
+              job: messenger_bot
+              platform: messenger
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot has incomplete privacy cleanup work
+              description: messenger_bot still has pending or processing own-platform privacy cleanup jobs; inspect the cleanup id and reconciler logs without exposing external identities.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#privacycleanupincomplete
+
+  - interval: 1m
+    input_series:
+      - series: 'zalo_privacy_cleanup_pending_job_age_seconds{job="zalo_bot",platform="zalo"}'
+        values: '0 0 901 901 901 901 901 901 901 901 901'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PrivacyCleanupRecoveryStuck
+        exp_alerts:
+          - exp_labels:
+              alertname: PrivacyCleanupRecoveryStuck
+              job: zalo_bot
+              platform: zalo
+              severity: critical
+            exp_annotations:
+              summary: zalo_bot privacy cleanup recovery is stuck
+              description: zalo_bot has privacy cleanup older than 15 minutes or repeated failures; verify Redis, the own-platform worker lease, and the database writer.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#privacycleanuprecoverystuck
+
+  - interval: 1m
+    input_series:
       - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",status="ok"}'
         values: '0 100 200 300 400 500 600 700 800 900 1000'
       - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",status="error"}'

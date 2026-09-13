@@ -34,6 +34,7 @@ import {
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
   WebActivityEntity,
+  PrivacyCleanupJobStore,
 } from '@wispace/database';
 
 export function buildTypeOrmOptions(config: ConfigService) {
@@ -113,10 +114,23 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
     NotificationPreferenceService,
     WebActivityService,
     {
-      provide: PrivacyDataService,
+      provide: PrivacyCleanupJobStore,
       useFactory: (dataSource: DataSource) =>
-        new PrivacyDataService(dataSource, buildPrivacyEntityRegistry()),
+        new PrivacyCleanupJobStore(dataSource),
       inject: [DataSource],
+    },
+    {
+      provide: PrivacyDataService,
+      useFactory: (
+        dataSource: DataSource,
+        cleanupJobs: PrivacyCleanupJobStore,
+      ) =>
+        new PrivacyDataService(
+          dataSource,
+          buildPrivacyEntityRegistry(),
+          cleanupJobs,
+        ),
+      inject: [DataSource, PrivacyCleanupJobStore],
     },
   ],
   exports: [
@@ -124,6 +138,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    PrivacyCleanupJobStore,
     PrivacyDataService,
   ],
 })

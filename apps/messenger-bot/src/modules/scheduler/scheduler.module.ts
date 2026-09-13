@@ -20,6 +20,9 @@ import {
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
   ReportClaimStaleResetCronService,
+  PrivacyCleanupReconciler,
+  PrivacyCleanupJobStore,
+  PRIVACY_CLEANUP_STORES,
 } from '@wispace/database';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -51,6 +54,11 @@ import { LlmSafetyService } from './application/services/llm-safety.service';
 import { SchedulerController } from './presentation/controllers/scheduler.controller';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { DisplayNameModule } from '../display-name/display-name.module';
+import { MessengerAgentService } from '../messenger/application/agent/messenger-agent.service';
+import { MessengerChatEnqueueService } from '../messenger/application/services/messenger-chat-enqueue.service';
+import { PlatformChatHistoryService } from '@wispace/chat-agent';
+import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
+import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-cleanup-summary.port';
 
 @Module({
   imports: [
@@ -169,9 +177,55 @@ import { DisplayNameModule } from '../display-name/display-name.module';
       ],
     },
     OpsHealthService,
+    {
+      provide: PRIVACY_CLEANUP_SUMMARY_PORT,
+      useExisting: PrivacyCleanupJobStore,
+    },
     OpsHealthCronService,
     DataQualityCronService,
     LlmSafetyService,
+    {
+      provide: PrivacyCleanupReconciler,
+      useFactory: (
+        dataSource: DataSource,
+        pgLock: PgAdvisoryLockService,
+        historyService: PlatformChatHistoryService,
+        queueService: MessengerChatEnqueueService,
+        clarificationAgent: MessengerAgentService,
+        displayNameCache: RedisUserDisplayNameCache,
+        metrics: BotMetricsService,
+        cleanupJobs: PrivacyCleanupJobStore,
+      ) =>
+        new PrivacyCleanupReconciler(
+          dataSource,
+          'messenger',
+          {
+            platform: 'messenger',
+            applicableStores: PRIVACY_CLEANUP_STORES,
+            clearHistory: (id) => historyService.clear(id),
+            clearQueuedWork: (id) => queueService.clear(id),
+            clearClarification: (id) =>
+              clarificationAgent.clearClarificationState(id),
+            clearUserCache: (userId) => displayNameCache.del(userId),
+          },
+          {
+            pgLock,
+            lockId: ADVISORY_LOCK.PRIVACY_CLEANUP,
+            metrics,
+            store: cleanupJobs,
+          },
+        ),
+      inject: [
+        DataSource,
+        PgAdvisoryLockService,
+        PlatformChatHistoryService,
+        MessengerChatEnqueueService,
+        MessengerAgentService,
+        RedisUserDisplayNameCache,
+        BotMetricsService,
+        PrivacyCleanupJobStore,
+      ],
+    },
   ],
 })
 export class SchedulerModule {}

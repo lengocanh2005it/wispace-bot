@@ -35,4 +35,7 @@ export const ADVISORY_LOCK = {
 
   /** Messenger: link-verify reconciliation cron (every 5 min, `messenger_link_verify_records`). */
   MESSENGER_LINK_RECONCILE: 884_200_938,
+
+  /** Messenger: durable privacy state cleanup recovery (every 5 min). */
+  PRIVACY_CLEANUP: 884_200_953,
 } as const;

@@ -9,6 +9,7 @@ import type {
   DeadLetterOpsSummary,
   ChatQuotaOpsSummary,
   StudyReminderOpsSummary,
+  PrivacyCleanupOpsSummary,
 } from './types';
 
 interface CountRow {
@@ -116,6 +117,31 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
     return {
       outboundPendingCount: row?.pending_count ?? 0,
       outboundFailedCount: row?.failed_count ?? 0,
+      oldestPendingAgeSeconds: row?.oldest_pending_age_seconds ?? null,
+    };
+  }
+
+  async getPrivacyCleanupSummary(): Promise<PrivacyCleanupOpsSummary> {
+    const rows = await this.execQuery<{
+      pending_count: number;
+      processing_count: number;
+      retrying_count: number;
+      oldest_pending_age_seconds: number | null;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE status = 'pending')::int AS pending_count,
+         COUNT(*) FILTER (WHERE status = 'processing')::int AS processing_count,
+         COUNT(*) FILTER (WHERE attempt_count > 0 AND status IN ('pending', 'processing'))::int AS retrying_count,
+         EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE status IN ('pending', 'processing'))))::int AS oldest_pending_age_seconds
+       FROM privacy_cleanup_jobs
+      WHERE platform = $1`,
+      [this.platform],
+    );
+    const row = rows[0];
+    return {
+      pendingCount: row?.pending_count ?? 0,
+      processingCount: row?.processing_count ?? 0,
+      retryingCount: row?.retrying_count ?? 0,
       oldestPendingAgeSeconds: row?.oldest_pending_age_seconds ?? null,
     };
   }

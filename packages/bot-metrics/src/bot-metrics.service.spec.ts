@@ -3,6 +3,33 @@ import { BotMetricsService } from './bot-metrics.service';
 import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
+  it('exposes privacy cleanup attempts and queue age without identity labels', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.incPrivacyCleanupAttempt(
+      'messenger',
+      'delete',
+      'chat_history',
+      'failure',
+    );
+    metrics.setPrivacyCleanupPending('messenger', 2, 901);
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'test_privacy_cleanup_attempts_total{platform="messenger",operation="delete",store="chat_history",outcome="failure"} 1',
+    );
+    expect(output).toContain(
+      'test_privacy_cleanup_pending_jobs{platform="messenger"} 2',
+    );
+    expect(output).toContain(
+      'test_privacy_cleanup_pending_job_age_seconds{platform="messenger"} 901',
+    );
+    expect(output).not.toContain('external_user_id');
+  });
+
   it('exposes Redis deadline counters with bounded command labels', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

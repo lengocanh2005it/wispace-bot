@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Optional,
+  Post,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import {
   IsBoolean,
@@ -18,11 +26,20 @@ import { StudySessionSourceService } from '@messenger/modules/study-reminder/app
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
-import { PrivacyDataService } from '@wispace/database';
+import {
+  PrivacyDataService,
+  PRIVACY_CLEANUP_STORES,
+  type PrivacyStateCleanup,
+} from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
+import {
+  setPrivacyResponseStatus,
+  type PrivacyResponse,
+} from '@wispace/bot-common/health';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -73,6 +90,8 @@ export class SchedulerController {
     private readonly historyService: PlatformChatHistoryService,
     private readonly chatEnqueueService: MessengerChatEnqueueService,
     private readonly displayNameCache: RedisUserDisplayNameCache,
+    @Optional()
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   @Post('send-reports')
@@ -162,26 +181,32 @@ export class SchedulerController {
 
   @Post('privacy/unlink')
   @HttpCode(200)
-  unlinkUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.unlink('messenger', body.externalUserId, {
-      clearHistory: (id) => this.historyService.clear(id),
-      clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
-      clearClarification: (id) =>
-        this.clarificationAgent.clearClarificationState(id),
-      clearUserCache: (userId: number) => this.displayNameCache.del(userId),
-    });
+  async unlinkUser(
+    @Body() body: PrivacyActionBody,
+    @Res({ passthrough: true }) response?: PrivacyResponse,
+  ) {
+    const result = await this.privacyService.unlink(
+      'messenger',
+      body.externalUserId,
+      this.privacyCleanup('unlink'),
+    );
+    setPrivacyResponseStatus(response, result);
+    return result;
   }
 
   @Post('privacy/delete')
   @HttpCode(200)
-  deleteUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.delete('messenger', body.externalUserId, {
-      clearHistory: (id) => this.historyService.clear(id),
-      clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
-      clearClarification: (id) =>
-        this.clarificationAgent.clearClarificationState(id),
-      clearUserCache: (userId: number) => this.displayNameCache.del(userId),
-    });
+  async deleteUser(
+    @Body() body: PrivacyActionBody,
+    @Res({ passthrough: true }) response?: PrivacyResponse,
+  ) {
+    const result = await this.privacyService.delete(
+      'messenger',
+      body.externalUserId,
+      this.privacyCleanup('delete'),
+    );
+    setPrivacyResponseStatus(response, result);
+    return result;
   }
 
   @Post('privacy/export')
@@ -202,6 +227,25 @@ export class SchedulerController {
           psid: f.externalUserId,
           error: f.error,
         })) ?? [],
+    };
+  }
+
+  private privacyCleanup(operation: 'unlink' | 'delete'): PrivacyStateCleanup {
+    return {
+      platform: 'messenger',
+      applicableStores: PRIVACY_CLEANUP_STORES,
+      clearHistory: (id) => this.historyService.clear(id),
+      clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
+      clearClarification: (id) =>
+        this.clarificationAgent.clearClarificationState(id),
+      clearUserCache: (userId: number) => this.displayNameCache.del(userId),
+      onAttempt: (store, outcome) =>
+        this.metrics?.incPrivacyCleanupAttempt(
+          'messenger',
+          operation,
+          store,
+          outcome,
+        ),
     };
   }
 }

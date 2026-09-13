@@ -108,6 +108,43 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
         .send({ externalUserId: 12345 })
         .expect(400);
     });
+
+    it('returns 202 and canonical outstanding stores when cleanup is incomplete', async () => {
+      privacyService.unlink.mockResolvedValueOnce({
+        deleted: true,
+        unlinked: true,
+        status: 'incomplete',
+        cleanupId: 'opaque-cleanup-id',
+        outstandingStores: ['chat_history'],
+      });
+
+      await request(app.getHttpServer())
+        .post('/v1/messenger/privacy/unlink')
+        .send({ externalUserId: 'psid-123' })
+        .expect(202)
+        .expect(({ body }) => {
+          expect(body).toEqual({
+            deleted: true,
+            unlinked: true,
+            status: 'incomplete',
+            cleanupId: 'opaque-cleanup-id',
+            outstandingStores: ['chat_history'],
+          });
+        });
+    });
+
+    it('returns 409 for an expected-generation conflict', async () => {
+      privacyService.unlink.mockResolvedValueOnce({
+        deleted: false,
+        unlinked: false,
+        conflict: true,
+      });
+
+      await request(app.getHttpServer())
+        .post('/v1/messenger/privacy/unlink')
+        .send({ externalUserId: 'psid-123' })
+        .expect(409);
+    });
   });
 
   describe('POST /v1/messenger/privacy/delete', () => {
@@ -132,6 +169,28 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
         .post('/v1/messenger/privacy/delete')
         .send({})
         .expect(400);
+    });
+
+    it('returns 202 for an incomplete delete without changing the mutation boolean', async () => {
+      privacyService.delete.mockResolvedValueOnce({
+        deleted: false,
+        status: 'incomplete',
+        cleanupId: 'opaque-delete-id',
+        outstandingStores: ['chat_queue'],
+      });
+
+      await request(app.getHttpServer())
+        .post('/v1/messenger/privacy/delete')
+        .send({ externalUserId: 'psid-456' })
+        .expect(202)
+        .expect(({ body }) => {
+          expect(body).toMatchObject({
+            deleted: false,
+            status: 'incomplete',
+            cleanupId: 'opaque-delete-id',
+            outstandingStores: ['chat_queue'],
+          });
+        });
     });
   });
 

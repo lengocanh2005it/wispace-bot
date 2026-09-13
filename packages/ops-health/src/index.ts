@@ -12,6 +12,7 @@ export {
   type DeadLetterOpsSummary,
   type ChatQuotaOpsSummary,
   type StudyReminderOpsSummary,
+  type PrivacyCleanupOpsSummary,
   type CronHeartbeatInfo,
   type ApplicationReadinessResult,
 } from './types';

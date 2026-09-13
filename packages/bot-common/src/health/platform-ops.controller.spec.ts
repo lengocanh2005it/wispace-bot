@@ -79,4 +79,27 @@ describe('PlatformOpsController', () => {
     body.externalUserId = 'user-1';
     expect(body.externalUserId).toBe('user-1');
   });
+
+  it('maps durable privacy outcomes to HTTP status without changing the body', async () => {
+    const response = { status: jest.fn() };
+    const incomplete = {
+      deleted: true,
+      status: 'incomplete' as const,
+      cleanupId: 'opaque-cleanup-id',
+      outstandingStores: ['chat_history'],
+    };
+    handlers.unlinkUser.mockResolvedValueOnce(incomplete);
+
+    await expect(
+      controller.unlinkUser({ externalUserId: 'u1' }, response),
+    ).resolves.toBe(incomplete);
+    expect(response.status).toHaveBeenCalledWith(202);
+
+    handlers.deleteUser.mockResolvedValueOnce({
+      deleted: false,
+      conflict: true,
+    });
+    await controller.deleteUser({ externalUserId: 'u2' }, response);
+    expect(response.status).toHaveBeenLastCalledWith(409);
+  });
 });

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatQuotaOpsService } from '@messenger/modules/chat-rate-limit/application/services/chat-quota-ops.service';
 import {
@@ -11,6 +11,10 @@ import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { LlmSafetyService } from './llm-safety.service';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 import { subHours, subMilliseconds } from 'date-fns';
+import {
+  PRIVACY_CLEANUP_SUMMARY_PORT,
+  type PrivacyCleanupSummaryPort,
+} from '../../domain/repositories/privacy-cleanup-summary.port';
 import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
@@ -31,6 +35,9 @@ export class OpsHealthService {
     private readonly llmSafetyService: LlmSafetyService,
     @Inject(REDIS_CLIENT)
     private readonly redisClient: RedisClientPort,
+    @Optional()
+    @Inject(PRIVACY_CLEANUP_SUMMARY_PORT)
+    private readonly privacyCleanupJobs?: PrivacyCleanupSummaryPort,
   ) {}
 
   isAlertCronEnabled(): boolean {
@@ -58,6 +65,7 @@ export class OpsHealthService {
       denyLogs24h,
       metaTokenExpiredEvents24h,
       llmSafetyWarnings24h,
+      privacyCleanup,
     ] = await Promise.all([
       this.chatQuotaOpsService.getSummary(),
       this.collectStudyReminderSummary(failedHours, stuckProcessingMinutes),
@@ -70,6 +78,9 @@ export class OpsHealthService {
         denySince,
       ),
       this.llmSafetyService.countWarnings24h(),
+      this.privacyCleanupJobs
+        ? this.privacyCleanupJobs.getSummary('messenger').catch(() => undefined)
+        : Promise.resolve(undefined),
     ]);
 
     // Redis health check
@@ -100,6 +111,7 @@ export class OpsHealthService {
       llmSafetyWarnings24h,
       llmSafetyThresholdBreached,
       redisStatus,
+      privacyCleanup,
     });
 
     return {
@@ -110,6 +122,7 @@ export class OpsHealthService {
       llmSafetyWarnings24h,
       llmSafetyThresholdBreached,
       redisStatus,
+      privacyCleanup,
       alerts,
     };
   }
@@ -143,6 +156,7 @@ export class OpsHealthService {
     llmSafetyWarnings24h: number;
     llmSafetyThresholdBreached: boolean;
     redisStatus: OpsHealthSnapshot['redisStatus'];
+    privacyCleanup?: OpsHealthSnapshot['privacyCleanup'];
   }): OpsHealthAlert[] {
     const alerts: OpsHealthAlert[] = [];
     const minFailedJobs = this.readPositiveNumber(
@@ -204,6 +218,30 @@ export class OpsHealthService {
         severity: 'warn',
         message: `Redis is unreachable — chat queue, dedupe, and burst counter may be degraded`,
       });
+    }
+
+    if (input.privacyCleanup) {
+      const pending =
+        input.privacyCleanup.pendingCount +
+        input.privacyCleanup.processingCount;
+      if (pending > 0) {
+        alerts.push({
+          code: 'PRIVACY_CLEANUP_INCOMPLETE',
+          severity: 'warn',
+          message: `${pending} privacy cleanup job(s) remain actionable`,
+        });
+      }
+      if (
+        (input.privacyCleanup.oldestPendingAgeSeconds ?? 0) > 15 * 60 ||
+        input.privacyCleanup.retryingCount > 0
+      ) {
+        alerts.push({
+          code: 'PRIVACY_CLEANUP_RECOVERY_STUCK',
+          severity: 'critical',
+          message:
+            'Privacy cleanup recovery is older than 15 minutes or retrying',
+        });
+      }
     }
 
     return alerts;

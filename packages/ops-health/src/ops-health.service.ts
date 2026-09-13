@@ -178,6 +178,7 @@ export class OpsHealthService implements OpsHealthServicePort {
       studyReminder,
       webhookInbound,
       deadLetter,
+      privacyCleanup,
       llmSafetyWarnings,
     ] = await Promise.all([
       this.repository.getChatQuotaSummary(),
@@ -187,6 +188,9 @@ export class OpsHealthService implements OpsHealthServicePort {
         : Promise.resolve(undefined),
       this.repository.getDeadLetterSummary
         ? this.repository.getDeadLetterSummary()
+        : Promise.resolve(undefined),
+      this.repository.getPrivacyCleanupSummary
+        ? this.repository.getPrivacyCleanupSummary()
         : Promise.resolve(undefined),
       this.repository.getLlmSafetyWarningsCount(failedSince),
     ]);
@@ -210,6 +214,7 @@ export class OpsHealthService implements OpsHealthServicePort {
       studyReminder,
       webhookInbound,
       deadLetter,
+      privacyCleanup,
       llmSafetyWarnings,
       safetyThresholdBreached,
       crons,
@@ -249,6 +254,7 @@ export class OpsHealthService implements OpsHealthServicePort {
         deadLetter,
         chatQuota,
         studyReminder,
+        privacyCleanup,
       },
       crons,
       llm: {
@@ -302,6 +308,12 @@ export class OpsHealthService implements OpsHealthServicePort {
     studyReminder: Record<string, unknown>;
     webhookInbound?: { pendingCount: number; failedCount: number };
     deadLetter?: { outboundPendingCount: number; outboundFailedCount: number };
+    privacyCleanup?: {
+      pendingCount: number;
+      processingCount: number;
+      retryingCount: number;
+      oldestPendingAgeSeconds: number | null;
+    };
     llmSafetyWarnings: number;
     safetyThresholdBreached: boolean;
     crons: Record<string, { status: string; name: string }>;
@@ -415,6 +427,29 @@ export class OpsHealthService implements OpsHealthServicePort {
         severity: 'warn',
         message: `${data.deadLetter.outboundPendingCount} outbound dead letter(s) pending retry`,
       });
+    }
+
+    if (data.privacyCleanup) {
+      const pending =
+        data.privacyCleanup.pendingCount + data.privacyCleanup.processingCount;
+      if (pending > 0) {
+        alerts.push({
+          code: 'PRIVACY_CLEANUP_INCOMPLETE',
+          severity: 'warn',
+          message: `${pending} privacy cleanup job(s) remain actionable`,
+        });
+      }
+      if (
+        (data.privacyCleanup.oldestPendingAgeSeconds ?? 0) > 15 * 60 ||
+        data.privacyCleanup.retryingCount > 0
+      ) {
+        alerts.push({
+          code: 'PRIVACY_CLEANUP_RECOVERY_STUCK',
+          severity: 'critical',
+          message:
+            'Privacy cleanup recovery is older than 15 minutes or retrying',
+        });
+      }
     }
 
     for (const cron of Object.values(data.crons)) {

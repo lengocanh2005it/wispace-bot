@@ -42,4 +42,7 @@ export const ADVISORY_LOCKS = {
   ZALO_STUDY_REMINDER_ROLLOVER: 884_200_949,
   /** Shared scheduled data-quality checks (Messenger runs it today; reserved for cross-bot coordination). */
   DATA_QUALITY_CHECK: 884_200_943,
+  /** Discord/Zalo: durable privacy state cleanup recovery (every 5 min). */
+  PRIVACY_CLEANUP_DISCORD: 884_200_954,
+  PRIVACY_CLEANUP_ZALO: 884_200_955,
 } as const;

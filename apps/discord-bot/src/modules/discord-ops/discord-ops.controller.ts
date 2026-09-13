@@ -1,4 +1,4 @@
-import { Controller, UseGuards } from '@nestjs/common';
+import { Controller, Optional, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PlatformOpsController } from '@wispace/bot-common/health';
@@ -8,6 +8,11 @@ import {
 } from '@wispace/study-reminder-shared';
 import { WispaceCalendarService } from '@wispace/wispace-client';
 import { PrivacyDataService } from '@wispace/database';
+import {
+  PRIVACY_CLEANUP_STORES,
+  type PrivacyStateCleanup,
+} from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 import {
   PlatformAgentService,
@@ -26,6 +31,7 @@ export class DiscordOpsController extends PlatformOpsController {
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
+    @Optional() metrics?: BotMetricsService,
   ) {
     super({
       sendReports: () => reportCronService.sendScheduledReports(),
@@ -35,21 +41,31 @@ export class DiscordOpsController extends PlatformOpsController {
           getSessions: createCalendarGetSessions(calendarService),
         }),
       unlinkUser: async (externalUserId) => {
-        const result = await privacyService.unlink('discord', externalUserId, {
-          clearHistory: (id) => historyService.clear(id),
-          clearQueuedWork: (id) => queueService.clear(id),
-          clearClarification: (id) =>
-            clarificationAgent.clearClarificationState(id),
-        });
+        const result = await privacyService.unlink(
+          'discord',
+          externalUserId,
+          discordPrivacyCleanup(
+            historyService,
+            queueService,
+            clarificationAgent,
+            metrics,
+            'unlink',
+          ),
+        );
         return result;
       },
       deleteUser: async (externalUserId) => {
-        await privacyService.delete('discord', externalUserId, {
-          clearHistory: (id) => historyService.clear(id),
-          clearQueuedWork: (id) => queueService.clear(id),
-          clearClarification: (id) =>
-            clarificationAgent.clearClarificationState(id),
-        });
+        return privacyService.delete(
+          'discord',
+          externalUserId,
+          discordPrivacyCleanup(
+            historyService,
+            queueService,
+            clarificationAgent,
+            metrics,
+            'delete',
+          ),
+        );
       },
       exportUser: (externalUserId) =>
         privacyService.export('discord', externalUserId),
@@ -57,4 +73,24 @@ export class DiscordOpsController extends PlatformOpsController {
         clarificationAgent.clearClarificationState(externalUserId),
     });
   }
+}
+
+function discordPrivacyCleanup(
+  historyService: PlatformChatHistoryService,
+  queueService: PlatformChatQueueService,
+  clarificationAgent: PlatformAgentService,
+  metrics: BotMetricsService | undefined,
+  operation: 'unlink' | 'delete',
+): PrivacyStateCleanup {
+  return {
+    platform: 'discord',
+    applicableStores: PRIVACY_CLEANUP_STORES.filter(
+      (store) => store !== 'display_name_cache',
+    ),
+    clearHistory: (id) => historyService.clear(id),
+    clearQueuedWork: (id) => queueService.clear(id),
+    clearClarification: (id) => clarificationAgent.clearClarificationState(id),
+    onAttempt: (store, outcome) =>
+      metrics?.incPrivacyCleanupAttempt('discord', operation, store, outcome),
+  };
 }

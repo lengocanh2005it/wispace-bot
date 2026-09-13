@@ -79,6 +79,9 @@ export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-re
 export { buildLearnerUsageQuery } from './services/learner-usage-query';
 export {
   PrivacyDataService,
+  hasPrivacyCleanupAdapter,
+  isPrivacyCleanupGenerationCurrent,
+  privacyCleanupCallbackForStore,
   type PrivacyEntityRegistry,
   type PrivacyEntityTarget,
   type PrivacyScopedEntities,
@@ -86,7 +89,30 @@ export {
   type PrivacyExportData,
   type PrivacyExpectedMapping,
   type PrivacyUnlinkResult,
+  type PrivacyDeleteResult,
 } from './services/privacy-data.service';
+export {
+  PrivacyCleanupJobStore,
+  PRIVACY_CLEANUP_STORES,
+  PRIVACY_CLEANUP_REQUEST_ATTEMPTS,
+  PRIVACY_CLEANUP_WORKER_BATCH_SIZE,
+  PRIVACY_CLEANUP_WORKER_LEASE_MS,
+  PRIVACY_CLEANUP_RETENTION_DAYS,
+  PRIVACY_CLEANUP_MAX_BACKOFF_MS,
+  type PrivacyCleanupStore,
+  type PrivacyCleanupOperation,
+  type PrivacyCleanupJobStatus,
+  type PrivacyCleanupJobInput,
+  type PrivacyCleanupJobRef,
+  type PrivacyCleanupJobRow,
+  type PrivacyCleanupSummary,
+  type PrivacyCleanupMetrics,
+} from './services/privacy-cleanup-job.service';
+export {
+  PrivacyCleanupReconciler,
+  type PrivacyCleanupReconcilerOptions,
+  type PrivacyCleanupRunResult,
+} from './services/privacy-cleanup-reconciler.service';
 export {
   CanonicalPlatformService,
   resolveCanonicalPlatform,
@@ -101,3 +127,4 @@ export { WebActivityEntity } from './entities/web-activity.entity';
 export { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 export { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 export { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
+export { PrivacyCleanupJobEntity } from './entities/privacy-cleanup-job.entity';

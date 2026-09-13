@@ -20,6 +20,7 @@ import { WebActivityEntity } from './entities/web-activity.entity';
 import { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
+import { PrivacyCleanupJobEntity } from './entities/privacy-cleanup-job.entity';
 
 export type EntityClass = new (...args: unknown[]) => unknown;
 
@@ -89,6 +90,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   UserNotificationPreferenceEntity,
   PlatformLinkAuditEventEntity,
   WebActivityEntity,
+  PrivacyCleanupJobEntity,
 ];
 
 /**

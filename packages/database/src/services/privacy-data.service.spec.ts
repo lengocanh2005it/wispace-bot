@@ -4,6 +4,7 @@ import {
   PrivacyDataService,
   type PrivacyEntityRegistry,
 } from './privacy-data.service';
+import type { PrivacyCleanupJobStore } from './privacy-cleanup-job.service';
 
 class MessengerMappingTarget {}
 class DiscordMappingTarget {}
@@ -139,6 +140,7 @@ describe('PrivacyDataService', () => {
 
     mockDataSource = {
       hasMetadata: jest.fn().mockReturnValue(true),
+      query: jest.fn().mockResolvedValue([]),
       getRepository: jest.fn().mockImplementation((target: unknown) => {
         const repo = repoByTarget.get(target);
         if (!repo) throw new Error(`Unknown entity target: ${String(target)}`);
@@ -174,6 +176,28 @@ describe('PrivacyDataService', () => {
   });
 
   describe('unlink', () => {
+    it('returns an explicit incomplete outcome after independently bounded cleanup attempts', async () => {
+      mockMappingRepo.findOne.mockResolvedValue({
+        id: 1,
+        userId: 42,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+        mappingGeneration: '3',
+      });
+      const clearHistory = jest.fn().mockRejectedValue(new Error('redis down'));
+
+      const result = await service.unlink('messenger', 'psid-123', {
+        platform: 'messenger',
+        applicableStores: ['chat_history'],
+        clearHistory,
+      });
+
+      expect(result.status).toBe('incomplete');
+      expect(result.outstandingStores).toEqual(['chat_history']);
+      expect(result.cleanupId).toEqual(expect.any(String));
+      expect(clearHistory).toHaveBeenCalledTimes(3);
+    });
+
     it('returns deleted:false when no mapping exists', async () => {
       mockMappingRepo.findOne.mockResolvedValue(null);
 
@@ -183,6 +207,66 @@ describe('PrivacyDataService', () => {
       expect(mockMappingRepo.findOne).toHaveBeenCalledWith({
         where: { platform: 'messenger', externalUserId: 'psid-123' },
       });
+    });
+
+    it('fences request-time cleanup when a newer active owner appears', async () => {
+      const mapping = {
+        id: 1,
+        userId: 42,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+        mappingGeneration: '3',
+      };
+      mockMappingRepo.findOne.mockResolvedValue(mapping);
+      mockDataSource.query = jest
+        .fn()
+        .mockResolvedValue([{ mapping_generation: '4', link_state: 'active' }]);
+      const clearHistory = jest.fn().mockResolvedValue(undefined);
+      const cleanupRows = [
+        {
+          cleanupId: 'cleanup-1',
+          idempotencyKey: 'cleanup-1:chat_history',
+          store: 'chat_history' as const,
+          operation: 'unlink' as const,
+          platform: 'messenger' as const,
+          externalUserId: 'psid-123',
+          mappingGeneration: '4',
+          status: 'pending' as const,
+          attemptCount: 0,
+        },
+      ];
+      const cleanupJobs = {
+        enqueue: jest.fn().mockResolvedValue([
+          {
+            cleanupId: 'cleanup-1',
+            idempotencyKey: 'cleanup-1:chat_history',
+            store: 'chat_history',
+          },
+        ]),
+        getByCleanupId: jest.fn().mockImplementation(async () => cleanupRows),
+        markStale: jest.fn().mockImplementation(async () => {
+          cleanupRows[0].status = 'stale';
+        }),
+        markCompleted: jest.fn(),
+        markFailure: jest.fn(),
+      } as unknown as PrivacyCleanupJobStore;
+      const fencedService = new PrivacyDataService(
+        mockDataSource,
+        makeRegistry(),
+        cleanupJobs,
+      );
+
+      await expect(
+        fencedService.unlink('messenger', 'psid-123', {
+          platform: 'messenger',
+          applicableStores: ['chat_history'],
+          clearHistory,
+        }),
+      ).resolves.toMatchObject({ status: 'complete' });
+      expect(clearHistory).not.toHaveBeenCalled();
+      expect(cleanupJobs.markStale).toHaveBeenCalledWith(
+        expect.objectContaining({ idempotencyKey: 'cleanup-1:chat_history' }),
+      );
     });
 
     it('deletes mapping and returns userId when mapping exists', async () => {
@@ -476,6 +560,45 @@ describe('PrivacyDataService', () => {
 
       // Transaction still used even when no mapping
       expect(mockDataSource.transaction).toHaveBeenCalled();
+    });
+
+    it('reuses an existing tombstone generation for durable delete cleanup', async () => {
+      mockMappingRepo.findOne.mockResolvedValue(null);
+      for (const repo of [
+        mockLearnerRepo,
+        mockReminderRepo,
+        mockClaimRepo,
+        mockReportRepo,
+        mockDailyUsageRepo,
+        mockLlmUsageRepo,
+        mockIdempotencyRepo,
+      ]) {
+        repo.delete.mockResolvedValue({ affected: 0 } as never);
+      }
+      mockManagerQuery.mockImplementation(async (sql: string) =>
+        sql.includes('FROM platform_link_audit_events')
+          ? [{ mapping_generation: '4' }]
+          : [],
+      );
+      mockDataSource.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM platform_link_audit_events')) {
+          return [{ mapping_generation: '4' }];
+        }
+        return [];
+      });
+      const clearHistory = jest.fn().mockResolvedValue(undefined);
+      const outcomes: string[] = [];
+
+      const result = await service.delete('messenger', 'psid-123', {
+        platform: 'messenger',
+        applicableStores: ['chat_history'],
+        clearHistory,
+        onAttempt: (_store, outcome) => outcomes.push(outcome),
+      });
+
+      expect(result).toMatchObject({ status: 'complete' });
+      expect(clearHistory).toHaveBeenCalledWith('psid-123');
+      expect(outcomes).toContain('success');
     });
 
     it('rolls back transaction on failure', async () => {

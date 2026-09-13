@@ -20,6 +20,9 @@ export {
   PlatformOpsController,
   PrivacyActionBody,
   type PlatformOpsHandlers,
+  type PrivacyResponse,
+  type PrivacyResponseStatus,
+  setPrivacyResponseStatus,
 } from './platform-ops.controller';
 export {
   assertPostgresWriter,

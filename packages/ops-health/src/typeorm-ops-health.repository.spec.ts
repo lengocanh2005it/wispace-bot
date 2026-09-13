@@ -139,6 +139,29 @@ describe('TypeormOpsHealthRepository', () => {
     );
   });
 
+  it('queries privacy cleanup backlog with platform-only parameters', async () => {
+    const query = jest.fn().mockResolvedValue([
+      {
+        pending_count: 2,
+        processing_count: 1,
+        retrying_count: 1,
+        oldest_pending_age_seconds: 901,
+      },
+    ]);
+    const repo = buildRepo('zalo', () => 15, query);
+
+    await expect(repo.getPrivacyCleanupSummary()).resolves.toEqual({
+      pendingCount: 2,
+      processingCount: 1,
+      retryingCount: 1,
+      oldestPendingAgeSeconds: 901,
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM privacy_cleanup_jobs'),
+      ['zalo'],
+    );
+  });
+
   it('queries LLM safety warnings with passed since date', async () => {
     const query = jest.fn().mockResolvedValue([{ count: 7 }]);
     const repo = buildRepo('zalo', () => 15, query);

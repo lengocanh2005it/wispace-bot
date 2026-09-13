@@ -58,9 +58,11 @@ describe('MessengerChatProcessorService', () => {
     const markClarificationDeliveryFailedForEvent = jest.fn(() =>
       Promise.resolve(),
     );
+    const clearClarificationState = jest.fn(() => Promise.resolve());
     const messengerAgentService = {
       reply,
       markClarificationDeliveryFailedForEvent,
+      clearClarificationState,
       cancelPendingReschedule: jest.fn(() => Promise.resolve('cancelled')),
     } as unknown as MessengerAgentService;
 
@@ -176,6 +178,7 @@ describe('MessengerChatProcessorService', () => {
       appendToolSummary,
       reply,
       markClarificationDeliveryFailedForEvent,
+      clearClarificationState,
       cancelPendingReschedule: messengerAgentService.cancelPendingReschedule,
       reserveFreeFormSlot,
       markDelivered,
@@ -923,6 +926,31 @@ describe('MessengerChatProcessorService', () => {
       );
       expect(reserveFreeFormSlot).not.toHaveBeenCalled();
       expect(reply).not.toHaveBeenCalled();
+    });
+
+    it('does not swallow clarification cleanup failures for durable privacy jobs', async () => {
+      const { service, privacyDelete, clearClarificationState } = createService(
+        {
+          withPrivacy: true,
+        },
+      );
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'dong y xoa du lieu nhe!',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-clarification-failure',
+      });
+
+      clearClarificationState.mockRejectedValueOnce(new Error('redis down'));
+      const cleanupState = privacyDelete.mock.calls[0]?.[2] as {
+        clearClarification?: (psid: string) => Promise<void>;
+      };
+
+      await expect(cleanupState.clearClarification!('psid-1')).rejects.toThrow(
+        'redis down',
+      );
     });
 
     it('a linked learner with an unchanged mapping can still confirm', async () => {

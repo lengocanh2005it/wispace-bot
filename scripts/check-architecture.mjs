@@ -67,7 +67,9 @@ const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts|@wispace/wispace-client|PrecreateExerciseApiClient',
   'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts|@wispace/chat-agent|PlatformAgentService',
   'apps/messenger-bot/src/modules/messenger/application/services/chat-history-store-startup.service.ts|../../infrastructure/persistence/chat-history.store.resolver|ChatHistoryStoreResolver',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/database|PrivacyDataService,PrivacyExpectedMapping',
+  // #995: the chat privacy path owns the durable cleanup request and consumes
+  // the shared persistence contract at this application boundary.
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/database|PRIVACY_CLEANUP_STORES,PrivacyDataService,PrivacyExpectedMapping',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|../../infrastructure/adapters/messenger-chat-pipeline-adapters|createMessengerChatPipelineAdapters',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/chat-agent|PlatformChatHistoryService,readChatFlushRetrySettings',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-context.service.ts|../../infrastructure/wispace/wispace-messenger-token-verify.service|WispaceMessengerTokenVerifyService',

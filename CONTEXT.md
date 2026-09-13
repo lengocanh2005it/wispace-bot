@@ -68,6 +68,40 @@ _Avoid_: ref-only linking
 Ops-only flag that allows relinking a PSID to a different WISPACE userId. Webhook linking blocks this change by default.
 _Avoid_: reassign, rebind
 
+**ownership generation**:
+Monotonic version of a platform mapping's ownership. Privacy cleanup is fenced to the generation it actually erased, so a retry cannot clear state belonging to a newer relink.
+_Avoid_: mapping version when referring to ownership fencing
+
+### Privacy & Erasure
+
+**privacy erasure**:
+An operation that removes learner-attributable local data and platform-owned state for an external identity after a privacy request. It is distinct from time-based retention cleanup.
+_Avoid_: purge, best-effort delete
+
+**cleanup outcome**:
+The result of a privacy erasure: `complete` means every applicable state store was cleared; `incomplete` means the database erasure committed but one or more stores remain outstanding.
+_Avoid_: deleted boolean, partial success
+
+**privacy cleanup store**:
+One platform-owned state surface in an erasure plan: `chat_history`, `chat_queue`, `clarification_state`, or `display_name_cache`. Store names describe the data boundary, not the adapter method that clears it.
+_Avoid_: cleanup callback, cache bucket
+
+**privacy cleanup job**:
+A durable work item for retrying one outstanding state-store cleanup for one identity and ownership generation. It remains actionable until the store is cleared or the job is safely retired as stale.
+_Avoid_: retention job, generic cleanup task
+
+**stale cleanup job**:
+A privacy cleanup job that can no longer safely act because the identity's ownership generation changed. It is retired without touching the newer owner's state.
+_Avoid_: failed cleanup, expired request
+
+**privacy conflict**:
+A privacy mutation refused because its expected mapping no longer matches the current owner. It is not a cleanup outcome and does not create a cleanup job.
+_Avoid_: incomplete erasure, retry failure
+
+**applicable state store**:
+A platform-owned store included in the privacy erasure plan for that bot. A store that does not exist on a platform is not applicable; a configured store without a cleanup adapter is a configuration failure.
+_Avoid_: optional purge, cache-only store
+
 ### Study Reminder
 
 **study_reminder_jobs** (DB table):

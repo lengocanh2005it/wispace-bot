@@ -594,6 +594,19 @@ The **outbox table (`study_reminder_jobs`) + cron sync/dispatch** approach suits
 6. **Dedicated queue** (BullMQ, pg_cron by `remind_at`…) — when job/instance count grows significantly.
 7. **Expand channels** — email/push in-app for users not linked to Messenger (if product requires).
 
+### 11.5. Privacy Cleanup Recovery (#995)
+
+Privacy unlink/delete has a durable state-cleanup outbox shared by all three
+bots. The database mutation and one `privacy_cleanup_jobs` row per applicable
+store commit together; request-time adapters get three bounded attempts. A
+request returns HTTP 200 with `status: complete`, or HTTP 202 with an opaque
+`cleanupId` and `outstandingStores` when Redis/state cleanup remains. The
+five-minute own-platform reconciler claims at most 100 jobs with a 60-second
+lease, fences relinks by mapping generation, and retains completed/stale rows
+for seven days. There are no new environment variables. See
+[ADR-0014](../../../docs/adr/0014-privacy-erasure-completion.md) and the
+[fleet verification drill](../../../docs/privacy-erasure-verification.md).
+
 ### 11.6. Worker Dispatch Polling — DB Load Concerns & Risk Mitigation
 
 The dispatch worker (`StudyReminderWorkerService`) runs an **adaptive poll loop** (S2 ✓), no longer a fixed 1-minute cron. Each tick calls `StudyReminderDispatchService.dispatchDueReminders()`, gets `nextDueAt` from `findNextDueTime()`, then `setTimeout` for the next tick.

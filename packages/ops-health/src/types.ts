@@ -35,6 +35,13 @@ export interface StudyReminderOpsSummary {
   [key: string]: unknown;
 }
 
+export interface PrivacyCleanupOpsSummary {
+  pendingCount: number;
+  processingCount: number;
+  retryingCount: number;
+  oldestPendingAgeSeconds: number | null;
+}
+
 export interface CronHeartbeatInfo {
   name: string;
   expectedIntervalMs: number;
@@ -58,6 +65,7 @@ export interface OpsHealthSnapshot {
     deadLetter?: DeadLetterOpsSummary;
     chatQuota?: ChatQuotaOpsSummary;
     studyReminder?: StudyReminderOpsSummary;
+    privacyCleanup?: PrivacyCleanupOpsSummary;
   };
   crons?: Record<string, CronHeartbeatInfo>;
   llm?: {
@@ -81,6 +89,7 @@ export interface OpsHealthRepositoryPort {
   getLlmSafetyWarningsCount(since: Date): Promise<number>;
   getWebhookInboundSummary?(): Promise<WebhookInboundOpsSummary>;
   getDeadLetterSummary?(): Promise<DeadLetterOpsSummary>;
+  getPrivacyCleanupSummary?(): Promise<PrivacyCleanupOpsSummary>;
   isDatabaseReachable?(): Promise<boolean>;
 }
 

@@ -325,6 +325,29 @@ describe('OpsHealthService', () => {
       expect(snapshot.status).toBe('degraded');
     });
 
+    it('surfaces actionable privacy cleanup and escalates old retries', async () => {
+      const repo = mockRepository({
+        getPrivacyCleanupSummary: jest.fn().mockResolvedValue({
+          pendingCount: 1,
+          processingCount: 0,
+          retryingCount: 1,
+          oldestPendingAgeSeconds: 901,
+        }),
+      });
+      const service = new OpsHealthService(repo, mockConfig());
+
+      const snapshot = await service.collectSnapshot();
+
+      expect(snapshot.queues.privacyCleanup?.pendingCount).toBe(1);
+      expect(snapshot.alerts.map((alert) => alert.code)).toEqual(
+        expect.arrayContaining([
+          'PRIVACY_CLEANUP_INCOMPLETE',
+          'PRIVACY_CLEANUP_RECOVERY_STUCK',
+        ]),
+      );
+      expect(snapshot.status).toBe('error');
+    });
+
     it('generates alert and sets status=error when a registered cron is stale', async () => {
       const repo = mockRepository();
       const registry = new CronHeartbeatRegistry();

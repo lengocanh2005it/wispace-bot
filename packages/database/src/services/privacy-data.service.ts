@@ -12,7 +12,16 @@ import {
   acquireStudyReminderOwnershipMutationLock,
 } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { jitteredDelayMs, sleep } from '@wispace/bot-common/utils';
 import type { Platform } from '@wispace/contracts';
+import {
+  PRIVACY_CLEANUP_REQUEST_ATTEMPTS,
+  PRIVACY_CLEANUP_STORES,
+  PrivacyCleanupJobStore,
+  type PrivacyCleanupJobRef,
+  type PrivacyCleanupStore,
+} from './privacy-cleanup-job.service';
+import { PrivacyCleanupJobEntity } from '../entities/privacy-cleanup-job.entity';
 
 /**
  * Per-call Redis/state cleanup callbacks, wired by each app's ops controller.
@@ -21,11 +30,20 @@ import type { Platform } from '@wispace/contracts';
  * privacy/delete endpoint (#537).
  */
 export interface PrivacyStateCleanup {
+  /** The adapter's platform boundary; cross-platform ids are never accepted. */
+  platform?: Platform;
+  /** Explicitly configured stores. Omitted only for legacy direct callers. */
+  applicableStores?: readonly PrivacyCleanupStore[];
   clearHistory?: (externalUserId: string) => Promise<void>;
   clearQueuedWork?: (externalUserId: string) => Promise<void>;
   clearClarification?: (externalUserId: string) => Promise<void>;
   /** Clears internal-userId-keyed caches (e.g. display-name cache). */
   clearUserCache?: (userId: number) => Promise<void>;
+  /** Low-cardinality request/worker telemetry hook. */
+  onAttempt?: (
+    store: PrivacyCleanupStore,
+    outcome: 'success' | 'failure' | 'stale' | 'skipped',
+  ) => void;
 }
 
 /** Entity classes/schemas only; string targets would recreate implicit lookup. */
@@ -89,10 +107,24 @@ export interface PrivacyEntityRegistry {
 export interface PrivacyUnlinkResult {
   /** Whether a mapping was actually deleted (false = already unlinked). */
   deleted: boolean;
+  /** Authoritative database mutation boolean for unlink callers. */
+  unlinked?: boolean;
   /** The WISPACE userId that was unlinked (for logging/audit). */
   userId?: number;
   /** True when the mapping changed since it was captured — action refused. */
   conflict?: boolean;
+  status?: 'complete' | 'incomplete';
+  cleanupId?: string;
+  outstandingStores?: PrivacyCleanupStore[];
+}
+
+export interface PrivacyDeleteResult {
+  deleted: boolean;
+  userId?: number;
+  conflict?: boolean;
+  status: 'complete' | 'incomplete';
+  cleanupId?: string;
+  outstandingStores: PrivacyCleanupStore[];
 }
 
 /** Identity snapshot captured before a chat privacy confirmation. */
@@ -115,6 +147,57 @@ export interface PrivacyExportData {
   scheduledReportClaims: number;
   reportSendJobs: number;
   messageLogs: number;
+}
+
+/**
+ * Check the ownership fence immediately before a state-store action. A job
+ * may outlive the mapping row, so an active owner always wins over replay.
+ */
+export async function isPrivacyCleanupGenerationCurrent(
+  dataSource: Pick<DataSource, 'query'>,
+  platform: Platform,
+  externalUserId: string,
+  mappingGeneration: string,
+): Promise<boolean> {
+  if (typeof dataSource.query !== 'function') {
+    throw new Error('privacy cleanup generation fence unavailable');
+  }
+  const mappingTableName = MAPPING_TABLES[platform];
+  if (!mappingTableName) {
+    throw new Error(`Unknown platform: ${platform}`);
+  }
+  const mappingRows = (await dataSource.query(
+    `SELECT mapping_generation, link_state
+       FROM "${mappingTableName}"
+      WHERE platform = $1 AND external_user_id = $2`,
+    [platform, externalUserId],
+  )) as Array<{ mapping_generation?: string | number; link_state?: string }>;
+  const mapping = mappingRows[0];
+  if (mapping) {
+    if (
+      mapping.link_state !== 'locally-unlinked' &&
+      mapping.link_state !== 'confirmed-revoked'
+    ) {
+      // Unknown/temporarily-unknown states fail closed: a live owner must
+      // never lose state to an older cleanup job.
+      return false;
+    }
+    return sameOrOlderGeneration(mappingGeneration, mapping.mapping_generation);
+  }
+
+  const auditRows = (await dataSource.query(
+    `SELECT mapping_generation
+       FROM platform_link_audit_events
+      WHERE platform = $1
+        AND external_user_hash = $2
+        AND event_type = 'locally_unlinked'
+      ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [platform, createHash('sha256').update(externalUserId).digest('hex')],
+  )) as Array<{ mapping_generation?: string | number }>;
+  const latest = auditRows[0]?.mapping_generation;
+  return latest === undefined
+    ? true
+    : sameOrOlderGeneration(mappingGeneration, latest);
 }
 
 const PLATFORMS = [
@@ -158,6 +241,7 @@ export class PrivacyDataService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly registry: PrivacyEntityRegistry,
+    private readonly cleanupJobs = new PrivacyCleanupJobStore(dataSource),
   ) {
     if (!registry) {
       throw new Error(
@@ -207,6 +291,7 @@ export class PrivacyDataService {
           ],
       ),
       ['messageLog', this.registry.messageLog],
+      ['privacyCleanupJobs', PrivacyCleanupJobEntity],
     ];
     const missing = required
       .filter(
@@ -235,6 +320,9 @@ export class PrivacyDataService {
     expectedMapping?: PrivacyExpectedMapping,
   ): Promise<PrivacyUnlinkResult> {
     const currentPlatform = this.assertCurrentPlatform(platform);
+    const durableCleanup = isDurableCleanup(cleanup);
+    if (durableCleanup)
+      this.assertCleanupConfiguration(currentPlatform, cleanup!);
     const repo = this.getMappingRepo(currentPlatform);
     const initialMapping = await repo.findOne({
       where: { platform: currentPlatform, externalUserId },
@@ -243,16 +331,18 @@ export class PrivacyDataService {
       expectedMapping &&
       !mappingMatchesExpected(initialMapping, expectedMapping)
     ) {
-      return { deleted: false };
+      return durableCleanup
+        ? { deleted: false, unlinked: false, conflict: true }
+        : { deleted: false };
     }
-    if (!expectedMapping && initialMapping) {
+    if (!durableCleanup && !expectedMapping && initialMapping) {
       const userId = readMappingUserId(initialMapping);
       const currentState = (initialMapping as { linkState?: string }).linkState;
       if (
         currentState === 'locally-unlinked' ||
         currentState === 'confirmed-revoked'
       ) {
-        await this.runCleanup(externalUserId, cleanup, userId);
+        await this.runLegacyCleanup(externalUserId, cleanup, userId);
         return { deleted: false, userId };
       }
     }
@@ -261,6 +351,8 @@ export class PrivacyDataService {
     let conflict = false;
     let deleted = false;
     let userId: number | undefined;
+    let cleanupGeneration = '1';
+    let cleanupRefs: PrivacyCleanupJobRef[] = [];
 
     await this.dataSource.transaction(async (manager) => {
       await acquireStudyReminderOwnershipMutationLock(manager);
@@ -285,7 +377,7 @@ export class PrivacyDataService {
       }
 
       if (!mapping) {
-        const generation = await nextLocalUnlinkGeneration(
+        const generation = await currentLocalUnlinkGeneration(
           manager,
           currentPlatform,
           externalUserId,
@@ -296,6 +388,7 @@ export class PrivacyDataService {
           externalUserId,
           generation,
         );
+        cleanupGeneration = generation;
         await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
         await manager.query(
           `DELETE FROM learner_profiles
@@ -303,6 +396,15 @@ export class PrivacyDataService {
           [currentPlatform, externalUserId],
         );
         await deleteVerifyIntent(manager, currentPlatform, externalUserId);
+        if (durableCleanup) {
+          cleanupRefs = await this.enqueueCleanupJobs(manager, {
+            operation: 'unlink',
+            platform: currentPlatform,
+            externalUserId,
+            mappingGeneration: cleanupGeneration,
+            cleanup: cleanup!,
+          });
+        }
         return;
       }
 
@@ -313,6 +415,20 @@ export class PrivacyDataService {
         currentState === 'locally-unlinked' ||
         currentState === 'confirmed-revoked'
       ) {
+        cleanupGeneration = String(
+          (mapping as unknown as { mappingGeneration?: string })
+            .mappingGeneration ?? '1',
+        );
+        if (durableCleanup) {
+          cleanupRefs = await this.enqueueCleanupJobs(manager, {
+            operation: 'unlink',
+            platform: currentPlatform,
+            externalUserId,
+            userId,
+            mappingGeneration: cleanupGeneration,
+            cleanup: cleanup!,
+          });
+        }
         return;
       }
       const generation = String(
@@ -321,6 +437,7 @@ export class PrivacyDataService {
             .mappingGeneration ?? '1',
         ) + 1n,
       );
+      cleanupGeneration = generation;
       await writeLocalUnlinkAudit(
         manager,
         currentPlatform,
@@ -346,13 +463,43 @@ export class PrivacyDataService {
         [currentPlatform, externalUserId],
       );
       await deleteVerifyIntent(manager, currentPlatform, externalUserId);
+      if (durableCleanup) {
+        cleanupRefs = await this.enqueueCleanupJobs(manager, {
+          operation: 'unlink',
+          platform: currentPlatform,
+          externalUserId,
+          userId,
+          mappingGeneration: cleanupGeneration,
+          cleanup: cleanup!,
+        });
+      }
       deleted = true;
     });
 
-    if (conflict) return { deleted: false, conflict: true };
-    await this.runCleanup(externalUserId, cleanup, userId);
+    if (conflict) {
+      return durableCleanup
+        ? { deleted: false, unlinked: false, conflict: true }
+        : { deleted: false, conflict: true };
+    }
+    if (!durableCleanup) {
+      await this.runLegacyCleanup(externalUserId, cleanup, userId);
+      return { deleted, userId };
+    }
 
-    return { deleted, userId };
+    const outcome = await this.executeCleanup(
+      cleanupRefs,
+      cleanup!,
+      externalUserId,
+      userId,
+      currentPlatform,
+      cleanupGeneration,
+    );
+    return {
+      deleted,
+      unlinked: deleted,
+      userId,
+      ...outcome,
+    };
   }
 
   /**
@@ -362,7 +509,8 @@ export class PrivacyDataService {
    *    a. Look up + remove the platform mapping (returns userId for cross-platform delete)
    *    b. Delete all other platform mappings by userId
    *    c. Delete all userId-scoped local records
-   * 2. Clear Redis chat history (outside transaction — best-effort, idempotent)
+   * 2. Enqueue and execute own-platform state cleanup outside the transaction;
+   *    durable callers receive an explicit completion outcome.
    *
    * Idempotent — safe to call multiple times. Returns without error if
    * the user was already deleted.
@@ -372,11 +520,17 @@ export class PrivacyDataService {
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
     expectedMapping?: PrivacyExpectedMapping,
-  ): Promise<boolean | void> {
+  ): Promise<PrivacyDeleteResult | boolean | void> {
     const currentPlatform = this.assertCurrentPlatform(platform);
+    const durableCleanup = isDurableCleanup(cleanup);
+    if (durableCleanup)
+      this.assertCleanupConfiguration(currentPlatform, cleanup!);
     // 1. Atomic transaction: mapping removal + all userId-scoped deletes
     let userId: number | undefined;
     let conflict = false;
+    let deleted = false;
+    let cleanupGeneration = '1';
+    let cleanupRefs: PrivacyCleanupJobRef[] = [];
     const cleanupExternalIds = new Set<string>([externalUserId]);
 
     await this.dataSource.transaction(async (manager) => {
@@ -404,7 +558,11 @@ export class PrivacyDataService {
         return;
       }
       if (mapping) {
-        userId = (mapping as unknown as { userId?: number }).userId;
+        userId = readMappingUserId(mapping);
+        cleanupGeneration = String(
+          (mapping as unknown as { mappingGeneration?: string })
+            .mappingGeneration ?? '1',
+        );
         await writeLocalUnlinkAudit(
           mockableQueryManager(manager),
           currentPlatform,
@@ -414,6 +572,15 @@ export class PrivacyDataService {
         );
         await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
         await mappingRepo.remove(mapping);
+        deleted = true;
+      } else if (durableCleanup) {
+        // Preserve the latest tombstone generation when the mapping is already
+        // absent; otherwise a delete retry could be fenced stale forever.
+        cleanupGeneration = await currentLocalUnlinkGeneration(
+          manager,
+          currentPlatform,
+          externalUserId,
+        );
       }
 
       // 1b. Delete mappings for OTHER platforms if userId is known
@@ -517,17 +684,54 @@ export class PrivacyDataService {
           .delete({ userId: uid });
       }
       await deleteVerifyIntent(manager, currentPlatform, externalUserId);
+      if (durableCleanup) {
+        cleanupRefs = await this.enqueueCleanupJobs(manager, {
+          operation: 'delete',
+          platform: currentPlatform,
+          externalUserId,
+          userId,
+          mappingGeneration: cleanupGeneration,
+          cleanup: cleanup!,
+        });
+      }
     });
 
-    if (conflict) return false;
+    if (conflict) {
+      return durableCleanup
+        ? {
+            deleted: false,
+            conflict: true,
+            status: 'complete',
+            outstandingStores: [],
+          }
+        : false;
+    }
 
-    // 2. Redis cleanup — outside transaction, best-effort, idempotent.
-    //    Each bot clears its own platform's keys via per-call callbacks.
-    //    Cross-platform Redis erasure requires calling each bot's endpoint.
-    await Promise.all(
-      [...cleanupExternalIds].map((id) => this.runCleanup(id, cleanup, userId)),
+    if (!durableCleanup) {
+      // Legacy direct callers may still supply a callback without the explicit
+      // adapter boundary. Keep their historical cross-platform fan-out until
+      // all callers use the durable contract.
+      await Promise.all(
+        [...cleanupExternalIds].map((id) =>
+          this.runLegacyCleanup(id, cleanup, userId),
+        ),
+      );
+      return expectedMapping ? true : undefined;
+    }
+
+    const outcome = await this.executeCleanup(
+      cleanupRefs,
+      cleanup!,
+      externalUserId,
+      userId,
+      currentPlatform,
+      cleanupGeneration,
     );
-    return expectedMapping ? true : undefined;
+    return {
+      deleted,
+      userId,
+      ...outcome,
+    };
   }
 
   /**
@@ -623,7 +827,7 @@ export class PrivacyDataService {
       : readExport();
   }
 
-  private async runCleanup(
+  private async runLegacyCleanup(
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
     userId?: number,
@@ -656,6 +860,184 @@ export class PrivacyDataService {
       }),
     );
   }
+
+  private assertCleanupConfiguration(
+    platform: Platform,
+    cleanup: PrivacyStateCleanup,
+  ): void {
+    if (cleanup.platform && cleanup.platform !== platform) {
+      throw new Error(
+        `Privacy cleanup adapter is configured for ${cleanup.platform}, not ${platform}`,
+      );
+    }
+    const stores =
+      cleanup.applicableStores ??
+      (cleanup.platform
+        ? DEFAULT_CLEANUP_STORES_BY_PLATFORM[cleanup.platform]
+        : inferCleanupStores(cleanup));
+    for (const store of stores) {
+      if (!hasPrivacyCleanupAdapter(cleanup, store)) {
+        throw new Error(
+          `Privacy cleanup adapter missing for configured store: ${store}`,
+        );
+      }
+    }
+  }
+
+  private async enqueueCleanupJobs(
+    manager: Pick<EntityManager, 'query'>,
+    input: {
+      operation: 'unlink' | 'delete';
+      platform: Platform;
+      externalUserId: string;
+      userId?: number;
+      mappingGeneration: string;
+      cleanup: PrivacyStateCleanup;
+    },
+  ): Promise<PrivacyCleanupJobRef[]> {
+    const stores = applicableCleanupStores(input.cleanup, input.userId);
+    if (stores.length === 0) return [];
+    return this.cleanupJobs.enqueue(manager, {
+      operation: input.operation,
+      platform: input.platform,
+      externalUserId: input.externalUserId,
+      ...(input.userId === undefined ? {} : { userId: input.userId }),
+      mappingGeneration: input.mappingGeneration,
+      stores,
+    });
+  }
+
+  private async executeCleanup(
+    refs: PrivacyCleanupJobRef[],
+    cleanup: PrivacyStateCleanup,
+    externalUserId: string,
+    userId?: number,
+    platform = this.registry.platform,
+    mappingGeneration = '1',
+  ): Promise<{
+    status: 'complete' | 'incomplete';
+    cleanupId?: string;
+    outstandingStores: PrivacyCleanupStore[];
+  }> {
+    if (refs.length === 0) {
+      return { status: 'complete', outstandingStores: [] };
+    }
+
+    const cleanupId = refs[0].cleanupId;
+    let existing: Awaited<ReturnType<PrivacyCleanupJobStore['getByCleanupId']>>;
+    try {
+      existing = await this.cleanupJobs.getByCleanupId(
+        cleanupId,
+        cleanup.platform ?? this.registry.platform,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Privacy cleanup status unavailable: ${errorMessage(error, { externalUserId, maxChars: 160 })}`,
+      );
+      return {
+        status: 'incomplete',
+        cleanupId,
+        outstandingStores: refs.map((ref) => ref.store),
+      };
+    }
+    const statuses = new Map(existing.map((row) => [row.store, row]));
+
+    await Promise.all(
+      refs.map(async (ref) => {
+        const row = statuses.get(ref.store);
+        if (row?.status === 'completed' || row?.status === 'stale') {
+          cleanup.onAttempt?.(ref.store, 'skipped');
+          return;
+        }
+        const action = privacyCleanupCallbackForStore(
+          cleanup,
+          ref.store,
+          externalUserId,
+          userId,
+        );
+        if (!action) {
+          throw new Error(
+            `Privacy cleanup adapter missing for configured store: ${ref.store}`,
+          );
+        }
+        let attemptCount = row?.attemptCount ?? ref.attemptCount ?? 0;
+        for (
+          let attempt = 0;
+          attempt < PRIVACY_CLEANUP_REQUEST_ATTEMPTS;
+          attempt += 1
+        ) {
+          try {
+            // Re-check immediately before every adapter call. Relinking may
+            // happen after a failed attempt while this request is still alive.
+            if (
+              !(await isPrivacyCleanupGenerationCurrent(
+                this.dataSource,
+                platform,
+                externalUserId,
+                mappingGeneration,
+              ))
+            ) {
+              await this.cleanupJobs.markStale(ref);
+              cleanup.onAttempt?.(ref.store, 'stale');
+              return;
+            }
+            await action();
+            await this.cleanupJobs.markCompleted(ref);
+            cleanup.onAttempt?.(ref.store, 'success');
+            return;
+          } catch (error) {
+            cleanup.onAttempt?.(ref.store, 'failure');
+            try {
+              await this.cleanupJobs.markFailure(
+                { ...ref, attemptCount },
+                errorMessage(error, {
+                  externalUserId,
+                  maxChars: 160,
+                }),
+              );
+            } catch (persistError) {
+              this.logger.warn(
+                `Privacy cleanup retry state unavailable: ${errorMessage(persistError, { externalUserId, maxChars: 160 })}`,
+              );
+            }
+            attemptCount += 1;
+            if (attempt + 1 < PRIVACY_CLEANUP_REQUEST_ATTEMPTS) {
+              await sleep(jitteredDelayMs(50 * 2 ** attempt));
+            }
+          }
+        }
+      }),
+    );
+
+    let after: Awaited<ReturnType<PrivacyCleanupJobStore['getByCleanupId']>>;
+    try {
+      after = await this.cleanupJobs.getByCleanupId(
+        cleanupId,
+        cleanup.platform ?? this.registry.platform,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Privacy cleanup status unavailable: ${errorMessage(error, { externalUserId, maxChars: 160 })}`,
+      );
+      return {
+        status: 'incomplete',
+        cleanupId,
+        outstandingStores: refs.map((ref) => ref.store),
+      };
+    }
+    const afterByKey = new Map(
+      after.map((row) => [row.idempotencyKey, row] as const),
+    );
+    const outstandingStores = refs
+      .filter((ref) => {
+        const row = afterByKey.get(ref.idempotencyKey);
+        return !row || (row.status !== 'completed' && row.status !== 'stale');
+      })
+      .map((ref) => ref.store);
+    return outstandingStores.length > 0
+      ? { status: 'incomplete', cleanupId, outstandingStores }
+      : { status: 'complete', outstandingStores: [] };
+  }
 }
 
 function readMappingUserId(
@@ -664,6 +1046,85 @@ function readMappingUserId(
   const userId = (mapping as { userId?: number | null } | null | undefined)
     ?.userId;
   return typeof userId === 'number' ? userId : undefined;
+}
+
+const DEFAULT_CLEANUP_STORES_BY_PLATFORM: Record<
+  Platform,
+  readonly PrivacyCleanupStore[]
+> = {
+  messenger: PRIVACY_CLEANUP_STORES,
+  discord: PRIVACY_CLEANUP_STORES.filter(
+    (store) => store !== 'display_name_cache',
+  ),
+  zalo: PRIVACY_CLEANUP_STORES.filter(
+    (store) => store !== 'display_name_cache',
+  ),
+};
+
+function isDurableCleanup(cleanup?: PrivacyStateCleanup): boolean {
+  return Boolean(cleanup?.platform || cleanup?.applicableStores);
+}
+
+function inferCleanupStores(
+  cleanup: PrivacyStateCleanup,
+): readonly PrivacyCleanupStore[] {
+  return PRIVACY_CLEANUP_STORES.filter((store) =>
+    Boolean(privacyCleanupCallbackForStore(cleanup, store)),
+  );
+}
+
+function applicableCleanupStores(
+  cleanup: PrivacyStateCleanup,
+  userId?: number,
+): PrivacyCleanupStore[] {
+  const configured =
+    cleanup.applicableStores ??
+    DEFAULT_CLEANUP_STORES_BY_PLATFORM[cleanup.platform ?? 'messenger'];
+  return [...new Set(configured)].filter(
+    (store) => store !== 'display_name_cache' || userId !== undefined,
+  );
+}
+
+export function privacyCleanupCallbackForStore(
+  cleanup: PrivacyStateCleanup,
+  store: PrivacyCleanupStore,
+  externalUserId = '',
+  userId?: number,
+): (() => Promise<void>) | undefined {
+  switch (store) {
+    case 'chat_history':
+      return cleanup.clearHistory
+        ? () => cleanup.clearHistory!(externalUserId)
+        : undefined;
+    case 'chat_queue':
+      return cleanup.clearQueuedWork
+        ? () => cleanup.clearQueuedWork!(externalUserId)
+        : undefined;
+    case 'clarification_state':
+      return cleanup.clearClarification
+        ? () => cleanup.clearClarification!(externalUserId)
+        : undefined;
+    case 'display_name_cache':
+      return cleanup.clearUserCache && userId !== undefined
+        ? () => cleanup.clearUserCache!(userId ?? 0)
+        : undefined;
+  }
+}
+
+export function hasPrivacyCleanupAdapter(
+  cleanup: PrivacyStateCleanup,
+  store: PrivacyCleanupStore,
+): boolean {
+  switch (store) {
+    case 'chat_history':
+      return typeof cleanup.clearHistory === 'function';
+    case 'chat_queue':
+      return typeof cleanup.clearQueuedWork === 'function';
+    case 'clarification_state':
+      return typeof cleanup.clearClarification === 'function';
+    case 'display_name_cache':
+      return typeof cleanup.clearUserCache === 'function';
+  }
 }
 
 function mappingMatchesExpected(
@@ -714,7 +1175,7 @@ async function writeLocalUnlinkAudit(
   );
 }
 
-async function nextLocalUnlinkGeneration(
+async function currentLocalUnlinkGeneration(
   manager: unknown,
   platform: Platform,
   externalUserId: string,
@@ -732,7 +1193,7 @@ async function nextLocalUnlinkGeneration(
   const previous = rows[0]?.mapping_generation;
   if (!previous) return '1';
   try {
-    return String(BigInt(previous) + 1n);
+    return String(BigInt(previous));
   } catch {
     throw new Error('invalid mapping generation tombstone');
   }
@@ -792,6 +1253,18 @@ function targetName(target: PrivacyEntityTarget | undefined): string {
     options?: { name?: string };
   };
   return candidate.name ?? candidate.options?.name ?? String(target);
+}
+
+function sameOrOlderGeneration(
+  jobGeneration: string,
+  currentGeneration: string | number | undefined,
+): boolean {
+  if (currentGeneration === undefined) return true;
+  try {
+    return BigInt(jobGeneration) >= BigInt(String(currentGeneration));
+  } catch {
+    return false;
+  }
 }
 
 async function deleteVerifyIntent(

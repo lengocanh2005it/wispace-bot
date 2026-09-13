@@ -51,4 +51,76 @@ describe('DiscordOpsController ops clarification recovery', () => {
     );
     expect(result).toBeUndefined();
   });
+
+  it.each([
+    ['unlinkUser', 'unlink', 'unlinked'],
+    ['deleteUser', 'delete', 'deleted'],
+  ] as const)(
+    'forwards the %s durable outcome and maps incomplete/conflict statuses',
+    async (method, operation, mutationKey) => {
+      const privacyService = {
+        unlink: jest.fn().mockResolvedValue({
+          [mutationKey]: true,
+          status: 'incomplete',
+          cleanupId: 'opaque-discord-cleanup',
+          outstandingStores: ['chat_history'],
+        }),
+        delete: jest.fn().mockResolvedValue({
+          [mutationKey]: true,
+          status: 'incomplete',
+          cleanupId: 'opaque-discord-cleanup',
+          outstandingStores: ['chat_history'],
+        }),
+        export: jest.fn(),
+      };
+      const historyService = { clear: jest.fn() };
+      const queueService = { clear: jest.fn() };
+      const clarificationAgent = {
+        clearClarificationState: jest.fn(),
+      };
+      const controller = new DiscordOpsController(
+        { sendScheduledReports: jest.fn() } as never,
+        { syncUpcomingSessions: jest.fn() } as never,
+        {} as never,
+        privacyService as never,
+        clarificationAgent as never,
+        historyService as never,
+        queueService as never,
+      );
+      const response = { status: jest.fn() };
+
+      const incomplete = await controller[method](
+        { externalUserId: 'discord-user-123' },
+        response,
+      );
+
+      expect(response.status).toHaveBeenCalledWith(202);
+      expect(incomplete).toMatchObject({
+        status: 'incomplete',
+        cleanupId: 'opaque-discord-cleanup',
+      });
+      expect(privacyService[operation]).toHaveBeenCalledWith(
+        'discord',
+        'discord-user-123',
+        expect.objectContaining({
+          platform: 'discord',
+          applicableStores: [
+            'chat_history',
+            'chat_queue',
+            'clarification_state',
+          ],
+        }),
+      );
+
+      privacyService[operation].mockResolvedValueOnce({
+        [mutationKey]: false,
+        conflict: true,
+      });
+      await controller[method](
+        { externalUserId: 'discord-user-123' },
+        response,
+      );
+      expect(response.status).toHaveBeenLastCalledWith(409);
+    },
+  );
 });

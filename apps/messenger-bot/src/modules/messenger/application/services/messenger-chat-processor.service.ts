@@ -43,6 +43,7 @@ import {
 } from '@messenger/shared/utils/messenger-text.utils';
 import { PrivacyStateService } from '@wispace/llm-agent';
 import {
+  PRIVACY_CLEANUP_STORES,
   PrivacyDataService,
   type PrivacyExpectedMapping,
 } from '@wispace/database';
@@ -618,19 +619,35 @@ export class MessengerChatProcessorService {
             'messenger',
             psid,
             {
+              platform: 'messenger',
+              applicableStores: PRIVACY_CLEANUP_STORES,
               clearHistory: (id) => this.historyService.clear(id),
               clearQueuedWork: (id) => this.clearQueuedWork(id),
-              clearClarification: (id) => this.clearClarificationState(id),
-              clearUserCache: (userId) =>
-                this.displayNameCache?.del(userId) ?? Promise.resolve(),
+              clearClarification: (id) =>
+                this.clearClarificationStateForPrivacy(id),
+              ...(this.displayNameCache
+                ? {
+                    clearUserCache: (id: number) =>
+                      this.displayNameCache!.del(id),
+                  }
+                : {}),
+              onAttempt: (store, outcome) =>
+                this.metrics.incPrivacyCleanupAttempt(
+                  'messenger',
+                  'unlink',
+                  store,
+                  outcome,
+                ),
             },
             expectedMapping,
           );
           resultMessage = result.conflict
             ? 'Liên kết đã thay đổi. Vui lòng gửi lại yêu cầu.'
-            : result.deleted
-              ? 'Đã ngắt kết nối tài khoản thành công.'
-              : 'Tài khoản chưa được liên kết.';
+            : result.status === 'incomplete'
+              ? 'Đã ghi nhận yêu cầu ngắt liên kết. Một số trạng thái nền sẽ được dọn tiếp.'
+              : result.deleted
+                ? 'Đã ngắt kết nối tài khoản thành công.'
+                : 'Tài khoản chưa được liên kết.';
           break;
         }
         case 'delete': {
@@ -638,18 +655,36 @@ export class MessengerChatProcessorService {
             'messenger',
             psid,
             {
+              platform: 'messenger',
+              applicableStores: PRIVACY_CLEANUP_STORES,
               clearHistory: (id) => this.historyService.clear(id),
               clearQueuedWork: (id) => this.clearQueuedWork(id),
-              clearClarification: (id) => this.clearClarificationState(id),
-              clearUserCache: (userId) =>
-                this.displayNameCache?.del(userId) ?? Promise.resolve(),
+              clearClarification: (id) =>
+                this.clearClarificationStateForPrivacy(id),
+              ...(this.displayNameCache
+                ? {
+                    clearUserCache: (id: number) =>
+                      this.displayNameCache!.del(id),
+                  }
+                : {}),
+              onAttempt: (store, outcome) =>
+                this.metrics.incPrivacyCleanupAttempt(
+                  'messenger',
+                  'delete',
+                  store,
+                  outcome,
+                ),
             },
             expectedMapping,
           );
+          const deleteResult =
+            deleted && typeof deleted === 'object' ? deleted : undefined;
           resultMessage =
-            deleted === false
+            deleted === false || deleteResult?.conflict
               ? 'Liên kết đã thay đổi. Vui lòng gửi lại yêu cầu.'
-              : 'Đã xóa toàn bộ dữ liệu thành công.';
+              : deleteResult?.status === 'incomplete'
+                ? 'Đã ghi nhận yêu cầu xóa. Một số trạng thái nền sẽ được dọn tiếp.'
+                : 'Đã xóa toàn bộ dữ liệu thành công.';
           break;
         }
         case 'export': {
@@ -739,6 +774,14 @@ export class MessengerChatProcessorService {
         )}: ${maskExternalIdInText(errorMessage(error), psid)}`,
       );
     }
+  }
+
+  private async clearClarificationStateForPrivacy(psid: string): Promise<void> {
+    const clearer = this.messengerAgentService.clearClarificationState;
+    if (typeof clearer !== 'function') {
+      throw new Error('Clarification state cleanup is unavailable');
+    }
+    await clearer.call(this.messengerAgentService, psid);
   }
 
   private async deliverOptionalChatExtras(params: {

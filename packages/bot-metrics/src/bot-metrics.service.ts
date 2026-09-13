@@ -160,6 +160,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private redisConsistencyDrift: Gauge;
   private redisConsistencyEvents: Counter;
   private platformLinkTransitions: Counter;
+  private privacyCleanupAttempts: Counter;
+  private privacyCleanupPending: Gauge<string>;
+  private privacyCleanupPendingAge: Gauge<string>;
   private dataQualityCheckStatus: Gauge;
   private dataQualityRuns: Counter;
   private dataQualityFailures: Counter;
@@ -518,6 +521,24 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_platform_link_transition_total`,
       help: 'Canonical platform-link ownership transitions',
       labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+    this.privacyCleanupAttempts = new Counter({
+      name: `${this.prefix}_privacy_cleanup_attempts_total`,
+      help: 'Durable privacy state cleanup attempts by bounded store labels',
+      labelNames: ['platform', 'operation', 'store', 'outcome'],
+      registers: [this.registry],
+    });
+    this.privacyCleanupPending = new Gauge({
+      name: `${this.prefix}_privacy_cleanup_pending_jobs`,
+      help: 'Pending or processing durable privacy cleanup jobs',
+      labelNames: ['platform'],
+      registers: [this.registry],
+    });
+    this.privacyCleanupPendingAge = new Gauge({
+      name: `${this.prefix}_privacy_cleanup_pending_job_age_seconds`,
+      help: 'Age of the oldest pending durable privacy cleanup job',
+      labelNames: ['platform'],
       registers: [this.registry],
     });
     this.dataQualityCheckStatus = new Gauge({
@@ -992,6 +1013,30 @@ export class BotMetricsService implements OnModuleDestroy {
     count = 1,
   ): void {
     this.platformLinkTransitions.inc({ platform, outcome }, count);
+  }
+
+  incPrivacyCleanupAttempt(
+    platform: string,
+    operation: string,
+    store: string,
+    outcome: string,
+  ): void {
+    this.privacyCleanupAttempts.inc({ platform, operation, store, outcome });
+  }
+
+  setPrivacyCleanupPending(
+    platform: string,
+    count: number,
+    oldestAgeSeconds: number | null,
+  ): void {
+    this.privacyCleanupPending.set(
+      { platform },
+      Math.max(0, Math.floor(count)),
+    );
+    this.privacyCleanupPendingAge.set(
+      { platform },
+      oldestAgeSeconds === null ? 0 : Math.max(0, oldestAgeSeconds),
+    );
   }
 
   setDataQualityCheckStatus(check: string, status: 'pass' | 'fail'): void {
