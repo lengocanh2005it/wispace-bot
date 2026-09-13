@@ -64,6 +64,17 @@ const BLOCKED_EXACT_KEYS = new Set([
   'DYLD_LIBRARY_PATH',
 ]);
 
+// Host backup credentials are fetched separately by the deployment workflow;
+// they must never become part of a bot container's runtime environment.
+const HOST_ONLY_BACKUP_KEYS = new Set([
+  'BACKUP_ENCRYPTION_PASSPHRASE',
+  'OFFSITE_S3_ENDPOINT',
+  'OFFSITE_S3_BUCKET',
+  'OFFSITE_S3_ACCESS_KEY',
+  'OFFSITE_S3_SECRET_KEY',
+  'OFFSITE_S3_REGION',
+]);
+
 const defaultLogger = new Logger('VaultSecrets');
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -409,6 +420,18 @@ function mergeSecrets(
   return merged;
 }
 
+function filterHostOnlyBackupSecrets(
+  secrets: Record<string, string>,
+): Record<string, string> {
+  const runtimeSecrets = Object.create(null) as Record<string, string>;
+  for (const [key, value] of Object.entries(secrets)) {
+    if (!HOST_ONLY_BACKUP_KEYS.has(key)) {
+      runtimeSecrets[key] = value;
+    }
+  }
+  return runtimeSecrets;
+}
+
 export async function loadVaultSecrets(
   options: VaultSecretsLoaderOptions,
 ): Promise<void> {
@@ -490,7 +513,11 @@ export async function loadVaultSecrets(
       limits.maxKeys,
       limits.maxValueBytes,
     );
-    const merged = mergeSecrets(shared, application, sharedOverrideKeys);
+    const merged = mergeSecrets(
+      filterHostOnlyBackupSecrets(shared),
+      filterHostOnlyBackupSecrets(application),
+      sharedOverrideKeys,
+    );
 
     for (const [key, value] of Object.entries(merged)) {
       env[key] = value;

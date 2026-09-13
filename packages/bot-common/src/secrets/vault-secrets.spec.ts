@@ -285,6 +285,59 @@ describe('loadVaultSecrets', () => {
     expect(env.DUPLICATE_KEY).toBeUndefined();
   });
 
+  it.each(['messenger', 'discord', 'zalo'] as VaultApplication[])(
+    'does not inject host-only backup secrets for %s',
+    async (application) => {
+      const env = productionEnvironment();
+      const fetchImpl = jest.fn() as jest.MockedFunction<typeof fetch>;
+      fetchImpl
+        .mockResolvedValueOnce(
+          vaultResponse({ auth: { client_token: 'client-token-for-test' } }),
+        )
+        .mockResolvedValueOnce(
+          vaultResponse({
+            data: {
+              data: {
+                SHARED_SETTING: 'shared-value',
+                BACKUP_ENCRYPTION_PASSPHRASE: 'host-only-shared',
+                OFFSITE_S3_ENDPOINT: 'https://s3.example.test',
+                OFFSITE_S3_BUCKET: 'bucket',
+                OFFSITE_S3_ACCESS_KEY: 'access',
+                OFFSITE_S3_SECRET_KEY: 'secret',
+                OFFSITE_S3_REGION: 'us-east-1',
+              },
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          vaultResponse({
+            data: {
+              data: {
+                APP_SETTING: `${application}-value`,
+                BACKUP_ENCRYPTION_PASSPHRASE: 'host-only-application',
+              },
+            },
+          }),
+        );
+
+      await loadVaultSecrets({
+        application,
+        env,
+        fetchImpl,
+        logger: mockLogger(),
+      });
+
+      expect(env.SHARED_SETTING).toBe('shared-value');
+      expect(env.APP_SETTING).toBe(`${application}-value`);
+      expect(env.BACKUP_ENCRYPTION_PASSPHRASE).toBeUndefined();
+      expect(env.OFFSITE_S3_ENDPOINT).toBeUndefined();
+      expect(env.OFFSITE_S3_BUCKET).toBeUndefined();
+      expect(env.OFFSITE_S3_ACCESS_KEY).toBeUndefined();
+      expect(env.OFFSITE_S3_SECRET_KEY).toBeUndefined();
+      expect(env.OFFSITE_S3_REGION).toBeUndefined();
+    },
+  );
+
   it('rejects malformed and non-string secret values before injection', async () => {
     const env = productionEnvironment();
     const fetchImpl = jest.fn() as jest.MockedFunction<typeof fetch>;
