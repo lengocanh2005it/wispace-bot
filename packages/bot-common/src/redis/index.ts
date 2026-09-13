@@ -1,5 +1,16 @@
-export { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
+export {
+  REDIS_CLIENT,
+  REDIS_OPERATION_METRICS_PORT,
+  type RedisClientPort,
+  type RedisOperationMetricsPort,
+} from './redis.client.port';
 export { RedisService } from './redis.service';
+export {
+  REDIS_COMMAND_TIMEOUT_CODE,
+  REDIS_CONNECT_TIMEOUT_CODE,
+  RedisCommandTimeoutError,
+  RedisConnectTimeoutError,
+} from './redis.operation.errors';
 export {
   OutboundRateLimiter,
   type OutboundRateLimitConfig,

@@ -15,6 +15,7 @@ import {
   InternalApiKeyGuard,
   INTERNAL_AUTH_METRICS_PORT,
 } from '@wispace/bot-common/guard';
+import { REDIS_OPERATION_METRICS_PORT } from '@wispace/bot-common/redis';
 import { BotMetricsService } from './bot-metrics.service';
 
 /**
@@ -81,11 +82,22 @@ export function createMetricsModule(
         }),
         inject: [PlatformMetricsService],
       },
+      {
+        provide: REDIS_OPERATION_METRICS_PORT,
+        useFactory: (metrics: InstanceType<typeof PlatformMetricsService>) => ({
+          incCommandDeadlineExceeded: (command: string) =>
+            metrics.incRedisCommandDeadlineExceeded(command),
+          incConnectDeadlineExceeded: () =>
+            metrics.incRedisConnectDeadlineExceeded(),
+        }),
+        inject: [PlatformMetricsService],
+      },
     ],
     exports: [
       PlatformMetricsService,
       BotMetricsService,
       INTERNAL_AUTH_METRICS_PORT,
+      REDIS_OPERATION_METRICS_PORT,
     ],
   })
   class PlatformMetricsModule {}

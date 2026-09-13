@@ -1,7 +1,12 @@
 import type { RedisClientPort } from '@wispace/bot-common/redis';
+import { RedisCommandTimeoutError } from '@wispace/bot-common/redis';
 import { RedisChatQueueStore } from './redis-chat-queue.store';
 
 describe('RedisChatQueueStore', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   const createStore = (
     client: Record<string, jest.Mock>,
     platform: 'messenger' | 'discord' | 'zalo' = 'messenger',
@@ -87,6 +92,132 @@ describe('RedisChatQueueStore', () => {
       'EX',
       86_400,
     );
+  });
+
+  it('surfaces a bounded lock deadline without fabricating an append', async () => {
+    jest.useFakeTimers();
+    const transaction = createTransaction();
+    const client = createClient(jest.fn().mockResolvedValue(null), transaction);
+    const timeout = new RedisCommandTimeoutError(
+      'set',
+      new Error('Command timed out'),
+    );
+    client.set.mockImplementationOnce(
+      () =>
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(timeout), 20);
+        }),
+    );
+    const store = createStore(client);
+
+    const append = store.appendChatBuffer({
+      externalUserId: 'messenger-timeout',
+      userText: 'hello',
+      debounceMs: 2000,
+    });
+    const appendAssertion = expect(append).rejects.toBe(timeout);
+    await jest.advanceTimersByTimeAsync(20);
+
+    await appendAssertion;
+    expect(client.get).not.toHaveBeenCalled();
+    expect(transaction.exec).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a bounded ready-index deadline and can poll again after recovery', async () => {
+    jest.useFakeTimers();
+    const transaction = createTransaction();
+    const client = createClient(jest.fn().mockResolvedValue(null), transaction);
+    const timeout = new RedisCommandTimeoutError(
+      'zrangebyscore',
+      new Error('Command timed out'),
+    );
+    client.zrangebyscore.mockImplementationOnce(
+      () =>
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(timeout), 20);
+        }),
+    );
+    const store = createStore(client);
+
+    const firstPoll = store.listReadyExternalUserIds(25);
+    const firstPollAssertion = expect(firstPoll).rejects.toBe(timeout);
+    await jest.advanceTimersByTimeAsync(20);
+    await firstPollAssertion;
+
+    client.zrangebyscore.mockResolvedValue([]);
+    await expect(store.listReadyExternalUserIds(25)).resolves.toEqual([]);
+  });
+
+  it('keeps a processing batch durable when retry scheduling times out', async () => {
+    jest.useFakeTimers();
+    let persistedState = JSON.stringify({
+      texts: [],
+      pendingTexts: [],
+      processingTexts: ['queued-message'],
+      processing: true,
+      processingStartedAt: Date.now(),
+      processingLeaseToken: 'lease-timeout',
+      processingIdempotencyKey: 'message-1',
+      lastIdempotencyKey: null,
+      lastPendingIdempotencyKey: null,
+      idempotencyKeys: ['message-1'],
+      retryCount: 0,
+      flushAfterAt: null,
+    });
+    let pendingState: string | undefined;
+    const transaction = createTransaction();
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      pendingState = value;
+      return transaction;
+    });
+    const timeout = new RedisCommandTimeoutError(
+      'exec',
+      new Error('Command timed out'),
+    );
+    transaction.exec.mockImplementationOnce(
+      () =>
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(timeout), 20);
+        }),
+    );
+    transaction.exec.mockImplementation(async () => {
+      if (pendingState) {
+        persistedState = pendingState;
+      }
+      return [
+        [null, 'OK'],
+        [null, 1],
+      ];
+    });
+    const client = createClient(
+      jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      transaction,
+    );
+    const store = createStore(client, 'discord');
+
+    const firstAttempt = store.scheduleRetryFlush(
+      'discord-timeout',
+      5000,
+      'lease-timeout',
+    );
+    const firstAssertion = expect(firstAttempt).resolves.toBe(false);
+    await jest.advanceTimersByTimeAsync(20);
+    await firstAssertion;
+    expect(JSON.parse(persistedState)).toMatchObject({
+      processing: true,
+      processingTexts: ['queued-message'],
+      processingLeaseToken: 'lease-timeout',
+    });
+
+    await expect(
+      store.scheduleRetryFlush('discord-timeout', 5000, 'lease-timeout'),
+    ).resolves.toBe(true);
+    expect(JSON.parse(persistedState)).toMatchObject({
+      processing: false,
+      texts: ['queued-message'],
+      processingTexts: [],
+      retryCount: 1,
+    });
   });
 
   it('replays a claimed batch after a fresh store instance takes over', async () => {

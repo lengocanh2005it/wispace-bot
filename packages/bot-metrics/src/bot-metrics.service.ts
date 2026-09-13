@@ -52,6 +52,46 @@ const SHARED_SLOT_METRIC_OUTCOMES: Record<string, LlmConcurrencyOutcome> = {
   llm_concurrency_release_error: 'release_error',
 };
 
+const REDIS_COMMAND_METRIC_NAMES: ReadonlySet<string> = new Set([
+  'del',
+  'decr',
+  'eval',
+  'evalsha',
+  'exec',
+  'exists',
+  'expire',
+  'get',
+  'incr',
+  'multi',
+  'ping',
+  'pexpire',
+  'psetex',
+  'quit',
+  'rename',
+  'sadd',
+  'scan',
+  'scard',
+  'set',
+  'sismember',
+  'smembers',
+  'srem',
+  'sscan',
+  'time',
+  'unlink',
+  'zadd',
+  'zcard',
+  'zrange',
+  'zrangebyscore',
+  'zrem',
+  'zremrangebyscore',
+  'zscore',
+]);
+
+function normalizeRedisCommandMetricLabel(command: string): string {
+  const normalized = command.trim().toLowerCase();
+  return REDIS_COMMAND_METRIC_NAMES.has(normalized) ? normalized : 'other';
+}
+
 /**
  * Platform-agnostic Prometheus metrics with optional OpenTelemetry tracing.
  * When `tracer` is provided in config, all timing methods also emit OTel spans.
@@ -115,6 +155,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private chatIdentityStaleDetected: Counter;
   private chatRevalidationSkip: Counter;
   private chatFlushRecovery: Counter;
+  private redisCommandDeadlineExceeded: Counter;
+  private redisConnectDeadlineExceeded: Counter;
   private redisConsistencyDrift: Gauge;
   private redisConsistencyEvents: Counter;
   private platformLinkTransitions: Counter;
@@ -447,6 +489,17 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_chat_flush_recovery_total`,
       help: 'Distributed chat flush recovery outcomes',
       labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+    this.redisCommandDeadlineExceeded = new Counter({
+      name: `${this.prefix}_redis_command_deadline_exceeded_total`,
+      help: 'Redis commands that exceeded the shared operation deadline',
+      labelNames: ['command'],
+      registers: [this.registry],
+    });
+    this.redisConnectDeadlineExceeded = new Counter({
+      name: `${this.prefix}_redis_connect_deadline_exceeded_total`,
+      help: 'Redis connection attempts that exceeded the shared deadline',
       registers: [this.registry],
     });
     this.redisConsistencyDrift = new Gauge({
@@ -900,6 +953,16 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Distributed chat flush recovery outcome (#406). */
   incChatFlushRecovery(platform: string, outcome: string): void {
     this.chatFlushRecovery.inc({ platform, outcome });
+  }
+
+  incRedisCommandDeadlineExceeded(command: string): void {
+    this.redisCommandDeadlineExceeded.inc({
+      command: normalizeRedisCommandMetricLabel(command),
+    });
+  }
+
+  incRedisConnectDeadlineExceeded(): void {
+    this.redisConnectDeadlineExceeded.inc();
   }
 
   setRedisConsistencyDrift(datum: 'burst' | 'chat_queue', count: number): void {

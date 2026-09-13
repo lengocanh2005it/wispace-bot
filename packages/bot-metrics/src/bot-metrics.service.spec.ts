@@ -3,6 +3,27 @@ import { BotMetricsService } from './bot-metrics.service';
 import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
+  it('exposes Redis deadline counters with bounded command labels', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.incRedisCommandDeadlineExceeded('get');
+    metrics.incRedisCommandDeadlineExceeded('learner-id-from-key');
+    metrics.incRedisConnectDeadlineExceeded();
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'test_redis_command_deadline_exceeded_total{command="get"} 1',
+    );
+    expect(output).toContain(
+      'test_redis_command_deadline_exceeded_total{command="other"} 1',
+    );
+    expect(output).toContain('test_redis_connect_deadline_exceeded_total 1');
+    expect(output).not.toContain('learner-id-from-key');
+  });
+
   it('tracks registered cron heartbeats and study-reminder lock skips', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

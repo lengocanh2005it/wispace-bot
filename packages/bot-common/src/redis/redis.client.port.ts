@@ -1,6 +1,14 @@
 import type Redis from 'ioredis';
 
 export const REDIS_CLIENT = Symbol('REDIS_CLIENT');
+export const REDIS_OPERATION_METRICS_PORT = Symbol(
+  'REDIS_OPERATION_METRICS_PORT',
+);
+
+export interface RedisOperationMetricsPort {
+  incCommandDeadlineExceeded(command: string): void;
+  incConnectDeadlineExceeded(): void;
+}
 
 export interface RedisClientPort {
   isEnabled(): boolean;

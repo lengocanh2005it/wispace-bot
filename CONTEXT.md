@@ -494,6 +494,16 @@ _Avoid_: hardening phase — these are specifically numbered items
 Redis integration phases. R0=basic connection, R1=chat history, R2=webhook dedupe, R3=burst counter, R4=chat queue, R5=user display cache.
 _Avoid_: generic redis phase
 
+### Redis Availability
+
+**Redis operation deadline**:
+Maximum time the bot waits for a Redis command or connection attempt before treating Redis as unavailable. It is a failure boundary, not a retry instruction.
+_Avoid_: Redis wait limit
+
+**unknown Redis outcome**:
+The client deadline or a connection loss prevents the caller from knowing whether Redis applied a command. Callers must use their own idempotency or fencing policy instead of blindly retrying the command.
+_Avoid_: failed Redis write — the command may already have taken effect
+
 ### Database & Entities
 
 **ai_chat_bot_db**:
