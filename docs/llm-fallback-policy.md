@@ -37,10 +37,15 @@ loop around that action.
   names) and `LLM_ALLOWED_MODELS` (exact `provider:model` pairs). Explicit and
   vendor-default endpoints are validated before the SDK is created; a bad
   failover candidate fails the whole chain.
-- `LLM_EXECUTION_ENABLED=false` keeps the existing deterministic fallback path,
-  but the startup binding supplies an unconfigured adapter so no provider
-  request can be issued while the gate is off. Active providers are always
-  subject to the URL/model policy; the execution gate does not weaken it.
+- `LLM_EXECUTION_ENABLED=false` is a compatibility passthrough, not a load-shed
+  or hard-stop control. The execution wrapper invokes its callback directly, so
+  provider work can continue without an admission cap, request deadline, retry budget,
+  or circuit breaker. Normal bot wiring supplies an unconfigured
+  adapter and therefore keeps the deterministic fallback path, but callers must
+  not rely on that adapter choice to control provider pressure. The flag also
+  skips active-
+  provider policy validation; hard-stop semantics are tracked separately in
+  [#951](https://github.com/lengocanh2005it/wispace-bot/issues/951).
 - Chat queue retry is for recovering the queued user turn only. It never
   re-enqueues a fixed fallback as a new turn. Report and reminder retry is
   owned by the durable outbox/lease, not by a second platform send loop.
@@ -79,11 +84,23 @@ raising retry counts first.
 1. Deploy telemetry and contract tests first. Roll out Messenger, then
    Discord, then Zalo while watching provider exhaustion, admission, outbox,
    and ambiguous-delivery signals.
-2. To shed LLM work immediately, set `LLM_EXECUTION_ENABLED=false` and keep
-   deterministic report/reminder paths enabled. This leaves the provider
-   policy enforced for the next enabled boot. To remove one provider, edit the
-   approved failover order and redeploy; do not leave an unknown or keyless
-   entry in the order.
+2. To shed LLM work immediately, keep `LLM_EXECUTION_ENABLED=true` and lower
+   the bounded admission controls, then restart/redeploy so the environment is
+   loaded:
+   - lower `LLM_MAX_CONCURRENT` to cap in-flight provider calls;
+   - lower `LLM_MAX_QUEUE_DEPTH` to reject excess queued work;
+   - lower `LLM_ADMISSION_WAIT_MS` so interactive requests stop waiting sooner;
+   - lower `LLM_BACKGROUND_ADMISSION_WAIT_MS` first so reports/reminders shed
+     before interactive chat; and
+   - with Redis-global concurrency enabled, lower `LLM_GLOBAL_MAX_CONCURRENT`
+     to cap aggregate work across pods and bots.
+   Keep these caps and wait budgets positive; zero/invalid values fall back to
+   their documented defaults. Lower `LLM_REQUEST_TIMEOUT_MS` as a complement
+   when slow in-flight provider calls also need to be cut off. Do not set
+   `LLM_EXECUTION_ENABLED=false` for load shedding: it bypasses the controls
+   above while the callback/provider path can continue without them. To remove
+   one provider, edit the approved failover order and redeploy; do not leave an
+   unknown or keyless entry in the order.
 3. Roll back the application image if fallback rates, duplicate delivery, or
    lease backlog regress. Existing durable jobs remain the recovery source;
    do not manually resend an ambiguous Zalo item without confirming delivery

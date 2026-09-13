@@ -19,7 +19,7 @@ import { LlmProviderCircuitOpenError } from './circuit-error';
 const FEATURE = 'FREE_FORM_CHAT';
 
 export interface EnvLlmExecutionConfig {
-  /** `LLM_EXECUTION_ENABLED` — false bypasses limiter/retry/deadline. */
+  /** `LLM_EXECUTION_ENABLED` — false bypasses admission, deadline, retry, and circuit controls; not a hard stop. */
   enabled: boolean;
   /** `LLM_MAX_CONCURRENT` — per-instance provider concurrency cap. */
   maxConcurrent: number;
@@ -80,7 +80,7 @@ export interface AdmissionMetrics {
  * (Discord/Zalo chat + reports). Reads the same `LLM_EXECUTION_*` contract as
  * the Messenger app's `LlmExecutionConfigService` — one documented
  * execution-control path for every LLM feature:
- *  - enable flag (off = passthrough)
+ *  - enable flag (off = uncontrolled passthrough, not a hard stop)
  *  - per-instance bounded admission queue on provider calls (#389)
  *  - per-request deadline composed with the caller signal, aborts the
  *    in-flight provider request (issue #121)

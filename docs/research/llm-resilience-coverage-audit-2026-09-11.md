@@ -71,7 +71,7 @@ content hoặc tool fields sai kiểu có thể làm hỏng cả turn thay vì b
 metric/quarantine bounded và fallback về history rỗng. Không mở issue mới trước
 khi có bằng chứng payload hỏng thực tế.
 
-### 4. Kill-switch LLM bypass toàn bộ deadline/admission (trung bình, trade-off cần chốt)
+### 4. `LLM_EXECUTION_ENABLED=false` bypass toàn bộ deadline/admission (trung bình, trade-off cần chốt)
 
 Khi `LLM_EXECUTION_ENABLED=false`, execution port gọi `fn(undefined)` ngay
 (`packages/llm-agent/src/execution/env-llm-execution.port.ts#L154-L161`), nên

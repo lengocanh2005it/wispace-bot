@@ -57,8 +57,9 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 
         if (!config.isEnabled()) {
           if (!order.length) assertSupportedLlmProvider(configuredProvider);
-          // Keep the existing fallback path while ensuring the execution
-          // kill-switch cannot leave a live provider adapter behind.
+          // Keep the existing fallback path while ensuring disabled execution
+          // cannot leave a live provider adapter behind. The execution service
+          // remains a passthrough in this mode; this is not a hard stop.
           return new OpenAiAdapter(() => undefined);
         }
 
