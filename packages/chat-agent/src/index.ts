@@ -66,15 +66,7 @@ export {
   recordChatQueueReconciliationMetrics,
   type ChatQueueReconciliationMetrics,
 } from './chat-queue/reconciliation-metrics';
-export {
-  DEFAULT_FLUSH_MAX_RETRIES,
-  DEFAULT_FLUSH_RETRY_DELAY_MS,
-  readChatFlushRetrySettings,
-} from './chat-queue/chat-queue-retry.config';
-export type {
-  ChatFlushRetrySettings,
-  StringConfigReader,
-} from './chat-queue/chat-queue-retry.config';
+export { readChatFlushRetrySettings } from './chat-queue/chat-queue-retry.config';
 export {
   createChatPipelineAdapters,
   type OutboundServicePort,
