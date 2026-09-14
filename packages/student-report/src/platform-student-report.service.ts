@@ -199,19 +199,4 @@ export class PlatformStudentReportService {
       ? Math.round(value * 10) / 10
       : null;
   }
-
-  private readEnvBoolean(key: string, defaultValue: boolean): boolean {
-    const raw = this.configService.get<string>(key);
-    if (raw === undefined || raw === null) return defaultValue;
-    return raw.toLowerCase() === 'true';
-  }
-
-  private readEnvPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key);
-    if (raw === undefined || raw === null) return defaultValue;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0
-      ? Math.floor(value)
-      : defaultValue;
-  }
 }
