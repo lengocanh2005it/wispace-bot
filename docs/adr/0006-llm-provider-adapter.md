@@ -63,7 +63,11 @@ interface LlmResponse {
 }
 ```
 
-### Adapter interface (sync + streaming)
+### Adapter interface (historical sketch; current contract is synchronous)
+
+The following streaming shape is retained as historical design context. The
+shipped adapter no longer exposes it; [ADR-0017](0017-llm-agent-context-budget-and-pipeline.md)
+removed the unused streaming path.
 
 ```typescript
 interface LlmProviderAdapter {
@@ -107,7 +111,7 @@ Each adapter handles:
 1. **Tool definition conversion**: `LlmToolDefinition[]` → provider-native format (e.g. OpenAI `ChatCompletionTool[]`, Anthropic `Tool[]`)
 2. **Message conversion**: `LlmMessage[]` → provider-native message format
 3. **Response normalization**: provider-native response → `LlmResponse`
-4. **Streaming normalization**: provider-native stream → `AsyncIterable<LlmStreamEvent>`
+4. **Streaming normalization**: historical only; current adapters expose synchronous operations.
 5. **Error classification**: `isRetryableError()` / `isRateLimitError()` using provider-specific error shapes
 
 ### OpenAI adapter (reference implementation)
@@ -117,7 +121,7 @@ Each adapter handles:
 - Converts `ChatCompletion` → `LlmResponse`
 - Moves existing `openai-error.utils.ts` logic into adapter methods
 
-### Agentic loop with streaming
+### Historical streaming design (superseded)
 
 The agent loop emits events during execution, allowing downstream consumers to react in real-time (typing indicators, progressive display, tool progress).
 
@@ -139,7 +143,8 @@ Loop behavior:
 5. Append tool results to messages, continue loop (max `maxToolRounds`)
 6. Guard: if stream errors mid-tool-call → yield `error`, return
 
-Implementation status: provider adapters expose `chatStream()`. `LlmAgentService.replyStream()` currently reuses the non-streaming agent rounds and emits the final text as one `delta`; native token-by-token agent-loop streaming remains Phase 2.
+Implementation status: this section is superseded. The current agent exposes only
+`reply()` and adapters expose only synchronous operations; see ADR-0017.
 
 ### Agentic loop changes
 
@@ -147,7 +152,7 @@ Implementation status: provider adapters expose `chatStream()`. `LlmAgentService
 - `AGENT_TOOLS` type changes from `ChatCompletionTool[]` to `LlmToolDefinition[]`
 - Response handling uses provider-agnostic response types instead of `ChatCompletion`
 - Tool result messages constructed as `LlmMessage` with `role: 'tool'`
-- `LlmAgentService` exposes sync `reply()` and a `replyStream()` API; adapters expose sync `chatWithTools()` and streaming `chatStream()` operations.
+- `LlmAgentService` exposes sync `reply()`; adapters expose sync `chatWithTools()` operations.
 
 ### Config
 
@@ -170,19 +175,17 @@ Implementation status: provider adapters expose `chatStream()`. `LlmAgentService
 - **Positive**: `LlmAgentService` and provider-agnostic types no longer import OpenAI SDK types. The `@wispace/llm-agent` package still declares `openai` because its OpenAI adapter ships in the same package.
 - **Positive**: Stronger guarantee for ADR-0002's "framework-agnostic" claim
 - **Positive**: Provider-specific error handling is encapsulated, not scattered across utils
-- **Positive**: Adapter-level streaming support normalizes provider streams; native token-by-token agent-loop streaming remains a follow-up.
-- **Positive**: The `replyStream()`/agent-event API decouples the core loop from transport consumers.
+- **Positive**: The synchronous adapter contract keeps provider integration focused on the shipped agent path.
 - **Negative**: One more interface to maintain; slightly more indirection in the call chain
 - **Negative**: Existing tests in `agent.service.spec.ts` need mock adapter instead of mock OpenAI response
 - **Negative**: Provider/failover adapter error classification and execution-layer retry policies must remain aligned.
-- **Negative**: Streaming adds edge cases: tool JSON errors mid-stream, partial tool arguments, loop termination detection
-- **Negative**: `AsyncIterable` consumption requires careful cleanup (abort signals) when stream is interrupted
+- **Negative**: A future streaming feature would require a separate design and explicit production use case.
 
 ## Scope
 
 - **Phase 1** (this ADR): `LlmProviderAdapter` interface + types + OpenAI adapter (`generateJson()` / `chatWithTools()` sync) + refactor `LlmAgentService`
-- **Phase 2** (follow-up): Wire adapter `chatStream()` into `LlmAgentService` for native token/tool-call streaming plus the `LlmStreamEvent` / `AgentEvent` stream.
-- **Phase 3** (follow-up): `@wispace/student-report` abstraction + streaming consumers in Messenger/Discord
+- **Phase 2** (superseded): streaming was removed by ADR-0017; any future streaming work requires a new decision.
+- **Phase 3** (follow-up): `@wispace/student-report` abstraction
 - **Phase 4** (implemented): Multi-provider failover routing — see [spec: 2026-07-18-multi-llm-provider-failover](../superpowers/specs/2026-07-18-multi-llm-provider-failover/spec.md)
   - `OpenRouterAdapter` + `MiniMaxAdapter` extending `OpenAiAdapter`
   - `FailoverLlmProviderAdapter` — greedy failover by priority, circuit breaker, quick-retry (150ms × 1) for transient errors, fast-fail (quota/auth) with long cooldown

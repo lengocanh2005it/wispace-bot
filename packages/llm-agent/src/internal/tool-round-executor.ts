@@ -54,7 +54,6 @@ export interface ToolRoundExecutorOptions {
 
 export interface ToolExecutionBudget {
   maxExecutions: number;
-  onExecuted: () => void;
 }
 
 export interface ToolRoundResult {
@@ -62,6 +61,14 @@ export interface ToolRoundResult {
   toolName: string;
   content: string;
   succeeded: boolean;
+}
+
+export interface ToolRoundExecution {
+  results: ToolRoundResult[];
+  /** Number of executor calls actually started (deduplicated and policy-allowed). */
+  executedCount: number;
+  /** One entry per successful deduplicated execution, preserving tool-name multiplicity. */
+  successfulToolNames: string[];
 }
 
 /** Executes one model tool round while preserving provider message pairing. */
@@ -78,12 +85,11 @@ export class ToolRoundExecutor<TToolContext> {
     toolCalls: Array<{ id: string; name: string; arguments: string }>,
     input: LlmAgentInput,
     toolContext: TToolContext,
-    toolsCalledThisTurn: Set<string>,
     observationBudget: number,
     parentSignal?: AbortSignal,
     budget?: ToolExecutionBudget,
     options: ToolRoundExecutorOptions = this.options,
-  ): Promise<ToolRoundResult[]> {
+  ): Promise<ToolRoundExecution> {
     const uniqueByKey = new Map<
       string,
       { id: string; name: string; arguments: string }
@@ -107,6 +113,7 @@ export class ToolRoundExecutor<TToolContext> {
       }
     >();
     let executedInRound = 0;
+    let executedCount = 0;
 
     const executeCall = async (toolCall: (typeof uniqueCalls)[number]) => {
       const toolName = toolCall.name;
@@ -168,15 +175,11 @@ export class ToolRoundExecutor<TToolContext> {
         });
         return;
       }
-      if (budget) {
-        executedInRound += 1;
-        budget.onExecuted();
-      }
-
-      toolsCalledThisTurn.add(toolName);
       if (parentSignal?.aborted) {
         throw parentSignal.reason ?? new Error('Aborted');
       }
+      if (budget) executedInRound += 1;
+      executedCount += 1;
       const controller = new AbortController();
       const abort = () => controller.abort(parentSignal?.reason);
       parentSignal?.addEventListener('abort', abort, { once: true });
@@ -260,12 +263,14 @@ export class ToolRoundExecutor<TToolContext> {
       string,
       ReturnType<typeof reduceToolObservation>
     >();
+    const successfulToolNames: string[] = [];
     for (const call of uniqueCalls) {
       const result = resultsByKey.get(this.toolCallKey(call)) ?? {
         observation: this.missingObservation(call.name),
         succeeded: false,
       };
       fullByKey.set(this.toolCallKey(call), result.observation);
+      if (result.succeeded) successfulToolNames.push(call.name);
       const injection = result.observation.injection;
       if (injection) {
         options.onInjection?.(
@@ -344,7 +349,7 @@ export class ToolRoundExecutor<TToolContext> {
       remainingUnique -= 1;
     }
 
-    return toolCalls.map((call) => {
+    const results = toolCalls.map((call) => {
       const key = this.toolCallKey(call);
       const result = resultsByKey.get(key) ?? {
         observation: this.missingObservation(call.name),
@@ -365,6 +370,8 @@ export class ToolRoundExecutor<TToolContext> {
         succeeded: result.succeeded,
       };
     });
+
+    return { results, executedCount, successfulToolNames };
   }
 
   private toolCallKey(call: { name: string; arguments: string }): string {

@@ -26,13 +26,14 @@ describe('ToolRoundExecutor', () => {
       ],
       input,
       {},
-      new Set(),
       2_000,
     );
 
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(result).toHaveLength(2);
-    expect(result.map((item) => item.toolCallId)).toEqual(['a', 'b']);
+    expect(result.executedCount).toBe(1);
+    expect(result.successfulToolNames).toEqual(['get_user_goals']);
+    expect(result.results).toHaveLength(2);
+    expect(result.results.map((item) => item.toolCallId)).toEqual(['a', 'b']);
   });
 
   it('runs read-only calls in parallel', async () => {
@@ -52,17 +53,17 @@ describe('ToolRoundExecutor', () => {
       { warn: jest.fn() },
     );
 
-    await executor.execute(
+    const result = await executor.execute(
       [
         { id: 'a', name: 'get_user_goals', arguments: '{}' },
         { id: 'b', name: 'get_upcoming_study_sessions', arguments: '{}' },
       ],
       input,
       {},
-      new Set(),
       2_000,
     );
 
     expect(maxActive).toBe(2);
+    expect(result.executedCount).toBe(2);
   });
 });

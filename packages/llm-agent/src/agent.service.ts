@@ -184,53 +184,21 @@ export class LlmAgentService<TToolContext> {
     return withTimeout(
       this.ports.metrics?.timeAgentLoop
         ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
-            this.collectReply(input, toolContext, controller.signal),
+            this.runRounds(input, toolContext, controller.signal),
           )
-        : this.collectReply(input, toolContext, controller.signal),
+        : this.runRounds(input, toolContext, controller.signal),
       this.limits.globalAgentTimeoutMs,
       'Agent loop',
       () => controller.abort(),
     );
   }
 
-  /** Runs the agent loop and returns the final reply (throws on error). */
-  private async collectReply(
+  /** Single agent loop: LLM call → tool round or final text → exhaustion. */
+  private async runRounds(
     input: LlmAgentInput,
     toolContext: TToolContext,
     signal?: AbortSignal,
   ): Promise<LlmAgentReply> {
-    let reply: LlmAgentReply | undefined;
-    for await (const event of this.runRounds(input, toolContext, signal)) {
-      if (event.type === 'error') {
-        throw event.error;
-      }
-      if (event.type === 'tool_start') {
-        continue;
-      }
-      reply = event.reply;
-    }
-    if (!reply) {
-      throw new Error('LLM agent loop ended without a reply');
-    }
-    return reply;
-  }
-
-  /**
-   * Single agent loop for the public `reply()` call:
-   * LLM call → usage record → tool-call round or final text → exhausted.
-   * Emits internal completion events so the public method can preserve the
-   * existing error and fallback semantics.
-   */
-  private async *runRounds(
-    input: LlmAgentInput,
-    toolContext: TToolContext,
-    signal?: AbortSignal,
-  ): AsyncGenerator<
-    | { type: 'tool_start'; toolName: string }
-    | { type: 'final_text'; text: string; reply: LlmAgentReply }
-    | { type: 'done'; reply: LlmAgentReply }
-    | { type: 'error'; error: unknown }
-  > {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
     const adapter = this.ports.adapter;
@@ -246,8 +214,7 @@ export class LlmAgentService<TToolContext> {
           'chat_fallback',
         );
       }
-      yield { type: 'done', reply: earlyReturn.reply };
-      return;
+      return earlyReturn.reply;
     }
 
     const model = adapter.getDefaultModel();
@@ -271,11 +238,7 @@ export class LlmAgentService<TToolContext> {
         'invalid_output',
         'chat_fallback',
       );
-      yield {
-        type: 'done',
-        reply: { text: this.buildFallbackReply(input.userText) },
-      };
-      return;
+      return { text: this.buildFallbackReply(input.userText) };
     }
     const messages = context.messages;
 
@@ -392,12 +355,7 @@ export class LlmAgentService<TToolContext> {
               )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
             );
           }
-          yield {
-            type: 'final_text',
-            text: safety.text,
-            reply: { text: safety.text, toolSummary: safety.toolSummary },
-          };
-          return;
+          return { text: safety.text, toolSummary: safety.toolSummary };
         }
 
         // Per-round call cap (#162): count DISTINCT (name, args) executions
@@ -418,11 +376,7 @@ export class LlmAgentService<TToolContext> {
               input.externalUserId,
             )}`,
           );
-          yield {
-            type: 'done',
-            reply: { text: buildToolCallCapMessage() },
-          };
-          return;
+          return { text: buildToolCallCapMessage() };
         }
 
         const signature = this.buildToolCallSignature(toolCalls);
@@ -506,28 +460,23 @@ export class LlmAgentService<TToolContext> {
         metrics.llmRoundOutcomeInc(FEATURE, 'tool_call');
         messages.push(response.message);
 
-        // Emit tool_start for known calls before parallel execution.
+        // Track known tools before execution for summaries and grounding logs.
         for (const toolCall of toolCalls) {
           if (isAgentToolName(toolCall.name)) {
             toolsCalledThisTurn.add(toolCall.name);
-            yield { type: 'tool_start', toolName: toolCall.name };
           }
         }
 
         const observationBudget =
           this.contextManager.observationBudget(messages);
-        const toolResults = await this.toolRoundExecutor.execute(
+        const toolExecution = await this.toolRoundExecutor.execute(
           toolCalls,
           input,
           toolContext,
-          toolsCalledThisTurn,
           observationBudget,
           signal,
           {
             maxExecutions: remainingExecutions,
-            onExecuted: () => {
-              toolExecutionsThisTurn += 1;
-            },
           },
           {
             onInjection: (reason, rawPreview, toolName) => {
@@ -544,24 +493,22 @@ export class LlmAgentService<TToolContext> {
             },
           },
         );
+        toolExecutionsThisTurn += toolExecution.executedCount;
+        const toolResults = toolExecution.results;
 
         previousRoundFailed = toolResults.some((result) => !result.succeeded);
 
         // Track executed runs per tool name for the varied-argument loop
         // check on the next round (#962).
-        for (const result of toolResults) {
-          if (result.succeeded) {
-            toolRunsPerName.set(
-              result.toolName,
-              (toolRunsPerName.get(result.toolName) ?? 0) + 1,
-            );
-          }
+        for (const toolName of toolExecution.successfulToolNames) {
+          groundedToolsThisTurn.add(toolName);
+          toolRunsPerName.set(
+            toolName,
+            (toolRunsPerName.get(toolName) ?? 0) + 1,
+          );
         }
 
         for (const result of toolResults) {
-          if (result.succeeded) {
-            groundedToolsThisTurn.add(result.toolName);
-          }
           messages.push({
             role: 'tool',
             toolCallId: result.toolCallId,
@@ -590,11 +537,7 @@ export class LlmAgentService<TToolContext> {
             'invalid_output',
             'chat_fallback',
           );
-          yield {
-            type: 'done',
-            reply: { text: this.buildFallbackReply(input.userText) },
-          };
-          return;
+          return { text: this.buildFallbackReply(input.userText) };
         }
       } catch (err) {
         // #549 — emit a zero-token error row only when the LLM call itself
@@ -617,8 +560,7 @@ export class LlmAgentService<TToolContext> {
           classifyAgentFailure(err),
           'chat_fallback',
         );
-        yield { type: 'error', error: err };
-        return;
+        throw err;
       }
     }
 
@@ -641,13 +583,10 @@ export class LlmAgentService<TToolContext> {
       toolsCalledThisTurn.size > 0
         ? `[Đã tra cứu: ${[...toolsCalledThisTurn].join('; ')}]`
         : undefined;
-    yield {
-      type: 'done',
-      reply: {
-        text: buildExhaustionPartialAnswer([...groundedToolsThisTurn]),
-        exhausted: true,
-        toolSummary,
-      },
+    return {
+      text: buildExhaustionPartialAnswer([...groundedToolsThisTurn]),
+      exhausted: true,
+      toolSummary,
     };
   }
 
