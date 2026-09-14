@@ -209,6 +209,49 @@ describe('StudyReminderDispatchService', () => {
     expect(result).toMatchObject({ claimed: 1, failed: 0, retried: 1 });
   });
 
+  it.each([
+    {
+      outcome: 'sent' as const,
+      result: { sent: 1, failed: 0, retried: 0 },
+    },
+    {
+      outcome: 'not_sent' as const,
+      result: { sent: 0, failed: 0, retried: 1 },
+    },
+    {
+      outcome: 'rate_limited' as const,
+      result: { sent: 0, failed: 1, retried: 0 },
+    },
+    {
+      outcome: 'ambiguous' as const,
+      result: { sent: 0, failed: 1, retried: 0 },
+    },
+  ])(
+    'preserves the delivery outcome matrix for $outcome (#435)',
+    async ({ outcome, result: expected }) => {
+      const job = makeJob();
+      jobRepo.findDueJobs.mockResolvedValue([job]);
+      jobRepo.claimJob.mockResolvedValue(job);
+      messageSender.sendText.mockResolvedValue(outcome);
+      build();
+
+      const result = await service.dispatchDueReminders();
+
+      expect(result).toMatchObject({ claimed: 1, ...expected });
+      if (outcome === 'sent') {
+        expect(jobRepo.markSent).toHaveBeenCalled();
+        expect(jobRepo.markFailed).not.toHaveBeenCalled();
+      } else {
+        expect(jobRepo.markFailed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            deliveryStatus: outcome,
+            terminal: outcome !== 'not_sent',
+          }),
+        );
+      }
+    },
+  );
+
   it('defensively surfaces a terminal row returned by a repository', async () => {
     const job = makeJob({ deliveryStatus: 'ambiguous' });
     jobRepo.findDueJobs.mockResolvedValue([job]);

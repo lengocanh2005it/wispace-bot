@@ -1,4 +1,5 @@
 import { MessengerOutboundService } from './messenger-outbound.service';
+import { MessengerApiError } from '../contracts/messenger-delivery.contract';
 
 const OK_RESPONSE = {
   ok: true,
@@ -186,6 +187,40 @@ describe('MessengerOutboundService message logging privacy (#262)', () => {
     expect(
       (logMessage.mock.calls[0][0] as Record<string, unknown>).messageText,
     ).toBeUndefined();
+  });
+});
+
+describe('Messenger delivery error compatibility (#435)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('preserves error metadata while masking the recipient id', async () => {
+    const psid = '123456789012345';
+    const globalFetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ...buildHttpFailure(400),
+      text: () => Promise.resolve(`{"error":{"message":"failed for ${psid}"}}`),
+    } as unknown as Response);
+    const service = buildLoggingService();
+
+    let caught: unknown;
+    try {
+      await service.sendTextViaPsid({
+        psid,
+        text: 'Reminder',
+        messageType: 'STUDY_REMINDER',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(globalFetch).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(MessengerApiError);
+    const apiError = caught as MessengerApiError;
+    expect(apiError.status).toBe(400);
+    expect(apiError.statusText).toBe('400');
+    expect(apiError.message).not.toContain(psid);
+    expect(apiError.responseBody).not.toContain(psid);
   });
 });
 
