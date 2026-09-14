@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
 import CircuitBreaker from 'opossum';
 import {
-  acquireRedisSlot,
   admissionWaitBudgetMs,
   cappedExponentialBackoff,
   retryWithBackoff,
@@ -12,6 +11,7 @@ import {
   type AdmissionTicket,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
+import { acquireRedisSlot } from '@wispace/llm-agent/execution';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';

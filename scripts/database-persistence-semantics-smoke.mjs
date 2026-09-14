@@ -68,7 +68,8 @@ const {
   ChatDailyUsageEntity: QuotaDailyUsageEntity,
   ChatIdempotencyEntity: QuotaIdempotencyEntity,
 } = require('@wispace/chat-metering');
-const { acquireRedisSlot, LlmOverloadError } = require('@wispace/llm-agent');
+const { LlmOverloadError } = require('@wispace/llm-agent');
+const { acquireRedisSlot } = require('@wispace/llm-agent/execution');
 const messengerDatabase = require(
   resolve(
     rootDir,

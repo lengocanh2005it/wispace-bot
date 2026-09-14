@@ -194,7 +194,6 @@ export {
   admissionWaitBudgetMs,
   createEnvLlmExecutionPort,
   buildLlmExecutionConfig,
-  acquireRedisSlot,
   LlmProviderCircuitOpenError,
 } from './execution/index';
 export type {
