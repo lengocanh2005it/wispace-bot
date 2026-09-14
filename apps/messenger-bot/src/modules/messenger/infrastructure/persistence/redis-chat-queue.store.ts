@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   RedisChatQueueStore as SharedRedisChatQueueStore,
+  ChatRuntimeConfig,
   recordChatQueueReconciliationMetrics,
   type ChatQueueReconciliationResult,
 } from '@wispace/chat-agent';
@@ -25,6 +26,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     @Inject(REDIS_CLIENT) redisClient: RedisClientPort,
     configService: ConfigService,
     @Optional() metrics?: BotMetricsService,
+    @Optional() runtimeConfig?: ChatRuntimeConfig,
   ) {
     this.sharedStore = new SharedRedisChatQueueStore(
       redisClient,
@@ -37,6 +39,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         onReconciliation: (result) =>
           recordChatQueueReconciliationMetrics(metrics, result),
       },
+      runtimeConfig,
     );
   }
 

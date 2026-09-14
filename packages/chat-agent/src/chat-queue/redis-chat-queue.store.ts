@@ -15,6 +15,7 @@ import type {
 } from './chat-queue-store.types';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
 import { readChatFlushRetrySettings } from './chat-queue-retry.config';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 
 const CHAT_QUEUE_BUFFER_TTL_SECONDS = 24 * 60 * 60;
 
@@ -56,15 +57,15 @@ export interface RedisChatQueueStoreOptions {
 
 @Injectable()
 export class RedisChatQueueStore implements ChatQueueStorePort {
-  private static readonly MAX_BUFFERED_MESSAGES = 20;
+  private static readonly MAX_IDEMPOTENCY_KEYS = 40;
   private static readonly DEFAULT_LOCK_TTL_MS = 30_000;
-  private static readonly DEFAULT_PROCESSING_STUCK_MS = 300_000;
   private static readonly REHYDRATE_LOCK_TTL_MS = 60_000;
   private static readonly RECONCILE_LOCK_TTL_MS = 60_000;
 
   private readonly logger = new Logger(RedisChatQueueStore.name);
   private readonly lockTtlMs: number;
   private readonly stuckMs: number;
+  private readonly maxPendingSize: number;
   private readonly bufferPrefix: string;
   private readonly platform: Platform;
   private readonly lockPrefix: string;
@@ -86,7 +87,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     private readonly redisClient: RedisClientPort,
     configService: ConfigService,
     options: RedisChatQueueStoreOptions = {},
+    runtimeConfig?: ChatRuntimeConfig,
   ) {
+    const runtime = runtimeConfig ?? new ChatRuntimeConfig(configService);
     const platform = options.platform ?? 'messenger';
     this.platform = platform;
     const legacyKeys = options.legacyKeys ?? platform === 'messenger';
@@ -105,6 +108,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       ? 'chat:queue:reconcile-lock'
       : `${prefix}reconcile-lock`;
     this.maxFlushRetries = readChatFlushRetrySettings(configService).maxRetries;
+    this.maxPendingSize = runtime.maxPendingSize;
     this.onRecoveryOutcome = options.onRecoveryOutcome;
     this.onReconciliation = options.onReconciliation;
 
@@ -115,14 +119,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         ? Math.floor(parsed)
         : RedisChatQueueStore.DEFAULT_LOCK_TTL_MS;
 
-    const stuckRaw = configService.get<string>(
-      'CHAT_QUEUE_PROCESSING_STUCK_MS',
-    );
-    const stuckParsed = stuckRaw ? Number(stuckRaw) : NaN;
-    this.stuckMs =
-      Number.isFinite(stuckParsed) && stuckParsed > 0
-        ? Math.floor(stuckParsed)
-        : RedisChatQueueStore.DEFAULT_PROCESSING_STUCK_MS;
+    this.stuckMs = runtime.processingStuckMs;
   }
 
   isAvailable(): boolean {
@@ -150,7 +147,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           state.idempotencyKeys = [
             ...state.idempotencyKeys,
             input.idempotencyKey,
-          ].slice(-RedisChatQueueStore.MAX_BUFFERED_MESSAGES * 2);
+          ].slice(-RedisChatQueueStore.MAX_IDEMPOTENCY_KEYS);
         }
 
         // A new user message makes an abandoned batch eligible for a fresh,
@@ -165,12 +162,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         if (state.processing) {
           state.pendingTexts.push(input.userText);
           if (
-            state.pendingTexts.length >
-            RedisChatQueueStore.MAX_BUFFERED_MESSAGES
+            this.maxPendingSize > 0 &&
+            state.pendingTexts.length > this.maxPendingSize
           ) {
-            state.pendingTexts = state.pendingTexts.slice(
-              -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
-            );
+            state.pendingTexts = this.capMessages(state.pendingTexts);
             state.droppedNoticePending = true;
           }
           if (input.idempotencyKey) {
@@ -178,10 +173,11 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           }
         } else {
           state.texts.push(input.userText);
-          if (state.texts.length > RedisChatQueueStore.MAX_BUFFERED_MESSAGES) {
-            state.texts = state.texts.slice(
-              -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
-            );
+          if (
+            this.maxPendingSize > 0 &&
+            state.texts.length > this.maxPendingSize
+          ) {
+            state.texts = this.capMessages(state.texts);
             state.droppedNoticePending = true;
           }
           if (input.idempotencyKey) {
@@ -967,6 +963,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
   private bufferKey(externalUserId: string): string {
     return `${this.bufferPrefix}${externalUserId}`;
+  }
+
+  private capMessages(messages: string[]): string[] {
+    return messages.slice(-this.maxPendingSize);
   }
 
   private emptyState(): RedisChatQueueBufferState {

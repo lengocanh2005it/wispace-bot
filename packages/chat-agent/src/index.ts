@@ -68,6 +68,12 @@ export {
 } from './chat-queue/reconciliation-metrics';
 export { readChatFlushRetrySettings } from './chat-queue/chat-queue-retry.config';
 export {
+  ChatRuntimeConfig,
+  type ChatHistoryRuntimeConfig,
+  type ChatRuntimeConfigReader,
+  type ChatStoreKind,
+} from './chat-runtime-config';
+export {
   createChatPipelineAdapters,
   type OutboundServicePort,
 } from './chat-pipeline-adapters';

@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { runBatched } from '@wispace/scheduler-core';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 
 const POLL_MS = 2000;
 const POLL_LIMIT = 25;
@@ -22,6 +23,7 @@ export class RedisChatQueueWorkerService
   /** #454: one poll wave at a time — a flush contains an LLM call that outlasts the 2s tick. */
   private polling = false;
   private lastReconciledAt = 0;
+  private readonly runtimeConfig: ChatRuntimeConfig;
 
   constructor(
     private readonly configService: ConfigService,
@@ -30,7 +32,10 @@ export class RedisChatQueueWorkerService
     ) => Promise<string[]>,
     private readonly flushReady: (externalUserId: string) => Promise<void>,
     private readonly reconcile?: () => Promise<unknown>,
-  ) {}
+    runtimeConfig?: ChatRuntimeConfig,
+  ) {
+    this.runtimeConfig = runtimeConfig ?? new ChatRuntimeConfig(configService);
+  }
 
   onModuleInit(): void {
     if (!this.isDistributedQueueEnabled()) {
@@ -81,17 +86,6 @@ export class RedisChatQueueWorkerService
   }
 
   private isDistributedQueueEnabled(): boolean {
-    const store =
-      this.configService
-        .get<string>('CHAT_QUEUE_STORE')
-        ?.trim()
-        .toLowerCase() ??
-      (this.configService
-        .get<string>('CHAT_QUEUE_SHARED')
-        ?.trim()
-        .toLowerCase() === 'true'
-        ? 'redis'
-        : 'memory');
-    return store === 'redis';
+    return this.runtimeConfig.queueMode() === 'redis';
   }
 }

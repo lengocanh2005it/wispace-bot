@@ -22,6 +22,7 @@ import {
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
+  ChatRuntimeConfig,
   RedisChatQueueStore,
   RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
@@ -137,6 +138,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     ]),
   ],
   providers: [
+    {
+      provide: ChatRuntimeConfig,
+      useFactory: (configService: ConfigService) =>
+        new ChatRuntimeConfig(configService),
+      inject: [ConfigService],
+    },
     ZaloChatService,
     ZaloWelcomeService,
     {
@@ -189,14 +196,20 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       provide: PlatformChatHistoryService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         redisClient?: { getNativeClient(): unknown } | null,
       ) =>
         new PlatformChatHistoryService(
           configService,
           { envPrefix: 'ZALO_CHAT_HISTORY_', keyPrefix: 'chat-history:zalo:' },
           redisClient,
+          runtimeConfig,
         ),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+      inject: [
+        ConfigService,
+        ChatRuntimeConfig,
+        { token: REDIS_CLIENT, optional: true },
+      ],
     },
     {
       provide: PlatformAgentToolsService,
@@ -380,6 +393,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       provide: PlatformChatQueueService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         rateLimitService: PlatformChatRateLimitService,
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
@@ -426,10 +440,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             timeStep: (step, fn) => metrics.timeStep(step, fn),
           },
           queueStore,
+          runtimeConfig,
         );
       },
       inject: [
         ConfigService,
+        ChatRuntimeConfig,
         PlatformChatRateLimitService,
         PlatformChatHistoryService,
         PlatformAgentService,
@@ -444,21 +460,33 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (
         redisClient: import('@wispace/bot-common/redis').RedisClientPort,
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         metrics: BotMetricsService,
       ) =>
-        new RedisChatQueueStore(redisClient, configService, {
-          platform: 'zalo',
-          onRecoveryOutcome: (outcome) =>
-            metrics.incChatFlushRecovery('zalo', outcome),
-          onReconciliation: (result) =>
-            recordChatQueueReconciliationMetrics(metrics, result),
-        }),
-      inject: [REDIS_CLIENT, ConfigService, BotMetricsService],
+        new RedisChatQueueStore(
+          redisClient,
+          configService,
+          {
+            platform: 'zalo',
+            onRecoveryOutcome: (outcome) =>
+              metrics.incChatFlushRecovery('zalo', outcome),
+            onReconciliation: (result) =>
+              recordChatQueueReconciliationMetrics(metrics, result),
+          },
+          runtimeConfig,
+        ),
+      inject: [
+        REDIS_CLIENT,
+        ConfigService,
+        ChatRuntimeConfig,
+        BotMetricsService,
+      ],
     },
     {
       provide: RedisChatQueueWorkerService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         queueStore: ChatQueueStorePort,
         queueService: PlatformChatQueueService,
       ) =>
@@ -467,9 +495,11 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           (limit) => queueStore.listReadyExternalUserIds(limit),
           (externalUserId) => queueService.flushReady(externalUserId),
           queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
+          runtimeConfig,
         ),
       inject: [
         ConfigService,
+        ChatRuntimeConfig,
         PLATFORM_CHAT_QUEUE_STORE,
         PlatformChatQueueService,
       ],

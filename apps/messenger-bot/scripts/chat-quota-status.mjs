@@ -1,5 +1,6 @@
 import { createPool } from './_db.mjs';
 import { parseArgs } from './_args.mjs';
+import { ChatRuntimeConfig } from '@wispace/chat-agent';
 
 const HELP = `Usage: npm run chat-quota:status -- [options]
 
@@ -125,6 +126,7 @@ const remainingHintThreshold = readPositiveNumber(
 const stuckReservedMs = readStuckReservedMs();
 const retentionDays = readRetentionDays();
 const stuckBefore = new Date(Date.now() - stuckReservedMs);
+const chatRuntimeConfig = new ChatRuntimeConfig(process.env);
 
 const pool = createPool();
 
@@ -364,13 +366,9 @@ try {
     );
 
     let sharedQueueStats = {
-      queueStore:
-        process.env.CHAT_QUEUE_STORE ??
-        (process.env.CHAT_QUEUE_SHARED === 'true' ? 'redis' : 'memory'),
-      historyStore:
-        process.env.CHAT_HISTORY_STORE ??
-        (process.env.CHAT_QUEUE_SHARED === 'true' ? 'redis' : 'memory'),
-      queueSharedEnv: process.env.CHAT_QUEUE_SHARED === 'true',
+      queueStore: chatRuntimeConfig.queueMode(),
+      historyStore: chatRuntimeConfig.history('CHAT_HISTORY_').store,
+      queueSharedEnv: chatRuntimeConfig.legacyQueueShared,
       note: 'Queue/history buffers live in Redis or in-process memory — postgres tables removed',
     };
 

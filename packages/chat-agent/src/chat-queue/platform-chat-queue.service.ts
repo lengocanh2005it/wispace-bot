@@ -23,15 +23,11 @@ import {
 } from '@wispace/bot-common/masking';
 import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 import type { ChatQueueBufferSnapshot } from './chat-queue-store.types';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
-import {
-  readChatFlushRetrySettings,
-  readPositiveNumber,
-} from './chat-queue-retry.config';
+import { readChatFlushRetrySettings } from './chat-queue-retry.config';
 
-const DEFAULT_DEBOUNCE_MS = 2000;
-const DEFAULT_PROCESSING_STUCK_MS = 300_000;
 const REDIS_AVAILABILITY_WAIT_MS = 5_000;
 const REDIS_AVAILABILITY_POLL_MS = 50;
 const STALE_TTL_MS = 60 * 60 * 1000;
@@ -106,15 +102,11 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     },
     private readonly options: PlatformChatQueueOptions = {},
     private readonly queueStore?: ChatQueueStorePort,
+    runtimeConfig?: ChatRuntimeConfig,
   ) {
     this.directTextSender = directTextSender;
-    const configuredStore =
-      configService.get<string>('CHAT_QUEUE_STORE')?.trim().toLowerCase() ??
-      (configService.get<string>('CHAT_QUEUE_SHARED')?.trim().toLowerCase() ===
-      'true'
-        ? 'redis'
-        : 'memory');
-    this.distributed = configuredStore === 'redis';
+    const runtime = runtimeConfig ?? new ChatRuntimeConfig(configService);
+    this.distributed = runtime.queueMode() === 'redis';
 
     const nodeEnv =
       configService.get<string>('NODE_ENV')?.trim().toLowerCase() ??
@@ -122,31 +114,17 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     if (nodeEnv === 'production' && !this.distributed) {
       throw new Error('CHAT_QUEUE_STORE=redis is required in production');
     }
-    this.debounceMs = Math.min(
-      Math.max(
-        Number(configService.get<string>('CHAT_DEBOUNCE_MS')) ||
-          DEFAULT_DEBOUNCE_MS,
-        0,
-      ),
-      10_000,
-    );
-    this.processingStuckMs = readPositiveNumber(
-      configService.get<string>('CHAT_QUEUE_PROCESSING_STUCK_MS'),
-      DEFAULT_PROCESSING_STUCK_MS,
-    );
+    this.debounceMs = runtime.debounceMs;
+    this.processingStuckMs = runtime.processingStuckMs;
 
     const retrySettings = readChatFlushRetrySettings(configService);
     this.retryEnabled = retrySettings.enabled;
     this.retryDelayMs = retrySettings.delayMs;
 
     const maxPendingSize =
-      configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
+      runtime.maxPendingSize === 0
         ? Number.MAX_SAFE_INTEGER
-        : Math.max(
-            1,
-            Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) ||
-              20,
-          );
+        : runtime.maxPendingSize;
 
     const hooks: ChatPipelineHooks = {
       onError: async (ctx: PipelineContext) => {

@@ -34,6 +34,7 @@ import {
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
+  ChatRuntimeConfig,
   RedisChatQueueStore,
   RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
@@ -135,6 +136,12 @@ const REGISTER_REPORT_MESSAGE =
     ]),
   ],
   providers: [
+    {
+      provide: ChatRuntimeConfig,
+      useFactory: (configService: ConfigService) =>
+        new ChatRuntimeConfig(configService),
+      inject: [ConfigService],
+    },
     DiscordChatGateway,
     {
       provide: PlatformConnectivityState,
@@ -162,14 +169,20 @@ const REGISTER_REPORT_MESSAGE =
       provide: PlatformChatHistoryService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         redisClient?: { getNativeClient(): unknown } | null,
       ) =>
         new PlatformChatHistoryService(
           configService,
           { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
           redisClient,
+          runtimeConfig,
         ),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+      inject: [
+        ConfigService,
+        ChatRuntimeConfig,
+        { token: REDIS_CLIENT, optional: true },
+      ],
     },
     {
       provide: PlatformAgentToolsService,
@@ -339,6 +352,7 @@ const REGISTER_REPORT_MESSAGE =
       provide: PlatformChatQueueService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         rateLimitService: PlatformChatRateLimitService,
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
@@ -394,10 +408,12 @@ const REGISTER_REPORT_MESSAGE =
             timeStep: (step, fn) => metrics.timeStep(step, fn),
           },
           queueStore,
+          runtimeConfig,
         );
       },
       inject: [
         ConfigService,
+        ChatRuntimeConfig,
         PlatformChatRateLimitService,
         PlatformChatHistoryService,
         PlatformAgentService,
@@ -412,21 +428,33 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         redisClient: import('@wispace/bot-common/redis').RedisClientPort,
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         metrics: BotMetricsService,
       ) =>
-        new RedisChatQueueStore(redisClient, configService, {
-          platform: 'discord',
-          onRecoveryOutcome: (outcome) =>
-            metrics.incChatFlushRecovery('discord', outcome),
-          onReconciliation: (result) =>
-            recordChatQueueReconciliationMetrics(metrics, result),
-        }),
-      inject: [REDIS_CLIENT, ConfigService, BotMetricsService],
+        new RedisChatQueueStore(
+          redisClient,
+          configService,
+          {
+            platform: 'discord',
+            onRecoveryOutcome: (outcome) =>
+              metrics.incChatFlushRecovery('discord', outcome),
+            onReconciliation: (result) =>
+              recordChatQueueReconciliationMetrics(metrics, result),
+          },
+          runtimeConfig,
+        ),
+      inject: [
+        REDIS_CLIENT,
+        ConfigService,
+        ChatRuntimeConfig,
+        BotMetricsService,
+      ],
     },
     {
       provide: RedisChatQueueWorkerService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         queueStore: ChatQueueStorePort,
         queueService: PlatformChatQueueService,
       ) =>
@@ -435,9 +463,11 @@ const REGISTER_REPORT_MESSAGE =
           (limit) => queueStore.listReadyExternalUserIds(limit),
           (externalUserId) => queueService.flushReady(externalUserId),
           queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
+          runtimeConfig,
         ),
       inject: [
         ConfigService,
+        ChatRuntimeConfig,
         PLATFORM_CHAT_QUEUE_STORE,
         PlatformChatQueueService,
       ],

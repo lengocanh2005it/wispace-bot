@@ -487,7 +487,7 @@ describe('PlatformChatQueueService', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('clamps debounce config to 0–10s', () => {
+  it('clamps debounce config and falls back for invalid values', () => {
     configGet.mockImplementation((key: string) => {
       if (key === 'CHAT_DEBOUNCE_MS') return '99999';
       return undefined;
@@ -509,7 +509,7 @@ describe('PlatformChatQueueService', () => {
     const cfg2 = MockedDebounceChatQueue.mock.calls[1][0] as {
       getDebounceMs: () => number;
     };
-    expect(cfg2.getDebounceMs()).toBe(0);
+    expect(cfg2.getDebounceMs()).toBe(2_000);
   });
 
   it('sends the pending message when a second message queues while processing', async () => {

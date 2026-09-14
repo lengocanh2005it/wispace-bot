@@ -1,9 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  readEnvBoolean,
-  readEnvPositiveInt,
-} from '@messenger/shared/config/env-helpers';
+import { ChatRuntimeConfig } from '@wispace/chat-agent';
+import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
 import type {
   ChatHistoryStoreKind,
   ChatQueueStoreKind,
@@ -11,10 +9,17 @@ import type {
 
 @Injectable()
 export class MessengerChatSharedConfigService {
-  constructor(private readonly configService: ConfigService) {}
+  private readonly runtimeConfig: ChatRuntimeConfig;
+
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() runtimeConfig?: ChatRuntimeConfig,
+  ) {
+    this.runtimeConfig = runtimeConfig ?? new ChatRuntimeConfig(configService);
+  }
 
   isSharedQueueEnabled(): boolean {
-    return readEnvBoolean(this.configService, 'CHAT_QUEUE_SHARED', false);
+    return this.runtimeConfig.legacyQueueShared;
   }
 
   isDistributedQueueEnabled(): boolean {
@@ -22,39 +27,19 @@ export class MessengerChatSharedConfigService {
   }
 
   getQueueStore(): ChatQueueStoreKind {
-    const raw = this.configService
-      .get<string>('CHAT_QUEUE_STORE')
-      ?.trim()
-      .toLowerCase();
-    if (raw === 'memory' || raw === 'redis') return raw;
-    if (this.isSharedQueueEnabled()) return 'redis';
-    return 'memory';
+    return this.runtimeConfig.queueMode();
   }
 
   getHistoryStore(): ChatHistoryStoreKind {
-    const raw = this.configService
-      .get<string>('CHAT_HISTORY_STORE')
-      ?.trim()
-      .toLowerCase();
-    if (raw === 'memory' || raw === 'redis') return raw;
-    if (this.isSharedQueueEnabled()) return 'redis';
-    return 'memory';
+    return this.runtimeConfig.history('CHAT_HISTORY_').store;
   }
 
   getProcessingStuckMs(): number {
-    return readEnvPositiveInt(
-      this.configService,
-      'CHAT_QUEUE_PROCESSING_STUCK_MS',
-      300_000,
-    );
+    return this.runtimeConfig.processingStuckMs;
   }
 
   getHistoryTtlMs(): number {
-    return readEnvPositiveInt(
-      this.configService,
-      'CHAT_HISTORY_TTL_MS',
-      30 * 60 * 1000,
-    );
+    return this.runtimeConfig.history('CHAT_HISTORY_').ttlMs;
   }
 
   /** #660: how long a pending in-chat privacy confirmation stays valid. */
@@ -67,19 +52,11 @@ export class MessengerChatSharedConfigService {
   }
 
   getHistoryMaxMessages(): number {
-    return readEnvPositiveInt(
-      this.configService,
-      'CHAT_HISTORY_MAX_MESSAGES',
-      12,
-    );
+    return this.runtimeConfig.history('CHAT_HISTORY_').maxMessages;
   }
 
   getHistoryMaxUsers(): number {
-    return readEnvPositiveInt(
-      this.configService,
-      'CHAT_HISTORY_MAX_USERS',
-      10_000,
-    );
+    return this.runtimeConfig.history('CHAT_HISTORY_').maxUsers;
   }
 
   getQueueStaleTtlMs(): number {

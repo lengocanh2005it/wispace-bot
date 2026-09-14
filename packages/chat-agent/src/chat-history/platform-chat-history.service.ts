@@ -16,10 +16,8 @@ import {
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
 import type { PlatformChatHistoryOptions } from '../agent/platform-agent.types';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 
-const DEFAULT_MAX_MESSAGES = 20; // 10 turns (user + assistant)
-const DEFAULT_TTL_MS = 30 * 60 * 1000;
-const DEFAULT_MAX_USERS = 10_000;
 /** How long to wait for RedisService's async connect (ping) before failing closed. */
 const REDIS_AVAILABILITY_WAIT_MS = 5_000;
 const REDIS_AVAILABILITY_POLL_MS = 50;
@@ -50,25 +48,26 @@ export class PlatformChatHistoryService
     configService: ConfigService,
     options: PlatformChatHistoryOptions,
     redisClient?: { getNativeClient(): unknown } | null,
+    runtimeConfig?: ChatRuntimeConfig,
   ) {
-    const ttlMs =
-      Number(configService.get<string>(`${options.envPrefix}TTL_MS`)) ||
-      DEFAULT_TTL_MS;
-    const maxMessages =
-      Number(configService.get<string>(`${options.envPrefix}MAX_MESSAGES`)) ||
-      DEFAULT_MAX_MESSAGES;
-    const maxUsers =
-      Number(configService.get<string>(`${options.envPrefix}MAX_USERS`)) ||
-      DEFAULT_MAX_USERS;
+    const history = (
+      runtimeConfig ?? new ChatRuntimeConfig(configService)
+    ).history(options.envPrefix);
 
-    this.storeType =
-      configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
-    this.ttlMs = ttlMs;
-    this.maxMessages = maxMessages;
+    this.storeType = history.store;
+    this.ttlMs = history.ttlMs;
+    this.maxMessages = history.maxMessages;
     this.options = options;
     this.redisClient = redisClient;
-    this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages, maxUsers });
-    this.compactionMemory = new MemoryCompactionCache({ ttlMs, maxUsers });
+    this.memory = new MemoryChatHistoryStore({
+      ttlMs: history.ttlMs,
+      maxMessages: history.maxMessages,
+      maxUsers: history.maxUsers,
+    });
+    this.compactionMemory = new MemoryCompactionCache({
+      ttlMs: history.ttlMs,
+      maxUsers: history.maxUsers,
+    });
   }
 
   onModuleDestroy(): void {

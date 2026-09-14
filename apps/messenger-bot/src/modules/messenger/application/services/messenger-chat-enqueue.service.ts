@@ -9,6 +9,7 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
+import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import type { EnqueueChatMessageInput } from '../../domain/entities/messenger-chat-queue.types';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
@@ -37,6 +38,7 @@ interface MemoryQueueContext {
 export class MessengerChatEnqueueService implements OnModuleDestroy {
   private readonly logger = new Logger(MessengerChatEnqueueService.name);
   private readonly debounceQueue: DebounceChatQueue<MemoryQueueContext>;
+  private readonly runtimeConfig: ChatRuntimeConfig;
   /** PSIDs already told their messages were dropped this cycle (reset on flush). */
   private readonly droppedNotified = new Set<string>();
 
@@ -49,17 +51,15 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     @Optional()
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
+    @Optional() runtimeConfig?: ChatRuntimeConfig,
   ) {
+    this.runtimeConfig = runtimeConfig ?? new ChatRuntimeConfig(configService);
     // 0 = no cap (DebounceChatQueue maps 0 to its default 20, so pass
     // MAX_SAFE_INTEGER to disable the pending-message cap entirely).
     const maxPendingSize =
-      configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
+      this.runtimeConfig.maxPendingSize === 0
         ? Number.MAX_SAFE_INTEGER
-        : Math.max(
-            1,
-            Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) ||
-              20,
-          );
+        : this.runtimeConfig.maxPendingSize;
 
     this.debounceQueue = new DebounceChatQueue<MemoryQueueContext>(
       {
@@ -250,13 +250,6 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
   }
 
   private getDebounceMs(): number {
-    const parsed = Number(
-      this.configService.get<string>('CHAT_DEBOUNCE_MS') ?? 2000,
-    );
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return 2000;
-    }
-
-    return Math.min(Math.floor(parsed), 10_000);
+    return this.runtimeConfig.debounceMs;
   }
 }

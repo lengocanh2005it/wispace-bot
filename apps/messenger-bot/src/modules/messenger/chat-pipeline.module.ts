@@ -10,6 +10,7 @@ import {
   PlatformAgentService,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
+  ChatRuntimeConfig,
   RedisChatQueueWorkerService,
   CLARIFICATION_STATE_STORE,
   LlmContentClassifier,
@@ -129,6 +130,12 @@ import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
     ]),
   ],
   providers: [
+    {
+      provide: ChatRuntimeConfig,
+      useFactory: (configService: ConfigService) =>
+        new ChatRuntimeConfig(configService),
+      inject: [ConfigService],
+    },
     MessengerChatSharedConfigService,
     {
       provide: MESSENGER_TOOL_IDENTITY_PROVIDER,
@@ -181,14 +188,20 @@ import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
       provide: PlatformChatHistoryService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         redisClient?: { getNativeClient(): unknown } | null,
       ) =>
         new PlatformChatHistoryService(
           configService,
           { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat:history:' },
           redisClient,
+          runtimeConfig,
         ),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+      inject: [
+        ConfigService,
+        ChatRuntimeConfig,
+        { token: REDIS_CLIENT, optional: true },
+      ],
     },
     {
       provide: PlatformLlmUsageRecorderAdapter,
@@ -523,6 +536,7 @@ import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
       provide: RedisChatQueueWorkerService,
       useFactory: (
         configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
         queueStore: ChatQueueStorePort,
         processor: MessengerChatProcessorService,
       ) =>
@@ -531,8 +545,14 @@ import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
           (limit) => queueStore.listPsidsReadyForFlush(limit),
           (externalUserId) => processor.flushReady(externalUserId),
           queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
+          runtimeConfig,
         ),
-      inject: [ConfigService, CHAT_QUEUE_STORE, MessengerChatProcessorService],
+      inject: [
+        ConfigService,
+        ChatRuntimeConfig,
+        CHAT_QUEUE_STORE,
+        MessengerChatProcessorService,
+      ],
     },
   ],
   exports: [

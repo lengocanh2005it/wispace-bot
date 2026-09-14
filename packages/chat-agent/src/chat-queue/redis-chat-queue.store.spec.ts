@@ -62,6 +62,57 @@ describe('RedisChatQueueStore', () => {
     exists: jest.fn().mockResolvedValue(1),
   });
 
+  it('applies the shared pending-message cap', async () => {
+    let persistedState: string | null = JSON.stringify({
+      texts: [],
+      pendingTexts: [],
+      processingTexts: ['in-flight'],
+      processing: true,
+      processingStartedAt: Date.now(),
+      processingLeaseToken: 'lease-1',
+      retryCount: 0,
+      idempotencyKeys: [],
+    });
+    const transaction = createTransaction();
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    const client = createClient(
+      jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      transaction,
+    );
+    const store = new RedisChatQueueStore(
+      {
+        isEnabled: () => true,
+        getNativeClient: () => client,
+      } as unknown as RedisClientPort,
+      {
+        get: (key: string) =>
+          key === 'CHAT_MAX_PENDING_MESSAGES' ? '1' : undefined,
+      } as never,
+      { platform: 'discord' },
+    );
+
+    await store.appendChatBuffer({
+      externalUserId: 'discord-cap',
+      userText: 'first',
+      debounceMs: 2_000,
+    });
+    await store.appendChatBuffer({
+      externalUserId: 'discord-cap',
+      userText: 'second',
+      debounceMs: 2_000,
+    });
+
+    const state = JSON.parse(persistedState ?? '{}') as {
+      pendingTexts?: string[];
+      droppedNoticePending?: boolean;
+    };
+    expect(state.pendingTexts).toEqual(['second']);
+    expect(state.droppedNoticePending).toBe(true);
+  });
+
   it('keeps Messenger on its legacy namespace and isolates Discord', async () => {
     const transaction = createTransaction();
     const client = createClient(jest.fn().mockResolvedValue(null), transaction);

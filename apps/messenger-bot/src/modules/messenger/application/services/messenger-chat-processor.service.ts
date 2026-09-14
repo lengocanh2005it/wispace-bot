@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
   maskExternalId,
@@ -52,6 +52,7 @@ import {
   PlatformChatHistoryService,
   readChatFlushRetrySettings,
 } from '@wispace/chat-agent';
+import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { isValidApprovalToken } from '@wispace/reschedule-confirm';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
@@ -82,6 +83,7 @@ export class MessengerChatProcessorService {
   private queueClearer?: (psid: string) => Promise<void>;
   private readonly retryEnabled: boolean;
   private readonly retryDelayMs: number;
+  private readonly runtimeConfig: ChatRuntimeConfig;
   private readonly fallbackSentThisCycle = new Set<string>();
   private readonly rateLimitedThisCycle = new Set<string>();
 
@@ -103,7 +105,9 @@ export class MessengerChatProcessorService {
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository?: MessengerMappingRepositoryPort,
     private readonly displayNameCache?: RedisUserDisplayNameCache,
+    @Optional() runtimeConfig?: ChatRuntimeConfig,
   ) {
+    this.runtimeConfig = runtimeConfig ?? new ChatRuntimeConfig(configService);
     const retrySettings = readChatFlushRetrySettings(configService);
     this.retryEnabled = retrySettings.enabled;
     this.retryDelayMs = retrySettings.delayMs;
@@ -235,7 +239,7 @@ export class MessengerChatProcessorService {
     const snapshot = await this.getChatQueueStore().claimReadyBuffer(
       psid,
       this.getDebounceMs(),
-      this.sharedConfig.getProcessingStuckMs(),
+      this.runtimeConfig.processingStuckMs,
     );
 
     if (!snapshot || snapshot.texts.length === 0) {
@@ -951,13 +955,6 @@ export class MessengerChatProcessorService {
   }
 
   private getDebounceMs(): number {
-    const parsed = Number(
-      this.configService.get<string>('CHAT_DEBOUNCE_MS') ?? 2000,
-    );
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return 2000;
-    }
-
-    return Math.min(Math.floor(parsed), 10_000);
+    return this.runtimeConfig.debounceMs;
   }
 }
