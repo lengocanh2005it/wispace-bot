@@ -15,6 +15,19 @@ whitespace-only payloads. That class had never been audited when this note was
 added (2026-09-09) precisely because this document looked like the catalogue for
 it. Add a pointer here when a new class of edge case gets its own pass, rather
 than letting the omission look like a clean bill of health.
+**Input/data class audited (2026-09-14):** the input-validation pass this note
+scoped out has since had a dedicated pass — webhook DTOs + `#436` field-copy
+mappers, zod-at-boundaries coverage, chat-tool argument coercion/clamping,
+per-route ops validation, and date/Unicode/boundary edge cases — plus full 6-domain
+gap sweeps (identity, outbound, LLM, privacy, deploy). Findings landed on the
+tracker: `#1000` comment (report-retry generation fence applies cross-bot, not
+just Messenger), `#1160` (Zalo link-reconcile lock/age drift), `#1161`
+(duplicate ops-health implementation), `#556` comment (`zalo_welcome_records`
+same retention profile as Discord). Two audit claims were retracted/corrected
+before filing: the `chat_quota_events` cleanup cron **does** exist
+(`chat-quota-event-cleanup`, monthly), and the older ops-health "`since` param
+ignored" claim is stale at HEAD (`typeorm-ops-health.repository.ts` binds `$2`).
+Remaining unowned findings are exactly the open issues above.
 
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
