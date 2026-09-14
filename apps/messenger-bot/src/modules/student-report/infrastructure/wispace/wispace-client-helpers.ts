@@ -4,6 +4,10 @@ import type {
   WispaceApiClientConfig,
   WispaceClientMetrics,
 } from '@wispace/wispace-client';
+import {
+  buildUpstreamUrlPolicy,
+  validateUpstreamUrl,
+} from '@wispace/wispace-client';
 
 export function buildWispaceClientConfig(
   configService: ConfigService,
@@ -16,8 +20,13 @@ export function buildWispaceClientConfig(
     throw new InternalServerErrorException(`${urlKey} must be set in .env`);
   }
 
-  return {
+  const validatedUrl = validateUpstreamUrl(
     url,
+    buildUpstreamUrlPolicy(urlKey, configService),
+  );
+
+  return {
+    url: validatedUrl,
     internalKey: getWispaceInternalKey(configService),
     maxRetries: readWispacePositiveInt(
       configService,

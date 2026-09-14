@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Canonical contract for WISPACE verify-token endpoint",
   "endpoint": "POST /api/User/verify-token-url",
   "env_var": "WISPACE_API_VERIFY_TOKEN_URL",
@@ -10,8 +10,13 @@
   },
   "response": {
     "success": "boolean",
-    "userId": "number (WISPACE internal user ID)"
+    "userId": "number (WISPACE internal user ID)",
+    "topic": "string (optional — Messenger notification topic)",
+    "cadence": "string (optional — Messenger notification cadence)"
   },
   "shared_across_bots": true,
-  "changelog": ["1.0.0 — Initial canonical contract"]
+  "changelog": [
+    "1.0.0 — Initial canonical contract",
+    "1.1.0 — Document optional Messenger topic/cadence metadata"
+  ]
 }

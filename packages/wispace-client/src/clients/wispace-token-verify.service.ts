@@ -29,6 +29,12 @@ const VERIFY_FAILURE_REASONS: WispaceLinkVerifyFailureReason[] = [
 
 /** Wire envelope only — userId/reason coercion below stays intentional leniency for the verify contract. */
 const linkVerifyBodySchema = z.record(z.string(), z.unknown());
+const linkVerifyMetadataSchema = z
+  .object({
+    topic: z.string().trim().min(1).optional().catch(undefined),
+    cadence: z.string().trim().min(1).optional().catch(undefined),
+  })
+  .passthrough();
 
 /**
  * Calls WISPACE's shared account-link verify API — the same
@@ -173,7 +179,14 @@ export class WispaceTokenVerifyService {
       `WISPACE verify-${this.platform}-token OK userId=${maskExternalId(userId)}`,
     );
 
-    return { valid: true, userId };
+    const metadata = linkVerifyMetadataSchema.parse(record);
+
+    return {
+      valid: true,
+      userId,
+      ...(metadata.topic ? { topic: metadata.topic } : {}),
+      ...(metadata.cadence ? { cadence: metadata.cadence } : {}),
+    };
   }
 
   private parseFailurePayload(

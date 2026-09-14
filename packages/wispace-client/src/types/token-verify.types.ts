@@ -5,5 +5,10 @@ export type WispaceLinkVerifyFailureReason =
   | 'INVALID_FORMAT';
 
 export type WispaceLinkVerifyResult =
-  | { valid: true; userId: number }
+  | {
+      valid: true;
+      userId: number;
+      topic?: string;
+      cadence?: string;
+    }
   | { valid: false; reason: WispaceLinkVerifyFailureReason };

@@ -90,6 +90,81 @@ describe('WispaceTokenVerifyService', () => {
     },
   );
 
+  it('passes optional upstream topic and cadence metadata through', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            userId: 143,
+            topic: ' IELTS ',
+            cadence: ' monthly ',
+          }),
+        ),
+    });
+
+    const service = new WispaceTokenVerifyService(
+      buildConfigService(),
+      'messenger',
+    );
+
+    await expect(service.verifyToken('link-token', 'psid-1')).resolves.toEqual({
+      valid: true,
+      userId: 143,
+      topic: 'IELTS',
+      cadence: 'monthly',
+    });
+  });
+
+  it('sends the Messenger payload through the shared client', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ userId: 143 })),
+    });
+    global.fetch = fetchMock;
+
+    const service = new WispaceTokenVerifyService(
+      buildConfigService(),
+      'messenger',
+    );
+
+    await service.verifyToken(' link-token ', ' psid-1 ');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://backend.example.com/api/User/verify-token-url',
+      expect.objectContaining({
+        body: JSON.stringify({
+          token: 'link-token',
+          value: 'psid-1',
+          platform: 'messenger',
+        }),
+      }),
+    );
+  });
+
+  it('composes the caller AbortSignal into the fetch request', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ userId: 143 })),
+    });
+    global.fetch = fetchMock;
+    const controller = new AbortController();
+
+    const service = new WispaceTokenVerifyService(
+      buildConfigService(),
+      'messenger',
+    );
+
+    await service.verifyToken('link-token', 'psid-1', {
+      signal: controller.signal,
+    });
+
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(requestInit.signal).toBeInstanceOf(AbortSignal);
+    controller.abort();
+    expect(requestInit.signal?.aborted).toBe(true);
+  });
+
   it.each(['discord', 'zalo'] as const)(
     'returns a failure reason from a non-ok response (%s)',
     async (platform) => {

@@ -15,14 +15,16 @@ import { MessengerMappingService } from './application/services/messenger-mappin
 import { MessengerLinkContextService } from './application/services/messenger-link-context.service';
 import { MessengerLinkStartupService } from './application/services/messenger-link-startup.service';
 import { MessengerLinkReconcileCronService } from './application/services/messenger-link-reconcile-cron.service';
-import { WispaceMessengerTokenVerifyService } from './infrastructure/wispace/wispace-messenger-token-verify.service';
+import { WispaceMessengerTokenVerifyAdapter } from './infrastructure/wispace/wispace-messenger-token-verify.adapter';
 import { MessengerLinkVerifyRecordEntity } from '../../infrastructure/database/entities/messenger-link-verify-record.entity';
 import { TypeormMessengerLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-messenger-link-verify-record.repository';
 import { MESSENGER_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/messenger-link-verify-record.repository.port';
+import { MESSENGER_TOKEN_VERIFY } from './domain/ports/messenger-token-verify.port';
 import { PlatformLinkStateService } from '@wispace/database';
 import {
   WispaceConfigService,
   WispaceLinkStatusClient,
+  WispaceTokenVerifyService,
 } from '@wispace/wispace-client';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
@@ -44,7 +46,16 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     MessengerMappingService,
     MessengerLinkContextService,
     MessengerLinkStartupService,
-    WispaceMessengerTokenVerifyService,
+    {
+      provide: WispaceTokenVerifyService,
+      useFactory: (configService: ConfigService, metrics: BotMetricsService) =>
+        new WispaceTokenVerifyService(configService, 'messenger', metrics),
+      inject: [ConfigService, BotMetricsService],
+    },
+    {
+      provide: MESSENGER_TOKEN_VERIFY,
+      useClass: WispaceMessengerTokenVerifyAdapter,
+    },
     MessengerLinkReconcileCronService,
     PlatformLinkStateService,
     {

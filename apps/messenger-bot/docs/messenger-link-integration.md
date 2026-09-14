@@ -19,7 +19,7 @@ Related: [messenger-link-security.md](./messenger-link-security.md) (solution tr
 
 ## 1. Current Flow (Token-Verified)
 
-The bot is already in token-only mode. WISPACE issues an opaque token in the `m.me` URL; the bot never derives `userId` from that token. On a webhook carrying a new referral token, `MessengerLinkContextService` calls `WispaceMessengerTokenVerifyService`, which posts `{ token, value: psid, platform: 'messenger' }` to `WISPACE_API_VERIFY_TOKEN_URL` with `X-Internal-Key`. Only a successful response can produce the `userId` used to save the mapping.
+The bot is already in token-only mode. WISPACE issues an opaque token in the `m.me` URL; the bot never derives `userId` from that token. On a webhook carrying a new referral token, `MessengerLinkContextService` delegates to the Messenger token-verify boundary, which posts `{ token, value: psid, platform: 'messenger' }` to `WISPACE_API_VERIFY_TOKEN_URL` with `X-Internal-Key`. The canonical shared client owns URL policy, timeout, and cancellation handling; Messenger keeps only its `topic`/`cadence` defaults and validation. Only a successful response can produce the `userId` used to save the mapping.
 
 Webhook relinking to a different `userId` is rejected. Support can change a mapping only through the protected ops relink flow with `allowRelink`.
 

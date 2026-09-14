@@ -220,16 +220,20 @@ Bot **only** supports `token` — `legacy` / `signed` already removed; startup f
 
 ## 5. Current Code and Contract
 
-| File / Module                        | Change                                                                              |
-| ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `MessengerLinkContextService`        | Resolves webhook ref through WISPACE token verification before linking              |
-| `WispaceMessengerTokenVerifyService` | Calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }`              |
-| `MessengerMappingService`            | Rejects webhook relink if PSID is ACTIVE and `userId` differs                       |
-| `MessengerService` / webhook router  | Links only after a successful verification outcome                                  |
-| `.env.example`                       | `MESSENGER_LINK_MODE=token`, `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY` |
-| WISPACE app                          | Must generate `m.me` URLs with opaque tokens, not client-side `userId` values       |
+| File / Module                       | Change                                                                                                                                       |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MessengerLinkContextService`       | Resolves webhook ref through WISPACE token verification before linking                                                                       |
+| Messenger token-verify boundary     | Uses the canonical WISPACE token client with `platform: 'messenger'`; Messenger-only `topic`/`cadence` normalization stays in a thin adapter |
+| `MessengerMappingService`           | Rejects webhook relink if PSID is ACTIVE and `userId` differs                                                                                |
+| `MessengerService` / webhook router | Links only after a successful verification outcome                                                                                           |
+| `.env.example`                      | `MESSENGER_LINK_MODE=token`, `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY`                                                          |
+| WISPACE app                         | Must generate `m.me` URLs with opaque tokens, not client-side `userId` values                                                                |
 
 **WISPACE verify API contract:**
+
+The Messenger boundary uses the shared `WispaceTokenVerifyService`. The shared
+client owns URL policy, HTTP timeout, and `AbortSignal` handling; Messenger
+retains only its POC `topic`/`cadence` defaults and validation.
 
 ```http
 POST {WISPACE_API_VERIFY_TOKEN_URL}

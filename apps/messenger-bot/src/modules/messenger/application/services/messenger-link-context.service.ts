@@ -17,7 +17,10 @@ import {
   MESSENGER_LINK_INTENT_LEASE_MS,
   type MessengerLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/messenger-link-verify-record.repository.port';
-import { WispaceMessengerTokenVerifyService } from '../../infrastructure/wispace/wispace-messenger-token-verify.service';
+import {
+  MESSENGER_TOKEN_VERIFY,
+  type MessengerTokenVerifyPort,
+} from '../../domain/ports/messenger-token-verify.port';
 
 const RECORD_VERIFY_MAX_ATTEMPTS = 3;
 const RECORD_VERIFY_BASE_DELAY_MS = 50;
@@ -33,7 +36,8 @@ export class MessengerLinkContextService {
   private readonly logger = new Logger(MessengerLinkContextService.name);
 
   constructor(
-    private readonly wispaceTokenVerifyService: WispaceMessengerTokenVerifyService,
+    @Inject(MESSENGER_TOKEN_VERIFY)
+    private readonly wispaceTokenVerifyAdapter: MessengerTokenVerifyPort,
     @Inject(MESSENGER_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordRepository: MessengerLinkVerifyRecordRepositoryPort,
   ) {}
@@ -114,7 +118,7 @@ export class MessengerLinkContextService {
 
     let verified;
     try {
-      verified = await this.wispaceTokenVerifyService.verifyMessengerToken(
+      verified = await this.wispaceTokenVerifyAdapter.verifyMessengerToken(
         psid,
         normalizedRef,
       );

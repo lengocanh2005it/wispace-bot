@@ -1,14 +1,14 @@
 import { MessengerLinkContextService } from './messenger-link-context.service';
-import { WispaceMessengerTokenVerifyService } from '../../infrastructure/wispace/wispace-messenger-token-verify.service';
+import type { MessengerTokenVerifyPort } from '../../domain/ports/messenger-token-verify.port';
 
 describe('MessengerLinkContextService', () => {
   const createService = (
-    verifyImpl: WispaceMessengerTokenVerifyService['verifyMessengerToken'],
+    verifyImpl: MessengerTokenVerifyPort['verifyMessengerToken'],
     verifyRecordRepoOverrides?: Record<string, jest.Mock>,
   ) => {
     const verifyService = {
       verifyMessengerToken: verifyImpl,
-    } as WispaceMessengerTokenVerifyService;
+    } as MessengerTokenVerifyPort;
 
     const verifyRecordRepository = {
       findByRefFingerprint: jest.fn().mockResolvedValue(null),
@@ -331,6 +331,36 @@ describe('MessengerLinkContextService', () => {
       userId: 143,
       topic: 'IELTS',
       cadence: 'WEEKLY',
+    });
+  });
+
+  it('keeps event topic precedence but trusts verified cadence', async () => {
+    const verify = jest.fn(() =>
+      Promise.resolve({
+        valid: true as const,
+        userId: 143,
+        topic: 'WISPACE topic',
+        cadence: 'DAILY' as const,
+      }),
+    );
+
+    const { service, verifyRecordRepository } = createService(verify);
+
+    const outcome = await service.resolveFromRef('psid-1', {
+      ref: 'opaque-token',
+      topic: 'IELTS Writing',
+      cadence: 'MONTHLY',
+    });
+
+    expect(verifyRecordRepository.recordVerify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'IELTS Writing',
+        cadence: 'DAILY',
+      }),
+    );
+    expect(outcome.context).toMatchObject({
+      topic: 'IELTS Writing',
+      cadence: 'DAILY',
     });
   });
 
