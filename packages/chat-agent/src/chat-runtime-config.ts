@@ -122,6 +122,8 @@ export class ChatRuntimeConfig {
       this.env.CHAT_QUEUE_PROCESSING_STUCK_MS,
       DEFAULT_PROCESSING_STUCK_MS,
     );
+
+    Object.freeze(this);
   }
 
   queueMode(): ChatStoreKind {

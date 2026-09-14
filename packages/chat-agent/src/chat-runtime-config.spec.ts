@@ -114,5 +114,6 @@ describe('ChatRuntimeConfig', () => {
 
     expect(config.queueMode()).toBe('redis');
     expect(config.debounceMs).toBe(100);
+    expect(Object.isFrozen(config)).toBe(true);
   });
 });
