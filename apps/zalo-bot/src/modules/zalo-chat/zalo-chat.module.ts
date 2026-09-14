@@ -63,6 +63,7 @@ import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
 } from './application/ports/zalo-outbound.port';
+import { ZALO_CLARIFICATION_AGENT } from './application/ports/zalo-clarification-agent.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
 import {
@@ -138,6 +139,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   providers: [
     ZaloChatService,
     ZaloWelcomeService,
+    {
+      provide: ZALO_CLARIFICATION_AGENT,
+      useExisting: PlatformAgentService,
+    },
     TypeormStudyReminderJobRepository,
     // #549 — shadows forPlatform's unwired recorder with the metrics-wired one.
     provideWiredUsageRecorder('zalo', BotMetricsService),

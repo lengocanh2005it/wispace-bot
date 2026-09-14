@@ -2,10 +2,8 @@ import type { ConfigService } from '@nestjs/config';
 import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
-import {
-  type PlatformAgentService,
-  PlatformChatQueueService,
-} from '@wispace/chat-agent';
+import { PlatformChatQueueService } from '@wispace/chat-agent';
+import type { ZaloClarificationAgentPort } from '../ports/zalo-clarification-agent.port';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import { NotificationPreferenceService } from '@wispace/database';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
@@ -283,7 +281,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
       undefined,
       undefined,
-      { clearClarificationState } as unknown as PlatformAgentService,
+      { clearClarificationState } as unknown as ZaloClarificationAgentPort,
     );
 
     await service.handleIncomingMessage('zalo-1', 'hủy');

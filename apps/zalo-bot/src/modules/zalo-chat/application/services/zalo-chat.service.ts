@@ -22,10 +22,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
-import {
-  PlatformAgentService,
-  PlatformChatQueueService,
-} from '@wispace/chat-agent';
+import { PlatformChatQueueService } from '@wispace/chat-agent';
 import {
   isValidApprovalToken,
   RescheduleConfirmationService,
@@ -50,6 +47,10 @@ import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
 } from '../ports/zalo-outbound.port';
+import {
+  ZALO_CLARIFICATION_AGENT,
+  type ZaloClarificationAgentPort,
+} from '../ports/zalo-clarification-agent.port';
 
 @Injectable()
 export class ZaloChatService {
@@ -69,7 +70,9 @@ export class ZaloChatService {
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,
     @Optional() private readonly welcomeService?: ZaloWelcomeService,
-    @Optional() private readonly clarificationAgent?: PlatformAgentService,
+    @Optional()
+    @Inject(ZALO_CLARIFICATION_AGENT)
+    private readonly clarificationAgent?: ZaloClarificationAgentPort,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
