@@ -50,7 +50,9 @@ function snapshotSource(
 
   return Object.freeze(
     Object.fromEntries(
-      SNAPSHOT_KEYS.map((key) => [key, source.get<string>(key)]),
+      [...new Set([...SNAPSHOT_KEYS, ...Object.keys(process.env)])].map(
+        (key) => [key, source.get<string>(key)],
+      ),
     ),
   );
 }

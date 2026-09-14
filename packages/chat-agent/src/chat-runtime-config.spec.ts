@@ -116,4 +116,37 @@ describe('ChatRuntimeConfig', () => {
     expect(config.debounceMs).toBe(100);
     expect(Object.isFrozen(config)).toBe(true);
   });
+
+  it('snapshots custom history prefixes exposed by the environment reader', () => {
+    const prefix = 'CUSTOM_CHAT_HISTORY_';
+    const values: Record<string, string> = {
+      [`${prefix}STORE`]: 'redis',
+      [`${prefix}TTL_MS`]: '60000',
+      [`${prefix}MAX_MESSAGES`]: '7',
+      [`${prefix}MAX_USERS`]: '8',
+    };
+    const keys = Object.keys(values);
+    const previous = new Map(
+      keys.map((key) => [key, process.env[key]] as const),
+    );
+    try {
+      for (const key of keys) process.env[key] = values[key];
+
+      const config = new ChatRuntimeConfig({
+        get: (key: string) => values[key],
+      });
+
+      expect(config.history(prefix)).toEqual({
+        store: 'redis',
+        ttlMs: 60_000,
+        maxMessages: 7,
+        maxUsers: 8,
+      });
+    } finally {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
 });
