@@ -1,5 +1,6 @@
 import type { RedisClientPort } from '@wispace/bot-common/redis';
 import { RedisCommandTimeoutError } from '@wispace/bot-common/redis';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 import { RedisChatQueueStore } from './redis-chat-queue.store';
 
 describe('RedisChatQueueStore', () => {
@@ -87,11 +88,9 @@ describe('RedisChatQueueStore', () => {
         isEnabled: () => true,
         getNativeClient: () => client,
       } as unknown as RedisClientPort,
-      {
-        get: (key: string) =>
-          key === 'CHAT_MAX_PENDING_MESSAGES' ? '1' : undefined,
-      } as never,
+      { get: () => undefined } as never,
       { platform: 'discord' },
+      new ChatRuntimeConfig({ CHAT_MAX_PENDING_MESSAGES: '1' }),
     );
 
     await store.appendChatBuffer({

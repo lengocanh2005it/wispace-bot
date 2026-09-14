@@ -1,6 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
 import { RedisCommandTimeoutError } from '@wispace/bot-common/redis';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 import { RedisChatQueueWorkerService } from './redis-chat-queue.worker';
 
 describe('RedisChatQueueWorkerService', () => {
@@ -134,6 +135,25 @@ describe('RedisChatQueueWorkerService', () => {
 
     worker.onModuleInit();
     worker.onModuleDestroy();
+  });
+
+  it('uses the injected runtime snapshot for the queue mode', async () => {
+    const listReadyExternalUserIds = jest.fn().mockResolvedValue([]);
+    const configService = {
+      get: () => 'memory',
+    } as unknown as ConfigService;
+    const runtimeConfig = new ChatRuntimeConfig({ CHAT_QUEUE_STORE: 'redis' });
+    const worker = new RedisChatQueueWorkerService(
+      configService,
+      listReadyExternalUserIds,
+      jest.fn(),
+      undefined,
+      runtimeConfig,
+    );
+
+    await worker.pollReadyBuffers();
+
+    expect(listReadyExternalUserIds).toHaveBeenCalledWith(25);
   });
 
   it('runs the bounded reconciliation at most once per minute', async () => {

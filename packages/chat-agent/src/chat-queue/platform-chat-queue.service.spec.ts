@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import { ChatPipeline } from '@wispace/chat-pipeline';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 import { PlatformChatQueueService } from './platform-chat-queue.service';
 import { fallbackSentThisCycle } from './platform-chat-queue.service';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
@@ -67,6 +68,7 @@ describe('PlatformChatQueueService', () => {
   const buildConfigWith = (
     values: Record<string, string>,
     queueStore?: ChatQueueStorePort,
+    runtimeConfig?: ChatRuntimeConfig,
   ) => {
     const config = {
       get: jest.fn((key: string) => values[key] ?? configGet(key)),
@@ -84,6 +86,7 @@ describe('PlatformChatQueueService', () => {
       { sendText: jest.fn().mockResolvedValue(undefined) },
       {},
       queueStore,
+      runtimeConfig,
     );
   };
 
@@ -599,6 +602,26 @@ describe('PlatformChatQueueService', () => {
       maxPendingSize: number;
     };
     expect(cfg.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('uses the injected runtime snapshot for queue timing and capacity', () => {
+    const runtimeConfig = new ChatRuntimeConfig({
+      CHAT_DEBOUNCE_MS: '137',
+      CHAT_MAX_PENDING_MESSAGES: '4',
+    });
+
+    buildConfigWith(
+      { CHAT_DEBOUNCE_MS: '9000', CHAT_MAX_PENDING_MESSAGES: '20' },
+      undefined,
+      runtimeConfig,
+    );
+
+    const cfg = jest.mocked(DebounceChatQueue).mock.calls[0][0] as {
+      getDebounceMs: () => number;
+      maxPendingSize: number;
+    };
+    expect(cfg.getDebounceMs()).toBe(137);
+    expect(cfg.maxPendingSize).toBe(4);
   });
 
   describe('flush retry on pipeline+fallback failure (#406)', () => {

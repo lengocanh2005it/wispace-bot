@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
@@ -19,6 +20,7 @@ import { MessengerChatProcessorService } from './messenger-chat-processor.servic
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PlatformChatHistoryService } from '@wispace/chat-agent';
+import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import type { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { PrivacyStateService } from '@wispace/llm-agent';
 
@@ -41,6 +43,9 @@ describe('MessengerChatProcessorService', () => {
       mappingRepository?: MessengerMappingRepositoryPort;
       withPrivacy?: boolean;
       displayNameCache?: Pick<RedisUserDisplayNameCache, 'del' | 'delStrict'>;
+      distributedMode?: boolean;
+      chatQueueStore?: ChatQueueStorePort;
+      runtimeConfig?: ChatRuntimeConfig;
     } = {},
   ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
@@ -113,7 +118,7 @@ describe('MessengerChatProcessorService', () => {
     } as unknown as MessengerMessageLogRepositoryPort;
 
     const sharedConfig = {
-      isDistributedQueueEnabled: () => false,
+      isDistributedQueueEnabled: () => options.distributedMode ?? false,
       getProcessingStuckMs: () => 600_000,
       getQueueStaleTtlMs: () => 3_600_000,
       getQueueCleanupIntervalMs: () => 900_000,
@@ -164,11 +169,12 @@ describe('MessengerChatProcessorService', () => {
       sharedConfig,
       historyService,
       configService,
-      undefined, // chatQueueStore
+      options.chatQueueStore,
       privacyState,
       privacyService as never,
       options.mappingRepository as never,
       options.displayNameCache as never,
+      options.runtimeConfig,
     );
 
     return {
@@ -195,6 +201,25 @@ describe('MessengerChatProcessorService', () => {
       privacyExport,
     };
   };
+
+  it('uses the injected runtime snapshot for distributed flush boundaries', async () => {
+    const claimReadyBuffer = jest.fn().mockResolvedValue(null);
+    const runtimeConfig = new ChatRuntimeConfig({
+      CHAT_DEBOUNCE_MS: '137',
+      CHAT_QUEUE_PROCESSING_STUCK_MS: '1234',
+    });
+    const service = createService({
+      distributedMode: true,
+      chatQueueStore: {
+        claimReadyBuffer,
+      } as unknown as ChatQueueStorePort,
+      runtimeConfig,
+    }).service;
+
+    await service.flushReady('psid-1');
+
+    expect(claimReadyBuffer).toHaveBeenCalledWith('psid-1', 137, 1234);
+  });
 
   beforeEach(() => {
     jest.useFakeTimers();

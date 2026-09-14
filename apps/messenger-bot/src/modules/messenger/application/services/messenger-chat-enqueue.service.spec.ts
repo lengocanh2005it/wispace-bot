@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
@@ -6,7 +7,10 @@ import { MessengerChatEnqueueService } from './messenger-chat-enqueue.service';
 import type { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { MessengerOutboundService } from './messenger-outbound.service';
 
-const mockQueueConfigs: Array<{ maxPendingSize?: number }> = [];
+const mockQueueConfigs: Array<{
+  getDebounceMs?: () => number;
+  maxPendingSize?: number;
+}> = [];
 const mockQueueCallbacks: Array<{
   onPendingQueued: (
     externalUserId: string,
@@ -50,6 +54,7 @@ describe('MessengerChatEnqueueService', () => {
       shouldEnforce?: boolean;
       maxPendingMessages?: string;
       distributedMode?: boolean;
+      runtimeConfig?: ChatRuntimeConfig;
     } = {},
   ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
@@ -108,6 +113,7 @@ describe('MessengerChatEnqueueService', () => {
       chatRateLimitConfig,
       sharedConfig,
       options.distributedMode ? chatQueueStore : undefined,
+      options.runtimeConfig,
     );
     createdServices.push(service);
 
@@ -243,6 +249,21 @@ describe('MessengerChatEnqueueService', () => {
     mockQueueConfigs.length = 0;
     createService({ maxPendingMessages: '0' });
     expect(mockQueueConfigs[0]?.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('uses the injected runtime snapshot for memory queue construction', () => {
+    mockQueueConfigs.length = 0;
+    const runtimeConfig = new ChatRuntimeConfig({
+      CHAT_DEBOUNCE_MS: '137',
+      CHAT_MAX_PENDING_MESSAGES: '4',
+    });
+    createService({
+      maxPendingMessages: '20',
+      runtimeConfig,
+    });
+
+    expect(mockQueueConfigs[0]?.maxPendingSize).toBe(4);
+    expect(mockQueueConfigs[0]?.getDebounceMs?.()).toBe(137);
   });
 
   it('sends pending feedback on first queued message', () => {

@@ -10,6 +10,7 @@ describe('ChatRuntimeConfig', () => {
   it.each([
     [{ CHAT_QUEUE_STORE: 'redis' }, 'redis'],
     [{ CHAT_QUEUE_STORE: ' MEMORY ', CHAT_QUEUE_SHARED: 'true' }, 'memory'],
+    [{ CHAT_QUEUE_STORE: ' REDIS ' }, 'redis'],
     [{ CHAT_QUEUE_SHARED: '1' }, 'redis'],
     [{ CHAT_QUEUE_SHARED: 'YES' }, 'redis'],
     [{ CHAT_QUEUE_STORE: 'unknown', CHAT_QUEUE_SHARED: 'true' }, 'redis'],
@@ -25,6 +26,7 @@ describe('ChatRuntimeConfig', () => {
     ['12.9', 12],
     ['10001', 10_000],
     ['-1', 2_000],
+    ['NaN', 2_000],
     ['Infinity', 2_000],
     ['nope', 2_000],
   ])('resolves debounce %s as %s', (raw, expected) => {
@@ -36,6 +38,7 @@ describe('ChatRuntimeConfig', () => {
     ['0', 0],
     ['3.9', 3],
     ['-1', 20],
+    ['NaN', 20],
     ['Infinity', 20],
     ['nope', 20],
   ])('resolves pending cap %s as %s', (raw, expected) => {
@@ -49,6 +52,8 @@ describe('ChatRuntimeConfig', () => {
     ['300000.9', 300_000],
     ['0', 300_000],
     ['-1', 300_000],
+    ['NaN', 300_000],
+    ['Infinity', 300_000],
     ['nope', 300_000],
   ])('resolves processing stuck %s as %s', (raw, expected) => {
     expect(

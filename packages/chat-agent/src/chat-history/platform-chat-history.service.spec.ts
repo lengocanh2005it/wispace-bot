@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { computeCompactionCoverage } from '@wispace/chat-history';
+import { ChatRuntimeConfig } from '../chat-runtime-config';
 import { PlatformChatHistoryService } from './platform-chat-history.service';
 
 function buildService(envPrefix: string, keyPrefix: string) {
@@ -14,6 +15,24 @@ describe('PlatformChatHistoryService', () => {
   it('returns empty history for a user with no prior turns', async () => {
     const service = buildService('CHAT_HISTORY_', 'chat-history:discord:');
     await expect(service.getHistory('user-1')).resolves.toEqual([]);
+  });
+
+  it('uses the injected runtime snapshot for history limits', async () => {
+    const service = new PlatformChatHistoryService(
+      { get: () => undefined } as unknown as ConfigService,
+      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
+      undefined,
+      new ChatRuntimeConfig({ CHAT_HISTORY_MAX_MESSAGES: '2' }),
+    );
+
+    await service.appendTurn('user-1', 'first', 'reply-1');
+    await service.appendTurn('user-1', 'second', 'reply-2');
+
+    await expect(service.getHistory('user-1')).resolves.toEqual([
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'reply-2' },
+    ]);
+    service.onModuleDestroy();
   });
 
   it('fails closed on init when Redis history is configured but the client is unavailable', async () => {
