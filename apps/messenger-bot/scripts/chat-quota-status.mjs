@@ -1,6 +1,6 @@
 import { createPool } from './_db.mjs';
 import { parseArgs } from './_args.mjs';
-import { ChatRuntimeConfig } from '@wispace/chat-agent';
+import { createChatRuntimeConfig } from './chat-quota-status-runtime-config.cjs';
 
 const HELP = `Usage: npm run chat-quota:status -- [options]
 
@@ -126,7 +126,7 @@ const remainingHintThreshold = readPositiveNumber(
 const stuckReservedMs = readStuckReservedMs();
 const retentionDays = readRetentionDays();
 const stuckBefore = new Date(Date.now() - stuckReservedMs);
-const chatRuntimeConfig = new ChatRuntimeConfig(process.env);
+const chatRuntimeConfig = createChatRuntimeConfig(process.env);
 
 const pool = createPool();
 
