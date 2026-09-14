@@ -42,13 +42,6 @@ export const STUDY_REMINDER_JOB_REPOSITORY = Symbol(
 
 export interface UpsertStudyReminderJobOptions {
   /**
-   * When set, the upsert runs inside a transaction holding
-   * `pg_advisory_xact_lock(hashtext(lockKey))` — serializes concurrent
-   * syncs of the same (platform, externalUserId, sessionKey) on multi-pod
-   * deployments (Messenger passes `srj:{psid}:{sessionKey}`).
-   */
-  lockKey?: string;
-  /**
    * Production sync semantics: `sent`/`processing`/terminal-outcome jobs are
    * reopened only when the schedule (scheduledAt/remindAt/topic) changed;
    * `cancelled` jobs are always reopened. Pending/failed retryable jobs keep
@@ -58,13 +51,9 @@ export interface UpsertStudyReminderJobOptions {
 }
 
 export interface StudyReminderJobRepositoryPort {
-  upsertPendingJob(
-    input: UpsertStudyReminderJobInput,
-    options?: UpsertStudyReminderJobOptions,
-  ): Promise<StudyReminderJob>;
   /**
    * Batch upsert — transaction-scoped locks protect the snapshot while
-   * applying the same per-row semantics as `upsertPendingJob`.
+   * applying per-row reopen semantics.
    */
   upsertPendingJobs(
     inputs: UpsertStudyReminderJobInput[],

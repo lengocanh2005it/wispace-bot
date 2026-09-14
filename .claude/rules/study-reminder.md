@@ -119,7 +119,7 @@ npm run study-reminder:sync-only
 
 ## Upsert job on schedule change
 
-`StudyReminderJobRepository.upsertPendingJob`:
+`StudyReminderJobRepository.upsertPendingJobs`:
 
 - `sent` + **same** time → keep `sent` (no duplicate reminder)
 - `sent` + **changed** time/topic → reopen as `pending`

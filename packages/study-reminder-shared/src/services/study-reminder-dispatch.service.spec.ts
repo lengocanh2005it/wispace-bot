@@ -62,7 +62,6 @@ describe('StudyReminderDispatchService', () => {
       markFailed: jest.fn().mockResolvedValue(undefined),
       markDeliveryKey: jest.fn().mockResolvedValue(true),
       findNextDueTime: jest.fn().mockResolvedValue(null),
-      upsertPendingJob: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn(),
       cancelJobsFromOtherPlatforms: jest.fn(),
       deleteSentJobs: jest.fn(),

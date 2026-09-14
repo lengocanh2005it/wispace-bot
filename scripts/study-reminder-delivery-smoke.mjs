@@ -408,9 +408,9 @@ try {
   );
 
   // Direct terminal outcomes are persisted and excluded from due/claim.
-  const terminalJob = await jobRepository.upsertPendingJob(
+  const [terminalJob] = await jobRepository.upsertPendingJobs([
     input(owner, 'smoke-terminal', future, due),
-  );
+  ]);
   const terminalClaim = await jobRepository.claimJob(
     'messenger',
     terminalJob.id,
@@ -445,9 +445,9 @@ try {
 
   // Exercise the actual dispatcher against PostgreSQL: a provider ack followed
   // by a finalization crash becomes ambiguous instead of retryable.
-  const dispatchCrashJob = await jobRepository.upsertPendingJob(
+  const [dispatchCrashJob] = await jobRepository.upsertPendingJobs([
     input(owner, 'smoke-dispatch-crash', future, due),
-  );
+  ]);
   let dispatchProviderCalls = 0;
   const failingFinalizationRepository = new Proxy(jobRepository, {
     get(target, property, receiver) {
@@ -488,9 +488,9 @@ try {
 
   // Provider accepted, worker crashed before markSent: recovery marks the
   // row ambiguous, clears the lease, and stale finalization cannot win.
-  const crashJob = await jobRepository.upsertPendingJob(
+  const [crashJob] = await jobRepository.upsertPendingJobs([
     input(owner, 'smoke-crash', future, due),
-  );
+  ]);
   const crashClaim = await jobRepository.claimJob(
     'messenger',
     crashJob.id,
@@ -549,9 +549,9 @@ try {
 
   // Same session key, changed schedule: reopen fences the old owner and
   // clears the previous generation key; the new owner can send once.
-  const raceJob = await jobRepository.upsertPendingJob(
+  const [raceJob] = await jobRepository.upsertPendingJobs([
     input(owner, 'smoke-reschedule', future, due),
-  );
+  ]);
   const oldClaim = await jobRepository.claimJob(
     'messenger',
     raceJob.id,
@@ -564,8 +564,8 @@ try {
     'old-generation-key',
   );
   const changedAt = new Date(now + 2 * 60 * 60 * 1000);
-  await jobRepository.upsertPendingJob(
-    input(owner, 'smoke-reschedule', changedAt, new Date(now - 60 * 1000)),
+  await jobRepository.upsertPendingJobs(
+    [input(owner, 'smoke-reschedule', changedAt, new Date(now - 60 * 1000))],
     { reopenOnlyOnScheduleChange: true },
   );
   const reopenedRow = await rowById(raceJob.id);
@@ -611,9 +611,9 @@ try {
 
   // Run the same reschedule race through the dispatcher. Reopening while the
   // old worker is building text clears its lease before the provider call.
-  const dispatchRaceJob = await jobRepository.upsertPendingJob(
+  const [dispatchRaceJob] = await jobRepository.upsertPendingJobs([
     input(owner, 'smoke-dispatch-reschedule', future, due),
-  );
+  ]);
   let releaseGeneration;
   const generationGate = new Promise((resolve) => {
     releaseGeneration = resolve;
@@ -642,13 +642,15 @@ try {
     async () => (await rowById(dispatchRaceJob.id))?.status === 'processing',
     'old generation did not claim the reschedule race job',
   );
-  await jobRepository.upsertPendingJob(
-    input(
-      owner,
-      'smoke-dispatch-reschedule',
-      new Date(now + 2 * 60 * 60 * 1000),
-      new Date(now - 60 * 1000),
-    ),
+  await jobRepository.upsertPendingJobs(
+    [
+      input(
+        owner,
+        'smoke-dispatch-reschedule',
+        new Date(now + 2 * 60 * 60 * 1000),
+        new Date(now - 60 * 1000),
+      ),
+    ],
     { reopenOnlyOnScheduleChange: true },
   );
   releaseGeneration();

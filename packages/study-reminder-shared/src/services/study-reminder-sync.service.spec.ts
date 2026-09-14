@@ -53,7 +53,6 @@ describe('StudyReminderSyncService', () => {
 
     jobRepo = {
       upsertPendingJobs: jest.fn().mockResolvedValue([]),
-      upsertPendingJob: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn().mockResolvedValue(0),
       cancelJobsFromOtherPlatforms: jest.fn().mockResolvedValue(0),
       findDueJobs: jest.fn(),
@@ -160,8 +159,6 @@ describe('StudyReminderSyncService', () => {
           reopenOnlyOnScheduleChange: true,
         },
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.upsertPendingJob).not.toHaveBeenCalled();
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.cancelStaleJobsForExternalUserId).toHaveBeenCalledWith(
         'messenger',

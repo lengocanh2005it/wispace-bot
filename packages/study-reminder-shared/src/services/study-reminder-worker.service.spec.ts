@@ -79,7 +79,6 @@ describe('StudyReminderWorkerService', () => {
     jobRepo = {
       deleteSentJobs: jest.fn().mockResolvedValue(0),
       deleteTerminalJobsOlderThan: jest.fn().mockResolvedValue(0),
-      upsertPendingJob: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn(),
       cancelJobsFromOtherPlatforms: jest.fn(),
       findDueJobs: jest.fn(),

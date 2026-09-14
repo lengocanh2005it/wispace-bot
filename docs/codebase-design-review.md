@@ -150,7 +150,7 @@ adapter; architecture tests (`zalo-module-boundaries.spec.ts`, `runtime-dependen
 - 14 test trên lớp pass-through 41 dòng (`MessengerAgentService`).
 - Spec tự mock chính core (`platform-student-report.service.spec.ts` mock `StudentReportCore`) → bản
   mapping bị drift có **zero coverage**.
-- Test duy nhất exercise nhánh transaction `upsertPendingJob` mà production **gọi 0 lần** → xoá port method,
+- Test duy nhất exercise nhánh transaction single-row reminder upsert mà production **gọi 0 lần** → xoá port method,
   xoá test.
 
 **Nguyên tắc áp dụng khi deepen**: *replace, don't layer* — spec cũ trên module shallow thành rác khi có
@@ -200,7 +200,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 4. **Xoá double translation quanh agent**: adapters factory capture thẳng `PlatformAgentService`;
    tiêu diệt 14 specs/21 mocks của rename layer.
 5. **Dead code sweep**: `readEnv*` copies (student-report bản chết), `acquireRedisSlot` export,
-   `upsertPendingJob`+`lockKey` khỏi port, dangling comment `with-retry.ts:112-116`,
+   single-row reminder upsert + custom `lockKey` khỏi port, dangling comment `with-retry.ts:112-116`,
    `retry.utils.ts` của discord-bot (thay bằng bản superset của llm-agent).
 6. **Relocate `PrivacyStateService`/`detectPrivacyIntent` về messenger** (fix framework-leak, deletion test pass).
 7. **Thêm advisory lock cho reschedule recovery cron** (consistency với 4 cron còn lại).

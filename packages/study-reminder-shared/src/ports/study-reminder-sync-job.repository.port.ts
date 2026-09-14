@@ -15,7 +15,7 @@ import type { UpsertStudyReminderJobOptions } from './study-reminder-job.reposit
 export interface SyncJobRepository {
   /**
    * Batch upsert — transaction-scoped advisory/row locks protect the snapshot
-   * while applying the same per-row reopen semantics as `upsertPendingJob`.
+   * while applying per-row reopen semantics.
    */
   upsertPendingJobs(
     inputs: UpsertStudyReminderJobInput[],

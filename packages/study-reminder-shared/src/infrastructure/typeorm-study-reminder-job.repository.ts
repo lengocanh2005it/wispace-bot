@@ -76,19 +76,6 @@ export class TypeormStudyReminderJobRepository
     private readonly repo: Repository<StudyReminderJobEntity>,
   ) {}
 
-  async upsertPendingJob(
-    input: UpsertStudyReminderJobInput,
-    options?: UpsertStudyReminderJobOptions,
-  ): Promise<StudyReminderJob> {
-    return this.repo.manager.transaction(async (manager) => {
-      // Serialize both existing-row updates and concurrent inserts. The
-      // transaction-scoped advisory lock also covers the no-row-yet case;
-      // the row lock in doUpsert protects an existing job from claim races.
-      await this.acquireUpsertLocks(manager, [input], options);
-      return this.doUpsert(manager, input, options);
-    });
-  }
-
   async upsertPendingJobs(
     inputs: UpsertStudyReminderJobInput[],
     options?: UpsertStudyReminderJobOptions,
@@ -98,7 +85,7 @@ export class TypeormStudyReminderJobRepository
     }
 
     return this.repo.manager.transaction(async (manager) => {
-      await this.acquireUpsertLocks(manager, inputs, options);
+      await this.acquireUpsertLocks(manager, inputs);
 
       // Lock rows before reading them. This prevents a sync snapshot from
       // overwriting a concurrent claim or cancellation after its SELECT.
@@ -128,47 +115,14 @@ export class TypeormStudyReminderJobRepository
     });
   }
 
-  private async doUpsert(
-    manager: EntityManager,
-    input: UpsertStudyReminderJobInput,
-    options?: UpsertStudyReminderJobOptions,
-  ): Promise<StudyReminderJob> {
-    await manager.query(
-      `SELECT id FROM study_reminder_jobs
-       WHERE platform = $1 AND external_user_id = $2 AND session_key = $3
-       FOR UPDATE`,
-      [input.platform, input.externalUserId, input.sessionKey],
-    );
-    const existing = await manager.findOne(StudyReminderJobEntity, {
-      where: {
-        platform: input.platform,
-        externalUserId: input.externalUserId,
-        sessionKey: input.sessionKey,
-      },
-    });
-
-    if (!existing) {
-      const saved = await manager.save(
-        StudyReminderJobEntity,
-        this.buildNewEntity(manager, input),
-      );
-      return this.mapEntity(saved);
-    }
-
-    this.applyExisting(existing, input, options);
-    const saved = await manager.save(StudyReminderJobEntity, existing);
-    return this.mapEntity(saved);
-  }
-
   private async acquireUpsertLocks(
     manager: EntityManager,
     inputs: UpsertStudyReminderJobInput[],
-    options?: UpsertStudyReminderJobOptions,
   ): Promise<void> {
     const lockKeys = new Set(
       [...inputs]
         .sort((a, b) => this.inputKey(a).localeCompare(this.inputKey(b)))
-        .map((input) => options?.lockKey ?? this.inputKey(input)),
+        .map((input) => this.inputKey(input)),
     );
     for (const lockKey of lockKeys) {
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [

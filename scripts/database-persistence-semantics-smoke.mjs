@@ -851,14 +851,16 @@ async function reminderJobSuite() {
   console.log('reminder jobs: two-worker claimJob race');
   const repo = dataSource.getRepository(StudyReminderJobEntity);
   const svc = new TypeormStudyReminderJobRepository(repo);
-  const saved = await svc.upsertPendingJob({
-    platform: 'discord',
-    externalUserId: 'smoke-rj',
-    sessionKey: 'smoke-rj-session',
-    scheduledAt: new Date(Date.now() - 60_000),
-    remindAt: new Date(Date.now() - 30_000),
-    maxRetries: 3,
-  });
+  const [saved] = await svc.upsertPendingJobs([
+    {
+      platform: 'discord',
+      externalUserId: 'smoke-rj',
+      sessionKey: 'smoke-rj-session',
+      scheduledAt: new Date(Date.now() - 60_000),
+      remindAt: new Date(Date.now() - 30_000),
+      maxRetries: 3,
+    },
+  ]);
 
   const [w1, w2] = await Promise.all([
     svc.claimJob('discord', saved.id, 60_000),
