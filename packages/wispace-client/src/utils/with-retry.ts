@@ -125,9 +125,3 @@ export function createCircuitBreaker<T>(
 
   return breaker;
 }
-
-/**
- * Create a circuit breaker that wraps withRetry for Wispace API calls.
- * When the circuit is open, calls fail fast without attempting retries.
- * When closed, the full retry logic runs normally.
- */
