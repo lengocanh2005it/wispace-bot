@@ -1,16 +1,47 @@
 import { Body, HttpCode, Post, Res } from '@nestjs/common';
-import { IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+
+export class PrivacyExpectedMappingBody {
+  @IsBoolean()
+  exists!: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  userId?: number;
+
+  @IsOptional()
+  @IsString()
+  mappingGeneration?: string;
+}
 
 export class PrivacyActionBody {
   @IsString()
   externalUserId!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PrivacyExpectedMappingBody)
+  expectedMapping?: PrivacyExpectedMappingBody;
 }
 
 export interface PlatformOpsHandlers {
   sendReports(body?: unknown): unknown;
   syncStudyReminders(): unknown;
-  unlinkUser(externalUserId: string): unknown;
-  deleteUser(externalUserId: string): unknown;
+  unlinkUser(
+    externalUserId: string,
+    expectedMapping?: PrivacyExpectedMappingBody,
+  ): unknown;
+  deleteUser(
+    externalUserId: string,
+    expectedMapping?: PrivacyExpectedMappingBody,
+  ): unknown;
   exportUser(externalUserId: string): unknown;
   clearClarification(externalUserId: string): unknown;
 }
@@ -51,7 +82,10 @@ export abstract class PlatformOpsController {
     @Body() body: PrivacyActionBody,
     @Res({ passthrough: true }) response?: PrivacyResponse,
   ) {
-    const result = await this.ops.unlinkUser(body.externalUserId);
+    const result = await this.ops.unlinkUser(
+      body.externalUserId,
+      body.expectedMapping,
+    );
     setPrivacyResponseStatus(response, result);
     return result;
   }
@@ -62,7 +96,10 @@ export abstract class PlatformOpsController {
     @Body() body: PrivacyActionBody,
     @Res({ passthrough: true }) response?: PrivacyResponse,
   ) {
-    const result = await this.ops.deleteUser(body.externalUserId);
+    const result = await this.ops.deleteUser(
+      body.externalUserId,
+      body.expectedMapping,
+    );
     setPrivacyResponseStatus(response, result);
     return result;
   }

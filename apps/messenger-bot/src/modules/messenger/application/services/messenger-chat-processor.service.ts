@@ -628,7 +628,7 @@ export class MessengerChatProcessorService {
               ...(this.displayNameCache
                 ? {
                     clearUserCache: (id: number) =>
-                      this.displayNameCache!.del(id),
+                      this.displayNameCache!.delStrict(id),
                   }
                 : {}),
               onAttempt: (store, outcome) =>
@@ -664,7 +664,7 @@ export class MessengerChatProcessorService {
               ...(this.displayNameCache
                 ? {
                     clearUserCache: (id: number) =>
-                      this.displayNameCache!.del(id),
+                      this.displayNameCache!.delStrict(id),
                   }
                 : {}),
               onAttempt: (store, outcome) =>

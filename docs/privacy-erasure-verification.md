@@ -20,6 +20,7 @@ npm run test --workspace=@wispace/bot-common -- platform-ops.controller.spec.ts
 npm run test --workspace=@wispace/bot-metrics -- bot-metrics.service.spec.ts
 npm run test --workspace=@wispace/ops-health -- ops-health.service.spec.ts
 npm run test --workspace=@wispace/ops-health -- typeorm-ops-health.repository.spec.ts
+npm run database:privacy-erasure-drill
 npx turbo run typecheck --concurrency=1 --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
 ```
 
@@ -29,11 +30,25 @@ therefore runs it before an application cutover.
 
 ## PostgreSQL/Redis recovery drill
 
-Run this against an isolated loopback PostgreSQL and Redis pair with the
+CI runs `npm run database:privacy-erasure-drill` after the migration barrier
+against the isolated loopback PostgreSQL/Redis services. The script seeds real
+Redis history, queue, clarification, and Messenger display-name state, then
+does the following for every platform:
+
+- runs a durable `delete` while a separate Redis client is unavailable,
+  asserts `202`-equivalent `incomplete` state and three persisted attempts;
+- closes the request data source and starts a fresh worker process, which
+  claims the jobs and reaches `completed` without re-running a completed store;
+- runs `unlink` under the same outage, relinks to generation 3, and proves the
+  fresh worker marks all old jobs `stale` while the newer owner's Redis state
+  remains intact.
+
+For a local run, use an isolated loopback PostgreSQL and Redis pair with the
 normal test environment loaded (`NODE_ENV=test`, `DB_HOST=127.0.0.1`,
 `REDIS_HOST=127.0.0.1`):
 
-1. Apply migrations and start all three bots at the same release SHA.
+1. Apply migrations and start all three bots at the same release SHA, or run
+   the automated drill above.
 2. Seed one linked identity and the four applicable state stores for Messenger
    (three for Discord/Zalo), then call each bot's own internal
    `privacy/unlink` and `privacy/delete` endpoint while Redis is stopped.

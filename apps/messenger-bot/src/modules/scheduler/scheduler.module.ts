@@ -206,7 +206,7 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
             clearQueuedWork: (id) => queueService.clear(id),
             clearClarification: (id) =>
               clarificationAgent.clearClarificationState(id),
-            clearUserCache: (userId) => displayNameCache.del(userId),
+            clearUserCache: (userId) => displayNameCache.delStrict(userId),
           },
           {
             pgLock,

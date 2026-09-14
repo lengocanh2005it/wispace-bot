@@ -110,6 +110,7 @@ describe('DiscordOpsController ops clarification recovery', () => {
             'clarification_state',
           ],
         }),
+        undefined,
       );
 
       privacyService[operation].mockResolvedValueOnce({

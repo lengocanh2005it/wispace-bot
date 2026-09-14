@@ -34,8 +34,8 @@ describe('PlatformOpsController', () => {
 
     expect(handlers.sendReports).toHaveBeenCalledWith(reportBody);
     expect(handlers.syncStudyReminders).toHaveBeenCalledWith();
-    expect(handlers.unlinkUser).toHaveBeenLastCalledWith('u1');
-    expect(handlers.deleteUser).toHaveBeenLastCalledWith('u2');
+    expect(handlers.unlinkUser).toHaveBeenLastCalledWith('u1', undefined);
+    expect(handlers.deleteUser).toHaveBeenLastCalledWith('u2', undefined);
     expect(handlers.exportUser).toHaveBeenLastCalledWith('u3');
     expect(handlers.clearClarification).toHaveBeenLastCalledWith('u4');
   });
@@ -78,6 +78,20 @@ describe('PlatformOpsController', () => {
     const body = new PrivacyActionBody();
     body.externalUserId = 'user-1';
     expect(body.externalUserId).toBe('user-1');
+  });
+
+  it('forwards the expected mapping fence to both privacy mutations', async () => {
+    const expectedMapping = {
+      exists: true,
+      userId: 42,
+      mappingGeneration: '7',
+    };
+
+    await controller.unlinkUser({ externalUserId: 'u1', expectedMapping });
+    await controller.deleteUser({ externalUserId: 'u2', expectedMapping });
+
+    expect(handlers.unlinkUser).toHaveBeenCalledWith('u1', expectedMapping);
+    expect(handlers.deleteUser).toHaveBeenCalledWith('u2', expectedMapping);
   });
 
   it('maps durable privacy outcomes to HTTP status without changing the body', async () => {

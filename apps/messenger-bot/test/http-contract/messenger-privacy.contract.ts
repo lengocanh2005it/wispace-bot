@@ -40,8 +40,15 @@ function buildControllerProviders() {
     {
       provide: PrivacyDataService,
       useValue: {
-        unlink: jest.fn().mockResolvedValue({ unlinked: true }),
-        delete: jest.fn().mockResolvedValue({ deleted: true }),
+        unlink: jest.fn().mockResolvedValue({
+          unlinked: true,
+          status: 'complete',
+        }),
+        delete: jest.fn().mockResolvedValue({
+          deleted: true,
+          status: 'complete',
+          outstandingStores: [],
+        }),
         export: jest.fn().mockResolvedValue({ data: {} }),
       },
     },
@@ -51,7 +58,10 @@ function buildControllerProviders() {
     },
     { provide: PlatformChatHistoryService, useValue: { clear: noop } },
     { provide: MessengerChatEnqueueService, useValue: { clear: noop } },
-    { provide: RedisUserDisplayNameCache, useValue: { del: noop } },
+    {
+      provide: RedisUserDisplayNameCache,
+      useValue: { del: noop, delStrict: noop },
+    },
   ];
 }
 
@@ -85,13 +95,14 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
         .send({ externalUserId: 'psid-123' })
         .expect(200)
         .expect(({ body }) => {
-          expect(body).toEqual({ unlinked: true });
+          expect(body).toEqual({ unlinked: true, status: 'complete' });
         });
 
       expect(privacyService.unlink).toHaveBeenCalledWith(
         'messenger',
         'psid-123',
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -106,6 +117,16 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
       await request(app.getHttpServer())
         .post('/v1/messenger/privacy/unlink')
         .send({ externalUserId: 12345 })
+        .expect(400);
+    });
+
+    it('rejects a malformed expected mapping fence', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/messenger/privacy/unlink')
+        .send({
+          externalUserId: 'psid-123',
+          expectedMapping: { exists: 'yes' },
+        })
         .expect(400);
     });
 
@@ -142,8 +163,22 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
 
       await request(app.getHttpServer())
         .post('/v1/messenger/privacy/unlink')
-        .send({ externalUserId: 'psid-123' })
+        .send({
+          externalUserId: 'psid-123',
+          expectedMapping: {
+            exists: true,
+            userId: 42,
+            mappingGeneration: '3',
+          },
+        })
         .expect(409);
+
+      expect(privacyService.unlink).toHaveBeenLastCalledWith(
+        'messenger',
+        'psid-123',
+        expect.any(Object),
+        { exists: true, userId: 42, mappingGeneration: '3' },
+      );
     });
   });
 
@@ -154,13 +189,18 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
         .send({ externalUserId: 'psid-456' })
         .expect(200)
         .expect(({ body }) => {
-          expect(body).toEqual({ deleted: true });
+          expect(body).toEqual({
+            deleted: true,
+            status: 'complete',
+            outstandingStores: [],
+          });
         });
 
       expect(privacyService.delete).toHaveBeenCalledWith(
         'messenger',
         'psid-456',
         expect.any(Object),
+        undefined,
       );
     });
 

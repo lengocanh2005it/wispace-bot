@@ -19,6 +19,7 @@ import { MessengerChatProcessorService } from './messenger-chat-processor.servic
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PlatformChatHistoryService } from '@wispace/chat-agent';
+import type { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { PrivacyStateService } from '@wispace/llm-agent';
 
 describe('MessengerChatProcessorService', () => {
@@ -39,6 +40,7 @@ describe('MessengerChatProcessorService', () => {
       shouldEnforce?: boolean;
       mappingRepository?: MessengerMappingRepositoryPort;
       withPrivacy?: boolean;
+      displayNameCache?: Pick<RedisUserDisplayNameCache, 'del' | 'delStrict'>;
     } = {},
   ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
@@ -166,6 +168,7 @@ describe('MessengerChatProcessorService', () => {
       privacyState,
       privacyService as never,
       options.mappingRepository as never,
+      options.displayNameCache as never,
     );
 
     return {
@@ -951,6 +954,33 @@ describe('MessengerChatProcessorService', () => {
       await expect(cleanupState.clearClarification!('psid-1')).rejects.toThrow(
         'redis down',
       );
+    });
+
+    it('uses strict display-name deletion for durable delete cleanup', async () => {
+      const displayNameCache = {
+        del: jest.fn().mockResolvedValue(undefined),
+        delStrict: jest.fn().mockResolvedValue(undefined),
+      };
+      const { service, privacyDelete } = createService({
+        withPrivacy: true,
+        displayNameCache,
+      });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'dong y xoa du lieu nhe!',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-cache-strict',
+      });
+
+      const cleanupState = privacyDelete.mock.calls[0]?.[2] as {
+        clearUserCache?: (userId: number) => Promise<void>;
+      };
+      await cleanupState.clearUserCache!(143);
+
+      expect(displayNameCache.delStrict).toHaveBeenCalledWith(143);
+      expect(displayNameCache.del).not.toHaveBeenCalled();
     });
 
     it('a linked learner with an unchanged mapping can still confirm', async () => {

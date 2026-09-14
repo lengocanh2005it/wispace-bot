@@ -40,7 +40,7 @@ export class DiscordOpsController extends PlatformOpsController {
           platform: 'discord',
           getSessions: createCalendarGetSessions(calendarService),
         }),
-      unlinkUser: async (externalUserId) => {
+      unlinkUser: async (externalUserId, expectedMapping) => {
         const result = await privacyService.unlink(
           'discord',
           externalUserId,
@@ -51,10 +51,11 @@ export class DiscordOpsController extends PlatformOpsController {
             metrics,
             'unlink',
           ),
+          expectedMapping,
         );
         return result;
       },
-      deleteUser: async (externalUserId) => {
+      deleteUser: async (externalUserId, expectedMapping) => {
         return privacyService.delete(
           'discord',
           externalUserId,
@@ -65,6 +66,7 @@ export class DiscordOpsController extends PlatformOpsController {
             metrics,
             'delete',
           ),
+          expectedMapping,
         );
       },
       exportUser: (externalUserId) =>

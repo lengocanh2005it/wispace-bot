@@ -112,11 +112,27 @@ export class RedisUserDisplayNameCache {
   }
 
   async del(userId: number): Promise<void> {
+    await this.delete(userId, false);
+  }
+
+  /**
+   * Privacy erasure variant: Redis failures must remain visible to the
+   * durable cleanup job instead of being treated as a cache miss.
+   */
+  async delStrict(userId: number): Promise<void> {
+    await this.delete(userId, true);
+  }
+
+  private async delete(userId: number, strict: boolean): Promise<void> {
     const client = this.redisClient.getNativeClient();
-    if (!client || !this.isAvailable()) return;
+    if (!client || !this.isAvailable()) {
+      if (strict) throw new Error('Redis user display cache unavailable');
+      return;
+    }
     try {
       await client.del(this.key(userId));
     } catch (error) {
+      if (strict) throw error;
       this.logger.warn(
         `Redis user display cache delete failed userId=${maskExternalId(userId)}: ${errorMessage(error)}`,
       );

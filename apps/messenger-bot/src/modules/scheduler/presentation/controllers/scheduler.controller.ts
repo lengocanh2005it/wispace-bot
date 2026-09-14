@@ -37,6 +37,7 @@ import { MessengerChatEnqueueService } from '@messenger/modules/messenger/applic
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import {
+  PrivacyActionBody,
   setPrivacyResponseStatus,
   type PrivacyResponse,
 } from '@wispace/bot-common/health';
@@ -68,11 +69,6 @@ class SendReportsBody {
   @IsOptional()
   @IsBoolean()
   allowDuplicate?: boolean;
-}
-
-class PrivacyActionBody {
-  @IsString()
-  externalUserId!: string;
 }
 
 @Controller('messenger')
@@ -189,6 +185,7 @@ export class SchedulerController {
       'messenger',
       body.externalUserId,
       this.privacyCleanup('unlink'),
+      body.expectedMapping,
     );
     setPrivacyResponseStatus(response, result);
     return result;
@@ -204,6 +201,7 @@ export class SchedulerController {
       'messenger',
       body.externalUserId,
       this.privacyCleanup('delete'),
+      body.expectedMapping,
     );
     setPrivacyResponseStatus(response, result);
     return result;
@@ -238,7 +236,8 @@ export class SchedulerController {
       clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
       clearClarification: (id) =>
         this.clarificationAgent.clearClarificationState(id),
-      clearUserCache: (userId: number) => this.displayNameCache.del(userId),
+      clearUserCache: (userId: number) =>
+        this.displayNameCache.delStrict(userId),
       onAttempt: (store, outcome) =>
         this.metrics?.incPrivacyCleanupAttempt(
           'messenger',

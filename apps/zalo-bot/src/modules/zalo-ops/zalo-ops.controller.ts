@@ -63,7 +63,7 @@ export class ZaloOpsController extends PlatformOpsController {
           platform: 'zalo',
           getSessions: createCalendarGetSessions(calendarService),
         }),
-      unlinkUser: async (externalUserId) => {
+      unlinkUser: async (externalUserId, expectedMapping) => {
         const result = await privacyService.unlink(
           'zalo',
           externalUserId,
@@ -74,10 +74,11 @@ export class ZaloOpsController extends PlatformOpsController {
             metrics,
             'unlink',
           ),
+          expectedMapping,
         );
         return result;
       },
-      deleteUser: async (externalUserId) => {
+      deleteUser: async (externalUserId, expectedMapping) => {
         return privacyService.delete(
           'zalo',
           externalUserId,
@@ -88,6 +89,7 @@ export class ZaloOpsController extends PlatformOpsController {
             metrics,
             'delete',
           ),
+          expectedMapping,
         );
       },
       exportUser: (externalUserId) =>

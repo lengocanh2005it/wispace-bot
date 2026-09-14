@@ -92,6 +92,13 @@ describe('Discord privacy HTTP contract', () => {
       .expect(({ body }) => {
         expect(body).toEqual({ unlinked: true, status: 'complete' });
       });
+
+    expect(privacyService.unlink).toHaveBeenLastCalledWith(
+      'discord',
+      'discord-user-1',
+      expect.any(Object),
+      undefined,
+    );
   });
 
   it('returns 202 with outstanding stores for an incomplete delete', async () => {
@@ -114,6 +121,13 @@ describe('Discord privacy HTTP contract', () => {
           outstandingStores: ['chat_history'],
         });
       });
+
+    expect(privacyService.delete).toHaveBeenLastCalledWith(
+      'discord',
+      'discord-user-1',
+      expect.any(Object),
+      undefined,
+    );
   });
 
   it('returns 409 for a generation conflict', async () => {
@@ -124,14 +138,36 @@ describe('Discord privacy HTTP contract', () => {
 
     await request(app.getHttpServer())
       .post('/v1/discord/privacy/unlink')
-      .send({ externalUserId: 'discord-user-1' })
+      .send({
+        externalUserId: 'discord-user-1',
+        expectedMapping: {
+          exists: true,
+          userId: 42,
+          mappingGeneration: '3',
+        },
+      })
       .expect(409);
+
+    expect(privacyService.unlink).toHaveBeenLastCalledWith(
+      'discord',
+      'discord-user-1',
+      expect.any(Object),
+      { exists: true, userId: 42, mappingGeneration: '3' },
+    );
   });
 
   it('validates the external identity boundary', async () => {
     await request(app.getHttpServer())
       .post('/v1/discord/privacy/delete')
       .send({ externalUserId: 123 })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/v1/discord/privacy/delete')
+      .send({
+        externalUserId: 'discord-user-1',
+        expectedMapping: { exists: 'yes' },
+      })
       .expect(400);
   });
 });

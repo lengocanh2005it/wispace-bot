@@ -19,6 +19,7 @@ export {
 export {
   PlatformOpsController,
   PrivacyActionBody,
+  PrivacyExpectedMappingBody,
   type PlatformOpsHandlers,
   type PrivacyResponse,
   type PrivacyResponseStatus,
