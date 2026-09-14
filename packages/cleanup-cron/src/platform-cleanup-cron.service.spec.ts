@@ -1,10 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
-import {
-  CleanupCronService,
-  type CleanupCronConfig,
-  type CleanupResult,
-} from './cleanup-cron.service';
+import { CleanupCronService, type CleanupResult } from './cleanup-cron.service';
 import {
   PlatformCleanupCronService,
   type CleanupCronJobsConfig,
@@ -12,12 +8,7 @@ import {
 
 type ExecuteMock = jest.Mock<
   Promise<CleanupResult | null>,
-  [
-    CleanupCronConfig,
-    (cutoff: Date) => Promise<number>,
-    () => boolean,
-    () => number,
-  ]
+  [string, number, (cutoff: Date) => Promise<number>]
 >;
 
 function buildConfig(
@@ -25,7 +16,6 @@ function buildConfig(
 ): CleanupCronJobsConfig {
   return {
     platform: 'discord',
-    envPrefix: 'DISCORD_',
     lockIds: {
       messageLog: 884_200_911,
       deadLetter: 884_200_912,
@@ -72,12 +62,7 @@ function buildService(config: CleanupCronJobsConfig): {
   const execute = jest
     .fn<
       Promise<CleanupResult | null>,
-      [
-        CleanupCronConfig,
-        (cutoff: Date) => Promise<number>,
-        () => boolean,
-        () => number,
-      ]
+      [string, number, (cutoff: Date) => Promise<number>]
     >()
     .mockResolvedValue({ deleted: 0, cutoff: new Date() });
   const cleanupService = { execute } as never as CleanupCronService;
@@ -131,7 +116,6 @@ describe('PlatformCleanupCronService', () => {
   it('registers the 5th oauth-state cron for zalo', () => {
     const config = buildConfig({
       platform: 'zalo',
-      envPrefix: 'ZALO_',
       lockIds: { oauthState: 884_200_913 },
       oauthStateRepo: {
         delete: jest.fn().mockResolvedValue({ affected: 0 }),
@@ -146,19 +130,17 @@ describe('PlatformCleanupCronService', () => {
   it('message log cleanup uses platform env keys and lock id', async () => {
     const { service, cleanupService } = buildService(buildConfig());
     await service.handleMessageLogCleanup();
-    const config = cleanupService.execute.mock.calls[0][0];
-    expect(config).toMatchObject({
-      advisoryLockId: 884_200_911,
-      enabledConfigKey: 'DISCORD_MESSAGE_LOG_CLEANUP_ENABLED',
-      retentionDaysConfigKey: 'DISCORD_MESSAGE_LOG_RETENTION_DAYS',
-      defaultRetentionDays: 90,
-    });
+    expect(cleanupService.execute.mock.calls[0]).toEqual([
+      'discord-message-log-cleanup',
+      884_200_911,
+      expect.any(Function),
+    ]);
   });
 
   it('message log cleanup uses bounded-batch delete', async () => {
     const { service, cleanupService, dataSource } = buildService(buildConfig());
     await service.handleMessageLogCleanup();
-    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[2];
     const cutoff = new Date('2026-08-18T00:00:00.000Z');
 
     // First call: select IDs (empty → loop exits immediately)
@@ -175,7 +157,7 @@ describe('PlatformCleanupCronService', () => {
   it('message log cleanup iterates multiple batches', async () => {
     const { service, cleanupService, dataSource } = buildService(buildConfig());
     await service.handleMessageLogCleanup();
-    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[2];
 
     // Batch 1: 1000 IDs → delete returns 1000
     dataSource.query
@@ -198,7 +180,7 @@ describe('PlatformCleanupCronService', () => {
   it('dead-letter cleanup uses bounded-batch delete with platform scope', async () => {
     const { service, cleanupService, dataSource } = buildService(buildConfig());
     await service.handleDeadLetterCleanup();
-    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[2];
     const cutoff = new Date('2026-08-18T00:00:00.000Z');
 
     dataSource.query.mockResolvedValueOnce([]);
@@ -237,7 +219,7 @@ describe('PlatformCleanupCronService', () => {
     });
     const { service, cleanupService } = buildService(config);
     await service.handleOAuthStateCleanup();
-    const deleteFn = cleanupService.execute.mock.calls[0][1];
+    const deleteFn = cleanupService.execute.mock.calls[0][2];
     const now = new Date();
     await deleteFn(now);
     const where = oauthDelete.mock.calls[0][0];
@@ -251,7 +233,7 @@ describe('PlatformCleanupCronService', () => {
   it('idempotency cleanup also prunes aged chat_tool_daily_usage rows (#626)', async () => {
     const { service, cleanupService, dataSource } = buildService(buildConfig());
     await service.handleIdempotencyCleanup();
-    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[2];
     await deleteFn?.(new Date());
     const prune = dataSource.query.mock.calls.find((call) =>
       call[0].includes('chat_tool_daily_usage'),
@@ -269,7 +251,7 @@ describe('PlatformCleanupCronService', () => {
       }),
     );
     await service.handleReportClaimsCleanup();
-    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[2];
     dataSource.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await deleteFn?.(new Date('2026-08-18T00:00:00.000Z'));

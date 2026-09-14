@@ -1,4 +1,3 @@
-import type { ConfigService } from '@nestjs/config';
 import type { DataSource } from 'typeorm';
 import { PlatformLinkAuditCleanupService } from './platform-link-audit-cleanup.service';
 
@@ -9,14 +8,16 @@ describe('PlatformLinkAuditCleanupService', () => {
       .mockResolvedValueOnce([{ id: 1 }, { id: 2 }])
       .mockResolvedValueOnce({ rowCount: 2 });
     const cleanupCron = {
-      execute: jest.fn(async (_config, deleteFn) => deleteFn(new Date(0))),
+      execute: jest.fn(
+        async (
+          _name: string,
+          _lockId: number,
+          deleteFn: (cutoff: Date) => Promise<number>,
+        ) => deleteFn(new Date(0)),
+      ),
     };
-    const config = {
-      get: jest.fn().mockReturnValue(undefined),
-    } as unknown as ConfigService;
     const service = new PlatformLinkAuditCleanupService(
       cleanupCron as never,
-      config,
       { query } as unknown as DataSource,
       { platform: 'zalo', advisoryLockId: 884_200_942 },
     );
@@ -24,12 +25,8 @@ describe('PlatformLinkAuditCleanupService', () => {
     await service.handleDailyCleanup();
 
     expect(cleanupCron.execute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'zalo-platform-link-audit-cleanup',
-        advisoryLockId: 884_200_942,
-      }),
-      expect.any(Function),
-      expect.any(Function),
+      'zalo-platform-link-audit-cleanup',
+      884_200_942,
       expect.any(Function),
     );
     expect(query).toHaveBeenCalledTimes(2);

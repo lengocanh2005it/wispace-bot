@@ -326,6 +326,21 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     expect(ageMs).toBeLessThan(1_200_000 + 5_000);
   });
 
+  it('continues the due batch after one item throws', async () => {
+    const secondJob = { ...JOB, id: 2, externalUserId: 'discord-2' };
+    const built = buildService({ dueJobs: [JOB, secondJob] });
+    built.accountLinkReader.findLinkStateByExternalUserId = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary lookup failure'))
+      .mockResolvedValueOnce(LINK);
+
+    const result = await built.service.dispatchDueReportRetries();
+
+    expect(result.failed).toBe(1);
+    expect(result.sent).toBe(1);
+    expect(built.jobRepository.claimJob).toHaveBeenCalledTimes(2);
+  });
+
   it('resetStuckProcessingJobs follows a custom lease from REPORT_SEND_LEASE_MS (2x invariant) (#521)', async () => {
     const { service, jobRepository } = buildService({
       dueJobs: [],

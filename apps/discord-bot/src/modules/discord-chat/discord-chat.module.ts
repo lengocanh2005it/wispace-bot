@@ -585,18 +585,12 @@ const REGISTER_REPORT_MESSAGE =
     CleanupCronService,
     {
       provide: PlatformLinkAuditCleanupService,
-      useFactory: (
-        cleanupCron: CleanupCronService,
-        configService: ConfigService,
-        dataSource: DataSource,
-      ) =>
-        new PlatformLinkAuditCleanupService(
-          cleanupCron,
-          configService,
-          dataSource,
-          { platform: 'discord', advisoryLockId: 884_200_942 },
-        ),
-      inject: [CleanupCronService, ConfigService, DataSource],
+      useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
+        new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
+          platform: 'discord',
+          advisoryLockId: 884_200_942,
+        }),
+      inject: [CleanupCronService, DataSource],
     },
     LlmSafetyCleanupService,
     {
@@ -658,7 +652,6 @@ const REGISTER_REPORT_MESSAGE =
           dataSource,
           {
             platform: 'discord',
-            envPrefix: 'DISCORD_',
             lockIds: {
               messageLog: 884_200_911,
               deadLetter: 884_200_912,

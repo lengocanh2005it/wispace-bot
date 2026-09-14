@@ -636,6 +636,18 @@ _Avoid_: implementation, service implementation
 Pattern used for `study_reminder_jobs` and `report_send_jobs`: write job rows first, then process asynchronously. Provides durability and retry.
 _Avoid_: queue pattern, task queue
 
+**locked tick**:
+One scheduled execution attempt that either acquires its shared advisory lock and runs, or skips when another worker owns the lock. A locked tick coordinates one bounded batch; it does not own item persistence transitions.
+_Avoid_: cron run, database lock
+
+**bounded batch worker**:
+A scheduled worker that processes at most its configured batch for one tick, records per-outcome counts, and returns a summary. Empty input is a successful zero-work tick, not a failure.
+_Avoid_: unbounded drain, queue consumer
+
+**batch orchestration**:
+The coordination layer around a bounded batch: enabled/config resolution, locked-tick execution, item-loop outcome accounting, and summary construction. Claim, lease, retry, and stuck-row state transitions remain persistence responsibilities.
+_Avoid_: persistence workflow, claim loop
+
 **fan-out**:
 Ambiguous in this repo — always qualify it. Four unrelated meanings are in active use:
 _upstream fan-out_, one scheduled tick making one WISPACE call per learner, the linear-cost concern behind the scheduled crons;

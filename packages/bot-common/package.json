@@ -70,6 +70,16 @@
       "require": "./dist/locks/index.js",
       "types": "./dist/locks/index.d.ts"
     },
+    "./cron": {
+      "import": "./dist/cron/index.js",
+      "require": "./dist/cron/index.js",
+      "types": "./dist/cron/index.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config/index.js",
+      "require": "./dist/config/index.js",
+      "types": "./dist/config/index.d.ts"
+    },
     "./logging": {
       "import": "./dist/logging/index.js",
       "require": "./dist/logging/index.js",

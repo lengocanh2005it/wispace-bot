@@ -11,15 +11,19 @@ describe('MessengerMessageLogCleanupService', () => {
 
   const cleanupCron = {
     execute: jest.fn(),
+    isEnabled: jest.fn().mockReturnValue(true),
+    getRetentionDays: jest.fn().mockReturnValue(90),
   } as unknown as CleanupCronService;
 
   const createService = (env: Record<string, string | undefined> = {}) => {
-    const configService = {
-      get: (key: string) => env[key],
-    };
+    cleanupCron.isEnabled = jest.fn(
+      () => env.MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED !== 'false',
+    ) as never;
+    cleanupCron.getRetentionDays = jest.fn(() =>
+      Number(env.MESSENGER_MESSAGE_LOG_RETENTION_DAYS ?? 90),
+    ) as never;
 
     return new MessengerMessageLogCleanupService(
-      configService as never,
       messengerRepository,
       cleanupCron,
     );

@@ -7,7 +7,11 @@ import {
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { runLockedTick } from '@wispace/bot-common/cron';
+import type { LockedTickItem } from '@wispace/bot-common/cron';
+import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
+import type { WebhookDeadLetterEntry } from '../entities/webhook-dead-letter.entity';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -15,6 +19,20 @@ const DEFAULT_MIN_RETRY_AGE_MS = 60_000;
 const DEFAULT_RETRY_LIMIT = 10;
 const DEFAULT_LEASE_MS = 600_000;
 const DEFAULT_CRON_NAME = 'platform-dead-letter-retry';
+
+type DeadLetterItemDetail =
+  | 'replayed'
+  | 'abandoned'
+  | 'retried'
+  | 'claim_skipped'
+  | 'failed';
+
+interface DeadLetterRetrySettings {
+  maxRetries: number;
+  minRetryAgeMs: number;
+  retryLimit: number;
+  leaseMs: number;
+}
 
 /**
  * The dead-letter replay evaluates eligibility every 5 minutes. The actual
@@ -97,133 +115,164 @@ export class PlatformDeadLetterCronService {
 
   @Cron(DEAD_LETTER_RETRY_CRON, { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleRetry(): Promise<void> {
-    const result = await this.pgLock.withLock(this.options.lockId, () =>
-      this.runRetryBatch(),
-    );
-
-    if (result === null) {
-      this.logger.debug(
-        'webhook-dead-letter-retry skipped — lock held by another pod',
-      );
-    } else {
-      this.options.metrics?.recordCronSuccess(
-        this.options.cronName ?? DEFAULT_CRON_NAME,
-      );
-    }
+    let settings: DeadLetterRetrySettings | undefined;
+    await runLockedTick<DeadLetterItemDetail, WebhookDeadLetterEntry>({
+      name: this.options.cronName ?? DEFAULT_CRON_NAME,
+      withLock: (run) => this.pgLock.withLock(this.options.lockId, run),
+      fetchBatch: async () => {
+        settings = this.readRetrySettings();
+        const entries = await this.deadLetterService.listPendingForRetry({
+          limit: settings.retryLimit,
+          olderThan: subMilliseconds(new Date(), settings.minRetryAgeMs),
+          maxRetries: settings.maxRetries,
+        });
+        if (entries.length > 0) {
+          this.logger.log(`Retrying ${entries.length} dead letter entries`);
+        }
+        return entries;
+      },
+      processItem: (entry) => this.retryEntry(entry, settings!),
+      metrics: this.options.metrics,
+      logger: this.logger,
+    });
   }
 
-  private async runRetryBatch(): Promise<void> {
-    const maxRetries = this.readPositiveInt(
-      'WEBHOOK_DEAD_LETTER_MAX_RETRIES',
-      DEFAULT_MAX_RETRIES,
-    );
-    const minRetryAgeMs = this.readPositiveInt(
-      'WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS',
-      DEFAULT_MIN_RETRY_AGE_MS,
-    );
-    const retryLimit = this.readPositiveInt(
-      'WEBHOOK_DEAD_LETTER_RETRY_LIMIT',
-      DEFAULT_RETRY_LIMIT,
-    );
-    const leaseMs = this.readPositiveInt(
-      'WEBHOOK_DEAD_LETTER_LEASE_MS',
-      DEFAULT_LEASE_MS,
-    );
+  private readRetrySettings(): DeadLetterRetrySettings {
+    return {
+      maxRetries: this.readPositiveInt(
+        'WEBHOOK_DEAD_LETTER_MAX_RETRIES',
+        DEFAULT_MAX_RETRIES,
+      ),
+      minRetryAgeMs: this.readPositiveInt(
+        'WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS',
+        DEFAULT_MIN_RETRY_AGE_MS,
+      ),
+      retryLimit: this.readPositiveInt(
+        'WEBHOOK_DEAD_LETTER_RETRY_LIMIT',
+        DEFAULT_RETRY_LIMIT,
+      ),
+      leaseMs: this.readPositiveInt(
+        'WEBHOOK_DEAD_LETTER_LEASE_MS',
+        DEFAULT_LEASE_MS,
+      ),
+    };
+  }
 
-    const olderThan = subMilliseconds(new Date(), minRetryAgeMs);
-    const entries = await this.deadLetterService.listPendingForRetry({
-      limit: retryLimit,
-      olderThan,
-      maxRetries,
-    });
+  private async retryEntry(
+    entry: WebhookDeadLetterEntry,
+    settings: DeadLetterRetrySettings,
+  ): Promise<LockedTickItem<DeadLetterItemDetail>> {
+    let item: LockedTickItem<DeadLetterItemDetail> = {
+      outcome: 'skipped',
+      details: 'claim_skipped',
+    };
+    let leaseToken: string | undefined;
 
-    if (entries.length === 0) return;
-
-    this.logger.log(`Retrying ${entries.length} dead letter entries`);
-
-    for (const entry of entries) {
+    try {
       const claimed = await this.deadLetterService.claimForRetry(
         entry.id,
-        leaseMs,
+        settings.leaseMs,
       );
-      if (!claimed) continue; // another worker owns it, or the row changed
+      if (!claimed) return item;
+      leaseToken = claimed.leaseToken;
 
-      try {
-        const payload = entry.rawPayload as Record<string, unknown>;
-        const { externalUserId, text } = this.options.extractPayload(payload);
-        if (!externalUserId || !text) {
-          await this.deadLetterService.markAbandoned(
-            entry.id,
-            this.options.abandonReason,
-            entry.externalUserId ?? undefined,
-            { leaseToken: claimed.leaseToken },
-          );
-          continue;
-        }
+      const payload = entry.rawPayload as Record<string, unknown>;
+      const { externalUserId, text } = this.options.extractPayload(payload);
+      if (!externalUserId || !text) {
+        await this.deadLetterService.markAbandoned(
+          entry.id,
+          this.options.abandonReason,
+          entry.externalUserId ?? undefined,
+          { leaseToken: claimed.leaseToken },
+        );
+        return { outcome: 'succeeded', details: 'abandoned' };
+      }
 
-        const outcome = await this.options.sendText(externalUserId, text, {
-          deliveryKey: claimed.deliveryKey,
-        });
+      const outcome = await this.options.sendText(externalUserId, text, {
+        deliveryKey: claimed.deliveryKey,
+      });
 
-        if (outcome === 'sent') {
-          await this.deadLetterService.markReplayed(
-            entry.id,
-            claimed.leaseToken,
-            claimed.deliveryKey,
-          );
-        } else if (outcome === 'ambiguous') {
-          if (this.options.retryAmbiguous) {
-            // Discord: stable nonce makes the retry safe — same delivery key.
-            await this.deadLetterService.incrementRetry(
-              entry.id,
-              'ambiguous delivery — retried with the same delivery key',
-              entry.externalUserId ?? undefined,
-              { leaseToken: claimed.leaseToken },
-            );
-          } else {
-            // Messenger/Zalo: provider may have accepted — no auto-resend.
-            await this.deadLetterService.markAbandoned(
-              entry.id,
-              'ambiguous delivery — not auto-retried',
-              entry.externalUserId ?? undefined,
-              {
-                leaseToken: claimed.leaseToken,
-                deliveryStatus: 'ambiguous',
-              },
-            );
-          }
-        } else if (outcome === 'rate_limited') {
-          // Rate limiting is a local containment decision. Retrying the same
-          // row would immediately re-admit the storm and create noise.
-          await this.deadLetterService.markAbandoned(
-            entry.id,
-            'outbound_rate_limited',
-            entry.externalUserId ?? undefined,
-            {
-              leaseToken: claimed.leaseToken,
-              deliveryStatus: 'rate_limited',
-            },
-          );
-        } else {
+      if (outcome === 'sent') {
+        await this.deadLetterService.markReplayed(
+          entry.id,
+          claimed.leaseToken,
+          claimed.deliveryKey,
+        );
+        return { outcome: 'succeeded', details: 'replayed' };
+      }
+      if (outcome === 'ambiguous' && this.options.retryAmbiguous) {
+        await this.deadLetterService.incrementRetry(
+          entry.id,
+          'ambiguous delivery — retried with the same delivery key',
+          entry.externalUserId ?? undefined,
+          { leaseToken: claimed.leaseToken },
+        );
+        return { outcome: 'succeeded', details: 'retried' };
+      }
+      if (outcome === 'ambiguous') {
+        await this.deadLetterService.markAbandoned(
+          entry.id,
+          'ambiguous delivery — not auto-retried',
+          entry.externalUserId ?? undefined,
+          { leaseToken: claimed.leaseToken, deliveryStatus: 'ambiguous' },
+        );
+        return { outcome: 'succeeded', details: 'abandoned' };
+      }
+      if (outcome === 'rate_limited') {
+        await this.deadLetterService.markAbandoned(
+          entry.id,
+          'outbound_rate_limited',
+          entry.externalUserId ?? undefined,
+          { leaseToken: claimed.leaseToken, deliveryStatus: 'rate_limited' },
+        );
+        return { outcome: 'succeeded', details: 'abandoned' };
+      }
+
+      await this.handleFailure(
+        entry,
+        'send failed',
+        claimed.leaseToken,
+        settings.maxRetries,
+      );
+      return {
+        outcome: 'succeeded',
+        details:
+          (entry.retryCount ?? 0) + 1 >= settings.maxRetries
+            ? 'abandoned'
+            : 'retried',
+      };
+    } catch (error) {
+      const errorMsg = maskExternalIdInText(
+        errorMessage(error),
+        entry.externalUserId,
+      );
+      if (leaseToken) {
+        try {
           await this.handleFailure(
             entry,
-            'send failed',
-            claimed.leaseToken,
-            maxRetries,
+            errorMsg,
+            leaseToken,
+            settings.maxRetries,
+          );
+          item = {
+            outcome: 'succeeded',
+            details:
+              (entry.retryCount ?? 0) + 1 >= settings.maxRetries
+                ? 'abandoned'
+                : 'retried',
+          };
+        } catch (transitionError) {
+          this.logger.error(
+            `Dead-letter retry state transition failed id=${entry.id}: ${maskExternalIdInText(errorMessage(transitionError), entry.externalUserId)}`,
           );
         }
-      } catch (error) {
-        const errorMsg = maskExternalIdInText(
-          errorMessage(error),
-          entry.externalUserId,
-        );
-        await this.handleFailure(
-          entry,
-          errorMsg,
-          claimed.leaseToken,
-          maxRetries,
-        );
       }
+      this.logger.error(
+        `Dead-letter retry item failed id=${entry.id}: ${errorMsg}`,
+      );
+      return item.outcome === 'skipped'
+        ? { outcome: 'failed', details: 'failed' }
+        : item;
     }
   }
 
@@ -251,10 +300,6 @@ export class PlatformDeadLetterCronService {
   }
 
   private readPositiveInt(key: string, fallback: number): number {
-    const raw = this.configService.get<string>(key);
-    const parsed = raw ? Number(raw) : NaN;
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : fallback;
+    return readEnvPositiveInt(this.configService, key, fallback);
   }
 }

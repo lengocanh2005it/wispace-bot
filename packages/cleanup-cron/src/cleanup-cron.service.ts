@@ -1,9 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { runLockedTick } from '@wispace/bot-common/cron';
+import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import { subDays } from 'date-fns';
+import {
+  createCleanupCronPolicyRegistry,
+  type CleanupCronPolicy,
+  type CleanupCronPolicyRegistry,
+} from './cleanup-policy.registry';
 
 /** Retention-cleanup metrics — module-level Counters shared across all bots. */
 export const retentionRowsDeletedTotal = new Counter({
@@ -18,77 +24,102 @@ export const retentionCleanupErrorsTotal = new Counter({
   labelNames: ['cron_name'] as const,
 });
 
-export interface CleanupCronConfig {
-  /** Name for logging (e.g., 'llm-usage-cleanup') */
-  name: string;
-  /** Advisory lock ID for multi-pod safety */
-  advisoryLockId: number;
-  /** Cron expression (e.g., '0 0 3 * * *') */
-  cronExpression: string;
-  /** Timezone for cron (default: 'Asia/Ho_Chi_Minh') */
-  timeZone?: string;
-  /** Config key for enabled toggle */
-  enabledConfigKey: string;
-  /** Config key for retention days */
-  retentionDaysConfigKey: string;
-  /** Default retention days if config not set */
-  defaultRetentionDays: number;
-}
-
 export interface CleanupResult {
   deleted: number;
-  cutoff: Date;
+  cutoff?: Date;
 }
 
 /**
  * Generic cleanup cron service for deleting old records from any table.
- * Configurable via CleanupCronConfig. Uses PostgreSQL advisory lock for multi-pod safety.
+ * Uses the registered policy and a PostgreSQL advisory lock for multi-pod safety.
  */
 @Injectable()
 export class CleanupCronService {
   private readonly logger = new Logger(CleanupCronService.name);
+  private readonly policies: CleanupCronPolicyRegistry;
 
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
-  ) {}
+    @Optional() policyRegistry?: CleanupCronPolicyRegistry,
+  ) {
+    this.policies = policyRegistry ?? createCleanupCronPolicyRegistry();
+  }
 
   /**
    * Execute cleanup with advisory lock protection.
-   * @param config - Cleanup configuration
+   * @param name - Registered cleanup policy name
+   * @param advisoryLockId - Advisory lock ID for multi-pod safety
    * @param deleteFn - Function that deletes records older than cutoff, returns count
-   * @param isEnabled - Function to check if cleanup is enabled
-   * @param getRetentionDays - Function to get retention days from config
    */
   async execute(
-    config: CleanupCronConfig,
-    deleteFn: (cutoff: Date) => Promise<number>,
-    isEnabled: () => boolean,
-    getRetentionDays: () => number,
+    name: string,
+    advisoryLockId: number,
+    deleteFn: (cutoff?: Date) => Promise<number>,
   ): Promise<CleanupResult | null> {
-    if (!isEnabled()) {
-      return null;
-    }
+    const policy = this.policies.resolve(name);
+    const enabled = this.isEnabled(name);
+    const retentionDays = this.getRetentionDays(name);
+    const cutoff = policy.retention
+      ? subDays(new Date(), retentionDays)
+      : undefined;
 
-    const retentionDays = getRetentionDays();
-    const cutoff = subDays(new Date(), retentionDays);
-
-    return this.pgLock.withLock(config.advisoryLockId, async () => {
-      try {
-        const deleted = await deleteFn(cutoff);
-        if (deleted > 0) {
-          this.logger.log(
-            `${config.name}: deleted ${deleted} row(s) older than ${retentionDays} day(s) (before ${cutoff.toISOString()})`,
-          );
-          retentionRowsDeletedTotal
-            .labels({ cron_name: config.name })
-            .inc(deleted);
+    const result = await runLockedTick<{ deleted: number }>({
+      name,
+      enabled,
+      withLock: (run) => this.pgLock.withLock(advisoryLockId, run),
+      run: async () => {
+        try {
+          const deleted = await deleteFn(cutoff);
+          if (deleted > 0) {
+            this.logger.log(
+              `${name}: deleted ${deleted} row(s)${
+                cutoff
+                  ? ` older than ${retentionDays} day(s) (before ${cutoff.toISOString()})`
+                  : ''
+              }`,
+            );
+            retentionRowsDeletedTotal.labels({ cron_name: name }).inc(deleted);
+          }
+          return [{ outcome: 'succeeded' as const, details: { deleted } }];
+        } catch (error) {
+          retentionCleanupErrorsTotal.labels({ cron_name: name }).inc();
+          throw error;
         }
-        return { deleted, cutoff };
-      } catch (error) {
-        retentionCleanupErrorsTotal.labels({ cron_name: config.name }).inc();
-        throw error;
-      }
+      },
+      logger: this.logger,
     });
+
+    if (result === null) return null;
+    return { deleted: result.details[0]?.deleted ?? 0, cutoff };
+  }
+
+  isEnabled(name: string): boolean {
+    return this.readEnabled(this.policies.resolve(name));
+  }
+
+  getRetentionDays(name: string): number {
+    return this.readRetentionDays(this.policies.resolve(name));
+  }
+
+  private readEnabled(policy: CleanupCronPolicy): boolean {
+    const keys = [
+      policy.enabledConfigKey,
+      policy.enabledFallbackConfigKey,
+    ].filter((key): key is string => Boolean(key));
+    for (const key of keys) {
+      const raw = this.configService.get<string>(key)?.trim();
+      if (raw)
+        return readEnvBoolean(this.configService, key, policy.defaultEnabled);
+    }
+    return policy.defaultEnabled;
+  }
+
+  private readRetentionDays(policy: CleanupCronPolicy): number {
+    const defaultDays = policy.retention?.defaultDays ?? 0;
+    const key = policy.retention?.configKey;
+    if (!key) return defaultDays;
+
+    return readEnvPositiveInt(this.configService, key, defaultDays);
   }
 }

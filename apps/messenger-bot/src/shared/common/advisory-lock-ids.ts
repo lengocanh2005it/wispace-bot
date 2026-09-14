@@ -38,4 +38,7 @@ export const ADVISORY_LOCK = {
 
   /** Messenger: durable privacy state cleanup recovery (every 5 min). */
   PRIVACY_CLEANUP: 884_200_953,
+
+  /** Messenger: Redis burst consistency reconciliation (every minute). */
+  CHAT_QUOTA_REDIS_RECONCILE: 884_200_956,
 } as const;

@@ -33,8 +33,11 @@ describe('ChatIdempotencyCleanupCronService', () => {
     const executeMock = jest
       .fn()
       .mockImplementation(
-        (_config: unknown, fn: (cutoff: Date) => Promise<number>) =>
-          fn(new Date()),
+        (
+          _name: string,
+          _lockId: number,
+          fn: (cutoff: Date) => Promise<number>,
+        ) => fn(new Date()),
       );
     const cleanupCron = {
       execute: executeMock,
@@ -65,9 +68,8 @@ describe('ChatIdempotencyCleanupCronService', () => {
       ids: [1, 2, 3],
     });
     expect(executeMock).toHaveBeenCalledWith(
-      expect.objectContaining({ advisoryLockId: 202 }),
-      expect.any(Function),
-      expect.any(Function),
+      'chat-idempotency-cleanup',
+      202,
       expect.any(Function),
     );
   });

@@ -7,3 +7,5 @@ export * from './utils/index';
 export * from './redis/index';
 export * from './health/index';
 export * from './secrets/index';
+export * from './cron/index';
+export * from './config/index';

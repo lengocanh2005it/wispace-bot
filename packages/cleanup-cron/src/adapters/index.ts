@@ -3,9 +3,14 @@
 
 export {
   CleanupCronService,
-  type CleanupCronConfig,
   type CleanupResult,
 } from '../cleanup-cron.service';
+export {
+  CleanupCronPolicyRegistry,
+  createCleanupCronPolicyRegistry,
+  type CleanupCronPolicy,
+  type CleanupRetentionPolicy,
+} from '../cleanup-policy.registry';
 export {
   PlatformCleanupCronService,
   type CleanupCronMetricsPort,

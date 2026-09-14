@@ -4,14 +4,12 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CronJob } from 'cron';
 import { DataSource } from 'typeorm';
 import type { Platform } from '@wispace/contracts';
 import { CleanupCronService } from './cleanup-cron.service';
 
-const DEFAULT_RETENTION_DAYS = 90;
 const CRON_EXPRESSION = '0 15 4 * * *';
 
 export interface PlatformLinkAuditCleanupOptions {
@@ -31,7 +29,6 @@ export class PlatformLinkAuditCleanupService
 
   constructor(
     private readonly cleanupCron: CleanupCronService,
-    private readonly configService: ConfigService,
     @InjectDataSource() private readonly dataSource: DataSource,
     options: PlatformLinkAuditCleanupOptions,
   ) {
@@ -59,18 +56,9 @@ export class PlatformLinkAuditCleanupService
 
   async handleDailyCleanup(): Promise<void> {
     await this.cleanupCron.execute(
-      {
-        name: this.jobName,
-        advisoryLockId: this.options.advisoryLockId,
-        cronExpression: CRON_EXPRESSION,
-        timeZone: 'Asia/Ho_Chi_Minh',
-        enabledConfigKey: 'PLATFORM_LINK_AUDIT_CLEANUP_ENABLED',
-        retentionDaysConfigKey: 'PLATFORM_LINK_AUDIT_RETENTION_DAYS',
-        defaultRetentionDays: DEFAULT_RETENTION_DAYS,
-      },
-      (cutoff) => this.deleteBatched(cutoff),
-      () => this.isEnabled(),
-      () => this.getRetentionDays(),
+      this.jobName,
+      this.options.advisoryLockId,
+      (cutoff) => this.deleteBatched(cutoff!),
     );
   }
 
@@ -95,23 +83,5 @@ export class PlatformLinkAuditCleanupService
       if (rows.length < batchSize) break;
     }
     return total;
-  }
-
-  private isEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('PLATFORM_LINK_AUDIT_CLEANUP_ENABLED')
-      ?.trim()
-      .toLowerCase();
-    return raw !== 'false' && raw !== '0';
-  }
-
-  private getRetentionDays(): number {
-    const raw = this.configService
-      .get<string>('PLATFORM_LINK_AUDIT_RETENTION_DAYS')
-      ?.trim();
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0
-      ? Math.floor(value)
-      : DEFAULT_RETENTION_DAYS;
   }
 }

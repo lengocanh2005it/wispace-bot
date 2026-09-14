@@ -11,14 +11,13 @@ import { DataSource, LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering/adapters';
 import { WebhookDeadLetterEntity } from '@wispace/database';
 import type { Platform } from '@wispace/contracts';
+import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import { subMinutes } from 'date-fns';
 import { CleanupCronService } from './cleanup-cron.service';
 
 export interface CleanupCronJobsConfig {
   /** Platform name ('discord' | 'zalo') — used for cron names and idempotency cleanup filter. */
   platform: Platform;
-  /** Env var prefix for cleanup toggles/retention (e.g. 'DISCORD_'). */
-  envPrefix: string;
   /** Advisory lock IDs for multi-pod safety. */
   lockIds: {
     messageLog: number;
@@ -128,60 +127,39 @@ export class PlatformCleanupCronService
   }
 
   async handleMessageLogCleanup(): Promise<void> {
-    const { envPrefix, platform } = this.config;
+    const { platform } = this.config;
     await this.cleanupService.execute(
-      {
-        name: `${platform}-message-log-cleanup`,
-        advisoryLockId: this.config.lockIds.messageLog,
-        cronExpression: '0 0 3 * * *',
-        enabledConfigKey: `${envPrefix}MESSAGE_LOG_CLEANUP_ENABLED`,
-        retentionDaysConfigKey: `${envPrefix}MESSAGE_LOG_RETENTION_DAYS`,
-        defaultRetentionDays: 90,
-      },
+      `${platform}-message-log-cleanup`,
+      this.config.lockIds.messageLog,
       (cutoff) =>
         this.deleteBatched(
           'message_logs',
           `"platform" = $1 AND "created_at" < $2`,
-          [platform, cutoff],
+          [platform, cutoff!],
         ),
-      this.parseEnabled(`${envPrefix}MESSAGE_LOG_CLEANUP_ENABLED`),
-      this.parseRetentionDays(`${envPrefix}MESSAGE_LOG_RETENTION_DAYS`, 90),
     );
   }
 
   async handleDeadLetterCleanup(): Promise<void> {
-    const { envPrefix, platform } = this.config;
+    const { platform } = this.config;
     await this.cleanupService.execute(
-      {
-        name: `${platform}-dead-letter-cleanup`,
-        advisoryLockId: this.config.lockIds.deadLetter,
-        cronExpression: '0 30 3 * * *',
-        enabledConfigKey: `${envPrefix}DEAD_LETTER_CLEANUP_ENABLED`,
-        retentionDaysConfigKey: `${envPrefix}DEAD_LETTER_RETENTION_DAYS`,
-        defaultRetentionDays: 30,
-      },
+      `${platform}-dead-letter-cleanup`,
+      this.config.lockIds.deadLetter,
       (cutoff) =>
         this.deleteBatched(
           'webhook_dead_letters',
           `"platform" = $1 AND "status" IN ('replayed','abandoned') AND "created_at" < $2`,
-          [platform, cutoff],
+          [platform, cutoff!],
         ),
-      this.parseEnabled(`${envPrefix}DEAD_LETTER_CLEANUP_ENABLED`),
-      this.parseRetentionDays(`${envPrefix}DEAD_LETTER_RETENTION_DAYS`, 30),
     );
   }
 
   async handleIdempotencyRecovery(): Promise<void> {
     if (!this.config.rateLimitService.isEnabled()) return;
+    const name = `${this.config.platform}-idempotency-recovery`;
     const result = await this.cleanupService.execute(
-      {
-        name: `${this.config.platform}-idempotency-recovery`,
-        advisoryLockId: this.config.lockIds.idempotencyRecovery,
-        cronExpression: '0 */30 * * * *',
-        enabledConfigKey: '',
-        retentionDaysConfigKey: '',
-        defaultRetentionDays: 0,
-      },
+      name,
+      this.config.lockIds.idempotencyRecovery,
       async () => {
         const { recovered } =
           await this.config.rateLimitService.recoverStuckReservedSlots();
@@ -192,35 +170,19 @@ export class PlatformCleanupCronService
         }
         return recovered.length;
       },
-      () => true,
-      () => 0,
     );
-    if (result !== null) {
-      this.config.metrics?.recordCronSuccess(
-        `${this.config.platform}-idempotency-recovery`,
-      );
-    }
+    if (result !== null) this.config.metrics?.recordCronSuccess(name);
   }
 
   async handleIdempotencyCleanup(): Promise<void> {
-    const retentionDays = this.parseRetentionDays(
-      'CHAT_IDEMPOTENCY_RETENTION_DAYS',
-      90,
-    )();
     await this.cleanupService.execute(
-      {
-        name: `${this.config.platform}-idempotency-cleanup`,
-        advisoryLockId: this.config.lockIds.idempotencyCleanup,
-        cronExpression: '0 0 4 * * 0',
-        enabledConfigKey: '',
-        retentionDaysConfigKey: '',
-        defaultRetentionDays: retentionDays,
-      },
+      `${this.config.platform}-idempotency-cleanup`,
+      this.config.lockIds.idempotencyCleanup,
       async (cutoff) => {
         const deleted = await this.deleteBatched(
           'chat_idempotency',
           `"platform" = $1 AND "status" IN ('completed','refunded') AND "reserved_at" < $2`,
-          [this.config.platform, cutoff],
+          [this.config.platform, cutoff!],
         );
         const toolRetentionDays = this.parseRetentionDays(
           'CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS',
@@ -235,30 +197,19 @@ export class PlatformCleanupCronService
         );
         return deleted;
       },
-      () => true,
-      () => retentionDays,
     );
   }
 
   async handleOAuthStateCleanup(): Promise<void> {
-    const { envPrefix } = this.config;
     await this.cleanupService.execute(
-      {
-        name: `${this.config.platform}-oauth-state-cleanup`,
-        advisoryLockId: this.config.lockIds.oauthState!,
-        cronExpression: '0 */10 * * * *',
-        enabledConfigKey: `${envPrefix}OAUTH_STATE_CLEANUP_ENABLED`,
-        retentionDaysConfigKey: `${envPrefix}OAUTH_STATE_RETENTION_DAYS`,
-        defaultRetentionDays: 0,
-      },
+      `${this.config.platform}-oauth-state-cleanup`,
+      this.config.lockIds.oauthState!,
       () => {
         const tenMinutesAgo = subMinutes(new Date(), 10);
         return this.config
           .oauthStateRepo!.delete({ createdAt: LessThan(tenMinutesAgo) })
           .then((r) => r.affected ?? 0);
       },
-      () => true,
-      () => 0,
     );
   }
 
@@ -268,35 +219,22 @@ export class PlatformCleanupCronService
    * advisory lock makes it a single effective execution per run.
    */
   async handleReportClaimsCleanup(): Promise<void> {
-    const { envPrefix } = this.config;
-    const retentionDays = this.parseRetentionDays(
-      `${envPrefix}REPORT_CLAIMS_RETENTION_DAYS`,
-      90,
-    )();
     await this.cleanupService.execute(
-      {
-        name: `${this.config.platform}-report-claims-cleanup`,
-        advisoryLockId: this.config.lockIds.reportClaim!,
-        cronExpression: '0 45 3 * * *',
-        enabledConfigKey: `${envPrefix}REPORT_CLAIMS_CLEANUP_ENABLED`,
-        retentionDaysConfigKey: `${envPrefix}REPORT_CLAIMS_RETENTION_DAYS`,
-        defaultRetentionDays: 90,
-      },
+      `${this.config.platform}-report-claims-cleanup`,
+      this.config.lockIds.reportClaim!,
       async (cutoff) => {
         const legacyDeleted = await this.deleteBatched(
           'scheduled_report_claims',
           `"created_at" < $1`,
-          [cutoff],
+          [cutoff!],
         );
         const learnerDeleted = await this.deleteBatched(
           'learner_scheduled_report_claims',
           `"created_at" < $1`,
-          [cutoff],
+          [cutoff!],
         );
         return legacyDeleted + learnerDeleted;
       },
-      this.parseEnabled(`${envPrefix}REPORT_CLAIMS_CLEANUP_ENABLED`),
-      () => retentionDays,
     );
   }
 
@@ -316,25 +254,12 @@ export class PlatformCleanupCronService
     this.jobs.set(name, job);
   }
 
-  private parseEnabled(configKey: string): () => boolean {
-    return () => {
-      const raw = this.configService
-        .get<string>(configKey)
-        ?.trim()
-        .toLowerCase();
-      return raw !== 'false' && raw !== '0';
-    };
-  }
-
   private parseRetentionDays(
     configKey: string,
     fallback: number,
   ): () => number {
     return () => {
-      const raw = this.configService.get<string>(configKey)?.trim();
-      if (!raw) return fallback;
-      const value = Number(raw);
-      return Number.isFinite(value) && value > 0 ? value : fallback;
+      return readEnvPositiveInt(this.configService, configKey, fallback);
     };
   }
 

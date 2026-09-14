@@ -637,18 +637,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     CleanupCronService,
     {
       provide: PlatformLinkAuditCleanupService,
-      useFactory: (
-        cleanupCron: CleanupCronService,
-        configService: ConfigService,
-        dataSource: DataSource,
-      ) =>
-        new PlatformLinkAuditCleanupService(
-          cleanupCron,
-          configService,
-          dataSource,
-          { platform: 'zalo', advisoryLockId: 884_200_942 },
-        ),
-      inject: [CleanupCronService, ConfigService, DataSource],
+      useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
+        new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
+          platform: 'zalo',
+          advisoryLockId: 884_200_942,
+        }),
+      inject: [CleanupCronService, DataSource],
     },
     LlmSafetyCleanupService,
     {
@@ -710,7 +704,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           dataSource,
           {
             platform: 'zalo',
-            envPrefix: 'ZALO_',
             lockIds: {
               messageLog: 884_200_916,
               deadLetter: 884_200_917,

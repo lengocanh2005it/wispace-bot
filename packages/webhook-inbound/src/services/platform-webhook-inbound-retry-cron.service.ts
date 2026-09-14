@@ -7,6 +7,9 @@ import {
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { runLockedTick } from '@wispace/bot-common/cron';
+import type { LockedTickItem } from '@wispace/bot-common/cron';
+import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import { runBatched } from '@wispace/scheduler-core';
 import {
   PlatformWebhookInboundEventService,
@@ -29,6 +32,8 @@ export interface InboundRetryStats {
   abandoned: number;
   skipped: number;
 }
+
+type InboundRetryItemDetail = 'completed' | 'failed' | 'abandoned' | 'skipped';
 
 export interface WebhookInboundRetryCronOptions {
   /** Advisory lock id — only one pod retries the inbox per tick. */
@@ -77,20 +82,21 @@ export class PlatformWebhookInboundRetryCronService {
 
   @Cron('*/30 * * * * *')
   async handleRetry(): Promise<void> {
-    const result = await this.pgLock.withLock(this.options.lockId, () =>
-      this.runRetryBatch(),
-    );
-
-    if (result === null) {
-      this.logger.debug(
-        'webhook-inbound-retry skipped — lock held by another pod',
-      );
-    } else if (this.options.metrics && this.options.cronName) {
-      this.options.metrics.recordCronSuccess(this.options.cronName);
-    }
+    await runLockedTick({
+      name: this.options.cronName ?? 'webhook-inbound-retry',
+      withLock: (run) => this.pgLock.withLock(this.options.lockId, run),
+      run: () => this.runRetryBatch(),
+      metrics:
+        this.options.metrics && this.options.cronName
+          ? this.options.metrics
+          : undefined,
+      logger: this.logger,
+    });
   }
 
-  private async runRetryBatch(): Promise<void> {
+  private async runRetryBatch(): Promise<
+    LockedTickItem<InboundRetryItemDetail>[]
+  > {
     const retryConfig = readInboundRetryConfig((key) =>
       this.configService.get<string>(key),
     );
@@ -124,7 +130,7 @@ export class PlatformWebhookInboundRetryCronService {
     };
     if (rows.length === 0) {
       this.options.onTickComplete?.(stats);
-      return;
+      return [];
     }
 
     this.logger.log(`Inbound retry: processing ${rows.length} event(s)`);
@@ -147,6 +153,11 @@ export class PlatformWebhookInboundRetryCronService {
     );
 
     this.options.onTickComplete?.(stats);
+    return results.map((result) =>
+      result.status === 'fulfilled'
+        ? result.value
+        : { outcome: 'failed' as const, details: 'failed' as const },
+    );
   }
 
   private async processRow(
@@ -154,7 +165,7 @@ export class PlatformWebhookInboundRetryCronService {
     retryConfig: ReturnType<typeof readInboundRetryConfig>,
     staleBefore: Date,
     stats: InboundRetryStats,
-  ): Promise<void> {
+  ): Promise<LockedTickItem<InboundRetryItemDetail>> {
     if (row.status === 'processing') {
       const terminalized = await this.inboundEvents.abandonStaleProcessing(
         row.id,
@@ -168,10 +179,11 @@ export class PlatformWebhookInboundRetryCronService {
             row.externalUserId,
           )} abandoned after stale processing lease; automatic replay skipped`,
         );
+        return { outcome: 'succeeded', details: 'abandoned' };
       } else {
         stats.skipped += 1;
+        return { outcome: 'skipped', details: 'skipped' };
       }
-      return;
     }
 
     // The retry worker claims before processing, so one row is handled by
@@ -181,7 +193,7 @@ export class PlatformWebhookInboundRetryCronService {
     const leaseToken = await this.inboundEvents.claim(row.id);
     if (!leaseToken) {
       stats.skipped += 1;
-      return;
+      return { outcome: 'skipped', details: 'skipped' };
     }
 
     const lagSeconds = (Date.now() - row.createdAt.getTime()) / 1000;
@@ -208,7 +220,7 @@ export class PlatformWebhookInboundRetryCronService {
       );
       if (!marked) {
         stats.skipped += 1;
-        return;
+        return { outcome: 'skipped', details: 'skipped' };
       }
 
       if (nextRetryCount >= retryConfig.maxRetries) {
@@ -222,7 +234,11 @@ export class PlatformWebhookInboundRetryCronService {
           `Inbound event id=${row.id} eventId=${maskedEventId} retry ${nextRetryCount}/${retryConfig.maxRetries} failed: ${errorMsg}`,
         );
       }
-      return;
+      return {
+        outcome: 'succeeded',
+        details:
+          nextRetryCount >= retryConfig.maxRetries ? 'abandoned' : 'failed',
+      };
     }
 
     try {
@@ -232,7 +248,7 @@ export class PlatformWebhookInboundRetryCronService {
       );
       if (!completed) {
         stats.skipped += 1;
-        return;
+        return { outcome: 'skipped', details: 'skipped' };
       }
       stats.completed += 1;
       this.logger.log(
@@ -241,6 +257,7 @@ export class PlatformWebhookInboundRetryCronService {
           row.externalUserId,
         )} processed successfully`,
       );
+      return { outcome: 'succeeded', details: 'completed' };
     } catch (error) {
       const completionError = maskExternalIdInText(
         errorMessage(error),
@@ -253,23 +270,18 @@ export class PlatformWebhookInboundRetryCronService {
       );
       if (terminalized) {
         stats.abandoned += 1;
+        this.logger.error(
+          `Inbound event id=${row.id} completion failed; automatic replay skipped: ${completionError}`,
+        );
+        return { outcome: 'succeeded', details: 'abandoned' };
       } else {
         stats.skipped += 1;
+        return { outcome: 'skipped', details: 'skipped' };
       }
-      this.logger.error(
-        `Inbound event id=${row.id} eventId=${maskEventId(
-          row.eventId,
-          row.externalUserId,
-        )} completion failed; automatic replay skipped: ${completionError}`,
-      );
     }
   }
 
   private readPositiveInt(key: string, fallback: number): number {
-    const raw = this.configService.get<string>(key);
-    const parsed = raw ? Number(raw) : NaN;
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : fallback;
+    return readEnvPositiveInt(this.configService, key, fallback);
   }
 }

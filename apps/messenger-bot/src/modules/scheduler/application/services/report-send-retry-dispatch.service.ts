@@ -11,14 +11,35 @@ import {
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { runLockedTick } from '@wispace/bot-common/cron';
+import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { subMilliseconds } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import { reportRetryAt } from '../utils/report-retry-at';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
+
+type ReportRetryItemDetail =
+  | 'sent'
+  | 'retried'
+  | 'expired'
+  | 'window_closed'
+  | 'failed'
+  | 'claim_skipped';
+
+export interface ReportRetryDispatchResult {
+  claimed: number;
+  sent: number;
+  retried: number;
+  expired: number;
+  windowClosed: number;
+  failed: number;
+  resetStuck: number;
+  failures: Array<{ jobId: number; psid: string; error: string }>;
+}
 
 @Injectable()
 export class ReportSendRetryDispatchService {
@@ -52,24 +73,23 @@ export class ReportSendRetryDispatchService {
       return;
     }
 
-    const result = await this.pgLock.withLock(
-      ADVISORY_LOCK.REPORT_SEND_RETRY_DISPATCH,
-      () => this.dispatchDueReportRetries(),
-    );
-    if (result !== null) {
-      this.metrics?.recordCronSuccess?.('report-send-retry');
-    }
+    await runLockedTick({
+      name: 'report-send-retry',
+      withLock: (run) =>
+        this.pgLock.withLock(ADVISORY_LOCK.REPORT_SEND_RETRY_DISPATCH, run),
+      run: async () => (await this.dispatchDueReportRetriesWithItems()).items,
+      metrics: this.metrics,
+      logger: this.logger,
+    });
   }
 
-  async dispatchDueReportRetries(): Promise<{
-    claimed: number;
-    sent: number;
-    retried: number;
-    expired: number;
-    windowClosed: number;
-    failed: number;
-    resetStuck: number;
-    failures: Array<{ jobId: number; psid: string; error: string }>;
+  async dispatchDueReportRetries(): Promise<ReportRetryDispatchResult> {
+    return (await this.dispatchDueReportRetriesWithItems()).result;
+  }
+
+  private async dispatchDueReportRetriesWithItems(): Promise<{
+    result: ReportRetryDispatchResult;
+    items: LockedTickItem<ReportRetryItemDetail>[];
   }> {
     const settings = this.reportSendScheduleService.getOutboxSettings();
     const now = new Date();
@@ -88,164 +108,234 @@ export class ReportSendRetryDispatchService {
     let windowClosed = 0;
     let failed = 0;
     const failures: Array<{ jobId: number; psid: string; error: string }> = [];
+    const items: LockedTickItem<ReportRetryItemDetail>[] = [];
 
     for (const job of dueJobs) {
-      // The job's examDate is frozen at failure time — re-resolve it so an
-      // exam reschedule is honored (a moved-up exam otherwise expires the job
-      // even though the new exam is still upcoming, and a moved-back exam
-      // keeps stale retries).
-      const examDate = await this.resolveFreshExamDate(
-        job.externalUserId,
-        job.examDate,
-      );
-      const daysUntilExam = this.reportScheduleService.calculateDaysUntilExam(
-        examDate,
-        now,
-      );
-
-      if (daysUntilExam < 0) {
-        await this.reportSendJobRepository.markFailed({
-          jobId: job.id,
-          errorMessage: 'Exam date passed without successful report (R5)',
-          retryCount: job.maxRetries,
-          terminal: true,
-        });
-        expired += 1;
-        this.logger.warn(
-          `Report send job expired jobId=${job.id} psid=${maskExternalId(
-            job.externalUserId,
-          )} examDate=${examDate}`,
+      let item: LockedTickItem<ReportRetryItemDetail> = {
+        outcome: 'skipped',
+        details: 'claim_skipped',
+      };
+      let claimedJobId: number | undefined;
+      let claimedLeaseToken: string | undefined;
+      let claimedRetryCount = job.retryCount;
+      let claimedMaxRetries = job.maxRetries;
+      try {
+        // The job's examDate is frozen at failure time — re-resolve it so an
+        // exam reschedule is honored (a moved-up exam otherwise expires the job
+        // even though the new exam is still upcoming, and a moved-back exam
+        // keeps stale retries).
+        const examDate = await this.resolveFreshExamDate(
+          job.externalUserId,
+          job.examDate,
         );
-        continue;
-      }
+        const daysUntilExam = this.reportScheduleService.calculateDaysUntilExam(
+          examDate,
+          now,
+        );
 
-      const claimedJob = await this.reportSendJobRepository.claimJob(
-        job.id,
-        settings.leaseMs,
-      );
-      if (!claimedJob) {
-        continue;
-      }
+        if (daysUntilExam < 0) {
+          await this.reportSendJobRepository.markFailed({
+            jobId: job.id,
+            errorMessage: 'Exam date passed without successful report (R5)',
+            retryCount: job.maxRetries,
+            terminal: true,
+          });
+          expired += 1;
+          this.logger.warn(
+            `Report send job expired jobId=${job.id} psid=${maskExternalId(
+              job.externalUserId,
+            )} examDate=${examDate}`,
+          );
+          item = { outcome: 'succeeded', details: 'expired' };
+          continue;
+        }
 
-      claimed += 1;
-      const leaseToken = claimedJob.leaseToken ?? '';
+        const claimedJob = await this.reportSendJobRepository.claimJob(
+          job.id,
+          settings.leaseMs,
+        );
+        if (!claimedJob) {
+          continue;
+        }
 
-      const mapping = await this.messengerRepository.findActiveMappingByPsid(
-        claimedJob.externalUserId,
-      );
+        claimed += 1;
+        const leaseToken = claimedJob.leaseToken ?? '';
+        claimedJobId = claimedJob.id;
+        claimedLeaseToken = leaseToken;
+        claimedRetryCount = claimedJob.retryCount;
+        claimedMaxRetries = claimedJob.maxRetries;
 
-      if (!mapping?.psid) {
-        const linkState = await this.messengerRepository.findMappingStateByPsid(
+        const mapping = await this.messengerRepository.findActiveMappingByPsid(
           claimedJob.externalUserId,
         );
-        if (linkState === 'temporarily-unknown') {
-          const nextRetryCount = claimedJob.retryCount + 1;
+
+        if (!mapping?.psid) {
+          const linkState =
+            await this.messengerRepository.findMappingStateByPsid(
+              claimedJob.externalUserId,
+            );
+          if (linkState === 'temporarily-unknown') {
+            const nextRetryCount = claimedJob.retryCount + 1;
+            await this.reportSendJobRepository.markFailed({
+              jobId: claimedJob.id,
+              leaseToken,
+              errorMessage: 'WISPACE link status temporarily unknown',
+              retryCount: nextRetryCount,
+              nextRetryAt: reportRetryAt(settings.retryBackoffMinutes),
+              terminal: nextRetryCount >= claimedJob.maxRetries,
+            });
+            if (nextRetryCount >= claimedJob.maxRetries) failed += 1;
+            else retried += 1;
+            item = { outcome: 'succeeded', details: 'retried' };
+            continue;
+          }
           await this.reportSendJobRepository.markFailed({
             jobId: claimedJob.id,
             leaseToken,
-            errorMessage: 'WISPACE link status temporarily unknown',
-            retryCount: nextRetryCount,
-            nextRetryAt: reportRetryAt(settings.retryBackoffMinutes),
-            terminal: nextRetryCount >= claimedJob.maxRetries,
+            errorMessage: 'Active mapping not found',
+            retryCount: claimedJob.maxRetries,
+            terminal: true,
           });
-          if (nextRetryCount >= claimedJob.maxRetries) failed += 1;
-          else retried += 1;
+          failed += 1;
+          item = { outcome: 'succeeded', details: 'failed' };
           continue;
         }
-        await this.reportSendJobRepository.markFailed({
-          jobId: claimedJob.id,
-          leaseToken,
-          errorMessage: 'Active mapping not found',
-          retryCount: claimedJob.maxRetries,
-          terminal: true,
-        });
-        failed += 1;
-        continue;
-      }
 
-      const orchestrationResult =
-        await this.reportSendOrchestrationService.claimAndSend(mapping, {
-          reportDate,
-          skipAlreadySentToday: true,
-          examDateForOutbox: examDate,
-        });
+        const orchestrationResult =
+          await this.reportSendOrchestrationService.claimAndSend(mapping, {
+            reportDate,
+            skipAlreadySentToday: true,
+            examDateForOutbox: examDate,
+          });
 
-      if (orchestrationResult.sent > 0) {
-        await this.reportSendJobRepository.markSent(claimedJob.id, leaseToken);
-        sent += 1;
-      } else if (orchestrationResult.skipped > 0) {
-        await this.reportSendJobRepository.markSent(claimedJob.id, leaseToken);
-        sent += 1;
-      } else if (orchestrationResult.claimSkipped > 0) {
-        const nextRetryAt = reportRetryAt(settings.retryBackoffMinutes);
-        await this.reportSendJobRepository.markFailed({
-          jobId: claimedJob.id,
-          leaseToken,
-          errorMessage: 'Report claim exists for today (R4)',
-          retryCount: claimedJob.retryCount,
-          nextRetryAt,
-          terminal: false,
-        });
-        retried += 1;
-      } else if (orchestrationResult.deferred > 0) {
-        const nextRetryCount = claimedJob.retryCount + 1;
-        const terminal = nextRetryCount >= claimedJob.maxRetries;
-        const nextRetryAt = reportRetryAt(settings.retryBackoffMinutes);
+        if (orchestrationResult.sent > 0) {
+          await this.reportSendJobRepository.markSent(
+            claimedJob.id,
+            leaseToken,
+          );
+          sent += 1;
+          item = { outcome: 'succeeded', details: 'sent' };
+        } else if (orchestrationResult.skipped > 0) {
+          await this.reportSendJobRepository.markSent(
+            claimedJob.id,
+            leaseToken,
+          );
+          sent += 1;
+          item = { outcome: 'succeeded', details: 'sent' };
+        } else if (orchestrationResult.claimSkipped > 0) {
+          const nextRetryAt = reportRetryAt(settings.retryBackoffMinutes);
+          await this.reportSendJobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: 'Report claim exists for today (R4)',
+            retryCount: claimedJob.retryCount,
+            nextRetryAt,
+            terminal: false,
+          });
+          retried += 1;
+          item = { outcome: 'succeeded', details: 'retried' };
+        } else if (orchestrationResult.deferred > 0) {
+          const nextRetryCount = claimedJob.retryCount + 1;
+          const terminal = nextRetryCount >= claimedJob.maxRetries;
+          const nextRetryAt = reportRetryAt(settings.retryBackoffMinutes);
 
-        await this.reportSendJobRepository.markFailed({
-          jobId: claimedJob.id,
-          leaseToken,
-          errorMessage: 'Wispace API retryable (R3/R5)',
-          retryCount: nextRetryCount,
-          nextRetryAt: terminal ? undefined : nextRetryAt,
-          terminal,
-        });
+          await this.reportSendJobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: 'Wispace API retryable (R3/R5)',
+            retryCount: nextRetryCount,
+            nextRetryAt: terminal ? undefined : nextRetryAt,
+            terminal,
+          });
 
-        if (terminal) {
+          if (terminal) {
+            failed += 1;
+            failures.push({
+              jobId: claimedJob.id,
+              psid: claimedJob.externalUserId,
+              error: 'Wispace API retryable (R3/R5)',
+            });
+          } else {
+            retried += 1;
+          }
+          item = {
+            outcome: 'succeeded',
+            details: terminal ? 'failed' : 'retried',
+          };
+
+          this.logger.warn(
+            `Report send retry Wispace 5xx jobId=${claimedJob.id} psid=${maskExternalId(
+              claimedJob.externalUserId,
+            )} retry=${nextRetryCount}/${claimedJob.maxRetries}`,
+          );
+        } else if (orchestrationResult.windowClosed > 0) {
+          await this.reportSendJobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: 'Messenger 24h window closed',
+            retryCount: claimedJob.maxRetries,
+            terminal: true,
+          });
+          windowClosed += 1;
+          item = { outcome: 'succeeded', details: 'window_closed' };
+        } else if (orchestrationResult.failures.length > 0) {
+          const error = orchestrationResult.failures[0].error;
+          await this.reportSendJobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: error,
+            retryCount: claimedJob.maxRetries,
+            terminal: true,
+          });
           failed += 1;
           failures.push({
             jobId: claimedJob.id,
             psid: claimedJob.externalUserId,
-            error: 'Wispace API retryable (R3/R5)',
+            error,
           });
-        } else {
-          retried += 1;
+          this.logger.error(
+            `Report send retry failed jobId=${claimedJob.id} psid=${maskExternalId(
+              claimedJob.externalUserId,
+            )}`,
+          );
+          item = { outcome: 'succeeded', details: 'failed' };
         }
-
-        this.logger.warn(
-          `Report send retry Wispace 5xx jobId=${claimedJob.id} psid=${maskExternalId(
-            claimedJob.externalUserId,
-          )} retry=${nextRetryCount}/${claimedJob.maxRetries}`,
-        );
-      } else if (orchestrationResult.windowClosed > 0) {
-        await this.reportSendJobRepository.markFailed({
-          jobId: claimedJob.id,
-          leaseToken,
-          errorMessage: 'Messenger 24h window closed',
-          retryCount: claimedJob.maxRetries,
-          terminal: true,
-        });
-        windowClosed += 1;
-      } else if (orchestrationResult.failures.length > 0) {
-        const error = orchestrationResult.failures[0].error;
-        await this.reportSendJobRepository.markFailed({
-          jobId: claimedJob.id,
-          leaseToken,
-          errorMessage: error,
-          retryCount: claimedJob.maxRetries,
-          terminal: true,
-        });
+      } catch (error) {
+        const message = errorMessage(error, job.externalUserId);
+        if (claimedJobId !== undefined && claimedLeaseToken) {
+          const nextRetryCount = claimedRetryCount + 1;
+          const terminal = nextRetryCount >= claimedMaxRetries;
+          try {
+            await this.reportSendJobRepository.markFailed({
+              jobId: claimedJobId,
+              leaseToken: claimedLeaseToken,
+              errorMessage: message,
+              retryCount: nextRetryCount,
+              nextRetryAt: terminal
+                ? undefined
+                : reportRetryAt(settings.retryBackoffMinutes),
+              terminal,
+            });
+          } catch (transitionError) {
+            this.logger.error(
+              `Report send retry state transition failed jobId=${claimedJobId}: ${errorMessage(transitionError, job.externalUserId)}`,
+            );
+          }
+        }
         failed += 1;
         failures.push({
-          jobId: claimedJob.id,
-          psid: claimedJob.externalUserId,
-          error,
+          jobId: job.id,
+          psid: job.externalUserId,
+          error: message,
         });
         this.logger.error(
-          `Report send retry failed jobId=${claimedJob.id} psid=${maskExternalId(
-            claimedJob.externalUserId,
-          )}`,
+          `Report send retry item failed jobId=${job.id} psid=${maskExternalId(
+            job.externalUserId,
+          )}: ${message}`,
         );
+        item = { outcome: 'failed', details: 'failed' };
+      } finally {
+        items.push(item);
       }
     }
 
@@ -256,14 +346,17 @@ export class ReportSendRetryDispatchService {
     }
 
     return {
-      claimed,
-      sent,
-      retried,
-      expired,
-      windowClosed,
-      failed,
-      resetStuck,
-      failures,
+      result: {
+        claimed,
+        sent,
+        retried,
+        expired,
+        windowClosed,
+        failed,
+        resetStuck,
+        failures,
+      },
+      items,
     };
   }
 

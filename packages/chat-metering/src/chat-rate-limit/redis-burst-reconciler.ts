@@ -1,5 +1,9 @@
+import { Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import type { RedisClientPort } from '@wispace/bot-common/redis';
+import { runLockedTick } from '@wispace/bot-common/cron';
+import type { LockedTickItem } from '@wispace/bot-common/cron';
+import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type Redis from 'ioredis';
 import {
   buildLegacyRedisBurstKey,
@@ -50,12 +54,18 @@ export interface RedisBurstReconciliationResult {
   sampleExternalIds: string[];
 }
 
+type RedisBurstItemDetail = 'clean' | 'repaired' | 'unresolved';
+
 export interface RedisBurstReconcilerOptions {
   platform?: string;
   legacyRead?: boolean;
   includeRefunded?: boolean;
   maxCandidates?: number;
   metrics?: RedisConsistencyMetrics;
+  pgLock?: PgAdvisoryLockService;
+  lockId?: number;
+  cronMetrics?: { recordCronSuccess(name: string): void };
+  cronName?: string;
   now?: () => Date;
 }
 
@@ -66,7 +76,7 @@ export interface RedisBurstReconcilerOptions {
  * they cannot prove a corresponding PG reservation and expire naturally.
  */
 export class RedisBurstReconciler {
-  private static readonly LOCK_TTL_MS = 55_000;
+  private readonly logger = new Logger(RedisBurstReconciler.name);
 
   constructor(
     private readonly redisClient: Pick<
@@ -78,7 +88,45 @@ export class RedisBurstReconciler {
   ) {}
 
   async reconcile(): Promise<RedisBurstReconciliationResult> {
-    const empty = (status: RedisBurstReconciliationStatus, unresolved = 0) => ({
+    const empty = this.emptyResult.bind(this);
+    const client = this.redisClient.getNativeClient();
+    if (!this.redisClient.isEnabled() || !client) {
+      this.record('unavailable');
+      return empty('unavailable');
+    }
+
+    if (!this.options.pgLock || this.options.lockId === undefined) {
+      this.record('unavailable');
+      return empty('unavailable');
+    }
+
+    let batchResult:
+      | {
+          result: RedisBurstReconciliationResult;
+          items: LockedTickItem<RedisBurstItemDetail>[];
+        }
+      | undefined;
+    const summary = await runLockedTick<RedisBurstItemDetail>({
+      name: this.options.cronName ?? `redis-burst-reconcile-${this.platform}`,
+      withLock: (run) =>
+        this.options.pgLock!.withLock(this.options.lockId!, run),
+      run: async () => {
+        batchResult = await this.reconcileBatch(client);
+        return batchResult.items;
+      },
+      metrics: this.options.cronMetrics,
+      logger: this.logger,
+    });
+
+    if (summary === null) return empty('locked');
+    return batchResult?.result ?? empty('clean');
+  }
+
+  private emptyResult(
+    status: RedisBurstReconciliationStatus,
+    unresolved = 0,
+  ): RedisBurstReconciliationResult {
+    return {
       status,
       scanned: 0,
       mismatches: 0,
@@ -86,76 +134,60 @@ export class RedisBurstReconciler {
       unresolved,
       truncated: false,
       sampleExternalIds: [],
-    });
-    const client = this.redisClient.getNativeClient();
-    if (!this.redisClient.isEnabled() || !client) {
-      this.record('unavailable');
-      return empty('unavailable');
-    }
+    };
+  }
 
-    const lockKey = `chat:quota:${this.platform}:reconcile-lock`;
-    const lockValue = `${Date.now()}:${Math.random()}`;
-    let acquired: string | null;
-    try {
-      acquired = await client.set(
-        lockKey,
-        lockValue,
-        'PX',
-        RedisBurstReconciler.LOCK_TTL_MS,
-        'NX',
-      );
-    } catch {
-      this.record('unavailable');
-      this.options.metrics?.setRedisConsistencyDrift('burst', 0);
-      return empty('unavailable');
-    }
-    if (acquired !== 'OK') {
-      this.record('locked');
-      return empty('locked');
-    }
+  private async reconcileBatch(client: Redis): Promise<{
+    result: RedisBurstReconciliationResult;
+    items: LockedTickItem<RedisBurstItemDetail>[];
+  }> {
+    const now = this.options.now?.() ?? new Date();
+    const bucketStart = new Date(
+      Math.floor(now.getTime() / CHAT_BURST_WINDOW_MS) * CHAT_BURST_WINDOW_MS,
+    );
+    const bucketEnd = new Date(bucketStart.getTime() + CHAT_BURST_WINDOW_MS);
+    const maxCandidates = Math.max(
+      1,
+      Math.floor(this.options.maxCandidates ?? 100),
+    );
+    const listed = await this.repository.listBurstCountsForBucket(
+      bucketStart,
+      bucketEnd,
+      {
+        includeRefunded: this.options.includeRefunded ?? false,
+        limit: maxCandidates,
+      },
+    );
 
-    try {
-      const now = this.options.now?.() ?? new Date();
-      const bucketStart = new Date(
-        Math.floor(now.getTime() / CHAT_BURST_WINDOW_MS) * CHAT_BURST_WINDOW_MS,
-      );
-      const bucketEnd = new Date(bucketStart.getTime() + CHAT_BURST_WINDOW_MS);
-      const maxCandidates = Math.max(
-        1,
-        Math.floor(this.options.maxCandidates ?? 100),
-      );
-      const listed = await this.repository.listBurstCountsForBucket(
-        bucketStart,
-        bucketEnd,
-        {
-          includeRefunded: this.options.includeRefunded ?? false,
-          limit: maxCandidates,
-        },
-      );
-
-      let mismatches = 0;
-      let repaired = 0;
-      let unresolved = 0;
-      const sampleExternalIds: string[] = [];
-      for (const row of listed.rows) {
+    let mismatches = 0;
+    let repaired = 0;
+    let unresolved = 0;
+    const sampleExternalIds: string[] = [];
+    const items: LockedTickItem<RedisBurstItemDetail>[] = [];
+    for (const row of listed.rows) {
+      try {
+        const bucket = Math.floor(bucketStart.getTime() / CHAT_BURST_WINDOW_MS);
         const key = buildRedisBurstKey(
           this.platform,
           row.externalUserId,
-          Math.floor(bucketStart.getTime() / CHAT_BURST_WINDOW_MS),
+          bucket,
         );
         const raw =
           (await client.get(key)) ??
           (this.legacyRead
             ? await client.get(
-                buildLegacyRedisBurstKey(
-                  row.externalUserId,
-                  Math.floor(bucketStart.getTime() / CHAT_BURST_WINDOW_MS),
-                ),
+                buildLegacyRedisBurstKey(row.externalUserId, bucket),
               )
             : null);
-        if (raw == null) continue;
+        if (raw == null) {
+          items.push({ outcome: 'succeeded', details: 'clean' });
+          continue;
+        }
         const redisCount = Number(raw);
-        if (Number.isFinite(redisCount) && redisCount === row.count) continue;
+        if (Number.isFinite(redisCount) && redisCount === row.count) {
+          items.push({ outcome: 'succeeded', details: 'clean' });
+          continue;
+        }
 
         mismatches += 1;
         if (sampleExternalIds.length < 5) {
@@ -164,25 +196,27 @@ export class RedisBurstReconciler {
         this.record('detected', 1);
         try {
           const keys = [key];
-          if (this.legacyRead) {
-            keys.push(
-              buildLegacyRedisBurstKey(
-                row.externalUserId,
-                Math.floor(bucketStart.getTime() / CHAT_BURST_WINDOW_MS),
-              ),
-            );
-          }
+          if (this.legacyRead)
+            keys.push(buildLegacyRedisBurstKey(row.externalUserId, bucket));
           await client.del(...keys);
           repaired += 1;
           this.record('repaired', 1);
+          items.push({ outcome: 'succeeded', details: 'repaired' });
         } catch {
           unresolved += 1;
           this.record('unresolved', 1);
+          items.push({ outcome: 'failed', details: 'unresolved' });
         }
+      } catch {
+        unresolved += 1;
+        this.record('unavailable', 1);
+        items.push({ outcome: 'failed', details: 'unresolved' });
       }
+    }
 
-      this.options.metrics?.setRedisConsistencyDrift('burst', unresolved);
-      return {
+    this.options.metrics?.setRedisConsistencyDrift('burst', unresolved);
+    return {
+      result: {
         status:
           unresolved > 0 ? 'drift' : listed.truncated ? 'partial' : 'clean',
         scanned: listed.rows.length,
@@ -191,14 +225,9 @@ export class RedisBurstReconciler {
         unresolved,
         truncated: listed.truncated,
         sampleExternalIds,
-      };
-    } catch {
-      this.options.metrics?.setRedisConsistencyDrift('burst', 1);
-      this.record('unresolved');
-      return empty('drift', 1);
-    } finally {
-      await this.releaseLock(client, lockKey, lockValue);
-    }
+      },
+      items,
+    };
   }
 
   private get platform(): string {
@@ -214,22 +243,5 @@ export class RedisBurstReconciler {
     count = 1,
   ): void {
     this.options.metrics?.incRedisConsistencyEvent('burst', outcome, count);
-  }
-
-  private async releaseLock(
-    client: Redis,
-    lockKey: string,
-    lockValue: string,
-  ): Promise<void> {
-    try {
-      await client.eval(
-        `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0`,
-        1,
-        lockKey,
-        lockValue,
-      );
-    } catch {
-      // Lease expiry is the safety net if Redis disappears during cleanup.
-    }
   }
 }

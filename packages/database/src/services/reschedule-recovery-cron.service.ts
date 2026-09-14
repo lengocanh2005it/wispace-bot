@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { TypeormRescheduleStore } from './typeorm-reschedule-store';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { runLockedTick } from '@wispace/bot-common/cron';
 import type { CronHeartbeatMetricsPort } from './platform-dead-letter-cron.service';
 
 const STALE_AFTER_MS = 5 * 60_000;
@@ -38,17 +39,20 @@ export class RescheduleRecoveryCronService {
   async handleRecovery(): Promise<void> {
     if (!this.lock) {
       await this.runRecovery();
+      this.metrics?.recordCronSuccess('reschedule-recovery');
       return;
     }
 
-    const result = await this.lock.pgLock.withLock(this.lock.lockId, () =>
-      this.runRecovery(),
-    );
-    if (result === null) {
-      this.logger.debug(
-        'reschedule-recovery skipped — lock held by another pod',
-      );
-    }
+    await runLockedTick({
+      name: 'reschedule-recovery',
+      withLock: (run) => this.lock!.pgLock.withLock(this.lock!.lockId, run),
+      run: async () => {
+        await this.runRecovery();
+        return [{ outcome: 'succeeded' as const }];
+      },
+      metrics: this.metrics,
+      logger: this.logger,
+    });
   }
 
   private async runRecovery(): Promise<void> {
@@ -59,6 +63,5 @@ export class RescheduleRecoveryCronService {
         `reschedule-recovery: reset ${recovered} stale processing row(s) to pending`,
       );
     }
-    this.metrics?.recordCronSuccess('reschedule-recovery');
   }
 }

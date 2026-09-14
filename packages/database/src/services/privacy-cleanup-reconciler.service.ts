@@ -3,6 +3,8 @@ import { Logger } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import type { Platform } from '@wispace/contracts';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { runLockedTick } from '@wispace/bot-common/cron';
+import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { errorMessage } from '@wispace/bot-common/masking';
 import {
   PrivacyCleanupJobStore,
@@ -31,6 +33,8 @@ export interface PrivacyCleanupRunResult {
   failed: number;
   stale: number;
 }
+
+type PrivacyCleanupItemDetail = 'completed' | 'failed' | 'stale';
 
 /** Own-platform five-minute recovery worker for durable privacy state jobs. */
 export class PrivacyCleanupReconciler {
@@ -72,16 +76,26 @@ export class PrivacyCleanupReconciler {
   async tick(): Promise<PrivacyCleanupRunResult | null> {
     const lockId = this.options.lockId;
     if (this.options.pgLock && lockId) {
-      return this.options.pgLock.withLock(lockId, () => this.process());
+      const summary = await runLockedTick<PrivacyCleanupItemDetail>({
+        name: `privacy-cleanup-${this.platform}`,
+        withLock: (run) => this.options.pgLock!.withLock(lockId, run),
+        run: async () => (await this.processWithItems()).items,
+        logger: this.logger,
+      });
+      if (summary === null) return null;
+      return this.processResultFromSummary(summary);
     }
-    return this.process();
+    return (await this.processWithItems()).result;
   }
 
   async runOnce(): Promise<PrivacyCleanupRunResult> {
-    return this.process();
+    return (await this.processWithItems()).result;
   }
 
-  private async process(): Promise<PrivacyCleanupRunResult> {
+  private async processWithItems(): Promise<{
+    result: PrivacyCleanupRunResult;
+    items: LockedTickItem<PrivacyCleanupItemDetail>[];
+  }> {
     const jobs = await this.jobs.claimDue(
       this.platform,
       PRIVACY_CLEANUP_WORKER_BATCH_SIZE,
@@ -93,6 +107,7 @@ export class PrivacyCleanupReconciler {
       failed: 0,
       stale: 0,
     };
+    const items: LockedTickItem<PrivacyCleanupItemDetail>[] = [];
 
     for (const job of jobs) {
       try {
@@ -105,6 +120,7 @@ export class PrivacyCleanupReconciler {
             'stale',
           );
           result.stale += 1;
+          items.push({ outcome: 'succeeded', details: 'stale' });
           continue;
         }
         const action = privacyCleanupCallbackForStore(
@@ -135,6 +151,7 @@ export class PrivacyCleanupReconciler {
             'stale',
           );
           result.stale += 1;
+          items.push({ outcome: 'succeeded', details: 'stale' });
           continue;
         }
         await action();
@@ -146,6 +163,7 @@ export class PrivacyCleanupReconciler {
           'success',
         );
         result.completed += 1;
+        items.push({ outcome: 'succeeded', details: 'completed' });
       } catch (error) {
         try {
           await this.jobs.markFailure(
@@ -168,6 +186,7 @@ export class PrivacyCleanupReconciler {
           'failure',
         );
         result.failed += 1;
+        items.push({ outcome: 'failed', details: 'failed' });
         this.logger.warn(
           `Privacy cleanup retry scheduled platform=${this.platform} store=${job.store}`,
         );
@@ -187,6 +206,18 @@ export class PrivacyCleanupReconciler {
         `Privacy cleanup summary unavailable platform=${this.platform}: ${errorMessage(error, { maxChars: 120 })}`,
       );
     }
-    return result;
+    return { result, items };
+  }
+
+  private processResultFromSummary(summary: {
+    details: PrivacyCleanupItemDetail[];
+  }): PrivacyCleanupRunResult {
+    return {
+      claimed: summary.details.length,
+      completed: summary.details.filter((detail) => detail === 'completed')
+        .length,
+      failed: summary.details.filter((detail) => detail === 'failed').length,
+      stale: summary.details.filter((detail) => detail === 'stale').length,
+    };
   }
 }

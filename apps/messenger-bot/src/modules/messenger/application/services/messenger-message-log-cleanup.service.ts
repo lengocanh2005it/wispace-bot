@@ -1,55 +1,30 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
-import {
-  CleanupCronService,
-  type CleanupCronConfig,
-} from '@wispace/cleanup-cron';
+import { CleanupCronService } from '@wispace/cleanup-cron';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
-import {
-  readEnvBoolean,
-  readEnvPositiveInt,
-} from '@messenger/shared/config/env-helpers';
 import { subDays } from 'date-fns';
 
-const DEFAULT_RETENTION_DAYS = 90;
-
-const CLEANUP_CONFIG: CleanupCronConfig = {
-  name: 'messenger-message-log-cleanup',
-  advisoryLockId: 100,
-  cronExpression: '0 0 3 * * 1',
-  timeZone: 'Asia/Ho_Chi_Minh',
-  enabledConfigKey: 'MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED',
-  retentionDaysConfigKey: 'MESSENGER_MESSAGE_LOG_RETENTION_DAYS',
-  defaultRetentionDays: DEFAULT_RETENTION_DAYS,
-};
+const CLEANUP_NAME = 'messenger-message-log-cleanup';
+const CLEANUP_LOCK_ID = 100;
+const CLEANUP_CRON = '0 0 3 * * 1';
 
 @Injectable()
 export class MessengerMessageLogCleanupService {
   private readonly logger = new Logger(MessengerMessageLogCleanupService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly cleanupCron: CleanupCronService,
   ) {}
 
   isEnabled(): boolean {
-    return readEnvBoolean(
-      this.configService,
-      CLEANUP_CONFIG.enabledConfigKey,
-      true,
-    );
+    return this.cleanupCron.isEnabled(CLEANUP_NAME);
   }
 
   getRetentionDays(): number {
-    return readEnvPositiveInt(
-      this.configService,
-      CLEANUP_CONFIG.retentionDaysConfigKey,
-      CLEANUP_CONFIG.defaultRetentionDays,
-    );
+    return this.cleanupCron.getRetentionDays(CLEANUP_NAME);
   }
 
   async purgeExpiredLogs(): Promise<{ deleted: number; cutoff: string }> {
@@ -73,16 +48,13 @@ export class MessengerMessageLogCleanupService {
   }
 
   /** Purge old audit rows — 03:00 ICT every Monday. */
-  @Cron(CLEANUP_CONFIG.cronExpression, {
-    name: CLEANUP_CONFIG.name,
-    timeZone: CLEANUP_CONFIG.timeZone,
+  @Cron(CLEANUP_CRON, {
+    name: CLEANUP_NAME,
+    timeZone: 'Asia/Ho_Chi_Minh',
   })
   async handleWeeklyCleanup(): Promise<void> {
-    await this.cleanupCron.execute(
-      CLEANUP_CONFIG,
-      (cutoff) => this.messengerRepository.deleteMessageLogsOlderThan(cutoff),
-      () => this.isEnabled(),
-      () => this.getRetentionDays(),
+    await this.cleanupCron.execute(CLEANUP_NAME, CLEANUP_LOCK_ID, (cutoff) =>
+      this.messengerRepository.deleteMessageLogsOlderThan(cutoff!),
     );
   }
 }

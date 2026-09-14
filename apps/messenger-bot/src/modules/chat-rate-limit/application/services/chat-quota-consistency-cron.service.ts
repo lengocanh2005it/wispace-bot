@@ -32,7 +32,6 @@ export class ChatQuotaConsistencyCronService {
           `chat-quota-redis-consistency status=${result.status} scanned=${result.scanned} mismatches=${result.mismatches} repaired=${result.repaired} unresolved=${result.unresolved} sampleExternalIds=${result.sampleExternalIds.join(',')}`,
         );
       }
-      this.metrics?.recordCronSuccess?.('chat-quota-redis-consistency');
     } catch (error) {
       // ponytail: one bounded pass per minute; the next tick retries after a
       // transient DB/Redis error and the metric/alert carries the signal.

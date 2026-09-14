@@ -6,6 +6,8 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -147,6 +149,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
         repository: ChatRateLimitRepository,
         redisClient: RedisClientPort | null,
         metrics: BotMetricsService,
+        pgLock: PgAdvisoryLockService,
       ) =>
         new RedisBurstReconciler(
           redisClient ?? {
@@ -159,6 +162,10 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
             legacyRead: true,
             includeRefunded: config.getBurstCountsRefunded(),
             metrics,
+            pgLock,
+            lockId: ADVISORY_LOCK.CHAT_QUOTA_REDIS_RECONCILE,
+            cronMetrics: metrics,
+            cronName: 'chat-quota-redis-consistency',
           },
         ),
       inject: [
@@ -166,6 +173,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
         ChatRateLimitRepository,
         { token: REDIS_CLIENT, optional: true },
         BotMetricsService,
+        PgAdvisoryLockService,
       ],
     },
     ChatQuotaEventRepository,
