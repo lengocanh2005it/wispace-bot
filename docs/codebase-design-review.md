@@ -56,7 +56,7 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 | Module | Interface nhỏ | Implementation giấu bên trong |
 |---|---|---|
 | `llm-execution` (messenger app) | **1 method `run(fn, ctx)`** | p-limit concurrency + opossum breaker + retry/backoff + deadline AbortSignal + Redis global slot + metrics. *"Best module in the app"* |
-| `LlmAgentService` (@wispace/llm-agent) | `reply`/`replyStream` | 910 LOC: rounds loop, dedupe/cap, injection redaction, grounding, context trimming, retry/timeouts |
+| `LlmAgentService` (@wispace/llm-agent) | `reply` | Orchestrates bounded rounds; context, tools, and safety live behind internal seams |
 | `LlmExecutionPort` + `createEnvLlmExecutionPort` | `run(fn, meta)` | Redis Lua lease slots, deadline composition, retry |
 | `StudyReminderDispatchService` / `SyncService` | mỗi cái **1 method** | claim/crash-recovery/ambiguous/backoff; keyset paging, bounded concurrency, fail-closed provider check |
 | `TypeormStudyReminderJobRepository` | 1 token DI | lease-claim/ambiguity/reopen state machine 565 LOC |
@@ -139,7 +139,7 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 > "constructor archaeology".
 
 **Tốt (chuẩn mực)**: fake `ChatQuotaRepositoryPort` mô phỏng stateful idempotency/reserve/refund → 17 test
-assert outcome quan sát được; `agent.service.spec.ts` test xuyên `reply()/replyStream()` với stubbed
+assert outcome quan sát được; `agent.service.spec.ts` test xuyên `reply()` với stubbed
 adapter; architecture tests (`zalo-module-boundaries.spec.ts`, `runtime-dependencies.spec.ts`) giữ lại.
 
 **Xấu (testing past the interface)**:

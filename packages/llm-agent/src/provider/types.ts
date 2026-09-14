@@ -121,17 +121,6 @@ export interface LlmToolChatResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Streaming events
-// ---------------------------------------------------------------------------
-
-export type LlmStreamEvent =
-  | { type: 'delta'; textDelta: string }
-  | { type: 'tool_call_start'; toolCall: LlmToolCall }
-  | { type: 'tool_call_delta'; toolCallId: string; argsDelta: string }
-  | { type: 'done'; response: LlmToolChatResponse }
-  | { type: 'error'; error: unknown };
-
-// ---------------------------------------------------------------------------
 // Error model
 // ---------------------------------------------------------------------------
 

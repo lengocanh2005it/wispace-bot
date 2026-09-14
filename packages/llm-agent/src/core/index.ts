@@ -19,8 +19,6 @@ export type {
   LlmAgentConfig,
   LlmAgentInput,
   LlmAgentReply,
-  LlmAgentStreamEvent,
-  LlmAgentExecuteCallbacks,
 } from '../types';
 
 export {
@@ -69,7 +67,6 @@ export type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
 } from '../provider/types';
 

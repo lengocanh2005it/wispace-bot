@@ -5,7 +5,6 @@ import type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
   LlmMessage,
 } from '../types';
@@ -125,120 +124,6 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     );
 
     return fromOpenAiCompletion(response, this.providerName, model);
-  }
-
-  // -----------------------------------------------------------------------
-  // Streaming
-  // -----------------------------------------------------------------------
-
-  async *chatStream(
-    request: LlmToolChatRequest,
-  ): AsyncIterable<LlmStreamEvent> {
-    const model = this.resolveModel(request.model);
-    const client = this.getClientOrThrow();
-
-    const stream = await client.chat.completions.create(
-      {
-        model,
-        messages: toOpenAiMessages(request.messages),
-        tools: toOpenAiTools(request.tools),
-        tool_choice: request.toolChoice ?? 'auto',
-        stream: true,
-        stream_options: { include_usage: true },
-        ...(request.temperature !== undefined && {
-          temperature: request.temperature,
-        }),
-        ...(request.maxOutputTokens !== undefined && {
-          max_completion_tokens: request.maxOutputTokens,
-        }),
-      },
-      request.signal ? { signal: request.signal } : undefined,
-    );
-
-    // Accumulator for the final response
-    const toolCallsAccum = new Map<
-      number,
-      { id: string; name: string; arguments: string }
-    >();
-    let contentAccum = '';
-    let finalUsage: ChatCompletion['usage'] = undefined;
-    let finalResponseId = '';
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
-      finalResponseId = chunk.id;
-
-      if (chunk.usage) {
-        finalUsage = chunk.usage;
-      }
-
-      if (delta?.content) {
-        contentAccum += delta.content;
-        yield { type: 'delta', textDelta: delta.content };
-      }
-
-      if (delta?.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index ?? 0;
-          const existing = toolCallsAccum.get(idx);
-
-          if (!existing) {
-            const toolCall = {
-              id: tc.id ?? `tool_call_${idx}`,
-              name: tc.function?.name ?? '',
-              arguments: tc.function?.arguments ?? '',
-            };
-            toolCallsAccum.set(idx, toolCall);
-            if (toolCall.name) {
-              yield {
-                type: 'tool_call_start',
-                toolCall: { ...toolCall },
-              };
-            }
-          } else {
-            if (tc.id) existing.id = tc.id;
-            if (tc.function?.name) existing.name = tc.function.name;
-            if (tc.function?.arguments) {
-              existing.arguments += tc.function.arguments;
-              yield {
-                type: 'tool_call_delta',
-                toolCallId: existing.id,
-                argsDelta: tc.function.arguments,
-              };
-            }
-          }
-        }
-      }
-    }
-
-    // Build the final LlmMessage
-    const toolCalls =
-      toolCallsAccum.size > 0
-        ? Array.from(toolCallsAccum.values()).map((tc) => ({
-            id: tc.id,
-            name: tc.name,
-            arguments: tc.arguments,
-          }))
-        : undefined;
-
-    const message: LlmMessage = {
-      role: 'assistant',
-      content: contentAccum || undefined,
-      toolCalls,
-    };
-
-    const response: LlmToolChatResponse = {
-      message,
-      content: toolCalls ? undefined : contentAccum || undefined,
-      metadata: {
-        provider: this.providerName,
-        model,
-        responseId: finalResponseId,
-        usage: fromOpenAiUsage(finalUsage),
-      },
-    };
-
-    yield { type: 'done', response };
   }
 
   // -----------------------------------------------------------------------

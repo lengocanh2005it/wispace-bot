@@ -12,7 +12,6 @@ function adapterReturning(content: string): LlmProviderAdapter {
       metadata: { provider: 'test', model: 'test-model' },
     })),
     chatWithTools: jest.fn(),
-    chatStream: jest.fn(),
     isRetryableError: () => false,
     isRateLimitError: () => false,
     normalizeError: () => ({
@@ -186,5 +185,4 @@ it('sends only the single user message — no history, no other adapter method',
   expect(arg).not.toHaveProperty('messages');
   expect(arg).not.toHaveProperty('history');
   expect(adapter.chatWithTools).not.toHaveBeenCalled();
-  expect(adapter.chatStream).not.toHaveBeenCalled();
 });

@@ -61,7 +61,6 @@ function makeAdapter(): LlmProviderAdapter {
     getDefaultModel: () => 'gpt-5.4',
     generateJson: jest.fn(),
     chatWithTools: jest.fn(),
-    chatStream: jest.fn(),
     isRetryableError: () => false,
     isRateLimitError: () => false,
     normalizeError: () => ({ provider: 'openai', retryable: false }),

@@ -20,7 +20,6 @@ function buildStormAdapter(
       return { content: 'ok', toolCalls: [] };
     }),
     chatJson: jest.fn(),
-    chatStream: jest.fn(),
   } as unknown as LlmProviderAdapter;
 }
 

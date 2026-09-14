@@ -3,7 +3,6 @@ import type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
@@ -14,7 +13,6 @@ type CandidateOverrides = {
   name: string;
   generateJson?: LlmProviderAdapter['generateJson'];
   chatWithTools?: LlmProviderAdapter['chatWithTools'];
-  chatStream?: LlmProviderAdapter['chatStream'];
   isRetryableError?: LlmProviderAdapter['isRetryableError'];
   isRateLimitError?: LlmProviderAdapter['isRateLimitError'];
   normalizeError?: LlmProviderAdapter['normalizeError'];
@@ -30,14 +28,6 @@ function makeCandidate(overrides: CandidateOverrides): LlmProviderAdapter {
     getDefaultModel: () => `model-${overrides.name}`,
     generateJson: overrides.generateJson ?? noop,
     chatWithTools: overrides.chatWithTools ?? noop,
-    chatStream:
-      overrides.chatStream ??
-      (() => {
-        function* gen(): AsyncIterable<LlmStreamEvent> {
-          yield { type: 'done', response: {} as LlmToolChatResponse };
-        }
-        return gen();
-      }),
     isRetryableError: overrides.isRetryableError ?? (() => false),
     isRateLimitError: overrides.isRateLimitError ?? (() => false),
     normalizeError:
@@ -643,39 +633,6 @@ describe('FailoverLlmProviderAdapter', () => {
         }),
       ).rejects.toThrow(/multiple providers/i);
       expect(models).toEqual([]);
-    });
-  });
-
-  describe('chatStream', () => {
-    it('does not failover mid-stream, but respects circuit breaker', async () => {
-      const candidateA = makeCandidate({
-        name: 'a',
-        chatStream: () => {
-          function* gen(): AsyncIterable<LlmStreamEvent> {
-            yield { type: 'delta', textDelta: 'hello' };
-            yield { type: 'done', response: {} as LlmToolChatResponse };
-          }
-          return gen();
-        },
-      });
-      const candidateB = makeCandidate({
-        name: 'b',
-        chatStream: () => {
-          function* gen(): AsyncIterable<LlmStreamEvent> {
-            yield { type: 'delta', textDelta: 'from-b' };
-            yield { type: 'done', response: {} as LlmToolChatResponse };
-          }
-          return gen();
-        },
-      });
-
-      const adapter = new FailoverLlmProviderAdapter([candidateA, candidateB]);
-      const stream = adapter.chatStream(makeToolChatRequest());
-      const events: LlmStreamEvent[] = [];
-      for await (const event of stream) {
-        events.push(event);
-      }
-      expect(events[0]).toEqual({ type: 'delta', textDelta: 'hello' });
     });
   });
 

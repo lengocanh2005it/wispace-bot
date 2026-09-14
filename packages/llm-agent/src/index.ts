@@ -21,8 +21,6 @@ export type {
   LlmAgentConfig,
   LlmAgentInput,
   LlmAgentReply,
-  LlmAgentStreamEvent,
-  LlmAgentExecuteCallbacks,
 } from './types';
 
 // Core provider
@@ -66,7 +64,6 @@ export type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
   LlmProviderEntryConfig,
   FailoverConfig,

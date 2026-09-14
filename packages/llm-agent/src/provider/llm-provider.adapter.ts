@@ -3,7 +3,6 @@ import type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
 } from './types';
 
@@ -31,11 +30,6 @@ export interface LlmProviderAdapter {
   // Sync — full tool-calling response (one round)
   // -----------------------------------------------------------------------
   chatWithTools(request: LlmToolChatRequest): Promise<LlmToolChatResponse>;
-
-  // -----------------------------------------------------------------------
-  // Streaming — emits events as tokens arrive
-  // -----------------------------------------------------------------------
-  chatStream(request: LlmToolChatRequest): AsyncIterable<LlmStreamEvent>;
 
   // -----------------------------------------------------------------------
   // Error classification (provider-specific)

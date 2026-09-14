@@ -4,6 +4,10 @@
 
 Implemented (PR #32 — `LlmProviderAdapter` pattern with OpenAI, OpenRouter, MiniMax adapters + failover)
 
+> The historical streaming sketch in this ADR was removed from the shipped
+> contract by [ADR-0017](0017-llm-agent-context-budget-and-pipeline.md).
+> Current adapters expose the synchronous operations documented below.
+
 ## Context
 
 `packages/llm-agent` is the core agentic loop shared across all 3 bots (Messenger, Discord, Zalo). It handles function calling (tool definitions, tool call parsing, tool result round-trips) with LLM providers.

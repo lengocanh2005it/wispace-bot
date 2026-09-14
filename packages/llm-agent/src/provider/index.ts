@@ -12,7 +12,6 @@ export type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
 } from './types';
 export type { LlmProviderAdapter } from './llm-provider.adapter';

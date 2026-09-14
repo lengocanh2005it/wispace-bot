@@ -122,10 +122,6 @@ export interface AgentMetricsPort {
   llmRoundOutcomeInc(feature: string, outcome: LlmRoundOutcome): void;
   /** Time the entire agent loop (all rounds). Optional — noop if not provided. */
   timeAgentLoop?<T>(feature: string, fn: () => Promise<T>): Promise<T>;
-  /** #413: Record compaction outcome. Optional — noop if not provided. */
-  compactionOutcomeInc?(
-    outcome: 'compacted' | 'reused' | 'fallback' | 'skipped',
-  ): void;
   /** #414: Record bounded in-run tool-observation outcomes. */
   observationOutcomeInc?(
     toolName: string,
@@ -156,7 +152,6 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   timeTool: (_toolName, fn) => fn(),
   llmRoundOutcomeInc: () => undefined,
   timeAgentLoop: (_feature, fn) => fn(),
-  compactionOutcomeInc: () => undefined,
   observationOutcomeInc: () => undefined,
   toolPolicyDeniedInc: () => undefined,
   degradedModeInc: () => undefined,

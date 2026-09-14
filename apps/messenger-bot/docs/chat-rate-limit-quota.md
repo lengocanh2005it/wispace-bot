@@ -905,7 +905,7 @@ GROUP BY error_message
 ORDER BY attempts DESC;
 ```
 
-`tool_round = -1` marks non-round calls (compaction summaries, #703); exclude
+`tool_round = -1` marks non-round calls; exclude
 or split them when sizing per-round retry budgets (#514).
 
 ---

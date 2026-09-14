@@ -3,7 +3,6 @@ import type {
   LlmJsonResponse,
   LlmToolChatRequest,
   LlmToolChatResponse,
-  LlmStreamEvent,
   LlmProviderError,
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
@@ -84,61 +83,6 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     request: LlmToolChatRequest,
   ): Promise<LlmToolChatResponse> {
     return this.runFailover((c, req) => c.chatWithTools(req), request);
-  }
-
-  async *chatStream(
-    request: LlmToolChatRequest,
-  ): AsyncIterable<LlmStreamEvent> {
-    this.validateRequestModelOverride(request.model);
-    const { ordered, suppressed } = this.pickOrdered();
-    this.emitSkips(suppressed);
-    let lastError: unknown;
-
-    for (const candidate of ordered) {
-      if (request.signal?.aborted) {
-        throw request.signal.reason ?? new Error('Aborted');
-      }
-      const req = this.requestForCandidate(request, candidate);
-      try {
-        this.onProviderAttempt?.(candidate.providerName, request.feature);
-        yield* candidate.chatStream(req);
-        if (this.circuit.has(candidate.providerName)) {
-          this.onCircuitEvent?.({
-            provider: candidate.providerName,
-            action: 'close',
-          });
-        }
-        this.circuit.delete(candidate.providerName);
-        return; // Stream completed successfully
-      } catch (err) {
-        lastError = err;
-        if (request.signal?.aborted || isAbortError(err)) {
-          throw err;
-        }
-        const { reason } = candidate.normalizeError(err);
-        const isLongCooldown =
-          reason === 'quota_exceeded' ||
-          reason === 'auth' ||
-          reason === 'rate_limit';
-        this.circuit.set(candidate.providerName, {
-          healthyAgainAt:
-            this.clock() +
-            (isLongCooldown ? this.cooldownLongMs : this.cooldownShortMs),
-        });
-        this.onCircuitEvent?.({
-          provider: candidate.providerName,
-          action: 'open',
-          reason,
-        });
-        this.logger?.warn(
-          `LLM_FAILOVER_STREAM provider=${candidate.providerName} reason=${reason} — trying next candidate`,
-        );
-      }
-    }
-
-    const providers = ordered.map((c) => c.providerName);
-    this.onProvidersExhausted?.(providers, request.feature);
-    throw new LlmAllProvidersExhaustedError(providers, lastError);
   }
 
   isRetryableError(): boolean {

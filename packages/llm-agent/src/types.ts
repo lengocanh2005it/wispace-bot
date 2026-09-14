@@ -33,14 +33,8 @@ export interface LlmAgentConfig {
   toolExecutionTimeoutMs?: number;
   /** Global timeout for the entire agent loop (all rounds) in ms. Default: 60_000 (60s). */
   globalAgentTimeoutMs?: number;
-  /** Max input tokens (system prompt + history + user text). Default: 16_000. */
+  /** Max input-token budget (system, tools, history, user, and loop messages). */
   maxInputTokens?: number;
-  /** Enable semantic compaction — summarize old history entries instead of dropping them. Default: false. */
-  compactionEnabled?: boolean;
-  /** Max tokens for the compacted summary. Default: 500. */
-  compactionSummaryMaxTokens?: number;
-  /** Number of recent turns to preserve after compaction. Default: 2. */
-  compactionRecentTurns?: number;
 }
 
 export interface LlmAgentInput {
@@ -68,31 +62,4 @@ export interface LlmAgentReply {
    * `tool_summary` history entry so the model knows what it looked up in previous turns.
    */
   toolSummary?: string;
-}
-
-/**
- * Events emitted by `LlmAgentService.replyStream()`.
- * - `delta` — incremental text token from the final LLM reply round.
- * - `tool_start` — a tool call is about to be executed (non-streaming round).
- * - `done` — stream complete; full reply is in `reply`.
- * - `error` — unrecoverable error; stream terminates after this event.
- */
-export type LlmAgentStreamEvent =
-  | { type: 'delta'; textDelta: string }
-  | { type: 'tool_start'; toolName: string }
-  | { type: 'done'; reply: LlmAgentReply }
-  | { type: 'error'; error: unknown };
-
-/**
- * Callbacks for the shared `execute()` algorithm.
- * - `reply()` passes throw-based callbacks.
- * - `replyStream()` passes yield-based callbacks.
- */
-export interface LlmAgentExecuteCallbacks {
-  /** Called with the final sanitized text before returning. */
-  onReply?(reply: LlmAgentReply): void;
-  /** Called when a tool call is about to be executed. */
-  onToolStart?(toolName: string): void;
-  /** Called on unrecoverable errors (empty content, retry exhaustion). */
-  onError?(error: Error): void;
 }

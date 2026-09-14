@@ -7,12 +7,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   MemoryChatHistoryStore,
-  MemoryCompactionCache,
   RedisChatHistoryStore,
-  RedisCompactionCache,
   type ChatHistoryMessage,
   type ChatHistoryStorePort,
-  type CompactionCachePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
 import type { PlatformChatHistoryOptions } from '../agent/platform-agent.types';
@@ -34,15 +31,12 @@ export class PlatformChatHistoryService
 {
   private readonly logger = new Logger(PlatformChatHistoryService.name);
   private readonly memory: MemoryChatHistoryStore;
-  /** #704 — persisted compaction summaries, same backend + TTL as history. */
-  private readonly compactionMemory: MemoryCompactionCache;
   private readonly storeType: string;
   private readonly ttlMs: number;
   private readonly maxMessages: number;
   private readonly options: PlatformChatHistoryOptions;
   private readonly redisClient?: { getNativeClient(): unknown } | null;
   private redis?: RedisChatHistoryStore;
-  private redisCompaction?: RedisCompactionCache;
 
   constructor(
     configService: ConfigService,
@@ -64,15 +58,10 @@ export class PlatformChatHistoryService
       maxMessages: history.maxMessages,
       maxUsers: history.maxUsers,
     });
-    this.compactionMemory = new MemoryCompactionCache({
-      ttlMs: history.ttlMs,
-      maxUsers: history.maxUsers,
-    });
   }
 
   onModuleDestroy(): void {
     this.memory.dispose();
-    this.compactionMemory.dispose();
   }
 
   async onModuleInit(): Promise<void> {
@@ -131,25 +120,7 @@ export class PlatformChatHistoryService
 
   /** Clears retained turns when ownership is revoked or cannot be verified. */
   async clear(externalUserId: string): Promise<void> {
-    // #704 — the compaction summary is derived history state: a surviving
-    // summary after erasure is a privacy bug, so both clears are always
-    // attempted even if the first fails, and no caller has to remember a
-    // second key.
-    const results = await Promise.allSettled([
-      this.resolveStore().clear(externalUserId),
-      this.resolveCompactionCache().clear(externalUserId),
-    ]);
-    for (const result of results) {
-      if (result.status === 'rejected') throw result.reason;
-    }
-  }
-
-  /**
-   * #704 — persisted compaction-summary cache for the LLM agent, sharing this
-   * service's backend, TTL and platform key scope.
-   */
-  getCompactionCache(): CompactionCachePort {
-    return this.resolveCompactionCache();
+    await this.resolveStore().clear(externalUserId);
   }
 
   private resolveStore(): ChatHistoryStorePort {
@@ -172,25 +143,5 @@ export class PlatformChatHistoryService
     );
     this.logger.log('Chat history: Redis backend');
     return this.redis;
-  }
-
-  private resolveCompactionCache(): CompactionCachePort {
-    if (this.storeType !== 'redis') {
-      return this.compactionMemory;
-    }
-
-    if (this.redisCompaction) {
-      return this.redisCompaction;
-    }
-
-    const nativeClient = this.redisClient!.getNativeClient();
-    this.redisCompaction = new RedisCompactionCache(
-      nativeClient as RedisChatHistoryClient,
-      {
-        ttlSec: Math.floor(this.ttlMs / 1000),
-        keyPrefix: this.options.keyPrefix,
-      },
-    );
-    return this.redisCompaction;
   }
 }
