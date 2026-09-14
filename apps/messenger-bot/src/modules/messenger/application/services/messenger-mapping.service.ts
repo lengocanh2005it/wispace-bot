@@ -8,10 +8,9 @@ import {
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import {
-  createSessionSourceGetSessions,
-  StudyReminderSyncService,
-} from '@wispace/study-reminder-shared';
-import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
+  STUDY_REMINDER_SYNC_PORT,
+  type StudyReminderSyncPort,
+} from '@messenger/modules/study-reminder/domain/ports/study-reminder-sync.port';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { RelinkMappingResult } from '../types/messenger-mapping.types';
@@ -52,8 +51,8 @@ export class MessengerMappingService {
     @Inject(MESSENGER_REPOSITORY)
     private readonly repository: MessengerMappingRepositoryPort,
     private readonly outbound: MessengerOutboundService,
-    private readonly studyReminderSyncService: StudyReminderSyncService,
-    private readonly sessionSourceService: StudySessionSourceService,
+    @Inject(STUDY_REMINDER_SYNC_PORT)
+    private readonly studyReminderSync: StudyReminderSyncPort,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
     private readonly notificationPreferences: NotificationPreferenceService,
@@ -467,13 +466,9 @@ export class MessengerMappingService {
     let syncedStudyReminders = false;
     if (params.syncStudyReminders !== false) {
       try {
-        await this.studyReminderSyncService.syncUpcomingSessions({
-          userId: params.userId,
-          // Authoritative calendar fetch before any stale-job cancellation.
-          getSessions: createSessionSourceGetSessions(
-            this.sessionSourceService,
-          ),
-        });
+        // Authoritative calendar fetch before any stale-job cancellation is
+        // owned by the adapter behind this port.
+        await this.studyReminderSync.syncForUser(params.userId);
         syncedStudyReminders = true;
       } catch (error) {
         this.logger.error(

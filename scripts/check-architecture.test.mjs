@@ -209,6 +209,65 @@ test('composition roots may wire infrastructure implementations', () => {
   }
 });
 
+test('messenger and study-reminder feature edges are limited to ports and composition roots', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/application/services/consumer.service.ts',
+      "import { StudyReminderService } from '@messenger/modules/study-reminder/application/services/study-reminder.service';\nexport class ConsumerService {}\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/application/services/port-consumer.service.ts',
+      "import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';\nexport class PortConsumerService {}\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/application/services/sync-port-consumer.service.ts',
+      "import { STUDY_REMINDER_SYNC_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-sync.port';\nexport class SyncPortConsumerService { token = STUDY_REMINDER_SYNC_PORT; }\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/messenger.module.ts',
+      "import { StudyReminderModule } from '@messenger/modules/study-reminder/study-reminder.module';\nexport class MessengerModule {}\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/study-reminder/application/services/producer.service.ts',
+      "import { MessengerOutboundService } from '@messenger/modules/messenger/application/services/messenger-outbound.service';\nexport class ProducerService {}\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts',
+      "import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';\nexport class MessengerOutboundService {}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(
+      result.violations.map((violation) => violation.rule),
+      [
+        'messenger-study-reminder-boundary',
+        'messenger-delivery-cycle',
+        'study-reminder-messenger-boundary',
+      ],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('chat delivery messages cannot import outbound transport', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/application/messages/chat-delivery.messages.ts',
+      "import { MessengerOutboundService } from '../services/messenger-outbound.service';\nexport const value = MessengerOutboundService;\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'messenger-delivery-cycle');
+  } finally {
+    f.close();
+  }
+});
+
 test('framework-agnostic package cores reject NestJS imports', () => {
   const f = fixture();
   try {

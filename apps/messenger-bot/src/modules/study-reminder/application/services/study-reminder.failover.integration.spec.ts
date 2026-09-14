@@ -3,10 +3,13 @@ import {
   createLlmProviderAdapterFromEnv,
   OpenAiAdapter,
   type EnvLlmExecutionConfig,
+  type LlmExecutionPort,
   type LlmJsonResponse,
+  type LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderService } from './study-reminder.service';
+import type { StudyReminderDisplayNamePort } from '../../domain/ports/study-reminder-display-name.port';
 
 const executionConfig: EnvLlmExecutionConfig = {
   enabled: true,
@@ -91,9 +94,11 @@ describe('env provider failover → execution port → study reminder', () => {
         getUserGoals: jest.fn().mockResolvedValue({ targetScore: 7 }),
         getCapacityData: jest.fn().mockResolvedValue({}),
       },
-      { resolveDisplayName: jest.fn().mockResolvedValue('Mai') } as never,
-      { recordFromCompletion: jest.fn() } as never,
-      execution as never,
+      {
+        resolveDisplayName: jest.fn().mockResolvedValue('Mai'),
+      } as unknown as StudyReminderDisplayNamePort,
+      { recordFromCompletion: jest.fn() } as unknown as LlmUsageRecorderPort,
+      execution as unknown as LlmExecutionPort,
       adapter,
     );
 

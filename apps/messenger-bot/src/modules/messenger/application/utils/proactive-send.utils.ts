@@ -1,4 +1,4 @@
-import { isMessenger24hWindowError } from '../messages/chat-delivery.messages';
+import { isMessenger24hWindowError } from '../contracts/messenger-delivery.contract';
 
 /** L2: cron/proactive Send bị Meta 24h — caller skip, không retry. */
 export class ProactiveMessenger24hSkippedError extends Error {

@@ -3,16 +3,13 @@ import { MessengerReminderDeliveryService } from './messenger-reminder-delivery.
 describe('MessengerReminderDeliveryService', () => {
   const buildService = (overrides?: {
     getNextUpcomingSession?: jest.Mock;
-    generateReminderForSession?: jest.Mock;
+    generateReminderBundleForSession?: jest.Mock;
     sendTextViaPsid?: jest.Mock;
   }) => {
-    const studyReminderService = {
+    const studyReminder = {
       getNextUpcomingSession: overrides?.getNextUpcomingSession ?? jest.fn(),
-      generateReminderForSession:
-        overrides?.generateReminderForSession ?? jest.fn(),
-    };
-
-    const studyReminderScheduleService = {
+      generateReminderBundleForSession:
+        overrides?.generateReminderBundleForSession ?? jest.fn(),
       getOutboxSettings: jest.fn().mockReturnValue({ minutesBefore: 30 }),
     };
 
@@ -23,22 +20,20 @@ describe('MessengerReminderDeliveryService', () => {
 
     const service = new MessengerReminderDeliveryService(
       outbound as never,
-      studyReminderService as never,
-      studyReminderScheduleService as never,
+      studyReminder as never,
     );
 
     return {
       service,
-      studyReminderService,
-      studyReminderScheduleService,
+      studyReminder,
       outbound,
     };
   };
 
   describe('sendReminderPreview', () => {
     it('sends empty message when no upcoming session', async () => {
-      const { service, studyReminderService, outbound } = buildService();
-      studyReminderService.getNextUpcomingSession.mockResolvedValue(null);
+      const { service, studyReminder, outbound } = buildService();
+      studyReminder.getNextUpcomingSession.mockResolvedValue(null);
 
       const result = await service.sendReminderPreview('psid-1', 10);
 
@@ -60,11 +55,12 @@ describe('MessengerReminderDeliveryService', () => {
         durationMinutes: 60,
       };
 
-      const { service, studyReminderService, outbound } = buildService();
-      studyReminderService.getNextUpcomingSession.mockResolvedValue(session);
-      studyReminderService.generateReminderForSession.mockResolvedValue(
-        'Nhớ học lúc 10h nhé!',
-      );
+      const { service, studyReminder, outbound } = buildService();
+      studyReminder.getNextUpcomingSession.mockResolvedValue(session);
+      studyReminder.generateReminderBundleForSession.mockResolvedValue({
+        text: 'Nhớ học lúc 10h nhé!',
+        output: {} as never,
+      });
 
       const result = await service.sendReminderPreview('psid-1', 10);
 
@@ -88,10 +84,11 @@ describe('MessengerReminderDeliveryService', () => {
         durationMinutes: 60,
       };
 
-      const { service, studyReminderService, outbound } = buildService();
-      studyReminderService.generateReminderForSession.mockResolvedValue(
-        'Reminder text',
-      );
+      const { service, studyReminder, outbound } = buildService();
+      studyReminder.generateReminderBundleForSession.mockResolvedValue({
+        text: 'Reminder text',
+        output: {} as never,
+      });
 
       const result = await service.sendReminder({
         psid: 'psid-1',
@@ -102,7 +99,7 @@ describe('MessengerReminderDeliveryService', () => {
 
       expect(result).toBe('Reminder text');
       expect(
-        studyReminderService.generateReminderForSession,
+        studyReminder.generateReminderBundleForSession,
       ).toHaveBeenCalledWith('psid-1', session, {
         userId: 10,
         displayName: undefined,

@@ -47,7 +47,7 @@ import {
 import {
   getNoUpcomingStudySessionMessage,
   getStudyReminderLeadTimeNotice,
-} from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
+} from '../messages/messenger-reminder.messages';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { MessengerMappingService } from '../services/messenger-mapping.service';

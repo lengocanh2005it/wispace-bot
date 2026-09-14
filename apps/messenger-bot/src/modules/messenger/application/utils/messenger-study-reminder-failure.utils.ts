@@ -1,15 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { isProactiveMessenger24hError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
-// ponytail: deduped — using shared WispaceApiError from @wispace/wispace-client
 import { WispaceApiError } from '@wispace/wispace-client';
+import { isMessenger24hWindowError } from '../contracts/messenger-delivery.contract';
 
-/**
- * Messenger terminal-failure classification for study reminder dispatch.
- * Mirrors the former in-app StudyReminderDispatchService logic: the Meta 24h
- * window and non-retryable Wispace errors are terminal (no retry); the 24h
- * error message is normalized before persisting.
- */
+/** Messenger-owned terminal/retry classification for study-reminder sends. */
 export function classifyMessengerDispatchFailure(params: {
   error: unknown;
   externalUserId: string;
@@ -18,9 +12,11 @@ export function classifyMessengerDispatchFailure(params: {
   maxRetries: number;
 }): { terminal: boolean; errorMessage: string } {
   const message = errorMessage(params.error, params.externalUserId);
-  const is24hWindow = isProactiveMessenger24hError(params.error);
+  const is24hWindow = isMessenger24hWindowError(params.error);
+  const wispaceError =
+    params.error instanceof WispaceApiError ? params.error : undefined;
   const isNonRetryableWispace =
-    params.error instanceof WispaceApiError && !params.error.isRetryable();
+    wispaceError !== undefined && !wispaceError.isRetryable();
   const retriesExhausted = params.retryCount + 1 >= params.maxRetries;
   const logger = new Logger('StudyReminderDispatch');
 
@@ -32,7 +28,7 @@ export function classifyMessengerDispatchFailure(params: {
 
   if (isNonRetryableWispace) {
     logger.warn(
-      `WISPACE_NON_RETRYABLE psid=${maskExternalId(params.externalUserId)} jobId=${params.jobId} status=${(params.error as WispaceApiError).statusCode}; marking terminal`,
+      `WISPACE_NON_RETRYABLE psid=${maskExternalId(params.externalUserId)} jobId=${params.jobId} status=${wispaceError.statusCode}; marking terminal`,
     );
   }
 

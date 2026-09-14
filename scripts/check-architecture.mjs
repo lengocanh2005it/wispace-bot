@@ -76,12 +76,10 @@ const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-mapping.service.ts|@wispace/study-reminder-shared|createSessionSourceGetSessions,StudyReminderSyncService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-mapping.service.ts|@wispace/database|PlatformLinkStateService,NotificationPreferenceService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-message-log-cleanup.service.ts|@wispace/cleanup-cron|CleanupCronService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|@wispace/database|PlatformDeadLetterService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|../../infrastructure/meta/messenger-platform-connectivity.service|MessengerPlatformConnectivityService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-reminder-delivery.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
   'apps/messenger-bot/src/modules/messenger/application/services/webhook-action-executor.service.ts|@wispace/database|NotificationPreferenceService',
   'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health|isDataQualityCronEnabled,DataQualityService,DataQualityCheckResult',
   'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@nestjs/typeorm|InjectRepository',
@@ -400,6 +398,116 @@ function packageImportViolation(relativePath, imported) {
   return undefined;
 }
 
+const MESSENGER_FEATURE_ROOT = 'apps/messenger-bot/src/modules/messenger/';
+const STUDY_REMINDER_FEATURE_ROOT =
+  'apps/messenger-bot/src/modules/study-reminder/';
+
+function featureForPath(relativePath) {
+  if (relativePath.startsWith(MESSENGER_FEATURE_ROOT)) return 'messenger';
+  if (relativePath.startsWith(STUDY_REMINDER_FEATURE_ROOT)) {
+    return 'study-reminder';
+  }
+  return undefined;
+}
+
+function featureForImport(relativePath, specifier) {
+  if (specifier.startsWith('@messenger/modules/messenger/')) {
+    return 'messenger';
+  }
+  if (specifier.startsWith('@messenger/modules/study-reminder/')) {
+    return 'study-reminder';
+  }
+  if (!specifier.startsWith('.')) return undefined;
+
+  const resolved = path.posix.normalize(
+    path.posix.join(path.posix.dirname(relativePath), specifier),
+  );
+  return featureForPath(resolved);
+}
+
+function isCompositionRoot(relativePath) {
+  return relativePath.endsWith('.module.ts');
+}
+
+function isStudyReminderPortImport(specifier) {
+  return (
+    specifier.endsWith('/study-reminder-operations.port') ||
+    specifier.endsWith('/study-reminder-sync.port')
+  );
+}
+
+function featureBoundaryViolation(relativePath, imported) {
+  const sourceFeature = featureForPath(relativePath);
+  const targetFeature = featureForImport(relativePath, imported.imported);
+  if (!sourceFeature || !targetFeature || sourceFeature === targetFeature) {
+    return undefined;
+  }
+
+  if (
+    sourceFeature === 'messenger' &&
+    (isCompositionRoot(relativePath) ||
+      isStudyReminderPortImport(imported.imported))
+  ) {
+    return undefined;
+  }
+  if (sourceFeature === 'study-reminder' && isCompositionRoot(relativePath)) {
+    return undefined;
+  }
+
+  return {
+    rule:
+      sourceFeature === 'messenger'
+        ? 'messenger-study-reminder-boundary'
+        : 'study-reminder-messenger-boundary',
+    package: ownerOf(relativePath),
+    file: relativePath,
+    line: imported.line,
+    imported: imported.imported,
+    symbols: imported.symbols,
+    message:
+      sourceFeature === 'messenger'
+        ? 'messenger feature code must consume study-reminder ports, not concrete feature details'
+        : 'study-reminder feature code must not depend on messenger feature details',
+  };
+}
+
+function deliveryCycleViolation(relativePath, imported) {
+  const outboundFile =
+    'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts';
+  const chatDeliveryFile =
+    'apps/messenger-bot/src/modules/messenger/application/messages/chat-delivery.messages.ts';
+  const importsChatDelivery =
+    imported.imported === '../messages/chat-delivery.messages' ||
+    imported.imported.endsWith(
+      '/messenger/application/messages/chat-delivery.messages',
+    );
+  const importsOutbound =
+    imported.imported === '../services/messenger-outbound.service' ||
+    imported.imported.endsWith(
+      '/messenger/application/services/messenger-outbound.service',
+    );
+
+  if (
+    !(
+      (relativePath === outboundFile && importsChatDelivery) ||
+      (relativePath === chatDeliveryFile && importsOutbound)
+    )
+  ) {
+    return undefined;
+  }
+
+  return {
+    rule: 'messenger-delivery-cycle',
+    package: ownerOf(relativePath),
+    file: relativePath,
+    line: imported.line,
+    imported: imported.imported,
+    symbols: imported.symbols,
+    message:
+      'messenger outbound transport must not import chat-delivery message formatting',
+  };
+}
+
 function ownerOf(relativePath) {
   return relativePath.split('/').slice(0, 2).join('/');
 }
@@ -418,6 +526,12 @@ export function checkArchitecture(rootDir) {
     const imports = importedModules(file, source);
 
     for (const imported of imports) {
+      const boundaryViolation = featureBoundaryViolation(relativePath, imported);
+      if (boundaryViolation) violations.push(boundaryViolation);
+
+      const cycleViolation = deliveryCycleViolation(relativePath, imported);
+      if (cycleViolation) violations.push(cycleViolation);
+
       const packageViolation = packageImportViolation(relativePath, imported);
       if (packageViolation) {
         packageViolation.line = imported.line;

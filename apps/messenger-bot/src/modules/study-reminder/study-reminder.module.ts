@@ -40,6 +40,7 @@ import {
   CanonicalPlatformService,
   WebActivityService,
 } from '@wispace/database';
+import type { LlmUsageRecorderPort } from '@wispace/llm-agent';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
@@ -50,11 +51,29 @@ import type { UserCalendarDataPort } from './domain/ports/user-calendar-data.por
 import type { ReminderStudentDataPort } from './domain/ports/reminder-student-data.port';
 import { USER_CALENDAR_DATA_PORT } from './domain/ports/user-calendar-data.port';
 import { REMINDER_STUDENT_DATA_PORT } from './domain/ports/reminder-student-data.port';
-import { classifyMessengerDispatchFailure } from './application/utils/study-reminder-dispatch.hooks';
+import { classifyMessengerDispatchFailure } from '../messenger/application/utils/messenger-study-reminder-failure.utils';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
-import { STUDY_REMINDER_OPERATIONS_PORT } from './domain/ports/study-reminder-operations.port';
-import type { StudyReminderOperationsPort } from './domain/ports/study-reminder-operations.port';
+import {
+  STUDY_REMINDER_OPERATIONS_PORT,
+  type StudyReminderOperationsPort,
+} from './domain/ports/study-reminder-operations.port';
+import {
+  STUDY_REMINDER_SYNC_PORT,
+  type StudyReminderSyncPort,
+} from './domain/ports/study-reminder-sync.port';
+import {
+  STUDY_REMINDER_DISPLAY_NAME_PORT,
+  type StudyReminderDisplayNamePort,
+} from './domain/ports/study-reminder-display-name.port';
+import {
+  STUDY_REMINDER_LLM_EXECUTION_PORT,
+  STUDY_REMINDER_LLM_USAGE_RECORDER_PORT,
+} from './domain/ports/study-reminder-llm.port';
 import { TaskScoreAverageApiService } from '../student-report/infrastructure/wispace/task-score-average-api.service';
+import { LlmExecutionService } from '../llm-execution/application/services/llm-execution.service';
+import { LlmUsageRecorderService } from '../llm-usage/application/services/llm-usage-recorder.service';
+import type { LlmUsageFeature } from '../llm-usage/domain/entities/llm-usage.types';
+import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
 
 const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'pending',
@@ -200,6 +219,45 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     StudyReminderService,
 
     {
+      provide: STUDY_REMINDER_LLM_EXECUTION_PORT,
+      useExisting: LlmExecutionService,
+    },
+    {
+      provide: STUDY_REMINDER_LLM_USAGE_RECORDER_PORT,
+      useFactory: (
+        recorder: LlmUsageRecorderService,
+      ): LlmUsageRecorderPort => ({
+        recordFromCompletion: (input) =>
+          recorder.recordFromCompletion({
+            feature: input.feature as LlmUsageFeature,
+            psid: input.externalUserId,
+            userId: input.userId,
+            provider: input.provider,
+            model: input.model,
+            response: input.response,
+            correlationId: input.correlationId,
+            toolRound: input.toolRound,
+          }),
+      }),
+      inject: [LlmUsageRecorderService],
+    },
+    {
+      provide: STUDY_REMINDER_DISPLAY_NAME_PORT,
+      useFactory: (
+        displayNameService: UserDisplayNameService,
+      ): StudyReminderDisplayNamePort => ({
+        resolveDisplayName: ({ userId, externalUserId }) =>
+          displayNameService.resolveDisplayName({
+            userId,
+            psid: externalUserId,
+          }),
+        preloadDisplayNames: (userIds) =>
+          displayNameService.preloadDisplayNames(userIds),
+      }),
+      inject: [UserDisplayNameService],
+    },
+
+    {
       // Strict mode: missing STUDY_REMINDER_* vars fail startup (AGENTS.md).
       // Timezone key order matches resolveAppTimezone (CHAT → LLM → STUDY_REMINDER).
       provide: StudyReminderScheduleService,
@@ -292,6 +350,23 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         CanonicalPlatformService,
         MESSENGER_REPOSITORY,
       ],
+    },
+
+    {
+      provide: STUDY_REMINDER_SYNC_PORT,
+      useFactory: (
+        syncService: StudyReminderSyncService,
+        sessionSource: StudySessionSourceService,
+      ): StudyReminderSyncPort => ({
+        syncForUser: async (userId) => {
+          await syncService.syncUpcomingSessions({
+            userId,
+            // Keep the shared sync service behind one Messenger-owned seam.
+            getSessions: createSessionSourceGetSessions(sessionSource),
+          });
+        },
+      }),
+      inject: [StudyReminderSyncService, StudySessionSourceService],
     },
 
     {
@@ -411,6 +486,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     StudyCalendarCommandService,
     STUDY_REMINDER_JOB_REPOSITORY,
     STUDY_REMINDER_OPERATIONS_PORT,
+    STUDY_REMINDER_SYNC_PORT,
   ],
 })
 export class StudyReminderModule {}

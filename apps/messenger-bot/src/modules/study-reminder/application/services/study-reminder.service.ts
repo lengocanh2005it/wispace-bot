@@ -19,7 +19,9 @@ import {
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
   type LlmDegradedModeEvent,
+  type LlmExecutionPort,
   type LlmProviderAdapter,
+  type LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
 import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -41,11 +43,16 @@ import {
   StudyReminderLlmInput,
   StudyReminderLlmOutput,
 } from '../../domain/entities/study-schedule.types';
-import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
-import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
-import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudySessionSourceService } from './study-session-source.service';
+import {
+  STUDY_REMINDER_DISPLAY_NAME_PORT,
+  type StudyReminderDisplayNamePort,
+} from '../../domain/ports/study-reminder-display-name.port';
+import {
+  STUDY_REMINDER_LLM_EXECUTION_PORT,
+  STUDY_REMINDER_LLM_USAGE_RECORDER_PORT,
+} from '../../domain/ports/study-reminder-llm.port';
 
 /** Fixed 6-field JSON shape (chars capped in reminder-formatter) — bounds output tokens. */
 const REMINDER_MAX_OUTPUT_TOKENS = 500;
@@ -59,9 +66,12 @@ export class StudyReminderService {
     private readonly studyReminderScheduleService: StudyReminderScheduleService,
     @Inject(REMINDER_STUDENT_DATA_PORT)
     private readonly studentData: ReminderStudentDataPort,
-    private readonly userDisplayNameService: UserDisplayNameService,
-    private readonly llmUsageRecorder: LlmUsageRecorderService,
-    private readonly llmExecution: LlmExecutionService,
+    @Inject(STUDY_REMINDER_DISPLAY_NAME_PORT)
+    private readonly userDisplayNameService: StudyReminderDisplayNamePort,
+    @Inject(STUDY_REMINDER_LLM_USAGE_RECORDER_PORT)
+    private readonly llmUsageRecorder: LlmUsageRecorderPort,
+    @Inject(STUDY_REMINDER_LLM_EXECUTION_PORT)
+    private readonly llmExecution: LlmExecutionPort,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
     @Optional()
@@ -89,7 +99,7 @@ export class StudyReminderService {
     const displayName =
       options?.displayName?.trim() ||
       (await this.userDisplayNameService.resolveDisplayName({
-        psid,
+        externalUserId: psid,
         userId: options?.userId,
       }));
     const safeDisplayName = this.sanitizeDisplayName(displayName, psid);
@@ -232,7 +242,7 @@ export class StudyReminderService {
 
     this.llmUsageRecorder.recordFromCompletion({
       feature: 'STUDY_REMINDER',
-      psid: context.psid,
+      externalUserId: context.psid,
       userId: context.userId,
       provider: response.metadata.provider,
       model: response.metadata.model,
@@ -244,6 +254,7 @@ export class StudyReminderService {
         usage: response.metadata.usage,
       },
       correlationId,
+      toolRound: 0,
     });
 
     const content = response.content;

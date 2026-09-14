@@ -132,6 +132,14 @@ _Avoid_: send, deliver
 Dispatch strategy: poll interval varies between 30s and 3.5 minutes depending on distance to the next reminder (`STUDY_REMINDER_POLL_*` env vars).
 _Avoid_: cron dispatch (it is an adaptive loop, not a fixed cron)
 
+**StudyReminderOperationsPort**:
+The narrow capability boundary through which Messenger reads upcoming study sessions, generates reminder content, reads calendar entries, and requests a reschedule. It is a port, not the `StudyReminderService` itself.
+_Avoid_: injecting `StudyReminderService` into Messenger application services
+
+**StudyReminderSyncPort**:
+The link-side-effect capability through which Messenger requests a per-user study-reminder sync. The sync owns its authoritative session lookup and returns no reminder implementation details to Messenger.
+_Avoid_: passing Study Reminder callbacks or `getSessions` internals across the boundary
+
 **horizon**:
 Search scope for upcoming sessions during sync (`STUDY_REMINDER_SYNC_HORIZON_HOURS`, default 14 days).
 _Avoid_: window, lookahead
@@ -628,9 +636,17 @@ _Avoid_: standalone interface — a port is specifically a DI token pair
 A narrow interface describing one thing a bot can do, named for the capability rather than for the service behind it — `GoalsCapabilityPort`, `CalendarCapabilityPort`, `ExerciseCapabilityPort`. Shared code depends on these; each bot wires a thin adapter and bakes its own platform identity header there. This is what keeps shared packages from importing a concrete client.
 _Avoid_: data port, service interface
 
+**delivery failure classification**:
+Platform-owned interpretation of an outbound delivery failure that decides whether a durable job is terminal or retryable and supplies the bounded error text to persist. It is distinct from the provider's `OutboundDeliveryOutcome`.
+_Avoid_: delivery outcome (that is the provider acknowledgement), retry decision without the delivery context
+
 **adapter**:
 Implementation of a port, bridging domain interfaces and infrastructure services.
 _Avoid_: implementation, service implementation
+
+**composition root**:
+The application wiring boundary where concrete adapters are bound to ports. A composition root may name infrastructure and platform services; feature application code may not.
+_Avoid_: service locator, concrete dependency in a use case
 
 **outbox pattern**:
 Pattern used for `study_reminder_jobs` and `report_send_jobs`: write job rows first, then process asynchronously. Provides durability and retry.

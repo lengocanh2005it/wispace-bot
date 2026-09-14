@@ -19,6 +19,30 @@ presentation -> application -> domain <- infrastructure
 - Composition roots (`*.module.ts`, app bootstrap) may import both sides to bind an implementation to a port.
 - Shared packages must never import app aliases (`@messenger/*`, `@discord/*`, `@zalo/*`).
 
+## Messenger ↔ Study Reminder boundary (#435)
+
+The two features communicate through capability ports, not each other's concrete
+application services, utilities, or transport implementations:
+
+- Messenger consumes `StudyReminderOperationsPort` for chat/calendar actions and
+  `StudyReminderSyncPort` for the post-link per-user sync side effect.
+- Study Reminder dispatch consumes the shared `MESSAGE_SENDER` port and receives
+  Messenger's delivery-failure classifier through the existing dispatch options
+  seam. It does not import Messenger error utilities.
+- Messenger delivery errors and pure delivery predicates live in a neutral
+  Messenger application contract; user-facing chat copy remains in Messenger's
+  message formatter.
+- Existing `*.module.ts` files are composition roots and may bind the concrete
+  Messenger adapters. Feature application/domain/infrastructure/presentation
+  code may not cross-import concrete services or utilities. Tests may assemble
+  concrete implementations.
+
+Behavior remains owned by the existing use cases: a failed post-link sync does
+not roll back a committed mapping; `StudyReminderDispatchService` remains the
+owner of retry/terminal persistence; and `sent`, `not_sent`, `ambiguous`, and
+`rate_limited` keep their current delivery semantics. The refactor adds no new
+lock or concurrency policy.
+
 ## Package entrypoints
 
 The affected shared packages expose explicit public subpaths:

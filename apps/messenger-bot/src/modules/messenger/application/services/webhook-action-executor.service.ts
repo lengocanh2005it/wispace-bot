@@ -12,7 +12,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
-import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
+import { getStudyReminderLeadTimeNotice } from '../messages/messenger-reminder.messages';
 import { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
 import { MessengerChatEnqueueService } from './messenger-chat-enqueue.service';
 import { MessengerMappingService } from './messenger-mapping.service';

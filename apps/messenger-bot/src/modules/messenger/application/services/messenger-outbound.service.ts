@@ -13,7 +13,12 @@ import {
 import { readResponseText } from '@wispace/bot-common/utils';
 import { ConfigService } from '@nestjs/config';
 import CircuitBreaker from 'opossum';
-import { isMessenger24hWindowError } from '../messages/chat-delivery.messages';
+import {
+  MessengerApiError,
+  MessengerPartialSendError,
+  isMessenger24hWindowError,
+  isMessengerAmbiguousDeliveryError,
+} from '../contracts/messenger-delivery.contract';
 import {
   buildProactive24hLogErrorMessage,
   buildProactiveFailureMessageType,
@@ -29,42 +34,12 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import { MessengerPlatformConnectivityService } from '../../infrastructure/meta/messenger-platform-connectivity.service';
-
-export class MessengerApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly statusText: string,
-    readonly responseBody: string,
-  ) {
-    super(message);
-    this.name = 'MessengerApiError';
-  }
-
-  isTokenExpired(): boolean {
-    return (
-      this.status === 400 &&
-      (this.responseBody.includes('"code":190') ||
-        this.responseBody.includes('"code": 190') ||
-        this.responseBody.includes('OAuthException'))
-    );
-  }
-}
-
-export function isMessengerAmbiguousDeliveryError(error: unknown): boolean {
-  return error instanceof MessengerApiError && error.status === 408;
-}
-
-/** H4: at least one bubble was delivered before a later Send API failure. */
-export class MessengerPartialSendError extends MessengerApiError {
-  constructor(
-    readonly bubblesSent: number,
-    cause: MessengerApiError,
-  ) {
-    super(cause.message, cause.status, cause.statusText, cause.responseBody);
-    this.name = 'MessengerPartialSendError';
-  }
-}
+export {
+  MessengerApiError,
+  MessengerPartialSendError,
+  isMessenger24hWindowError,
+  isMessengerAmbiguousDeliveryError,
+} from '../contracts/messenger-delivery.contract';
 
 export type MessengerSenderAction = 'mark_seen' | 'typing_on' | 'typing_off';
 

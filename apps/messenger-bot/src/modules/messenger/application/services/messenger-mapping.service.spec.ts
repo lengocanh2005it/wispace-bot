@@ -31,15 +31,14 @@ describe('MessengerMappingService', () => {
       sendTextViaPsid: jest.fn(() => Promise.resolve()),
     };
 
-    const studyReminderSyncService = {
-      syncUpcomingSessions: jest.fn(() => Promise.resolve({})),
+    const studyReminderSync = {
+      syncForUser: jest.fn(() => Promise.resolve()),
     };
 
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
-      studyReminderSyncService as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      studyReminderSync as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
       notificationPreferences as never,
     );
@@ -55,11 +54,7 @@ describe('MessengerMappingService', () => {
     expect(outbound.sendTextViaPsid).toHaveBeenCalledWith(
       expect.objectContaining({ messageType: 'MAPPING_USER_ID_UPDATED' }),
     );
-    expect(studyReminderSyncService.syncUpcomingSessions).toHaveBeenCalledWith({
-      userId: 200,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      getSessions: expect.any(Function),
-    });
+    expect(studyReminderSync.syncForUser).toHaveBeenCalledWith(200);
     // Relink without cadence/topic → explainer, no consent write (#596).
     expect(notificationPreferences.setReportEnabled).not.toHaveBeenCalled();
   });
@@ -85,8 +80,7 @@ describe('MessengerMappingService', () => {
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
-      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { syncForUser: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
       notificationPreferences as never,
     );
@@ -129,8 +123,7 @@ describe('MessengerMappingService', () => {
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
-      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { syncForUser: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
       notificationPreferences as never,
     );
@@ -160,15 +153,14 @@ describe('MessengerMappingService', () => {
       sendTextViaPsid: jest.fn(() => Promise.resolve()),
     };
 
-    const studyReminderSyncService = {
-      syncUpcomingSessions: jest.fn(() => Promise.resolve({})),
+    const studyReminderSync = {
+      syncForUser: jest.fn(() => Promise.resolve()),
     };
 
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
-      studyReminderSyncService as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      studyReminderSync as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
@@ -199,15 +191,14 @@ describe('MessengerMappingService', () => {
       sendTextViaPsid: jest.fn(() => Promise.resolve()),
     };
 
-    const studyReminderSyncService = {
-      syncUpcomingSessions: jest.fn(() => Promise.resolve({})),
+    const studyReminderSync = {
+      syncForUser: jest.fn(() => Promise.resolve()),
     };
 
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
-      studyReminderSyncService as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      studyReminderSync as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
@@ -248,8 +239,7 @@ describe('MessengerMappingService', () => {
     const service = new MessengerMappingService(
       repository as never,
       { sendTextViaPsid: jest.fn() } as never,
-      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { syncForUser: jest.fn().mockResolvedValue(undefined) } as never,
       clarificationStateStore as never,
       makePrefs() as never,
     );
@@ -289,8 +279,7 @@ describe('MessengerMappingService', () => {
     const service = new MessengerMappingService(
       repository as never,
       { sendTextViaPsid: jest.fn() } as never,
-      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { syncForUser: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
       makePrefs() as never,
       undefined,
@@ -345,12 +334,11 @@ describe('MessengerMappingService', () => {
       ),
     };
     const outbound = { sendTextViaPsid: jest.fn() };
-    const sync = { syncUpcomingSessions: jest.fn() };
+    const sync = { syncForUser: jest.fn() };
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
       sync as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
       { clear: jest.fn() } as never,
       notificationPreferences as never,
       undefined,
@@ -366,7 +354,7 @@ describe('MessengerMappingService', () => {
     expect(result.blocked).toBe(true);
     expect(repository.upsertPsidUserLink).not.toHaveBeenCalled();
     expect(notificationPreferences.setReportEnabled).not.toHaveBeenCalled();
-    expect(sync.syncUpcomingSessions).not.toHaveBeenCalled();
+    expect(sync.syncForUser).not.toHaveBeenCalled();
     expect(outbound.sendTextViaPsid).not.toHaveBeenCalled();
   });
 
@@ -379,12 +367,11 @@ describe('MessengerMappingService', () => {
       upsertPsidUserLink: jest.fn(),
     };
     const outbound = { sendTextViaPsid: jest.fn() };
-    const sync = { syncUpcomingSessions: jest.fn() };
+    const sync = { syncForUser: jest.fn() };
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
       sync as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
       { clear: jest.fn() } as never,
       notificationPreferences as never,
       undefined,
@@ -402,7 +389,7 @@ describe('MessengerMappingService', () => {
     );
     expect(repository.upsertPsidUserLink).not.toHaveBeenCalled();
     expect(notificationPreferences.setReportEnabled).not.toHaveBeenCalled();
-    expect(sync.syncUpcomingSessions).not.toHaveBeenCalled();
+    expect(sync.syncForUser).not.toHaveBeenCalled();
     expect(outbound.sendTextViaPsid).not.toHaveBeenCalled();
   });
 
@@ -428,12 +415,11 @@ describe('MessengerMappingService', () => {
       }),
     };
     const outbound = { sendTextViaPsid: jest.fn() };
-    const sync = { syncUpcomingSessions: jest.fn().mockResolvedValue({}) };
+    const sync = { syncForUser: jest.fn().mockResolvedValue(undefined) };
     const service = new MessengerMappingService(
       repository as never,
       outbound as never,
       sync as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
       makePrefs() as never,
       undefined,
@@ -452,7 +438,7 @@ describe('MessengerMappingService', () => {
         intentOutcome: 'complete_failed',
       }),
     );
-    expect(sync.syncUpcomingSessions).toHaveBeenCalled();
+    expect(sync.syncForUser).toHaveBeenCalledWith(200);
     expect(outbound.sendTextViaPsid).not.toHaveBeenCalled();
 
     const retry = await service.linkFromContext(
@@ -499,8 +485,7 @@ describe('MessengerMappingService', () => {
     const service = new MessengerMappingService(
       repository as never,
       { sendTextViaPsid: jest.fn() } as never,
-      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
-      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { syncForUser: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
       makePrefs() as never,
       undefined,
@@ -570,8 +555,7 @@ describe('MessengerMappingService', () => {
       const service = new MessengerMappingService(
         repository as never,
         { sendTextViaPsid: jest.fn() } as never,
-        { syncUpcomingSessions: jest.fn(() => syncGate) } as never,
-        { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+        { syncForUser: jest.fn(() => syncGate) } as never,
         { clear: jest.fn().mockResolvedValue(true) } as never,
         makePrefs() as never,
         undefined,
