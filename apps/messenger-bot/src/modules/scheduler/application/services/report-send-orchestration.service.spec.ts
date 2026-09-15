@@ -67,6 +67,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
 
     const service = new ReportSendOrchestrationService(
       messengerRepository as never,
+      messengerRepository as never,
       messengerReportDeliveryService as never,
       reportSendJobRepository as never,
       reportSendScheduleService as never,

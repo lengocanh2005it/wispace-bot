@@ -7,6 +7,10 @@ import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
+import {
+  MESSENGER_REPORT_SENT_READER,
+  type MessengerReportSentReaderPort,
+} from '@messenger/modules/messenger/domain/repositories/messenger-report-sent-reader.port';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import { MessengerReportDeliveryService } from '@messenger/modules/messenger/application/services/messenger-report-delivery.service';
 import {
@@ -55,6 +59,8 @@ export class ReportSendOrchestrationService {
   constructor(
     @Inject(REPORT_CLAIM_REPOSITORY)
     private readonly messengerRepository: ReportClaimRepositoryPort,
+    @Inject(MESSENGER_REPORT_SENT_READER)
+    private readonly reportSentReader: MessengerReportSentReaderPort,
     private readonly messengerReportDeliveryService: MessengerReportDeliveryService,
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
@@ -121,7 +127,7 @@ export class ReportSendOrchestrationService {
 
     if (skipAlreadySentToday) {
       const alreadySentToday =
-        await this.messengerRepository.hasSentScheduledReportToday(
+        await this.reportSentReader.hasSentScheduledReportToday(
           mapping.psid,
           mapping.userId,
         );

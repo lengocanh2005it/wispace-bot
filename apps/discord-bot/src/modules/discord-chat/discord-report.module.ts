@@ -30,6 +30,7 @@ import {
   LearnerScheduledReportClaimEntity,
   buildLearnerUsageQuery,
   PlatformReportClaimRepository,
+  PlatformReportSendJobRepository,
   CronLeaderLeaseEntity,
   CronLeaderLeaseService,
   ReportClaimStaleResetCronService,
@@ -42,7 +43,6 @@ import {
 } from '@wispace/wispace-client';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
-import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';
 import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';
 import { DISCORD_REPORT_ACCOUNT_READER } from './domain/ports/discord-report-account-reader.port';
 import { DiscordReportCronService } from './application/services/discord-report-cron.service';
@@ -103,7 +103,9 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
-      useExisting: DiscordReportSendJobRepository,
+      useFactory: (repo: Repository<ReportSendJobEntity>) =>
+        new PlatformReportSendJobRepository('discord', repo),
+      inject: [getRepositoryToken(ReportSendJobEntity)],
     },
     {
       provide: REPORT_CLAIM_REPOSITORY,
@@ -202,7 +204,6 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
       useExisting: BotMetricsService,
     },
     DiscordReportDeliveryService,
-    DiscordReportSendJobRepository,
     TypeormDiscordReportAccountReader,
     {
       provide: DISCORD_REPORT_ACCOUNT_READER,

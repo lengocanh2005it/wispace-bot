@@ -13,6 +13,31 @@ type ClaimRow = {
 
 const PLATFORM: Platform = 'zalo';
 
+it.each(['messenger', 'discord'] as const)(
+  'configures the shared claim adapter for %s',
+  async (platform) => {
+    const query = jest.fn().mockResolvedValue([]);
+    const claimRepo = {
+      manager: { query },
+      createQueryBuilder: jest.fn(),
+    } as unknown as Repository<ScheduledReportClaimEntity>;
+    const repository = new PlatformReportClaimRepository(platform, claimRepo);
+
+    await repository.tryClaimScheduledReport(
+      { externalUserId: 'external-1', reportDate: '2026-08-14' },
+      120_000,
+    );
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), [
+      platform,
+      'external-1',
+      '2026-08-14',
+      null,
+      120_000,
+    ]);
+  },
+);
+
 describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
   let repository: PlatformReportClaimRepository;
   let query: jest.Mock;
@@ -424,4 +449,240 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
       'lease_expires_at IS NULL AND updated_at < :olderThan',
     );
   });
+});
+
+type PlatformClaimHarness = {
+  repository: PlatformReportClaimRepository;
+  query: jest.Mock;
+  row: { status: ClaimRow['status']; leaseToken: string } | undefined;
+  queryBuilder: {
+    update: jest.Mock;
+    set: jest.Mock;
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    execute: jest.Mock;
+    pendingPatch?: { status?: ClaimRow['status'] };
+  };
+};
+
+function buildPlatformClaimHarness(platform: Platform): PlatformClaimHarness {
+  let nextLease = 1;
+  const harness = {} as PlatformClaimHarness;
+  const query = jest.fn((_sql: string, params: unknown[]) => {
+    expect(params[0]).toBe(platform);
+    if (!harness.row) {
+      harness.row = { status: 'claimed', leaseToken: `lease-${nextLease++}` };
+      return [
+        {
+          id: 1,
+          lease_token: harness.row.leaseToken,
+          delivery_record: null,
+          delivery_key: null,
+        },
+      ];
+    }
+    if (harness.row.status === 'released') {
+      harness.row.status = 'claimed';
+      harness.row.leaseToken = `lease-${nextLease++}`;
+      return [
+        {
+          id: 1,
+          lease_token: harness.row.leaseToken,
+          delivery_record: null,
+          delivery_key: null,
+        },
+      ];
+    }
+    return [];
+  });
+
+  const queryBuilder = {
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn((patch: { status?: ClaimRow['status'] }) => {
+      queryBuilder.pendingPatch = patch;
+      return queryBuilder;
+    }),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    execute: jest.fn(() => {
+      const predicates = queryBuilder.andWhere.mock.calls as Array<
+        [string, Record<string, unknown>?]
+      >;
+      if (
+        predicates.some(([sql]) => String(sql).includes('lease_expires_at'))
+      ) {
+        if (harness.row) harness.row.status = 'released';
+        return Promise.resolve({ affected: harness.row ? 1 : 0 });
+      }
+      const tokenCall = [...predicates]
+        .reverse()
+        .find(([sql]) => String(sql).includes('lease_token'));
+      const token = tokenCall?.[1]?.leaseToken as string | undefined;
+      if (!harness.row || (token && harness.row.leaseToken !== token)) {
+        return Promise.resolve({ affected: 0 });
+      }
+      harness.row.status =
+        queryBuilder.pendingPatch?.status ?? harness.row.status;
+      return Promise.resolve({ affected: 1 });
+    }),
+  };
+
+  harness.query = query;
+  harness.queryBuilder = queryBuilder;
+  harness.repository = new PlatformReportClaimRepository(platform, {
+    manager: { query },
+    createQueryBuilder: jest.fn(() => queryBuilder),
+  } as unknown as Repository<ScheduledReportClaimEntity>);
+  return harness;
+}
+
+describe.each(['messenger', 'discord', 'zalo'] as const)(
+  'PlatformReportClaimRepository semantic behavior (%s)',
+  (platform) => {
+    const params = {
+      externalUserId: 'external-1',
+      reportDate: '2026-08-14',
+    };
+
+    it('claims a fresh slot and returns a lease token', async () => {
+      const harness = buildPlatformClaimHarness(platform);
+
+      await expect(
+        harness.repository.tryClaimScheduledReport(params, 120_000),
+      ).resolves.toMatchObject({ claimed: true, leaseToken: 'lease-1' });
+      expect(harness.row?.status).toBe('claimed');
+    });
+
+    it('reclaims a released slot while keeping sent slots closed', async () => {
+      const harness = buildPlatformClaimHarness(platform);
+      const first = await harness.repository.tryClaimScheduledReport(
+        params,
+        120_000,
+      );
+
+      await expect(
+        harness.repository.releaseScheduledReportClaim(
+          params,
+          first.leaseToken!,
+        ),
+      ).resolves.toBe(true);
+      const reclaimed = await harness.repository.tryClaimScheduledReport(
+        params,
+        120_000,
+      );
+      expect(reclaimed.claimed).toBe(true);
+
+      await expect(
+        harness.repository.markScheduledReportClaimSent(
+          params,
+          reclaimed.leaseToken!,
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        harness.repository.tryClaimScheduledReport(params, 120_000),
+      ).resolves.toEqual({ claimed: false });
+    });
+
+    it('fences stale lease transitions after a reclaim', async () => {
+      const harness = buildPlatformClaimHarness(platform);
+      const first = await harness.repository.tryClaimScheduledReport(
+        params,
+        120_000,
+      );
+      await harness.repository.releaseScheduledReportClaim(
+        params,
+        first.leaseToken!,
+      );
+      const second = await harness.repository.tryClaimScheduledReport(
+        params,
+        120_000,
+      );
+
+      await expect(
+        harness.repository.markScheduledReportClaimSent(
+          params,
+          first.leaseToken!,
+        ),
+      ).resolves.toBe(false);
+      await expect(
+        harness.repository.releaseScheduledReportClaim(
+          params,
+          first.leaseToken!,
+        ),
+      ).resolves.toBe(false);
+      await expect(
+        harness.repository.markScheduledReportClaimSent(
+          params,
+          second.leaseToken!,
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('reopens an expired claim for a later worker', async () => {
+      const harness = buildPlatformClaimHarness(platform);
+      await harness.repository.tryClaimScheduledReport(params, 120_000);
+
+      await expect(
+        harness.repository.releaseExpiredScheduledReportClaims(
+          new Date('2026-08-14T10:00:00.000Z'),
+          new Date('2026-08-14T08:00:00.000Z'),
+        ),
+      ).resolves.toBe(1);
+      await expect(
+        harness.repository.tryClaimScheduledReport(params, 120_000),
+      ).resolves.toMatchObject({ claimed: true });
+    });
+  },
+);
+
+it('keeps learner-level dedupe when the first delivery uses Messenger', async () => {
+  let learnerClaimed = false;
+  const learnerQuery = jest.fn(() => {
+    if (learnerClaimed) return [];
+    learnerClaimed = true;
+    return [
+      {
+        lease_token: 'learner-lease-1',
+        delivery_record: null,
+        delivery_key: null,
+      },
+    ];
+  });
+  const learnerRepo = {
+    manager: { query: learnerQuery },
+  } as unknown as Repository<LearnerScheduledReportClaimEntity>;
+  const claimRepo = {
+    manager: { query: jest.fn() },
+  } as unknown as Repository<ScheduledReportClaimEntity>;
+  const messenger = new PlatformReportClaimRepository(
+    'messenger',
+    claimRepo,
+    learnerRepo,
+  );
+  const discord = new PlatformReportClaimRepository(
+    'discord',
+    claimRepo,
+    learnerRepo,
+  );
+
+  const [first, second] = await Promise.all([
+    messenger.tryClaimScheduledReport(
+      { externalUserId: 'messenger-1', userId: 143, reportDate: '2026-08-14' },
+      120_000,
+    ),
+    discord.tryClaimScheduledReport(
+      { externalUserId: 'discord-1', userId: 143, reportDate: '2026-08-14' },
+      120_000,
+    ),
+  ]);
+
+  expect(first.claimed).toBe(true);
+  expect(second.claimed).toBe(false);
+  expect(learnerQuery.mock.calls[0][1]).toEqual([
+    143,
+    '2026-08-14',
+    'messenger',
+    'messenger-1',
+    120_000,
+  ]);
 });

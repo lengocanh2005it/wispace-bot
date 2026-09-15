@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import type { Repository } from 'typeorm';
 import { DataSource } from 'typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
@@ -15,7 +16,10 @@ import {
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '@wispace/database';
+import {
+  ReportSendJobEntity,
+  PlatformReportSendJobRepository,
+} from '@wispace/database';
 import {
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
@@ -49,7 +53,6 @@ import { OpsHealthService } from './application/services/ops-health.service';
 import { ReportCronService } from './application/services/report-cron.service';
 import { ReportSendOrchestrationService } from './application/services/report-send-orchestration.service';
 import { ReportSendRetryDispatchService } from './application/services/report-send-retry-dispatch.service';
-import { ReportSendJobRepository } from './infrastructure/persistence/report-send-job.repository';
 import { LlmSafetyService } from './application/services/llm-safety.service';
 import { SchedulerController } from './presentation/controllers/scheduler.controller';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
@@ -118,7 +121,6 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
     ReportCronService,
     ReportSendScheduleService,
     ReportSendRetryDispatchService,
-    ReportSendJobRepository,
     {
       provide: ReportClaimStaleResetCronService,
       useFactory: (
@@ -146,7 +148,9 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
-      useExisting: ReportSendJobRepository,
+      useFactory: (repo: Repository<ReportSendJobEntity>) =>
+        new PlatformReportSendJobRepository('messenger', repo),
+      inject: [getRepositoryToken(ReportSendJobEntity)],
     },
     {
       provide: DataQualityService,

@@ -8,12 +8,20 @@ import {
   UserPlatformMappingEntity,
   WebhookDeadLetterEntity,
 } from '../../infrastructure/database/entities';
-import { PlatformDeadLetterService } from '@wispace/database';
+import {
+  PlatformDeadLetterService,
+  PlatformReportClaimRepository,
+} from '@wispace/database';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from './domain/repositories/messenger-message-log.repository.port';
-import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core';
+import {
+  REPORT_CLAIM_REPOSITORY,
+  type ReportClaimRepositoryPort,
+} from '@wispace/scheduler-core/core';
 import { MessengerRepository } from './infrastructure/persistence/messenger.repository';
+import { MessengerReportSentReader } from './infrastructure/persistence/messenger-report-sent-reader';
+import { MESSENGER_REPORT_SENT_READER } from './domain/repositories/messenger-report-sent-reader.port';
 import {
   PLATFORM_CONNECTIVITY,
   PlatformConnectivityState,
@@ -46,6 +54,7 @@ import { MessengerPlatformConnectivityService } from './infrastructure/meta/mess
     },
     MessengerPlatformConnectivityService,
     MessengerRepository,
+    MessengerReportSentReader,
     MessengerOutboundService,
     {
       provide: PlatformDeadLetterService,
@@ -63,7 +72,19 @@ import { MessengerPlatformConnectivityService } from './infrastructure/meta/mess
     },
     {
       provide: REPORT_CLAIM_REPOSITORY,
-      useExisting: MessengerRepository,
+      useFactory: (
+        repo: Repository<ScheduledReportClaimEntity>,
+        learnerRepo: Repository<LearnerScheduledReportClaimEntity>,
+      ): ReportClaimRepositoryPort =>
+        new PlatformReportClaimRepository('messenger', repo, learnerRepo),
+      inject: [
+        getRepositoryToken(ScheduledReportClaimEntity),
+        getRepositoryToken(LearnerScheduledReportClaimEntity),
+      ],
+    },
+    {
+      provide: MESSENGER_REPORT_SENT_READER,
+      useExisting: MessengerReportSentReader,
     },
   ],
   exports: [
@@ -76,6 +97,7 @@ import { MessengerPlatformConnectivityService } from './infrastructure/meta/mess
     MESSENGER_REPOSITORY,
     MESSENGER_MESSAGE_LOG_REPOSITORY,
     REPORT_CLAIM_REPOSITORY,
+    MESSENGER_REPORT_SENT_READER,
   ],
 })
 export class MessengerOutboundModule {}

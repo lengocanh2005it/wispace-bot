@@ -10,8 +10,8 @@ import { listUserIdsWithSentReport } from './list-user-ids-with-sent-report';
 
 /**
  * Report claim idempotency for the 08:00 scheduled report cron — shared by
- * Discord and Zalo (replaces their near-identical per-app repositories).
- * Platform (`'discord'` / `'zalo'`) parameterizes the claimed row.
+ * Messenger, Discord, and Zalo (replaces their near-identical per-app
+ * repositories). Platform parameterizes the claimed row.
  */
 @Injectable()
 export class PlatformReportClaimRepository implements ReportClaimRepositoryPort {

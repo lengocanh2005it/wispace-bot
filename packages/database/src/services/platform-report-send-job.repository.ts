@@ -1,23 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { randomUUID } from 'node:crypto';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
+import { extractQueryRows } from '@wispace/bot-common/utils';
+import type { Platform } from '@wispace/contracts';
 import type {
-  ReportSendJobRepositoryPort,
   ReportSendJob,
   ReportSendJobCreateParams,
+  ReportSendJobRepositoryPort,
   ReportSendJobUpdateParams,
-} from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '@wispace/database';
+} from '@wispace/scheduler-core/core';
+import { ReportSendJobEntity } from '../entities/report-send-job.entity';
 
-const PLATFORM = 'discord' as const;
-
+/** Platform-parameterized TypeORM persistence for the report-send outbox. */
 @Injectable()
-export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPort {
-  private readonly logger = new Logger(DiscordReportSendJobRepository.name);
+export class PlatformReportSendJobRepository implements ReportSendJobRepositoryPort {
+  private readonly logger = new Logger(PlatformReportSendJobRepository.name);
 
   constructor(
+    private readonly platform: Platform,
     @InjectRepository(ReportSendJobEntity)
     private readonly jobRepo: Repository<ReportSendJobEntity>,
   ) {}
@@ -27,7 +28,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
   ): Promise<ReportSendJob> {
     const existing = await this.jobRepo.findOne({
       where: {
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId: params.externalUserId,
         examDate: params.examDate,
       },
@@ -55,7 +56,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
     }
 
     const created = this.jobRepo.create({
-      platform: PLATFORM,
+      platform: this.platform,
       externalUserId: params.externalUserId,
       userId: params.userId ?? null,
       examDate: params.examDate,
@@ -74,7 +75,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
   async findDueJobs(now: Date, limit = 50): Promise<ReportSendJob[]> {
     const rows = await this.jobRepo
       .createQueryBuilder('job')
-      .where('job.platform = :platform', { platform: PLATFORM })
+      .where('job.platform = :platform', { platform: this.platform })
       .andWhere('job.status = :status', { status: 'failed' })
       .andWhere('job.retry_count < job.max_retries')
       .andWhere('job.next_retry_at IS NOT NULL')
@@ -90,58 +91,67 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
     jobId: number,
     leaseMs: number,
   ): Promise<ReportSendJob | null> {
-    // Assign a fresh lease token + expiry so recovery (which reopens only
-    // expired leases) and stale owners (whose token no longer matches) can
-    // never double-send or overwrite a newer owner's result.
-    const result = await this.jobRepo.update(
-      {
-        id: jobId,
-        platform: PLATFORM,
-        status: 'failed',
-      },
-      {
-        status: 'processing',
-        leaseToken: randomUUID(),
-        leaseExpiresAt: new Date(Date.now() + leaseMs),
-      },
+    const rows = extractQueryRows<Record<string, unknown>>(
+      await this.jobRepo.query(
+        `UPDATE report_send_jobs
+         SET status = 'processing',
+             lease_token = gen_random_uuid(),
+             lease_expires_at = now() + ($3::int * interval '1 millisecond')
+         WHERE id = $1
+           AND platform = $2
+           AND status = 'failed'
+         RETURNING *`,
+        [jobId, this.platform, leaseMs],
+      ),
     );
 
-    if (!result.affected) return null;
-
-    const row = await this.jobRepo.findOne({ where: { id: jobId } });
-    return row ? this.mapEntity(row) : null;
+    return rows.length > 0 ? this.mapEntity(rows[0]) : null;
   }
 
   async markSent(jobId: number, leaseToken: string): Promise<void> {
-    const result = await this.jobRepo.update(
-      { id: jobId, leaseToken },
-      {
+    const result = await this.jobRepo
+      .createQueryBuilder()
+      .update(ReportSendJobEntity)
+      .set({
         status: 'sent',
         sentAt: new Date(),
         nextRetryAt: null,
         lastError: null,
-      },
-    );
+      })
+      .where('id = :id', { id: jobId })
+      .andWhere('platform = :platform', { platform: this.platform })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .execute();
+
     if (!result.affected) {
       this.logger.warn(
-        `markSent ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
+        `markSent ignored for platform=${this.platform} jobId=${jobId}: lease token mismatch (stale owner)`,
       );
     }
   }
 
   async markFailed(params: ReportSendJobUpdateParams): Promise<void> {
-    const where = params.leaseToken
-      ? { id: params.jobId, leaseToken: params.leaseToken }
-      : { id: params.jobId };
-    const result = await this.jobRepo.update(where, {
-      status: 'failed',
-      retryCount: params.retryCount,
-      lastError: truncatePersistedError(params.errorMessage),
-      nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
-    });
+    const query = this.jobRepo
+      .createQueryBuilder()
+      .update(ReportSendJobEntity)
+      .set({
+        status: 'failed',
+        retryCount: params.retryCount,
+        lastError: truncatePersistedError(params.errorMessage),
+        nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
+      })
+      .where('id = :id', { id: params.jobId })
+      .andWhere('platform = :platform', { platform: this.platform });
+    if (params.leaseToken) {
+      query.andWhere('lease_token = :leaseToken', {
+        leaseToken: params.leaseToken,
+      });
+    }
+
+    const result = await query.execute();
     if (params.leaseToken && !result.affected) {
       this.logger.warn(
-        `markFailed ignored for jobId=${params.jobId}: lease token mismatch (stale owner)`,
+        `markFailed ignored for platform=${this.platform} jobId=${params.jobId}: lease token mismatch (stale owner)`,
       );
     }
   }
@@ -152,7 +162,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
   ): Promise<void> {
     await this.jobRepo.update(
       {
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId,
         examDate,
         status: In(['failed', 'processing', 'pending']),
@@ -167,13 +177,11 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
   }
 
   async resetStuckProcessingJobs(olderThan: Date): Promise<number> {
-    // Reopen only processing rows whose LEASE expired (live lease = worker
-    // still active) or legacy rows (no lease) past the updated_at threshold.
     const result = await this.jobRepo
       .createQueryBuilder()
       .update(ReportSendJobEntity)
       .set({ status: 'failed' })
-      .where('platform = :platform', { platform: PLATFORM })
+      .where('platform = :platform', { platform: this.platform })
       .andWhere('status = :status', { status: 'processing' })
       .andWhere(
         '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at < :olderThan))',
@@ -187,31 +195,44 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
   async countTerminalFailedSince(since: Date): Promise<number> {
     return this.jobRepo
       .createQueryBuilder('job')
-      .where('job.platform = :platform', { platform: PLATFORM })
+      .where('job.platform = :platform', { platform: this.platform })
       .andWhere('job.status = :status', { status: 'failed' })
       .andWhere('job.retry_count >= job.max_retries')
       .andWhere('job.updated_at >= :since', { since })
       .getCount();
   }
 
-  private mapEntity(entity: ReportSendJobEntity): ReportSendJob {
+  private mapEntity(
+    entity: ReportSendJobEntity | Record<string, unknown>,
+  ): ReportSendJob {
+    const row = entity as ReportSendJobEntity & Record<string, unknown>;
+    // Raw query rows use snake_case; TypeORM entity rows use camelCase.
     return {
-      id: entity.id,
-      platform: entity.platform,
-      externalUserId: entity.externalUserId,
-      userId: entity.userId ?? undefined,
-      examDate: entity.examDate,
-      firstAttemptDate: entity.firstAttemptDate,
-      status: entity.status,
-      retryCount: entity.retryCount,
-      maxRetries: entity.maxRetries,
-      nextRetryAt: entity.nextRetryAt ?? undefined,
-      lastError: entity.lastError ?? undefined,
-      sentAt: entity.sentAt ?? undefined,
-      leaseToken: entity.leaseToken ?? undefined,
-      leaseExpiresAt: entity.leaseExpiresAt ?? undefined,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
+      id: row.id as number,
+      platform: row.platform as string,
+      externalUserId: (row.externalUserId ?? row.external_user_id) as string,
+      userId: (row.userId ?? row.user_id ?? undefined) as number | undefined,
+      examDate: (row.examDate ?? row.exam_date) as string,
+      firstAttemptDate: (row.firstAttemptDate ??
+        row.first_attempt_date) as string,
+      status: row.status as ReportSendJob['status'],
+      retryCount: (row.retryCount ?? row.retry_count) as number,
+      maxRetries: (row.maxRetries ?? row.max_retries) as number,
+      nextRetryAt: (row.nextRetryAt ?? row.next_retry_at ?? undefined) as
+        | Date
+        | undefined,
+      lastError: (row.lastError ?? row.last_error ?? undefined) as
+        | string
+        | undefined,
+      sentAt: (row.sentAt ?? row.sent_at ?? undefined) as Date | undefined,
+      leaseToken: (row.leaseToken ?? row.lease_token ?? undefined) as
+        | string
+        | undefined,
+      leaseExpiresAt: (row.leaseExpiresAt ??
+        row.lease_expires_at ??
+        undefined) as Date | undefined,
+      createdAt: (row.createdAt ?? row.created_at) as Date,
+      updatedAt: (row.updatedAt ?? row.updated_at) as Date,
     };
   }
 }

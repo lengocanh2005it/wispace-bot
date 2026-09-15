@@ -5,7 +5,7 @@ entities. Verdicts: **keep** (with reason) / **truncate** / **hash** /
 **drop**. Implemented changes ship with migrations + tests; larger changes
 are filed as follow-ups.
 
-Last updated: 2026-08-31 (#640).
+Last updated: 2026-09-15 (#744).
 
 ## Verdicts
 
@@ -35,7 +35,7 @@ Last updated: 2026-08-31 (#640).
 
 | Field | Verdict | Notes |
 | --- | --- | --- |
-| `last_error` | **truncate** | Bounded at write time in both `ReportSendJobRepository` implementations (Messenger + Discord — create + `markFailed`). |
+| `last_error` | **truncate** | Bounded at write time in the report-send-job adapter (`create` + `markFailed`); #744 consolidates the current Messenger/Discord copies into one platform-parameterized implementation without changing this guarantee. |
 
 ### `study_reminder_jobs`
 

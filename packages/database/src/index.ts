@@ -66,6 +66,7 @@ export {
   type MessageLogRow,
 } from './services/delivery-log.service';
 export { PlatformReportClaimRepository } from './services/platform-report-claim.repository';
+export { PlatformReportSendJobRepository } from './services/platform-report-send-job.repository';
 export {
   DEFAULT_REPORT_CLAIM_LEASE_MS,
   ReportClaimStaleResetCronService,
