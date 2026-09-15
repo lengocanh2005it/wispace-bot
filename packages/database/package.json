@@ -30,7 +30,7 @@
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
     "date-fns": "^4.4.0",
-    "typeorm": "^1.1.0"
+    "typeorm": "^1.1.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

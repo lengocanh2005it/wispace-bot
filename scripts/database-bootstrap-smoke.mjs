@@ -430,7 +430,7 @@ async function exerciseCleanup({
   await repo.insert([oldValues, freshValues]);
 
   const cleanup = new CleanupCronService(
-    dataSource,
+    config,
     new PgAdvisoryLockService(dataSource),
   );
   const platformCleanup = new PlatformCleanupCronService(
