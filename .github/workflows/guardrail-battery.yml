@@ -35,5 +35,8 @@ jobs:
       - name: Build llm-agent
         run: npx --no-install turbo run build --filter=@wispace/llm-agent
 
+      - name: Verify eval fixture prompt hashes (#724)
+        run: npm run eval:rehash --workspace=@wispace/llm-agent -- --check
+
       - name: Run guardrail battery (#635)
         run: npm run eval:guardrail --workspace=@wispace/llm-agent

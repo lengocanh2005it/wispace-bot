@@ -64,7 +64,7 @@ import type { LlmAgentReply } from '../types';
  * Jest runs with `rootDir: src` and can present `__dirname`-relative module
  * paths, so a fixed depth (`../../..`) is not reliable — the marker walk is.
  */
-function resolveRepoRoot(): string {
+export function resolveRepoRoot(): string {
   let dir = __dirname;
   for (let depth = 0; depth < 8; depth++) {
     if (existsSync(join(dir, 'turbo.json'))) {
@@ -612,8 +612,15 @@ export function sha256Hex(content: string): string {
   return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
-export function resolvePromptPath(promptPath: string): string {
-  return resolve(REPO_ROOT, promptPath);
+export function resolvePromptPath(
+  promptPath: string,
+  repoRoot: string = REPO_ROOT,
+): string {
+  return resolve(repoRoot, promptPath);
+}
+
+export function normalizePromptContent(content: string): string {
+  return content.replace(/\r\n/g, '\n');
 }
 
 export type PromptLoadResult =
@@ -640,7 +647,7 @@ export function loadPrompt(path: string, hash: string): PromptLoadResult {
   } catch {
     return { ok: false, error: `prompt file not found: ${path}` };
   }
-  const content = raw.replace(/\r\n/g, '\n');
+  const content = normalizePromptContent(raw);
   const actual = sha256Hex(content);
   if (actual !== hash.toLowerCase()) {
     return {

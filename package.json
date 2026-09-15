@@ -16,6 +16,7 @@
     "format:check": "oxfmt --check apps packages",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "eval:rehash": "npm run eval:rehash --workspace=@wispace/llm-agent --",
     "test:affected": "turbo run test --affected",
     "database:bootstrap-smoke": "node scripts/database-bootstrap-smoke.mjs",
     "database:query-returning-shape-smoke": "node scripts/query-returning-shape-smoke.mjs",
