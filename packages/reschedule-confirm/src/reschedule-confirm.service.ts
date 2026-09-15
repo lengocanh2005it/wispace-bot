@@ -208,13 +208,18 @@ export interface ReschedulePort<TExternalId> {
   }): Promise<RescheduleResult>;
 }
 
+/** Drops cached calendar reads after a committed reschedule write. */
+export interface CalendarCacheInvalidationPort<TExternalId> {
+  invalidateCalendar(externalUserId: TExternalId): void;
+}
+
 export interface RescheduleConfirmationOptions<TExternalId> {
   /**
-   * Runs after the reschedule write commits (#636) — bots wire cache
-   * invalidation here so the next calendar read re-fetches. A hook failure
-   * is logged and swallowed: the write already succeeded.
+   * Drops cached calendar reads after the reschedule write commits (#705).
+   * An invalidation failure is logged and swallowed: the write already
+   * succeeded.
    */
-  onConfirmed?: (externalId: TExternalId) => Promise<void> | void;
+  calendarCacheInvalidation?: CalendarCacheInvalidationPort<TExternalId>;
   /** #626: atomically consume one daily write-tool-budget unit for
    *  `reschedule_study_session` BEFORE the calendar write. Returns false when
    *  the learner is over their daily cap — confirm() then aborts with
@@ -501,7 +506,7 @@ export class RescheduleConfirmationService<TExternalId> {
 
       await this.store.cancelClaimed(externalId, leaseToken);
 
-      await this.runOnConfirmed(externalId);
+      await this.runCalendarCacheInvalidation(externalId);
 
       this.logger.log(
         `RESCHEDULE_CONFIRMED externalId=${maskExternalId(
@@ -635,15 +640,18 @@ export class RescheduleConfirmationService<TExternalId> {
       : this.store.cancelPending(externalId, nonce);
   }
 
-  private async runOnConfirmed(externalId: TExternalId): Promise<void> {
-    if (!this.options.onConfirmed) {
+  private async runCalendarCacheInvalidation(
+    externalId: TExternalId,
+  ): Promise<void> {
+    const invalidation = this.options.calendarCacheInvalidation;
+    if (!invalidation) {
       return;
     }
     try {
-      await this.options.onConfirmed(externalId);
+      await invalidation.invalidateCalendar(externalId);
     } catch (error) {
       this.logger.warn(
-        `RESCHEDULE_ON_CONFIRMED_HOOK_FAILED externalId=${maskExternalId(
+        `RESCHEDULE_CALENDAR_CACHE_INVALIDATION_FAILED externalId=${maskExternalId(
           String(externalId),
         )}: ${sanitizeLogValue(errorMessage(error), 200)}`,
       );

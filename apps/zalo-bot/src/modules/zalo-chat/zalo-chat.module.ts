@@ -602,12 +602,9 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           rescheduleBudgetExceededMessage: buildWriteToolDailyBudgetMessage(
             'reschedule_study_session',
           ),
-          // The calendar write commits here — drop cached reads for the user
-          // so the next "upcoming sessions" question re-fetches (#636).
-          onConfirmed: (externalId) =>
-            new ZaloWispaceCacheInvalidationAdapter(cache).invalidateCalendar(
-              externalId,
-            ),
+          calendarCacheInvalidation: new ZaloWispaceCacheInvalidationAdapter(
+            cache,
+          ),
           scopeFailureInc: (reason) =>
             metrics.incLlmToolPolicyDenied(
               'reschedule_study_session',

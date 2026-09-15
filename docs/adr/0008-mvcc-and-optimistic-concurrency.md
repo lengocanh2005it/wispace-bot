@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for issue #576. Decision/documentation only — no runtime code changed.
+Accepted for issue #576; read-side decision implemented for #705.
 The concurrent-flow inventory below was reviewed and every flow already has a
 correct guard, so no version/CAS guard was added.
 
@@ -36,26 +36,25 @@ lost-update problem, and then the narrowest tool that solves it:
 ## Read-side (session) consistency
 
 The table above is the write-side view. The read side has its own guarantee —
-"does a read observe the caller's own prior write" — and today it is upheld by
-app wiring convention, not by construction:
+"does a read observe the caller's own prior write" — with mutation-specific
+invalidation rules:
 
 - **Goals cache** — `invalidateGoals` is called from **shared** code
   (`packages/chat-agent/src/agent/precreate-exercise-result.ts`), so no platform
   can forget it after a goal-mutating tool call.
-- **Calendar cache** — `invalidateCalendar` is called only from **per-app module
-  wiring** (`apps/discord-bot/.../discord-chat.module.ts`,
-  `apps/zalo-bot/.../zalo-chat.module.ts`). Messenger has **no** calendar cache
-  at all (`WispaceCalendarService` is constructed without the cache; only goals
-  are memoized), so Messenger cannot serve a stale calendar read — a known and
-  acceptable divergence, not a bug. The gap is that any *new* calendar-mutating
-  path on Discord/Zalo could silently lose read-your-writes because the
-  invalidation does not live next to the mutation in shared code. Tracked as
-  #705.
+- **Calendar cache** — the shared `RescheduleConfirmationService.confirm()`
+  mutation boundary invokes an optional narrow `CalendarCacheInvalidationPort`
+  after the successful WISPACE write and claimed-proposal cleanup. Discord and
+  Zalo pass their existing adapters from the composition root. Messenger has
+  **no** calendar cache at all (`WispaceCalendarService` is constructed without
+  the cache; only goals are memoized), so Messenger cannot serve a stale
+  calendar read — a known and acceptable divergence, not a bug.
 - **#705 decision** — the mutation boundary is shared
   `packages/reschedule-confirm` (`confirm()`), not `packages/chat-agent`, whose
-  reschedule tool only stages a proposal. `RescheduleConfirmationService` will
-  consume an optional narrow `CalendarCacheInvalidationPort` and invoke it after
-  a successful `rescheduleSession`; app modules provide only the adapter.
+  reschedule tool only stages a proposal. `RescheduleConfirmationService`
+  consumes an optional narrow `CalendarCacheInvalidationPort` and invokes it after
+  a successful `rescheduleSession` and claimed-proposal cleanup; app modules
+  provide only the adapter.
   Staging and failed writes do not invalidate, and Messenger omits the optional
   port because it has no calendar cache.
 - **Cross-pod invalidation** — `deleteByPrefix` on the shared Redis cache store
@@ -109,8 +108,8 @@ forgotten by a platform.
 
 ## Follow-up
 
-- #705 — implement the shared mutation-boundary decision above and update the
-  issue wording from `packages/chat-agent` to `packages/reschedule-confirm`.
+- #705 — implemented the shared mutation-boundary decision above; the issue
+  wording names `packages/reschedule-confirm` rather than `packages/chat-agent`.
 
 ## References
 

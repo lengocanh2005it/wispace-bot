@@ -23,6 +23,7 @@ export {
   type ConfirmError,
   type CalendarPort,
   type ReschedulePort,
+  type CalendarCacheInvalidationPort,
   type RescheduleConfirmationOptions,
   type RescheduleScopeFailureReason,
 } from './reschedule-confirm.service';

@@ -559,12 +559,9 @@ const REGISTER_REPORT_MESSAGE =
           rescheduleBudgetExceededMessage: buildWriteToolDailyBudgetMessage(
             'reschedule_study_session',
           ),
-          // The calendar write commits here — drop cached reads for the user
-          // so the next "upcoming sessions" question re-fetches (#636).
-          onConfirmed: (externalId) =>
-            new DiscordWispaceCacheInvalidationAdapter(
-              cache,
-            ).invalidateCalendar(externalId),
+          calendarCacheInvalidation: new DiscordWispaceCacheInvalidationAdapter(
+            cache,
+          ),
           scopeFailureInc: (reason) =>
             metrics.incLlmToolPolicyDenied(
               'reschedule_study_session',

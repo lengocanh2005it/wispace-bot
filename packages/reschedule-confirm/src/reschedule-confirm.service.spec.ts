@@ -442,10 +442,16 @@ describe('RescheduleConfirmationService', () => {
       const store = new MemoryRescheduleStore<string>();
       (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
         true;
+      const calendarCacheInvalidation = jest.fn();
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
         store,
+        {
+          calendarCacheInvalidation: {
+            invalidateCalendar: calendarCacheInvalidation,
+          },
+        },
       );
 
       const staged = await service.stage({
@@ -480,6 +486,7 @@ describe('RescheduleConfirmationService', () => {
       });
       expect(confirmed.confirmed).toBe(true);
       expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+      expect(calendarCacheInvalidation).toHaveBeenCalledTimes(1);
 
       const duplicate = await service.confirm('user-1', 42, token, {
         platform: 'discord',
@@ -487,6 +494,7 @@ describe('RescheduleConfirmationService', () => {
       });
       expect(duplicate.confirmed).toBe(false);
       expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+      expect(calendarCacheInvalidation).toHaveBeenCalledTimes(1);
     });
 
     it('rejects malformed approval tokens before claiming storage', async () => {
@@ -667,11 +675,17 @@ describe('RescheduleConfirmationService', () => {
       );
       const store = new MemoryRescheduleStore<string>();
       const scopeFailureInc = jest.fn();
+      const calendarCacheInvalidation = jest.fn();
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
         store,
-        { scopeFailureInc },
+        {
+          scopeFailureInc,
+          calendarCacheInvalidation: {
+            invalidateCalendar: calendarCacheInvalidation,
+          },
+        },
       );
 
       await service.stage({
@@ -689,6 +703,7 @@ describe('RescheduleConfirmationService', () => {
           'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.',
       });
       expect(scopeFailureInc).toHaveBeenCalledWith('scope_mismatch');
+      expect(calendarCacheInvalidation).not.toHaveBeenCalled();
       expect(await service.hasPending('user-1')).toBe(false);
     });
 
@@ -790,7 +805,17 @@ describe('RescheduleConfirmationService', () => {
       try {
         const calendar = mockCalendarPort();
         const reschedule = mockReschedulePort();
-        const service = new RescheduleConfirmationService(calendar, reschedule);
+        const calendarCacheInvalidation = jest.fn();
+        const service = new RescheduleConfirmationService(
+          calendar,
+          reschedule,
+          undefined,
+          {
+            calendarCacheInvalidation: {
+              invalidateCalendar: calendarCacheInvalidation,
+            },
+          },
+        );
 
         await service.stage({
           externalId: 'user-1',
@@ -806,6 +831,7 @@ describe('RescheduleConfirmationService', () => {
           confirmed: false,
           message: expect.stringContaining('hết hạn'),
         });
+        expect(calendarCacheInvalidation).not.toHaveBeenCalled();
       } finally {
         jest.useRealTimers();
       }
@@ -839,7 +865,7 @@ describe('RescheduleConfirmationService', () => {
     });
   });
 
-  describe('onConfirmed hook (#636 cache invalidation)', () => {
+  describe('calendar cache invalidation (#705)', () => {
     const stageValid = (service: RescheduleConfirmationService<string>) =>
       service.stage({
         externalId: 'user-1',
@@ -851,20 +877,25 @@ describe('RescheduleConfirmationService', () => {
     it('fires after a successful write with the external id', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
-      const onConfirmed = jest.fn();
+      const calendarCacheInvalidation = jest.fn();
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
         undefined,
-        { onConfirmed },
+        {
+          calendarCacheInvalidation: {
+            invalidateCalendar: calendarCacheInvalidation,
+          },
+        },
       );
 
       await stageValid(service);
+      expect(calendarCacheInvalidation).not.toHaveBeenCalled();
       const result = await service.confirm('user-1');
 
       expect(result.confirmed).toBe(true);
-      expect(onConfirmed).toHaveBeenCalledTimes(1);
-      expect(onConfirmed).toHaveBeenCalledWith('user-1');
+      expect(calendarCacheInvalidation).toHaveBeenCalledTimes(1);
+      expect(calendarCacheInvalidation).toHaveBeenCalledWith('user-1');
     });
 
     it('does not fire when the write fails', async () => {
@@ -873,40 +904,106 @@ describe('RescheduleConfirmationService', () => {
       (reschedule.rescheduleSession as jest.Mock).mockRejectedValue(
         new Error('Wispace down'),
       );
-      const onConfirmed = jest.fn();
+      const calendarCacheInvalidation = jest.fn();
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
         undefined,
-        { onConfirmed },
+        {
+          calendarCacheInvalidation: {
+            invalidateCalendar: calendarCacheInvalidation,
+          },
+        },
       );
 
       await stageValid(service);
       const result = await service.confirm('user-1');
 
       expect(result.confirmed).toBe(false);
-      expect(onConfirmed).not.toHaveBeenCalled();
+      expect(calendarCacheInvalidation).not.toHaveBeenCalled();
     });
 
-    it('a hook failure must not fail the already-committed confirmation', async () => {
+    it('an invalidation failure must not fail the already-committed confirmation', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
-      const onConfirmed = jest.fn().mockRejectedValue(new Error('cache down'));
+      const calendarCacheInvalidation = jest.fn().mockImplementation(() => {
+        throw new Error('cache down');
+      });
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        const service = new RescheduleConfirmationService(
+          calendar,
+          reschedule,
+          undefined,
+          {
+            calendarCacheInvalidation: {
+              invalidateCalendar: calendarCacheInvalidation,
+            },
+          },
+        );
+
+        await stageValid(service);
+        const result = await service.confirm('user-1');
+
+        expect(result).toEqual({
+          confirmed: true,
+          scheduledTimeLabel: expect.any(String),
+        });
+        expect(calendarCacheInvalidation).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'RESCHEDULE_CALENDAR_CACHE_INVALIDATION_FAILED',
+          ),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('invalidates once after write and claim cleanup, including duplicate confirms', async () => {
+      const events: string[] = [];
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      (reschedule.rescheduleSession as jest.Mock).mockImplementation(
+        async () => {
+          events.push('write');
+          return { scheduledTimeLabel: '29/07/2026 lúc 15:00' };
+        },
+      );
+      const store = new MemoryRescheduleStore<string>();
+      const originalCancelClaimed = store.cancelClaimed.bind(store);
+      jest.spyOn(store, 'cancelClaimed').mockImplementation(async (...args) => {
+        events.push('cleanup');
+        await originalCancelClaimed(...args);
+      });
+      const calendarCacheInvalidation = jest.fn(() => {
+        events.push('invalidate');
+      });
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
-        undefined,
-        { onConfirmed },
+        store,
+        {
+          calendarCacheInvalidation: {
+            invalidateCalendar: calendarCacheInvalidation,
+          },
+        },
       );
 
       await stageValid(service);
-      const result = await service.confirm('user-1');
+      const [first, duplicate] = await Promise.all([
+        service.confirm('user-1'),
+        service.confirm('user-1'),
+      ]);
 
-      expect(result).toEqual({
-        confirmed: true,
-        scheduledTimeLabel: expect.any(String),
-      });
-      expect(onConfirmed).toHaveBeenCalledTimes(1);
+      expect([first.confirmed, duplicate.confirmed].sort()).toEqual([
+        false,
+        true,
+      ]);
+      expect(events).toEqual(['write', 'cleanup', 'invalidate']);
+      expect(calendarCacheInvalidation).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -915,14 +1012,18 @@ describe('RescheduleConfirmationService', () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
       const cache = new WispaceDataCache();
-      const onConfirmed = jest.fn((externalId: string) => {
+      const calendarCacheInvalidation = jest.fn((externalId: string) => {
         cache.invalidateUser(externalId, ['calendar']);
       });
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
         undefined,
-        { onConfirmed },
+        {
+          calendarCacheInvalidation: {
+            invalidateCalendar: calendarCacheInvalidation,
+          },
+        },
       );
 
       // The same read path the chat tools use: cache.getOrFetch('calendar').
@@ -952,7 +1053,7 @@ describe('RescheduleConfirmationService', () => {
         { calendarId: 1, label: 'Ngày mai 10:00' },
       ]);
       expect(upstream).toHaveBeenCalledTimes(2);
-      expect(onConfirmed).toHaveBeenCalledWith('user-1');
+      expect(calendarCacheInvalidation).toHaveBeenCalledWith('user-1');
     });
   });
   describe('write-tool daily budget at confirm time (#626)', () => {
