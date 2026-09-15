@@ -70,7 +70,7 @@ Net effect: a learner-PII Postgres instance and the chat-history Redis are reach
 - **Browser → `/v1/{discord,zalo}/oauth/*`** — link tokens, OAuth codes. Server-side single-use state, `__Host-` cookie binding, PKCE (Zalo), `Referrer-Policy: no-referrer`, `Cache-Control: no-store`. Evidence: `apps/discord-bot/.../discord-oauth.controller.ts`.
 - **WISPACE → `/v1/messenger/wispace/web-activity`** — learner `userId`. Gated by `InternalApiKeyGuard` only.
 - **Operator → `/v1/{messenger,discord,zalo}/*` ops** — privacy purge, mapping relink, report send. Same single `InternalApiKeyGuard`. **Internet-reachable** (TM-004).
-- **Bot → LLM provider** — learner chat text leaves the trust boundary to a third party. Endpoint constrained by `LLM_ALLOWED_BASE_URLS` / `LLM_ALLOWED_MODELS`; secrets stripped by `registerRuntimeSecrets` (`main.ts:44`).
+- **Bot → LLM provider** — learner chat text leaves the trust boundary to a third party. Endpoint constrained by `LLM_ALLOWED_BASE_URLS` / `LLM_ALLOWED_MODELS`; secrets stripped by `registerRuntimeSecrets` in `packages/bot-common/src/bootstrap/bot-bootstrap.ts`.
 - **Bot → Wispace API** — `x-psid`/`x-discordid`/`x-zaloid` + `X-Internal-Key`; zod-validated responses.
 - **Internet → Redis 6379 / Postgres 5432 / pgAdmin 8082** — **unintended boundary.** Docker DNAT bypasses UFW (TM-001, TM-002, TM-006).
 

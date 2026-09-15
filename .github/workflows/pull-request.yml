@@ -153,10 +153,9 @@ jobs:
           if git diff --name-only "${BASE}...HEAD" -- \
             apps/messenger-bot/src/main.ts \
             apps/messenger-bot/src/shared/common/tracing.ts \
-            apps/messenger-bot/src/shared/common/graceful-shutdown.ts \
-            apps/messenger-bot/src/shared/common/graceful-shutdown.spec.ts \
             apps/messenger-bot/src/shared/common/tracing.spec.ts \
             apps/messenger-bot/scripts/verify-graceful-shutdown.mjs \
+            packages/bot-common/src/bootstrap/ \
             | grep -q .; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else

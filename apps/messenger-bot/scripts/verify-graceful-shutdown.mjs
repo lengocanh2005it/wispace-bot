@@ -8,13 +8,13 @@
  *   and asserts HTTP 200 + tracing flush + exit 0. Needs real signal
  *   delivery, so on Windows it falls back to --selftest (see below).
  * - --child: harness process (plain http server + the real
- *   createShutdownHandler/shutdownTracing wiring from ../dist).
+ *   createShutdownHandler/shutdownTracing wiring from the shared bootstrap).
  * - --selftest: single-process check that runs anywhere — asserts
  *   tracing.ts registers no signal listeners of its own, then drives the
  *   real shutdown handler through a live in-flight request.
  *
- * Prerequisite: `npm run build` (requires ../dist/tracing.js and
- * ../dist/graceful-shutdown.js).
+ * Prerequisite: `npm run build` (requires the Messenger tracing build and the
+ * shared bot-common bootstrap build).
  *
  * Exit 0 = PASS. Anything else prints the failure and exits non-zero.
  */
@@ -40,7 +40,7 @@ async function bootHarness({
   tracingLogger,
 }) {
   const { createShutdownHandler } =
-    await import('../dist/shared/common/graceful-shutdown.js');
+    await import('../../../packages/bot-common/dist/bootstrap/bot-bootstrap.js');
   const { shutdownTracing } = await import('../dist/shared/common/tracing.js');
 
   const server = http.createServer((req, res) => {

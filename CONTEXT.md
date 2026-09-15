@@ -656,6 +656,10 @@ _Avoid_: implementation, service implementation
 The application wiring boundary where concrete adapters are bound to ports. A composition root may name infrastructure and platform services; feature application code may not.
 _Avoid_: service locator, concrete dependency in a use case
 
+**bot bootstrap**:
+The shared startup contract for the three WISPACE bots: process-failure handling, Vault/runtime-secret setup, common Nest application configuration, and graceful shutdown. It belongs at the composition root and does not own platform behavior.
+_Avoid_: generic bootstrap, platform lifecycle
+
 **outbox pattern**:
 Pattern used for `study_reminder_jobs` and `report_send_jobs`: write job rows first, then process asynchronously. Provides durability and retry.
 _Avoid_: queue pattern, task queue

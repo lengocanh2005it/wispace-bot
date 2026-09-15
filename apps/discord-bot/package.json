@@ -47,7 +47,6 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "discord.js": "^14.27.0",
-    "helmet": "^8.3.0",
     "necord": "^7.0.0",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",

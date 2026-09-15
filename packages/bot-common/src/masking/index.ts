@@ -10,3 +10,9 @@ export {
   sanitizeLogValue,
 } from './mask-external-id';
 export { hashExternalId, truncatePersistedError } from './hash-external-id';
+export {
+  collectRuntimeSecretValues,
+  getRegisteredRuntimeSecretValues,
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from './runtime-secrets';
