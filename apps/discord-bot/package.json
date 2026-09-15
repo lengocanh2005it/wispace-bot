@@ -62,7 +62,7 @@
     "@swc/jest": "^0.2.39",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^26.5.0",
+    "@types/node": "^26.5.1",
     "@types/pg": "^8.23.1",
     "jest": "^30.5.1",
     "ts-node": "^10.9.2",
