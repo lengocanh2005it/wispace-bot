@@ -166,6 +166,14 @@ _Avoid_: CalendarEvent, SessionRecord
 Pending request created after validating a learner's UserCalendar session and before the learner confirms. It is not a calendar mutation; at most one active proposal exists per platform-scoped external identity, and a newer proposal supersedes the older token.
 _Avoid_: rescheduled session, completed reschedule
 
+**calendar mutation**:
+The committed WISPACE write that changes a UserCalendar session, currently the reschedule flow. Staging a proposal or showing a confirmation prompt is not a calendar mutation.
+_Avoid_: calendar staging, calendar read
+
+**calendar cache invalidation**:
+Removal of cached UserCalendar reads after a committed calendar mutation so the next read observes the latest WISPACE state.
+_Avoid_: calendar refresh, calendar sync
+
 **confirmation boundary**:
 Point at which the bot commits to delivering the reschedule confirmation prompt. Cancellation before this boundary removes only the matching staged reschedule; after it, an outbound attempt cannot be retracted.
 _Avoid_: confirmation complete, send completion

@@ -51,6 +51,13 @@ app wiring convention, not by construction:
   path on Discord/Zalo could silently lose read-your-writes because the
   invalidation does not live next to the mutation in shared code. Tracked as
   #705.
+- **#705 decision** — the mutation boundary is shared
+  `packages/reschedule-confirm` (`confirm()`), not `packages/chat-agent`, whose
+  reschedule tool only stages a proposal. `RescheduleConfirmationService` will
+  consume an optional narrow `CalendarCacheInvalidationPort` and invoke it after
+  a successful `rescheduleSession`; app modules provide only the adapter.
+  Staging and failed writes do not invalidate, and Messenger omits the optional
+  port because it has no calendar cache.
 - **Cross-pod invalidation** — `deleteByPrefix` on the shared Redis cache store
   (`packages/wispace-client/src/cache/redis-wispace-cache.store.ts`) is
   deliberately best-effort: its failure is caught and swallowed, with the
@@ -93,11 +100,8 @@ forgotten by a platform.
 
 ## Follow-up
 
-- #705 — move `invalidateCalendar` invocation into shared `packages/chat-agent`
-  code next to the calendar-mutating tool handler, so read-your-writes for
-  calendar cannot be forgotten per platform (low priority — no stale read today
-  because the only two platforms that cache calendar both wire it, and Messenger
-  does not cache).
+- #705 — implement the shared mutation-boundary decision above and update the
+  issue wording from `packages/chat-agent` to `packages/reschedule-confirm`.
 
 ## References
 
