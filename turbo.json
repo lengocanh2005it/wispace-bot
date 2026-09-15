@@ -31,6 +31,10 @@
       "inputs": ["src/**", "package.json", "tsconfig.json", "jest.config.*"],
       "outputs": []
     },
+    "verify": {
+      "dependsOn": ["typecheck", "test", "build"],
+      "cache": false
+    },
     "start:dev": {
       "cache": false,
       "persistent": true
