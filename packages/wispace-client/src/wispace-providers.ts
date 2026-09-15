@@ -17,6 +17,8 @@ export interface WispaceProvidersOptions {
    * (already created) and returns hours. Default: undefined (= 24h).
    */
   horizonHours?: (configService: WispaceConfigService) => () => number;
+  /** Optional app-level timezone resolver for calendar normalization. */
+  timezone?: (configService: ConfigService) => () => string;
   /**
    * Replaces the default in-memory-only `WispaceDataCache` provider — the
    * app wires its Redis-backed shared store here (#568). Must keep the
@@ -71,13 +73,17 @@ export function createWispaceProviders(
     },
     {
       provide: WispaceCalendarService,
-      useFactory: (configService: WispaceConfigService) =>
+      useFactory: (
+        configService: WispaceConfigService,
+        appConfigService: ConfigService,
+      ) =>
         new WispaceCalendarService(
           options.header,
           configService,
           options.horizonHours?.(configService),
+          options.timezone?.(appConfigService),
         ),
-      inject: [WispaceConfigService],
+      inject: [WispaceConfigService, ConfigService],
     },
     {
       provide: PrecreateExerciseApiClient,

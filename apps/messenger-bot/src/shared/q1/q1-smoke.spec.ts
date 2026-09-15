@@ -43,11 +43,30 @@ describe('Q1 smoke checks (automated)', () => {
 
   it('uses CHAT_USAGE_TIMEZONE as the shared app timezone', () => {
     const config = {
-      get: (key: string) =>
-        key === 'CHAT_USAGE_TIMEZONE' ? 'Asia/Ho_Chi_Minh' : undefined,
+      get: (key: string) => {
+        const values: Record<string, string> = {
+          CHAT_USAGE_TIMEZONE: 'Asia/Ho_Chi_Minh',
+          LLM_USAGE_TIMEZONE: 'Asia/Bangkok',
+          STUDY_REMINDER_TIMEZONE: 'UTC',
+        };
+        return values[key];
+      },
     } as ConfigService;
 
     expect(resolveAppTimezone(config)).toBe('Asia/Ho_Chi_Minh');
+  });
+
+  it('falls through the shared timezone precedence when higher-priority keys are blank', () => {
+    const config = {
+      get: (key: string) =>
+        ({
+          CHAT_USAGE_TIMEZONE: ' ',
+          LLM_USAGE_TIMEZONE: 'Asia/Bangkok',
+          STUDY_REMINDER_TIMEZONE: 'UTC',
+        })[key],
+    } as ConfigService;
+
+    expect(resolveAppTimezone(config)).toBe('Asia/Bangkok');
   });
 
   it('treats CHAT_RATE_LIMIT_ENABLED=true as enforcement on', () => {

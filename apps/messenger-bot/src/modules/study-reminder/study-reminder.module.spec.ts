@@ -8,6 +8,7 @@ import {
   WispaceCalendarService,
   WispaceConfigService,
 } from '@wispace/wispace-client';
+import { ConfigService } from '@nestjs/config';
 import { StudyReminderModule } from './study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
 
@@ -101,11 +102,24 @@ describe('Messenger study-reminder calendar wiring', () => {
       WISPACE_INTERNAL_KEY: 'internal-key',
       WISPACE_API_MAX_RETRIES: '0',
       STUDY_REMINDER_SYNC_HORIZON_HOURS: '48',
-      STUDY_REMINDER_TIMEZONE: 'UTC',
+      CHAT_USAGE_TIMEZONE: 'UTC',
+      STUDY_REMINDER_TIMEZONE: 'Asia/Tokyo',
     };
     const configService = new WispaceConfigService((key) => values[key]);
+    const appConfigService = {
+      get: (key: string) => values[key],
+    } as ConfigService;
+    const calendarBinding = binding as {
+      inject?: unknown[];
+      useFactory?: (...args: unknown[]) => unknown;
+    };
+    expect(calendarBinding.inject).toEqual([
+      WispaceConfigService,
+      ConfigService,
+    ]);
     const calendarService = binding!.useFactory!(
       configService,
+      appConfigService,
     ) as WispaceCalendarService;
     global.fetch = jest.fn(() =>
       Promise.resolve(
@@ -125,6 +139,11 @@ describe('Messenger study-reminder calendar wiring', () => {
 
     await expect(
       calendarService.getCalendarSessions('psid-1'),
-    ).resolves.toEqual([expect.objectContaining({ sessionKey: 'calendar:1' })]);
+    ).resolves.toEqual([
+      expect.objectContaining({
+        sessionKey: 'calendar:1',
+        scheduledAt: new Date('2026-01-02T12:00:00.000Z'),
+      }),
+    ]);
   });
 });

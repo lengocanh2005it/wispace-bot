@@ -9,7 +9,7 @@ import {
   PlatformStudyCalendarCommandService,
   StudyReminderSyncService,
   createSessionSourceGetSessions,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
 import type {
   CalendarSessionTimeRange,
   RescheduleSchedulingMode,

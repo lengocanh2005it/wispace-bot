@@ -106,6 +106,32 @@ describe('PlatformStudyCalendarCommandService', () => {
     expect(entries[0]?.calendarId).toBe(11);
   });
 
+  it('forwards a caller signal to both calendar reads', async () => {
+    const signal = new AbortController().signal;
+    const calendarService = buildCalendarService({
+      listCalendars: jest.fn().mockResolvedValue([]),
+      getCalendarSessions: jest.fn().mockResolvedValue([]),
+    });
+    const service = new PlatformStudyCalendarCommandService(
+      { platform: 'messenger' },
+      calendarService,
+      buildConfigService(),
+    );
+
+    await service.listEntries('u1', { signal });
+
+    expect(calendarService.listCalendars).toHaveBeenCalledWith('u1', {
+      signal,
+    });
+    expect(calendarService.getCalendarSessions).toHaveBeenCalledWith('u1', {
+      timeRange: 'upcoming',
+      userId: undefined,
+      pastDays: undefined,
+      limit: undefined,
+      signal,
+    });
+  });
+
   it('uses the IELTS Writing default when a session topic is empty', async () => {
     const calendarService = buildCalendarService({
       listCalendars: jest

@@ -11,6 +11,7 @@ import {
   PrecreateExerciseApiClient,
 } from '@wispace/wispace-client';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 
 /**
  * Cross-pod WISPACE cache coordination (#568): when Redis is enabled and
@@ -50,6 +51,7 @@ const cacheLogger = new Logger(WispaceDataCache.name);
       metrics: BotMetricsService,
       horizonHours: (configService) => () =>
         configService.getSyncHorizonHours(),
+      timezone: (configService) => () => resolveAppTimezone(configService),
       cacheProvider: createRedisCacheProvider(),
     }),
     {

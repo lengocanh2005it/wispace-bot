@@ -38,7 +38,7 @@ export interface PlatformStudyCalendarCommandOptions {
 
 /**
  * Delete-recreate calendar reschedule flow + upcoming-session listing,
- * shared by the Discord and Zalo bots. Consumes the structural calendar
+ * shared by Messenger, Discord, and Zalo. Consumes the structural calendar
  * port (`StudyCalendarPort`) + scheduling config (`RescheduleConfigPort`) —
  * concrete WISPACE adapters are wired at each bot's composition root (#424).
  */

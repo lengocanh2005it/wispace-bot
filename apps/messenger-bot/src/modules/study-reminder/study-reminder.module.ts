@@ -17,13 +17,14 @@ import {
   createStudyReminderProviders,
   createSessionSourceGetSessions,
   GET_SESSIONS,
-  PlatformStudyCalendarCommandService,
   type MappingReaderPort,
   type MessageSenderPort,
   type DispatchHooksPort,
   type StudyReminderJobStatus,
 } from '@wispace/study-reminder-shared';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared/adapters';
 import { CommonModule } from '../../shared/common/common.module';
+import { APP_TIMEZONE_ENV_KEYS } from '../../shared/config/app-timezone';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { UserEntity } from '../../infrastructure/database/entities/user.entity';
 import { MESSENGER_REPOSITORY } from '../messenger/domain/repositories/messenger.repository.port';
@@ -258,11 +259,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
       useFactory: (configService: ConfigService) =>
         new StudyReminderScheduleService(configService, {
           strict: true,
-          timezoneEnvKeys: [
-            'CHAT_USAGE_TIMEZONE',
-            'LLM_USAGE_TIMEZONE',
-            'STUDY_REMINDER_TIMEZONE',
-          ],
+          timezoneEnvKeys: [...APP_TIMEZONE_ENV_KEYS],
         }),
       inject: [ConfigService],
     },

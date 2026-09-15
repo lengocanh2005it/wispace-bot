@@ -23,12 +23,16 @@ export class WispaceCalendarService {
   private readonly logger = new Logger(WispaceCalendarService.name);
   private apiClient?: UserCalendarApiClient;
   private scheduleClient?: UserCalendarScheduleClient;
+  private readonly timezone: () => string;
 
   constructor(
     private readonly idHeader: WispaceIdHeader,
     private readonly configService: WispaceConfigService,
     private readonly horizonHours: () => number = () => 24,
-  ) {}
+    timezone?: () => string,
+  ) {
+    this.timezone = timezone ?? (() => configService.getTimezone());
+  }
 
   getCalendarSessions(
     externalUserId: string,
@@ -116,7 +120,7 @@ export class WispaceCalendarService {
       this.scheduleClient = new UserCalendarScheduleClient(
         (idHeader, externalId, options) =>
           this.getApiClient().listCalendars(idHeader, externalId, options),
-        this.configService.getTimezone(),
+        this.timezone(),
         { warn: (m) => this.logger.warn(m), log: (m) => this.logger.log(m) },
       );
     }
