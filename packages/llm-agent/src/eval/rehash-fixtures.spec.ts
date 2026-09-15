@@ -202,4 +202,14 @@ describe('eval fixture rehashing', () => {
       rmSync(tree.root, { recursive: true, force: true });
     }
   });
+
+  it('keeps every committed fixture clean in check mode', () => {
+    const result = rehashEvalFixtures({ check: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.fixtureCount).toBeGreaterThan(0);
+    expect(result.changed).toEqual([]);
+    expect(result.stale).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
 });
