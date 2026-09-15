@@ -16,7 +16,7 @@ npm run eval:rehash
 To verify hashes without changing fixtures:
 
 ```text
-npm run eval:rehash -- --check
+npm run eval:rehash:check
 ```
 
 The command discovers every JSON fixture, rejects invalid or unsafe prompt references before writing, preserves fixture formatting, and is idempotent. It does not approve fixture behavior or call an LLM. Run the offline eval after a prompt change:
