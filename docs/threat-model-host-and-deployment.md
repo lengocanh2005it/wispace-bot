@@ -4,13 +4,21 @@
 
 > Live-host findings below were obtained with owner-granted SSH access, read-only commands only. No secret values were printed, and no mutating endpoint was called.
 
+> **Remediation status — 2026-09-15.** TM-003 (SSH) is **closed**: password
+> authentication is disabled on both 22 and 8443 (verified at the protocol
+> level, server offers `publickey` only), `PermitRootLogin no`, fail2ban
+> active, and the account password rotated. TM-001/002/006/007 (exposed
+> data-store ports) remain **open** — see the note under Remediation order.
+> No credential values appear in this document.
+
+
 ## Executive summary
 
 The **application** is in good security shape. Webhook signature verification is HMAC + constant-time with replay windows, OAuth uses `__Host-` cookies with server-side state and PKCE, the LLM agent binds learner identity server-side (never from model output) and layers prompt-injection sanitising, write-tool budgets and secret redaction, secrets come from Vault at runtime, and SQL is parameterised. CI uses `pull_request` (not `pull_request_target`) and pins `known_hosts`.
 
 The **host** is where the risk lives, and it inverts the picture. Three findings dominate, and all three share one root cause: **a control was configured correctly and then silently bypassed by a lower layer.** Docker's iptables DNAT rules publish Redis, both Postgres instances and pgAdmin straight past an active UFW deny-by-default policy — including past an explicit rule written to restrict Redis to a single IP. A root-owned `cloud-init` drop-in re-enables `PasswordAuthentication yes` and wins over the hardening file by filename sort order, so SSH accepts passwords (with `PermitRootLogin yes` and no fail2ban) despite the config a non-root operator can read saying `no`. And `deploy/vps-hardening-check.sh` — the control designed to catch exactly this drift — was never installed on the box, so none of it was ever reported.
 
-Net effect: a learner-PII Postgres instance and the chat-history Redis are reachable from any IP on the internet, and the SSH front door accepts a guessable password. Fix the host; the code is not the problem.
+Net effect: a learner-PII Postgres instance and the chat-history Redis are reachable from any IP on the internet. The SSH weakness described in TM-003 has since been remediated; the data-store exposure has not. Fix the host; the code is not the problem.
 
 ## Scope and assumptions
 
@@ -127,7 +135,7 @@ flowchart TD
 ## Top abuse paths
 
 1. **Learner PII exfiltration via exposed Postgres.** Scan `69.62.74.196:5432` → `pg_hba.conf` permits `host all all all scram-sha-256` → offline/online guess the superuser password (no connection rate limit, no fail2ban on 5432) → `SELECT * FROM user_messenger_mappings, study_reminder_jobs` → full learner identity graph and study data. **Impact: total confidentiality loss.**
-2. **SSH takeover via cloud-init drift.** Note `sshd` on 22/8443 → password auth accepted → brute-force `ngoc_anh` (current password `wispace_dev@135` matches a guessable project-name+digits pattern) → `PermitRootLogin yes` gives a second path → host root → Vault AppRole bootstrap env → **every secret in the system.**
+2. **SSH takeover via cloud-init drift.** Note `sshd` on 22/8443 → password auth accepted → brute-force the login account (the password in place at the time of the audit followed a guessable project-name-plus-digits pattern; it has since been rotated) → `PermitRootLogin yes` gives a second path → host root → Vault AppRole bootstrap env → **every secret in the system.**
 3. **Chat-history disclosure via exposed Redis.** Reach `6379` → brute-force `requirepass` unthrottled over a cleartext channel → dump chat history, queue contents and rate-limit state; write access additionally lets the attacker forge queue entries the bots will process.
 4. **Ops-route abuse with one leaked key.** Obtain `INTERNAL_API_KEY` (from any of the bots, or from the WISPACE backend that shares the guard) → `POST /v1/messenger/*` from the open internet → purge learner privacy state, relink mappings to attacker-controlled accounts, or send reports to arbitrary PSIDs. **No network ACL to fall back on.**
 5. **pgAdmin as a pivot.** Reach `8082` → default/weak pgAdmin credentials or a known pgAdmin CVE → the console already has network reach to both Postgres instances → same impact as path 1 without needing the DB password.
@@ -254,12 +262,36 @@ That is the conclusion worth carrying out of this section: **defensive effort is
 
 ## Remediation order
 
-1. **Rotate the SSH password now** — it was transmitted in plaintext through a chat transcript during this engagement, independent of TM-003.
+1. ~~Rotate the SSH password~~ — **done 2026-09-15**, together with disabling password authentication entirely, so the rotated value is no longer usable for remote access.
 2. Close the exposed ports — **not** with one uniform change; see the subsection below. Covers TM-001, TM-002, TM-006, TM-007.
 3. Remove `PasswordAuthentication yes` from `50-cloud-init.conf`, set `PermitRootLogin no`, install fail2ban (TM-003).
 4. Drop `trust` from `pg_hba.conf`; scope remote auth to the Docker subnet (TM-002, TM-008).
 5. Add `allow`/`deny` ACLs to `/v1/*/ops` and `/metrics` in nginx (TM-004).
 6. Install `vps-hardening-check.sh` on its cron **and fix its sshd check to use `sshd -T`** rather than grepping files it cannot read (TM-005).
+
+### Closing the ports crosses project boundaries
+
+Step 2 is not a change this repository can make on its own. The four exposed
+ports belong to four separate Compose projects, two of which live outside this
+repo, and three of them have live consumers that connect *through* the public
+binding:
+
+| Port | Compose project | Config location | Live consumers observed |
+|---|---|---|---|
+| 6379 Redis | `redis` | `~/redis/docker-compose.yml` | two `dotnet` processes via `172.24.0.1` |
+| 5434 `postgres_n8n_db` | `app` | `/app/docker-compose.yml` | `Tracking-System` and two `dotnet` processes, via the public IP |
+| 5432 `postgres_db` | `adf_system` | `/root/adf_system/docker-compose.yml` | none observed |
+| 8082 pgAdmin, 3100 Grafana | `app`, `monitoring` | `/app/…`, `~/infra/monitoring/…` | none observed |
+
+Changing a published port requires recreating the container, and each consumer
+above resolves the service by an address that a loopback bind would refuse. The
+work is therefore: identify every consumer, move it onto a shared Docker network
+addressed by container name, verify it, and only then drop the host publish —
+per service, in that order.
+
+The consumer list is a **lower bound**. `ss` on the host sees only
+host-namespace sockets, so connections originating inside containers — including
+the three bots — do not appear in it.
 
 ### Why step 2 is not one uniform change
 
