@@ -48,6 +48,8 @@ const cacheLogger = new Logger(WispaceDataCache.name);
     ...createWispaceProviders({
       header: 'x-psid',
       metrics: BotMetricsService,
+      horizonHours: (configService) => () =>
+        configService.getSyncHorizonHours(),
       cacheProvider: createRedisCacheProvider(),
     }),
     {

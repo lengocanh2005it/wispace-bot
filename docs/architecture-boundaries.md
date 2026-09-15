@@ -26,6 +26,10 @@ application services, utilities, or transport implementations:
 
 - Messenger consumes `StudyReminderOperationsPort` for chat/calendar actions and
   `StudyReminderSyncPort` for the post-link per-user sync side effect.
+- The Messenger calendar adapter delegates common listing/reschedule orchestration
+  to `PlatformStudyCalendarCommandService` at the infrastructure/composition
+  boundary. Messenger-only psid mapping, unscoped-read fallback, and the
+  post-mutation reminder sync remain in that adapter.
 - Study Reminder dispatch consumes the shared `MESSAGE_SENDER` port and receives
   Messenger's delivery-failure classifier through the existing dispatch options
   seam. It does not import Messenger error utilities.

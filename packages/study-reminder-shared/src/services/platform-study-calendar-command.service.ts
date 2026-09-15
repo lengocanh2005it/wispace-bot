@@ -57,6 +57,8 @@ export class PlatformStudyCalendarCommandService {
     externalUserId: string,
     options?: {
       timeRange?: CalendarSessionTimeRange;
+      userId?: number;
+      pastDays?: number;
       limit?: number;
       signal?: AbortSignal;
     },
@@ -75,6 +77,8 @@ export class PlatformStudyCalendarCommandService {
       externalUserId,
       {
         timeRange,
+        userId: options?.userId,
+        pastDays: options?.pastDays,
         limit: options?.limit,
         ...(options?.signal ? { signal: options.signal } : {}),
       },
@@ -94,6 +98,12 @@ export class PlatformStudyCalendarCommandService {
 
         const calendarId = Number(match[1]);
         const record = recordById.get(calendarId);
+        if (
+          options?.userId !== undefined &&
+          record?.userId !== options.userId
+        ) {
+          return null;
+        }
 
         return {
           calendarId,

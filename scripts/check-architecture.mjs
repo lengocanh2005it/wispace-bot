@@ -92,8 +92,6 @@ const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService,todayReportDate',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
   'apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts|../../infrastructure/wispace/task-score-average-api.service|TaskScoreAverageApiService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-calendar-command.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-calendar-command.service.ts|@wispace/study-reminder-shared|StudyReminderSyncService',
   'apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
   'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
   'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|../../infrastructure/wispace/user-calendar-schedule.service|UserCalendarScheduleService',
@@ -526,7 +524,10 @@ export function checkArchitecture(rootDir) {
     const imports = importedModules(file, source);
 
     for (const imported of imports) {
-      const boundaryViolation = featureBoundaryViolation(relativePath, imported);
+      const boundaryViolation = featureBoundaryViolation(
+        relativePath,
+        imported,
+      );
       if (boundaryViolation) violations.push(boundaryViolation);
 
       const cycleViolation = deliveryCycleViolation(relativePath, imported);

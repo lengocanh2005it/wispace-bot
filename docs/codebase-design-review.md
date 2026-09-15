@@ -181,7 +181,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 | M4 | Composition roots | `zalo-chat.module.ts` 488 ln ≈ `discord-chat.module.ts` ~440 ln (~70% wiring giống) | `createPlatformChatProviders` |
 | M5 | Resilience Wispace calls | timeout→retry→breaker→error-map copy ×3; 5 endpoint trần trụi không retry/breaker | `runWispaceCall` nội bộ wispace-client |
 | M6 | bot-common grab-bag | 37-symbol barrel ép Nest+ioredis lên 13+ consumer agnostic | tách `@wispace/log-hygiene` (6 file Nest-free sẵn có) |
-| M7 | Calendar command | Messenger tự tiến hoá 291 dòng trong khi `PlatformStudyCalendarCommandService` đã có, signature khớp | adopt qua `USER_CALENDAR_DATA_PORT` |
+| M7 | Calendar command | Messenger tự tiến hoá 291 dòng trong khi `PlatformStudyCalendarCommandService` đã có, signature khớp | ~~adopt qua local calendar port~~ **Đã xong #743** — shared command + Messenger facade |
 | M8 | Env dialects | `CHAT_QUEUE_STORE` parse 3×, `CHAT_DEBOUNCE_MS` clamp copy, stuck-ms default dup, `readPositiveInt`/`readEnvBoolean` copies | `ChatRuntimeConfig` |
 | M9 | Ops controllers | Discord↔Zalo 57/89 dòng chung | shared factory (ưu tiên thấp) |
 | M10 | Durable-inbox port | Zalo đã bind `WebhookInboundIngressPort`; Messenger vẫn giữ bản port local tương đương | `WebhookInboundInboxPort` mở rộng port sẵn có |
@@ -267,7 +267,10 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
    cho 5 cron trong database package (fix unlocked recovery cron by construction).
 8. **Keep Vault delivery single-path**: production receives only the validated AppRole bootstrap;
    runtime secret sync adapters and developer CLI helpers are retired.
-9. **Adopt `PlatformStudyCalendarCommandService` trong Messenger** (M7) — signature khớp sẵn.
+9. ~~**Adopt `PlatformStudyCalendarCommandService` trong Messenger** (M7) — signature khớp sẵn.~~
+   **Đã xong #743 (2026-09-15)** — common listing/reschedule orchestration now runs through the shared
+   command; the Messenger adapter retains psid mapping, unscoped-read fallback, configured scheduling
+   policy, and post-mutation reminder sync.
 
 ---
 

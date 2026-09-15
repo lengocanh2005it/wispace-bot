@@ -64,6 +64,74 @@ describe('PlatformStudyCalendarCommandService', () => {
     expect(entries[0].scheduledTimeLabel).toBeTruthy();
   });
 
+  it('forwards user scope and past-day bounds and filters foreign records', async () => {
+    const calendarService = buildCalendarService({
+      listCalendars: jest.fn().mockResolvedValue([
+        { id: 11, userId: 3, eventDate: '2026-08-10', time: '09:00' },
+        { id: 12, userId: 99, eventDate: '2026-08-11', time: '09:00' },
+      ]),
+      getCalendarSessions: jest.fn().mockResolvedValue([
+        {
+          sessionKey: 'calendar:11',
+          scheduledAt: new Date('2026-08-10T02:00:00Z'),
+          topic: 'Writing Task 1',
+        },
+        {
+          sessionKey: 'calendar:12',
+          scheduledAt: new Date('2026-08-11T02:00:00Z'),
+          topic: 'Writing Task 2',
+        },
+      ]),
+    });
+    const service = new PlatformStudyCalendarCommandService(
+      { platform: 'messenger', enforceLeadTime: true },
+      calendarService,
+      buildConfigService(),
+    );
+
+    const { entries } = await service.listEntries('u1', {
+      timeRange: 'past',
+      userId: 3,
+      pastDays: 30,
+      limit: 10,
+    });
+
+    expect(calendarService.getCalendarSessions).toHaveBeenCalledWith('u1', {
+      timeRange: 'past',
+      userId: 3,
+      pastDays: 30,
+      limit: 10,
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.calendarId).toBe(11);
+  });
+
+  it('uses the IELTS Writing default when a session topic is empty', async () => {
+    const calendarService = buildCalendarService({
+      listCalendars: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 11, eventDate: '2026-08-10', time: '09:00' },
+        ]),
+      getCalendarSessions: jest.fn().mockResolvedValue([
+        {
+          sessionKey: 'calendar:11',
+          scheduledAt: new Date('2026-08-10T02:00:00Z'),
+          topic: '',
+        },
+      ]),
+    });
+    const service = new PlatformStudyCalendarCommandService(
+      { platform: 'messenger' },
+      calendarService,
+      buildConfigService(),
+    );
+
+    const { entries } = await service.listEntries('u1');
+
+    expect(entries[0]?.topic).toBe('IELTS Writing');
+  });
+
   it('rescheduleSession fetches the calendar list exactly once (#455)', async () => {
     const listCalendars = jest
       .fn()

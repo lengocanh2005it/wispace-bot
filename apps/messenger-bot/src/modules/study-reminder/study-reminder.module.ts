@@ -17,6 +17,7 @@ import {
   createStudyReminderProviders,
   createSessionSourceGetSessions,
   GET_SESSIONS,
+  PlatformStudyCalendarCommandService,
   type MappingReaderPort,
   type MessageSenderPort,
   type DispatchHooksPort,
@@ -31,7 +32,10 @@ import { MessengerOutboundModule } from '../messenger/messenger-outbound.module'
 import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
+import {
+  MemoizedWispaceGoalsService,
+  WispaceCalendarService,
+} from '@wispace/wispace-client';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
@@ -42,14 +46,12 @@ import {
 } from '@wispace/database';
 import type { LlmUsageRecorderPort } from '@wispace/llm-agent';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
-import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
+import { StudyCalendarCommandService } from './infrastructure/adapters/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
-import type { UserCalendarDataPort } from './domain/ports/user-calendar-data.port';
 import type { ReminderStudentDataPort } from './domain/ports/reminder-student-data.port';
-import { USER_CALENDAR_DATA_PORT } from './domain/ports/user-calendar-data.port';
 import { REMINDER_STUDENT_DATA_PORT } from './domain/ports/reminder-student-data.port';
 import { classifyMessengerDispatchFailure } from '../messenger/application/utils/messenger-study-reminder-failure.utils';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
@@ -179,31 +181,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     UserCalendarApiService,
     UserCalendarScheduleService,
     {
-      provide: USER_CALENDAR_DATA_PORT,
-      useFactory: (
-        calendarApi: UserCalendarApiService,
-        calendarSchedule: UserCalendarScheduleService,
-      ): UserCalendarDataPort => ({
-        listCalendars: (psid, options) =>
-          options
-            ? calendarApi.listCalendars(psid, options)
-            : calendarApi.listCalendars(psid),
-        createCalendar: (psid, input, options) =>
-          calendarApi.createCalendar(psid, input, options),
-        deleteCalendar: (psid, calendarId, options) =>
-          options
-            ? calendarApi.deleteCalendar(psid, calendarId, options)
-            : calendarApi.deleteCalendar(psid, calendarId),
-        getCalendarSessions: (psid, horizonEnd, options) =>
-          calendarSchedule.getCalendarSessions(psid, horizonEnd, options),
-        findCalendarRecord: (psid, calendarId, options) =>
-          options
-            ? calendarSchedule.findCalendarRecord(psid, calendarId, options)
-            : calendarSchedule.findCalendarRecord(psid, calendarId),
-      }),
-      inject: [UserCalendarApiService, UserCalendarScheduleService],
-    },
-    {
       provide: REMINDER_STUDENT_DATA_PORT,
       useFactory: (
         memoizedGoals: MemoizedWispaceGoalsService,
@@ -213,6 +190,23 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         getCapacityData: (psid) => taskScoreAverageApi.getCapacityData(psid),
       }),
       inject: [MemoizedWispaceGoalsService, TaskScoreAverageApiService],
+    },
+    {
+      provide: PlatformStudyCalendarCommandService,
+      useFactory: (
+        calendarService: WispaceCalendarService,
+        scheduleService: StudyReminderScheduleService,
+      ) =>
+        new PlatformStudyCalendarCommandService(
+          { platform: 'messenger', enforceLeadTime: true },
+          calendarService,
+          {
+            getTimezone: () => scheduleService.getOutboxSettings().timezone,
+            getMinLeadMinutes: () =>
+              scheduleService.getOutboxSettings().minLeadMinutes,
+          },
+        ),
+      inject: [WispaceCalendarService, StudyReminderScheduleService],
     },
     StudyCalendarCommandService,
     StudySessionSourceService,
