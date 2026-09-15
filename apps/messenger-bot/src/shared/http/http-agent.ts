@@ -1,8 +1,9 @@
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 const KEEP_ALIVE_TIMEOUT_MS = 30_000;
 const KEEP_ALIVE_MAX_TIMEOUT_MS = 60_000;
 const CONNECTIONS_PER_HOST = 6;
+const nativeFetch = globalThis.fetch;
 
 const agents = new Map<string, Agent>();
 
@@ -47,5 +48,9 @@ export async function keepAliveFetch(
     dispatcher: getKeepAliveAgent(url),
   };
 
-  return fetch(url, opts);
+  const fetchImplementation =
+    globalThis.fetch === nativeFetch
+      ? (undiciFetch as unknown as typeof globalThis.fetch)
+      : globalThis.fetch;
+  return fetchImplementation(url, opts);
 }

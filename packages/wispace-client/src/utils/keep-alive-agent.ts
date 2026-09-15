@@ -1,9 +1,10 @@
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 /** Default connections per host — mirrors the Messenger reference. */
 export const DEFAULT_KEEP_ALIVE_POOL_SIZE = 6;
 const KEEP_ALIVE_TIMEOUT_MS = 30_000;
 const KEEP_ALIVE_MAX_TIMEOUT_MS = 60_000;
+const nativeFetch = globalThis.fetch;
 
 export interface KeepAliveLogger {
   log(message: string): void;
@@ -71,7 +72,11 @@ export function keepAliveFetch(
     ...init,
     dispatcher: getKeepAliveAgent(url, options?.poolSize, options?.logger),
   } as RequestInit & { dispatcher: Agent };
-  return fetch(url, opts);
+  const fetchImplementation =
+    globalThis.fetch === nativeFetch
+      ? (undiciFetch as unknown as typeof globalThis.fetch)
+      : globalThis.fetch;
+  return fetchImplementation(url, opts);
 }
 
 /**
