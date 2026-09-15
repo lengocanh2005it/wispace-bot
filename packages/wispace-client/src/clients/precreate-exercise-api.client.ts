@@ -1,11 +1,11 @@
 import { z } from 'zod';
+import { readHttpsUrl } from '@wispace/bot-common/utils';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
-import { readHttpsUrl } from '../utils/https-url';
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
 import { validateShape } from '../utils/validate-shape';

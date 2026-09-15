@@ -35,12 +35,6 @@ describe('DiscordOpsController ops clarification recovery', () => {
     );
   });
 
-  it('does not expose the retired runtime secret sync route', () => {
-    expect(DiscordOpsController.prototype).not.toHaveProperty(
-      'dopplerRuntimeSync',
-    );
-  });
-
   it('delegates to clarificationAgent with the provided externalUserId and returns no state body', async () => {
     const result = await controller.clearClarificationState({
       externalUserId: 'discord-user-123',

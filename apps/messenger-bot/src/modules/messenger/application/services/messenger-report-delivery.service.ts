@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { buildStudentReportApiRetryMessage } from '@wispace/student-report/core';
 import { StudentReportService } from '@messenger/modules/student-report/application/services/student-report.service';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
-import { buildStudentReportApiRetryMessage } from '@messenger/modules/student-report/application/messages/student-report.messages';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import {
   isProactiveMessenger24hError,

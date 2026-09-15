@@ -5,12 +5,12 @@ import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
 import { RedactedLogger } from '@wispace/bot-common/logging';
+import { loadVaultSecrets } from '@wispace/bot-common/secrets';
 import {
   collectRuntimeSecretValues,
   registerRuntimeSecrets,
 } from '@wispace/llm-agent';
 import { AppModule } from './app.module';
-import { loadVaultSecrets } from './shared/config/vault-secrets';
 
 const logger = new Logger('Bootstrap');
 // Must cover the longest in-flight work (LLM tool execution can take 35s)
@@ -33,7 +33,7 @@ process.on('uncaughtException', (error) => {
 });
 
 async function bootstrap() {
-  await loadVaultSecrets();
+  await loadVaultSecrets({ application: 'zalo' });
 
   // No-secrets-in-model-context invariant (#632): register the process's
   // known secret values so every model-context boundary can redact them.

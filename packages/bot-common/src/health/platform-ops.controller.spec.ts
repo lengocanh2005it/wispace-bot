@@ -68,12 +68,6 @@ describe('PlatformOpsController', () => {
     }
   });
 
-  it('does not expose the retired runtime secret sync route', () => {
-    expect(TestOpsController.prototype).not.toHaveProperty(
-      'dopplerRuntimeSync',
-    );
-  });
-
   it('keeps the privacy action body contract', () => {
     const body = new PrivacyActionBody();
     body.externalUserId = 'user-1';

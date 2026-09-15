@@ -132,8 +132,9 @@ Before a production deploy, verify that each AppRole can read the shared path
 and its own path, and inspect only path/key metadata—not values—in the operator
 terminal or CI logs. The loader contract is covered by table-driven tests for
 canonical paths, merge/collision behavior, malformed responses, timeouts,
-redaction, limits, atomic injection, and restart rotation. Each bot also has a
-bootstrap-adapter smoke test.
+redaction, limits, atomic injection, and restart rotation. Each bot bootstrap
+passes its fixed application identity directly; no forwarding adapter module is
+maintained.
 
 Before a deploy, verify AppRole policy access to the shared and per-bot paths
 without printing values. The runtime contract and this delivery flow are
