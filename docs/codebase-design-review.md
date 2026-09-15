@@ -115,6 +115,9 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
    mapping bị duplicate 2 nơi (một timezone-aware, một UTC) vì seam chưa được kéo về package.
 3. **`getLlmSafetyWarningsCount(since)` vi phạm port của chính nó**: implement parameterless, hardcode 24h
    → knob `OPS_ALERT_FAILED_JOBS_HOURS` thành dead code (ops-health path không ai dùng).
+   > **Đã xử lý.** Verify 2026-09-15 khi sweep audit: `getLlmSafetyWarningsCount(failedSince)` nhận tham
+   > số, knob được wire (`ops-health.service.ts` đọc `OPS_ALERT_FAILED_JOBS_HOURS` → `addHours(now, -failedHours)` →
+   > truyền `failedSince` vào repo call), spec phủ nhánh passed-since. Mục này giữ lại chỉ như lịch sử finding.
 4. **Double-reserve quota (latent)**: processor pre-reserve + pipeline tự reserve khi có `idempotencyKey`;
    reserve thứ 2 hit `idempotency_conflict` → `'in_flight'` → `allowed:false` → `flush` false **trước cả
    agent/send**. Mock stateless trong spec khiến không test nào thấy. Cần một interface term cho
