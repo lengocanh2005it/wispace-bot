@@ -3,6 +3,7 @@ import {
   AGENT_TOOLS,
   isAgentToolName,
   parseAndValidateToolArguments,
+  type AgentToolName,
 } from './agent.tools';
 import {
   detectPromptInjection,
@@ -242,9 +243,9 @@ export class LlmAgentService<TToolContext> {
     }
     const messages = context.messages;
 
-    const toolsCalledThisTurn = new Set<string>();
-    const groundedToolsThisTurn = new Set<string>();
-    const toolRunsPerName = new Map<string, number>();
+    const toolsCalledThisTurn = new Set<AgentToolName>();
+    const groundedToolsThisTurn = new Set<AgentToolName>();
+    const toolRunsPerName = new Map<AgentToolName, number>();
     let toolExecutionsThisTurn = 0;
     const maxToolRounds = this.limits.maxToolRounds;
     const maxToolExecutionsPerTurn = this.limits.maxToolExecutionsPerTurn;

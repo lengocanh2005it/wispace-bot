@@ -1,4 +1,4 @@
-import type { WriteToolBudgetPort } from './write-tool-budget';
+import type { WriteToolBudgetPort, WriteToolName } from './write-tool-budget';
 import type {
   RescheduleCancellationOutcome,
   StageInput,
@@ -9,6 +9,7 @@ import type {
   AgentMetricsPort,
   ContentClassifierPort,
   LlmExecutionPort,
+  AgentToolName,
 } from '@wispace/llm-agent';
 import type { PinnedFact } from './pinned-facts';
 import type { WispaceCacheInvalidationPort } from './wispace-capability.ports';
@@ -55,10 +56,10 @@ export interface PlatformAgentToolContext {
   linkContext?: unknown;
   /** In-memory per-turn count of write-tool executions, keyed by tool name.
    *  Enforces the per-message cap (#626); never persisted. */
-  writeToolCalls?: Map<string, number>;
+  writeToolCalls?: Map<WriteToolName, number>;
   /** Tools whose daily budget unit was consumed this turn — refunded if the
    *  mutation did not ultimately succeed (#626). */
-  writeToolDailyConsumed?: Set<string>;
+  writeToolDailyConsumed?: Set<WriteToolName>;
 }
 
 export interface PlatformAgentReply {
@@ -243,7 +244,7 @@ export interface PlatformAgentToolsOptions {
   /** Per-user write-tool budget (#626). Absent = enforcement disabled. */
   writeToolBudget?: WriteToolBudgetPort;
   /** tool name → per-message cap (#626). */
-  writeToolPerMessageCaps?: Record<string, number>;
+  writeToolPerMessageCaps?: Partial<Record<AgentToolName, number>>;
   /** Bounded denial metric (#626); no ids. reason is always 'per_message' at
    *  this call site — daily denials are emitted inside WriteToolBudgetCore. */
   writeToolBudgetDeniedInc?: (toolName: string, reason: 'per_message') => void;

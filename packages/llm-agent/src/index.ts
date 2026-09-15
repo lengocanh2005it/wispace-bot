@@ -92,10 +92,15 @@ export {
   parseAndValidateToolArguments,
   canonicalizeToolArguments,
   validateAgentToolRegistry,
+  deriveAgentToolMap,
+  getAgentToolNamesByGroundingClaim,
 } from './agent.tools';
 export type {
   AgentToolName,
+  AgentToolMap,
+  AgentToolNameByBudget,
   AgentToolCapability,
+  AgentToolMetadata,
   AgentToolDefinition,
   GetUpcomingStudySessionsArgs,
   ListStudyCalendarEntriesArgs,
@@ -105,6 +110,8 @@ export type {
   ToolAuthorizationRequirement,
   ToolConfirmationRequirement,
   ToolIdempotencyStrategy,
+  AgentToolGroundingClaim,
+  AgentToolBudgetClassification,
   ToolArgumentValidationResult,
 } from './agent.tools';
 

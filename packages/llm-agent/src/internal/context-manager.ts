@@ -34,10 +34,14 @@ export interface LoopTrimResult {
   droppedToolNames: string[];
 }
 
+const CONTEXT_TOOL_DEFINITIONS = AGENT_TOOLS.map(
+  ({ metadata: _metadata, ...tool }) => tool,
+);
+
 export function estimateContextTokens(messages: LlmMessage[]): number {
   return (
     estimateTokens(JSON.stringify(messages)) +
-    estimateTokens(JSON.stringify(AGENT_TOOLS))
+    estimateTokens(JSON.stringify(CONTEXT_TOOL_DEFINITIONS))
   );
 }
 

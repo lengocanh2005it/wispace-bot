@@ -1,3 +1,9 @@
+import {
+  deriveAgentToolMap,
+  isAgentToolName,
+  type AgentToolMap,
+} from './agent.tools';
+
 export const CHAT_FAILURE_FALLBACK_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
 
@@ -89,16 +95,9 @@ export function buildFinalOutputBlockedMessage(): string {
  * Learner-friendly labels for tools that returned data — used by the
  * exhaustion partial answer. Server-controlled, never raw tool names.
  */
-const TOOL_LABELS: Record<string, string> = {
-  get_learning_progress_report: 'báo cáo tiến độ',
-  get_user_goals: 'mục tiêu band và ngày thi',
-  get_upcoming_study_sessions: 'lịch học sắp tới',
-  list_study_calendar_entries: 'lịch học',
-  reschedule_study_session: 'thông tin đổi lịch',
-  preview_next_study_reminder: 'tin nhắn nhắc buổi học',
-  register_exam_report_notifications: 'đăng ký nhận báo cáo',
-  precreate_next_exercise: 'thông tin bài tập mới',
-};
+const TOOL_LABELS: AgentToolMap<string> = deriveAgentToolMap(
+  (tool) => tool.metadata.learnerLabel,
+);
 
 const UNKNOWN_TOOL_LABEL = 'dữ liệu liên quan';
 
@@ -111,8 +110,8 @@ const UNKNOWN_TOOL_LABEL = 'dữ liệu liên quan';
 export function buildExhaustionPartialAnswer(
   groundedToolNames: string[],
 ): string {
-  const labels = [...new Set(groundedToolNames)].map(
-    (name) => TOOL_LABELS[name] ?? UNKNOWN_TOOL_LABEL,
+  const labels = [...new Set(groundedToolNames)].map((name) =>
+    isAgentToolName(name) ? TOOL_LABELS[name] : UNKNOWN_TOOL_LABEL,
   );
   if (labels.length === 0) {
     return 'Mình chưa tổng hợp xong câu trả lời. Bạn thử lại hoặc hỏi rõ hơn nhé.';
@@ -127,13 +126,15 @@ export function buildExhaustionPartialAnswer(
  * Learner-facing action labels for the mutating tools — used by the
  * per-user write-tool budget denial copy (#626). Server-controlled.
  */
-const WRITE_TOOL_ACTION_LABELS: Record<string, string> = {
-  reschedule_study_session: 'đổi lịch học',
-  precreate_next_exercise: 'tạo bài tập mới',
-};
+const WRITE_TOOL_ACTION_LABELS: AgentToolMap<string | undefined> =
+  deriveAgentToolMap((tool) =>
+    tool.metadata.budget === 'write' ? tool.metadata.writeAction : undefined,
+  );
 
 function writeToolAction(toolName: string): string {
-  return WRITE_TOOL_ACTION_LABELS[toolName] ?? 'thao tác này';
+  return isAgentToolName(toolName)
+    ? (WRITE_TOOL_ACTION_LABELS[toolName] ?? 'thao tác này')
+    : 'thao tác này';
 }
 
 /**

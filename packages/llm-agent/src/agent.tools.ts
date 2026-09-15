@@ -29,40 +29,36 @@ export interface AgentToolCapability {
   providerGuaranteeRequired: boolean;
 }
 
+export type AgentToolGroundingClaim =
+  | 'goals'
+  | 'progress'
+  | 'schedule'
+  | 'exercise';
+export type AgentToolBudgetClassification = 'none' | 'write' | 'exempt';
+
+interface AgentToolMetadataBase {
+  observationFields: readonly string[];
+  learnerLabel: string;
+  groundingClaims: readonly AgentToolGroundingClaim[];
+}
+
+export type AgentToolMetadata =
+  | (AgentToolMetadataBase & {
+      budget: 'write';
+      writeAction: string;
+    })
+  | (AgentToolMetadataBase & {
+      budget: 'none' | 'exempt';
+      writeAction?: string;
+    });
+
 /** The one tool schema (ADR 0010): provider JSON Schema, arg types, and runtime validation all derive from it. */
 export type AgentToolArgsSchema = z.ZodObject<z.ZodRawShape>;
 
 export interface AgentToolDefinition extends LlmToolDefinition {
   capability: AgentToolCapability;
+  metadata: AgentToolMetadata;
   args: AgentToolArgsSchema;
-}
-
-export const AGENT_TOOL_NAMES = [
-  'get_learning_progress_report',
-  'get_user_goals',
-  'get_upcoming_study_sessions',
-  'list_study_calendar_entries',
-  'reschedule_study_session',
-  'preview_next_study_reminder',
-  'register_exam_report_notifications',
-  'precreate_next_exercise',
-] as const;
-
-export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
-
-export const SCORE_TOOLS: ReadonlySet<AgentToolName> = new Set([
-  'get_user_goals',
-  'get_learning_progress_report',
-]);
-
-export const SCHEDULE_TOOLS: ReadonlySet<AgentToolName> = new Set([
-  'list_study_calendar_entries',
-  'get_upcoming_study_sessions',
-  'preview_next_study_reminder',
-]);
-
-export function isAgentToolName(name: string): name is AgentToolName {
-  return (AGENT_TOOL_NAMES as readonly string[]).includes(name);
 }
 
 const READ_ONLY_CAPABILITY: AgentToolCapability = {
@@ -169,24 +165,48 @@ export type RescheduleStudySessionArgs = z.infer<
   typeof rescheduleStudySessionArgs
 >;
 
+export const COMMON_TOOL_OBSERVATION_FIELDS = [
+  'available',
+  'blocked',
+  'error',
+  'message',
+  'reason',
+] as const;
+
 function toProviderSchema(args: AgentToolArgsSchema): Record<string, unknown> {
   const { $schema: _schema, ...parameters } = z.toJSONSchema(args);
   return parameters as Record<string, unknown>;
 }
 
-const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
+const agentToolSpecs = [
   {
     name: 'get_learning_progress_report',
     description:
       'Lấy báo cáo tiến độ học IELTS Writing đầy đủ: điểm task 1/2, mục tiêu, số bài đã làm, gợi ý cải thiện.',
     args: noArgs,
     capability: READ_ONLY_CAPABILITY,
+    metadata: {
+      observationFields: ['report', ...COMMON_TOOL_OBSERVATION_FIELDS],
+      learnerLabel: 'báo cáo tiến độ',
+      groundingClaims: ['goals', 'progress'],
+      budget: 'none',
+    },
   },
   {
     name: 'get_user_goals',
     description: 'Lấy mục tiêu band và ngày thi IELTS của học viên từ WISPACE.',
     args: noArgs,
     capability: READ_ONLY_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'targetScore',
+        'examDate',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'mục tiêu band và ngày thi',
+      groundingClaims: ['goals'],
+      budget: 'none',
+    },
   },
   {
     name: 'get_upcoming_study_sessions',
@@ -194,6 +214,17 @@ const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
       'Danh sách buổi học IELTS Writing sắp tới từ lịch UserCalendar của học viên. Dùng để hiển thị lịch. Nếu cần calendarId để đổi lịch, dùng list_study_calendar_entries thay thế.',
     args: getUpcomingStudySessionsArgs,
     capability: READ_ONLY_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'count',
+        'sessions',
+        'reminderNotice',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'lịch học sắp tới',
+      groundingClaims: ['schedule'],
+      budget: 'none',
+    },
   },
   {
     name: 'list_study_calendar_entries',
@@ -201,6 +232,18 @@ const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
       'Liệt kê lịch học UserCalendar (calendarId, scheduledTimeLabel). timeRange=upcoming (mặc định) cho lịch sắp tới và đổi lịch; past cho lịch đã qua; all cho cả hai. Học viên hỏi lịch đã qua/history → timeRange=past hoặc all (mặc định lấy trong 90 ngày gần). Không từ chối khi học viên hỏi lịch quá khứ — dữ liệu lấy từ UserCalendar. Dùng tool này (không dùng get_upcoming_study_sessions) khi đổi lịch.',
     args: listStudyCalendarEntriesArgs,
     capability: READ_ONLY_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'timeRange',
+        'count',
+        'entries',
+        'reminderNotice',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'lịch học',
+      groundingClaims: ['schedule'],
+      budget: 'none',
+    },
   },
   {
     name: 'reschedule_study_session',
@@ -208,6 +251,19 @@ const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
       'Luôn gọi list_study_calendar_entries trước để lấy calendarId. Tool KHÔNG đổi lịch ngay — chỉ gửi yêu cầu xác nhận bằng nút trên Messenger/Discord hoặc mã token trên Zalo; lịch chỉ thay đổi sau khi học viên xác nhận đúng cách. Không coi các câu đồng ý chung như "ok", "yes", "confirm", "đồng ý" là phê duyệt và không gọi lại tool để xác nhận. Sau khi gọi: báo ngắn gọn đã gửi yêu cầu xác nhận; KHÔNG nói «đã dời» cho tới khi học viên xác nhận (kết quả không về trong cùng lượt tool). Chỉ đúng 1 buổi học và học viên muốn dời mà không nêu ngày/giờ mới → schedulingMode=default_next_day_same_time (cùng giờ, +1 ngày so với buổi đang dời; buổi ngày mai → ngày kia). Nhiều buổi học → hỏi buổi nào (vd "buổi ngày mai", "buổi 15/6") dựa trên scheduledTimeLabel trong danh sách. Học viên không nêu ngày/giờ mới rõ ràng → default_next_day_same_time; nêu rõ ngày/giờ → explicit kèm newLocalDate (YYYY-MM-DD) và/hoặc newTime (HH:mm).',
     args: rescheduleStudySessionArgs,
     capability: RESCHEDULE_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'pendingConfirmation',
+        'rescheduled',
+        'sessionLabel',
+        'summary',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'thông tin đổi lịch',
+      groundingClaims: [],
+      budget: 'write',
+      writeAction: 'đổi lịch học',
+    },
   },
   {
     name: 'preview_next_study_reminder',
@@ -215,6 +271,19 @@ const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
       'Chỉ dùng khi học viên TỰ yêu cầu xem trước nội dung tin nhắn nhắc buổi học. Không gọi sau khi xem lịch học; không gọi để xem trước tin nhắn nhắc tự động (reminderNotice) khi tool lịch trả về — lúc đó chỉ nhắc lại đúng nội dung reminderNotice.',
     args: noArgs,
     capability: READ_ONLY_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'hasSession',
+        'scheduledTimeLabel',
+        'reminder',
+        'message',
+        'session',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'tin nhắn nhắc buổi học',
+      groundingClaims: ['schedule'],
+      budget: 'none',
+    },
   },
   {
     name: 'register_exam_report_notifications',
@@ -222,6 +291,18 @@ const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
       'Chỉ gọi khi học viên yêu cầu rõ ràng đăng ký nhận báo cáo AI tự động, ví dụ "đăng ký nhận báo cáo" hoặc "muốn nhận báo cáo tự động". Không gọi khi học viên chỉ muốn xem báo cáo, nói báo cáo cho mình, nói đăng ký chung hoặc nhận thông tin.',
     args: noArgs,
     capability: EXPLICIT_INTENT_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'registered',
+        'alreadyActive',
+        'automatic',
+        'blocked',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'đăng ký nhận báo cáo',
+      groundingClaims: [],
+      budget: 'exempt',
+    },
   },
   {
     name: 'precreate_next_exercise',
@@ -229,8 +310,68 @@ const agentToolSpecs: Omit<AgentToolDefinition, 'parameters'>[] = [
       'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap (vd "tạo bài tập cho mình", "cho mình bài tập mới"). Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn hay id tài nguyên — endpoint tự lấy bài tiếp theo theo identity đã liên kết.',
     args: noArgs,
     capability: EXPLICIT_INTENT_CAPABILITY,
+    metadata: {
+      observationFields: [
+        'exerciseUrl',
+        'url',
+        'status',
+        'created',
+        'existing',
+        'messageHint',
+        ...COMMON_TOOL_OBSERVATION_FIELDS,
+      ],
+      learnerLabel: 'thông tin bài tập mới',
+      groundingClaims: ['exercise'],
+      budget: 'write',
+      writeAction: 'tạo bài tập mới',
+    },
   },
-];
+] as const satisfies readonly Omit<AgentToolDefinition, 'parameters'>[];
+
+type AgentToolSpec = (typeof agentToolSpecs)[number];
+export type AgentToolName = AgentToolSpec['name'];
+export type AgentToolMap<Value> = Record<AgentToolName, Value>;
+type SelectAgentToolName<
+  Spec extends {
+    name: string;
+    metadata: { budget: AgentToolBudgetClassification };
+  },
+  Budget extends AgentToolBudgetClassification,
+> = Spec extends { metadata: { budget: Budget } } ? Spec['name'] : never;
+export type AgentToolNameByBudget<
+  Budget extends AgentToolBudgetClassification,
+> = SelectAgentToolName<AgentToolSpec, Budget>;
+
+export const AGENT_TOOL_NAMES: readonly AgentToolName[] = agentToolSpecs.map(
+  ({ name }) => name,
+);
+
+export function isAgentToolName(name: string): name is AgentToolName {
+  return (AGENT_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+function hasGroundingClaim(
+  name: AgentToolName,
+  claim: AgentToolGroundingClaim,
+): boolean {
+  const spec = agentToolSpecs.find((candidate) => candidate.name === name);
+  return (
+    spec?.metadata.groundingClaims.some((candidate) => candidate === claim) ??
+    false
+  );
+}
+
+export function getAgentToolNamesByGroundingClaim(
+  claim: AgentToolGroundingClaim,
+): ReadonlySet<AgentToolName> {
+  return new Set(
+    AGENT_TOOL_NAMES.filter((name) => hasGroundingClaim(name, claim)),
+  );
+}
+
+export const SCORE_TOOLS = getAgentToolNamesByGroundingClaim('goals');
+
+export const SCHEDULE_TOOLS = getAgentToolNamesByGroundingClaim('schedule');
 
 export const AGENT_TOOLS: AgentToolDefinition[] = agentToolSpecs
   .map((spec) => ({ ...spec, parameters: toProviderSchema(spec.args) }))
@@ -259,6 +400,17 @@ const IDEMPOTENCY = new Set<ToolIdempotencyStrategy>([
   'provider_key',
   'confirmation_nonce',
 ]);
+const GROUNDING_CLAIMS = new Set<AgentToolGroundingClaim>([
+  'goals',
+  'progress',
+  'schedule',
+  'exercise',
+]);
+const BUDGET_CLASSIFICATIONS = new Set<AgentToolBudgetClassification>([
+  'none',
+  'write',
+  'exempt',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -279,6 +431,52 @@ export function validateAgentToolRegistry(
     names.add(tool.name);
     if (!isRecord(tool.capability)) {
       throw new Error(`Missing capability metadata for tool: ${tool.name}`);
+    }
+    if (!isRecord(tool.metadata)) {
+      throw new Error(`Missing tool metadata for tool: ${tool.name}`);
+    }
+    if (
+      !Array.isArray(tool.metadata.observationFields) ||
+      tool.metadata.observationFields.some((field) => typeof field !== 'string')
+    ) {
+      throw new Error(`Invalid observation metadata for tool: ${tool.name}`);
+    }
+    if (
+      typeof tool.metadata.learnerLabel !== 'string' ||
+      !tool.metadata.learnerLabel.trim()
+    ) {
+      throw new Error(`Invalid learner label metadata for tool: ${tool.name}`);
+    }
+    if (
+      !Array.isArray(tool.metadata.groundingClaims) ||
+      tool.metadata.groundingClaims.some(
+        (claim) =>
+          typeof claim !== 'string' ||
+          !GROUNDING_CLAIMS.has(claim as AgentToolGroundingClaim),
+      )
+    ) {
+      throw new Error(`Invalid grounding metadata for tool: ${tool.name}`);
+    }
+    if (
+      !BUDGET_CLASSIFICATIONS.has(
+        tool.metadata.budget as AgentToolBudgetClassification,
+      )
+    ) {
+      throw new Error(`Invalid budget metadata for tool: ${tool.name}`);
+    }
+    if (
+      tool.metadata.budget === 'write' &&
+      (typeof tool.metadata.writeAction !== 'string' ||
+        !tool.metadata.writeAction.trim())
+    ) {
+      throw new Error(`Missing write action metadata for tool: ${tool.name}`);
+    }
+    if (
+      tool.metadata.writeAction !== undefined &&
+      (typeof tool.metadata.writeAction !== 'string' ||
+        !tool.metadata.writeAction.trim())
+    ) {
+      throw new Error(`Invalid write action metadata for tool: ${tool.name}`);
     }
     if (!EFFECTS.has(tool.capability.effect)) {
       throw new Error(`Invalid effect metadata for tool: ${tool.name}`);
@@ -333,6 +531,20 @@ export function getAgentToolDefinition(
   name: string,
 ): AgentToolDefinition | undefined {
   return AGENT_TOOLS.find((tool) => tool.name === name);
+}
+
+export function deriveAgentToolMap<Value>(
+  select: (tool: AgentToolDefinition) => Value,
+): AgentToolMap<Value> {
+  const result = {} as AgentToolMap<Value>;
+  for (const name of AGENT_TOOL_NAMES) {
+    const tool = getAgentToolDefinition(name);
+    if (!tool) {
+      throw new Error(`Missing agent tool definition: ${name}`);
+    }
+    result[name] = select(tool);
+  }
+  return result;
 }
 
 export type ToolArgumentValidationResult =

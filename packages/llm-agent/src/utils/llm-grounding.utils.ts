@@ -1,4 +1,8 @@
-import { SCORE_TOOLS, SCHEDULE_TOOLS } from '../agent.tools';
+import {
+  getAgentToolNamesByGroundingClaim,
+  SCORE_TOOLS,
+  SCHEDULE_TOOLS,
+} from '../agent.tools';
 
 export interface LlmGroundingResult {
   suspicious: boolean;
@@ -62,18 +66,9 @@ const ROADMAP_STATE_RE = new RegExp(
   'i',
 );
 
-const GOALS_TOOLS: ReadonlySet<string> = new Set([
-  'get_user_goals',
-  'get_learning_progress_report',
-]);
-
-const PROGRESS_TOOLS: ReadonlySet<string> = new Set([
-  'get_learning_progress_report',
-]);
-
-const EXERCISE_TOOLS: ReadonlySet<string> = new Set([
-  'precreate_next_exercise',
-]);
+const GOALS_TOOLS = SCORE_TOOLS;
+const PROGRESS_TOOLS = getAgentToolNamesByGroundingClaim('progress');
+const EXERCISE_TOOLS = getAgentToolNamesByGroundingClaim('exercise');
 
 /**
  * Checks whether the LLM response contains specific personal data claims

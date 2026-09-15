@@ -137,7 +137,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     private readonly writeToolBudget?: WriteToolBudgetPort,
     @Optional()
     @Inject(MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS)
-    private readonly writeToolPerMessageCaps?: Record<string, number>,
+    private readonly writeToolPerMessageCaps?: Partial<
+      Record<AgentToolName, number>
+    >,
     @Optional()
     @Inject(MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC)
     private readonly writeToolBudgetDeniedInc?: (
@@ -287,8 +289,8 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         return precreateResult;
       }
       default: {
-        const unknownTool = toolName as string;
-        return { error: `Unhandled tool: ${unknownTool}` };
+        const exhaustiveToolName: never = toolName;
+        return { error: `Unhandled tool: ${exhaustiveToolName}` };
       }
     }
   }

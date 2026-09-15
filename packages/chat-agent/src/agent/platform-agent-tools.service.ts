@@ -338,8 +338,8 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         return precreateResult;
       }
       default: {
-        const unknownTool = toolName as string;
-        return { error: `Unhandled tool: ${unknownTool}` };
+        const exhaustiveToolName: never = toolName;
+        return { error: `Unhandled tool: ${exhaustiveToolName}` };
       }
     }
   }

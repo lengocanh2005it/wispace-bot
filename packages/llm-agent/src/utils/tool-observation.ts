@@ -2,6 +2,11 @@ import {
   isInjectionSanitizeReason,
   sanitizeToolResultContent,
 } from './prompt-injection.utils';
+import {
+  deriveAgentToolMap,
+  isAgentToolName,
+  type AgentToolMap,
+} from '../agent.tools';
 
 export type ToolObservationOutcome =
   | 'kept'
@@ -39,14 +44,6 @@ const MAX_DEPTH = 5;
 const MAX_KEYS = 32;
 const MAX_ITEMS = 20;
 
-const COMMON_ERROR_FIELDS = [
-  'available',
-  'blocked',
-  'error',
-  'message',
-  'reason',
-] as const;
-
 const SESSION_FIELDS = [
   'calendarId',
   'sessionKey',
@@ -56,54 +53,9 @@ const SESSION_FIELDS = [
   'reminderNotice',
 ] as const;
 
-const TOOL_FIELDS: Record<string, readonly string[]> = {
-  get_user_goals: ['targetScore', 'examDate', ...COMMON_ERROR_FIELDS],
-  get_learning_progress_report: ['report', ...COMMON_ERROR_FIELDS],
-  get_upcoming_study_sessions: [
-    'count',
-    'sessions',
-    'reminderNotice',
-    ...COMMON_ERROR_FIELDS,
-  ],
-  list_study_calendar_entries: [
-    'timeRange',
-    'count',
-    'entries',
-    'reminderNotice',
-    ...COMMON_ERROR_FIELDS,
-  ],
-  preview_next_study_reminder: [
-    'hasSession',
-    'scheduledTimeLabel',
-    'reminder',
-    'message',
-    'session',
-    ...COMMON_ERROR_FIELDS,
-  ],
-  reschedule_study_session: [
-    'pendingConfirmation',
-    'rescheduled',
-    'sessionLabel',
-    'summary',
-    ...COMMON_ERROR_FIELDS,
-  ],
-  register_exam_report_notifications: [
-    'registered',
-    'alreadyActive',
-    'automatic',
-    'blocked',
-    ...COMMON_ERROR_FIELDS,
-  ],
-  precreate_next_exercise: [
-    'exerciseUrl',
-    'url',
-    'status',
-    'created',
-    'existing',
-    'messageHint',
-    ...COMMON_ERROR_FIELDS,
-  ],
-};
+const TOOL_FIELDS: AgentToolMap<readonly string[]> = deriveAgentToolMap(
+  (tool) => tool.metadata.observationFields,
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -166,6 +118,7 @@ function projectKnownToolObservation(
   result: unknown,
 ): ProjectedToolObservation {
   if (!isRecord(result)) return { value: result, omittedCount: 0 };
+  if (!isAgentToolName(toolName)) return { value: result, omittedCount: 0 };
   const fields = TOOL_FIELDS[toolName];
   if (!fields) return { value: result, omittedCount: 0 };
 

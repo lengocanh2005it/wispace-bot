@@ -2,6 +2,7 @@ import {
   getAgentToolDefinition,
   isAgentToolName,
   parseAndValidateToolArguments,
+  type AgentToolName,
 } from '../agent.tools';
 import type { AgentMetricsPort, ToolExecutorPort } from '../ports';
 import {
@@ -68,7 +69,7 @@ export interface ToolRoundExecution {
   /** Number of executor calls actually started (deduplicated and policy-allowed). */
   executedCount: number;
   /** One entry per successful deduplicated execution, preserving tool-name multiplicity. */
-  successfulToolNames: string[];
+  successfulToolNames: AgentToolName[];
 }
 
 /** Executes one model tool round while preserving provider message pairing. */
@@ -263,14 +264,16 @@ export class ToolRoundExecutor<TToolContext> {
       string,
       ReturnType<typeof reduceToolObservation>
     >();
-    const successfulToolNames: string[] = [];
+    const successfulToolNames: AgentToolName[] = [];
     for (const call of uniqueCalls) {
       const result = resultsByKey.get(this.toolCallKey(call)) ?? {
         observation: this.missingObservation(call.name),
         succeeded: false,
       };
       fullByKey.set(this.toolCallKey(call), result.observation);
-      if (result.succeeded) successfulToolNames.push(call.name);
+      if (result.succeeded && isAgentToolName(call.name)) {
+        successfulToolNames.push(call.name);
+      }
       const injection = result.observation.injection;
       if (injection) {
         options.onInjection?.(

@@ -7,17 +7,27 @@
 import {
   buildWriteToolDailyBudgetMessage,
   buildWriteToolPerMessageBudgetMessage,
+  AGENT_TOOL_NAMES,
+  getAgentToolDefinition,
+  isAgentToolName,
+  type AgentToolName,
+  type AgentToolNameByBudget,
 } from '@wispace/llm-agent';
 
-export const WRITE_TOOL_NAMES = [
-  'reschedule_study_session',
-  'precreate_next_exercise',
-] as const;
+export type WriteToolName = AgentToolNameByBudget<'write'>;
 
-export type WriteToolName = (typeof WRITE_TOOL_NAMES)[number];
+export const WRITE_TOOL_NAMES: readonly WriteToolName[] =
+  AGENT_TOOL_NAMES.filter(
+    (name): name is WriteToolName =>
+      getAgentToolDefinition(name)?.metadata.budget === 'write',
+  );
 
 export function isWriteToolName(name: string): name is WriteToolName {
-  return (WRITE_TOOL_NAMES as readonly string[]).includes(name);
+  return (
+    name.length > 0 &&
+    isAgentToolName(name) &&
+    getAgentToolDefinition(name)?.metadata.budget === 'write'
+  );
 }
 
 /**
@@ -27,9 +37,11 @@ export function isWriteToolName(name: string): name is WriteToolName {
  * must be added to WRITE_TOOL_NAMES or here consciously — the guard test
  * fails otherwise.
  */
-export const BUDGET_EXEMPT_TOOLS: ReadonlySet<string> = new Set([
-  'register_exam_report_notifications',
-]);
+export const BUDGET_EXEMPT_TOOLS: ReadonlySet<AgentToolName> = new Set(
+  AGENT_TOOL_NAMES.filter(
+    (name) => getAgentToolDefinition(name)?.metadata.budget === 'exempt',
+  ),
+);
 
 export interface WriteToolBudgetPort {
   /** Read-only daily gate (reschedule stage). true = allowed. */
@@ -60,9 +72,9 @@ export interface WriteToolBudgetContext {
    *  time the gate runs; the gate no-ops when absent (#416 fail-closes first). */
   userId?: number;
   /** In-memory per-turn count of write-tool executions, keyed by tool name. */
-  writeToolCalls?: Map<string, number>;
+  writeToolCalls?: Map<WriteToolName, number>;
   /** Tools whose daily unit was consumed this turn — refunded on non-success. */
-  writeToolDailyConsumed?: Set<string>;
+  writeToolDailyConsumed?: Set<WriteToolName>;
 }
 
 export type BudgetExceededResult = {
@@ -73,7 +85,7 @@ export type BudgetExceededResult = {
 export interface WriteToolBudgetGateDeps {
   budget: WriteToolBudgetPort;
   /** tool name → per-message cap. Absent tool → no per-message limit. */
-  perMessageCaps?: Record<string, number>;
+  perMessageCaps?: Partial<Record<AgentToolName, number>>;
   /** Bounded denial metric; only ever called with reason `'per_message'` here
    *  — daily denials are emitted inside the budget engine. No ids. */
   deniedInc?: (toolName: string, reason: 'per_message') => void;

@@ -414,6 +414,18 @@ _Avoid_: iteration, loop count
 The single zod schema per agent tool (ADR-0010). The provider-facing JSON Schema, the argument type, and runtime argument validation all derive from it — never hand-written separately. Capability metadata (effect/identity/authorization/confirmation/idempotency) sits alongside it, not inside it.
 _Avoid_: tool definition JSON, hand-written schema, three representations
 
+**tool spec**:
+The platform-independent declaration of an agent tool: its name, description, tool schema, capability metadata, and derived-tool metadata. A tool spec describes what the tool is and how shared chat code classifies its result; it does not contain platform execution or dependency injection.
+_Avoid_: executable tool, platform handler, registry entry when referring to the declaration itself
+
+**external tool name**:
+A tool-name string returned by an LLM/provider before the runtime tool-name guard accepts it. It is untrusted input and must not be treated as an `AgentToolName` until validation succeeds.
+_Avoid_: `AgentToolName` for an unchecked string, tool identifier when the source is the provider
+
+**derived tool metadata**:
+Shared projections of tool-spec metadata used for observations, learner-facing labels, grounding claims, and write-budget classification. The projections are generated from the specs so a newly registered tool cannot silently omit one of these policies.
+_Avoid_: satellite map, manually maintained tool map
+
 **feature**:
 String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `'STUDY_REMINDER'`. Used for usage tracking and metrics.
 _Avoid_: use case, purpose
@@ -643,6 +655,10 @@ _Avoid_: standalone interface — a port is specifically a DI token pair
 **capability port**:
 A narrow interface describing one thing a bot can do, named for the capability rather than for the service behind it — `GoalsCapabilityPort`, `CalendarCapabilityPort`, `ExerciseCapabilityPort`. Shared code depends on these; each bot wires a thin adapter and bakes its own platform identity header there. This is what keeps shared packages from importing a concrete client.
 _Avoid_: data port, service interface
+
+**platform handler**:
+Application-owned execution or result-decoration logic for an agent tool on one platform. Shared tool specs and metadata may classify a tool, but platform handlers own platform ports, identity wiring, and delivery-specific behavior.
+_Avoid_: tool spec, shared executor when referring to platform-owned behavior
 
 **delivery failure classification**:
 Platform-owned interpretation of an outbound delivery failure that decides whether a durable job is terminal or retryable and supplies the bounded error text to persist. It is distinct from the provider's `OutboundDeliveryOutcome`.

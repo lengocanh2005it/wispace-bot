@@ -40,7 +40,11 @@ describe('ContextManager', () => {
   });
 
   it('counts serialized tools and fixed messages in the budget', () => {
-    const toolsTokens = estimateTokens(JSON.stringify(AGENT_TOOLS));
+    const toolsTokens = estimateTokens(
+      JSON.stringify(
+        AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
+      ),
+    );
     const manager = new ContextManager(
       new AgentLimits({
         maxInputTokens: toolsTokens + 1,

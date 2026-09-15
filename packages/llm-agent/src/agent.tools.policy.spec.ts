@@ -45,6 +45,16 @@ describe('agent tool policy registry', () => {
     );
   });
 
+  it('rejects an incomplete tool metadata definition at registry validation', () => {
+    const broken = AGENT_TOOLS.map((tool) => ({ ...tool }));
+    const first = broken[0];
+    if (first) delete (first as { metadata?: unknown }).metadata;
+
+    expect(() => validateAgentToolRegistry(broken as never)).toThrow(
+      'Missing tool metadata',
+    );
+  });
+
   it('canonicalizes object key order for approval/idempotency hashes', () => {
     expect(canonicalizeToolArguments({ b: 2, a: { d: 4, c: 3 } })).toBe(
       '{"a":{"c":3,"d":4},"b":2}',
