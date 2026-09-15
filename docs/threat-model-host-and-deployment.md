@@ -1,6 +1,6 @@
 # wispace-bot — Threat Model
 
-**Date:** 2026-09-14 · **Branch:** `main` @ `a153eba4` · **Target:** repo + production VPS `69.62.74.196` (`aiassist.aihubproduction.com`)
+**Date:** 2026-09-14 · **Branch:** `main` @ `a153eba4` · **Target:** this repository plus the production VPS (host details withheld — see Redaction note)
 
 > Live-host findings below were obtained with owner-granted SSH access, read-only commands only. No secret values were printed, and no mutating endpoint was called.
 
@@ -10,6 +10,17 @@
 > active, and the account password rotated. TM-001/002/006/007 (exposed
 > data-store ports) remain **open** — see the note under Remediation order.
 > No credential values appear in this document.
+
+> **Redaction note.** This document is published with host identifiers,
+> verbatim firewall and `pg_hba` rules, and internal network addresses removed.
+> The analysis is unchanged. Two caveats, stated plainly rather than implied:
+> the repository itself contains an nginx site config named after the
+> production hostname, so the host is not actually secret; and git history
+> retains earlier, unredacted revisions of this file. The credential that
+> appeared in one of those revisions was rotated and remote password
+> authentication has since been disabled, so it is inert. Redaction here is
+> hygiene, not a containment boundary — the containment is closing the ports.
+
 
 
 ## Executive summary
@@ -134,7 +145,7 @@ flowchart TD
 
 ## Top abuse paths
 
-1. **Learner PII exfiltration via exposed Postgres.** Scan `69.62.74.196:5432` → `pg_hba.conf` permits `host all all all scram-sha-256` → offline/online guess the superuser password (no connection rate limit, no fail2ban on 5432) → `SELECT * FROM user_messenger_mappings, study_reminder_jobs` → full learner identity graph and study data. **Impact: total confidentiality loss.**
+1. **Learner PII exfiltration via exposed Postgres.** Scan the host for port 5432 → `pg_hba.conf` permits `host all all all scram-sha-256` → offline/online guess the superuser password (no connection rate limit, no fail2ban on 5432) → `SELECT * FROM user_messenger_mappings, study_reminder_jobs` → full learner identity graph and study data. **Impact: total confidentiality loss.**
 2. **SSH takeover via cloud-init drift.** Note `sshd` on 22/8443 → password auth accepted → brute-force the login account (the password in place at the time of the audit followed a guessable project-name-plus-digits pattern; it has since been rotated) → `PermitRootLogin yes` gives a second path → host root → Vault AppRole bootstrap env → **every secret in the system.**
 3. **Chat-history disclosure via exposed Redis.** Reach `6379` → brute-force `requirepass` unthrottled over a cleartext channel → dump chat history, queue contents and rate-limit state; write access additionally lets the attacker forge queue entries the bots will process.
 4. **Ops-route abuse with one leaked key.** Obtain `INTERNAL_API_KEY` (from any of the bots, or from the WISPACE backend that shares the guard) → `POST /v1/messenger/*` from the open internet → purge learner privacy state, relink mappings to attacker-controlled accounts, or send reports to arbitrary PSIDs. **No network ACL to fall back on.**
@@ -278,10 +289,10 @@ binding:
 
 | Port | Compose project | Config location | Live consumers observed |
 |---|---|---|---|
-| 6379 Redis | `redis` | `~/redis/docker-compose.yml` | two `dotnet` processes via `172.24.0.1` |
-| 5434 `postgres_n8n_db` | `app` | `/app/docker-compose.yml` | `Tracking-System` and two `dotnet` processes, via the public IP |
-| 5432 `postgres_db` | `adf_system` | `/root/adf_system/docker-compose.yml` | none observed |
-| 8082 pgAdmin, 3100 Grafana | `app`, `monitoring` | `/app/…`, `~/infra/monitoring/…` | none observed |
+| 6379 Redis | `redis` | own Compose project | services outside this repo, via the bridge gateway |
+| 5434 (bot DB backend) | separate project | outside this repo | several services outside this repo, via the public binding |
+| 5432 (unrelated DB) | separate project | outside this repo | none observed |
+| pgAdmin, Grafana | separate projects | partly outside this repo | none observed |
 
 Changing a published port requires recreating the container, and each consumer
 above resolves the service by an address that a loopback bind would refuse. The
@@ -300,14 +311,14 @@ Postgres and Redis are reached by different routes, and a single "bind everythin
 | Service | Config | Route the bots use | Loopback bind safe? |
 |---|---|---|---|
 | Postgres | `DB_HOST=pgbouncer` | Container name over Docker DNS on `app_n8n_db_network` | **Yes** — the host port is never used |
-| Redis | `REDIS_HOST=172.24.0.1` | The host's Docker bridge gateway — out to the host, back in through the published port | **No** — this breaks it |
+| Redis | `REDIS_HOST=the Docker bridge gateway | The host's Docker bridge gateway — out to the host, back in through the published port | **No** — this breaks it |
 
-`172.24.0.1` is the gateway of `messenger-bot_default`. A loopback socket does not accept connections arriving on a bridge interface. The cause is topological: the `redis` container sits alone on `redis_default` and shares no network with the bots, leaving the host detour as its only path.
+the Docker bridge gateway is the gateway of `messenger-bot_default`. A loopback socket does not accept connections arriving on a bridge interface. The cause is topological: the `redis` container sits alone on `redis_default` and shares no network with the bots, leaving the host detour as its only path.
 
 - **Postgres (5432, 5434), pgAdmin (8082), Grafana (3100)** — bind to `127.0.0.1` directly. pgAdmin and Grafana then need an SSH tunnel to reach, which is a change to operator workflow, not only to config.
 - **Redis** — give it the shape pgbouncer already has, adding the new path before removing the old one: `docker network connect app_n8n_db_network redis`, change `REDIS_HOST` to `redis`, restart the bots and confirm `/health/ready` is green, and only then remove `-p 6379:6379`.
 
-Verification must run from a host that is **not** `76.13.218.96`, since UFW carries a rule for that address that would mask the result. `/health/ready` must also be checked per bot: from outside, a closed port and an unreachable dependency look identical, so a port-only check passes while Redis is broken.
+Verification must run from a host that is **not** a single allow-listed operator address, since UFW carries a rule for that address that would mask the result. `/health/ready` must also be checked per bot: from outside, a closed port and an unreachable dependency look identical, so a port-only check passes while Redis is broken.
 
 ## Related
 
