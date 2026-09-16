@@ -64,24 +64,29 @@ describe('MessengerOutboundService breaker/fetch timeout alignment (#133)', () =
   });
 
   it('fails at the breaker budget and never records a late delivery', async () => {
-    const globalFetch = jest
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(
-        () =>
-          new Promise((resolve) => setTimeout(() => resolve(OK_RESPONSE), 500)),
-      );
-    const service = buildService('200');
+    jest.useFakeTimers();
 
-    const startedAt = Date.now();
-    await expect(
-      service.sendSenderAction('psid-1', 'mark_seen'),
-    ).rejects.toThrow();
+    try {
+      const globalFetch = jest
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(() => resolve(OK_RESPONSE), 500),
+            ),
+        );
+      const service = buildService('200');
+      const sendPromise = service.sendSenderAction('psid-1', 'mark_seen');
+      const rejection = expect(sendPromise).rejects.toThrow();
 
-    // The caller failed at the shared budget (~200ms), not after the 500ms
-    // fetch — no window where the breaker reports failure while the fetch
-    // keeps running and could deliver late.
-    expect(Date.now() - startedAt).toBeLessThan(400);
-    expect(globalFetch).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(200);
+      await rejection;
+
+      // The caller failed at the shared budget, not after the 500ms fetch.
+      expect(globalFetch).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
