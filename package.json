@@ -31,7 +31,7 @@
     "database:entity-discovery:test": "node --test scripts/database-entity-discovery.test.mjs",
     "architecture:check": "node scripts/check-architecture.mjs",
     "architecture:test": "node --test scripts/check-architecture.test.mjs",
-    "verify:affected": "npm run architecture:check && npm run format:check && npm run lint && turbo run typecheck test build --affected",
+    "verify:affected": "npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build --affected",
     "verify": "npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build"
   },
   "devDependencies": {
