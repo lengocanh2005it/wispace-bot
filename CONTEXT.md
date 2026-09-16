@@ -809,6 +809,30 @@ _Avoid_: bare `fan-out`; also do not read it as the social-feed read/write distr
 Project structure: `apps/` (Messenger, Discord, Zalo bots) + `packages/` (shared code). Built with Turborepo.
 _Avoid_: monorepo without "Turborepo"
 
+**local cache**:
+Filesystem cache used by a developer's local Turborepo run. It is the default
+cache for local verification and does not require remote credentials.
+_Avoid_: local remote cache when referring to the CI artifact store
+
+**CI remote cache**:
+Remote Turbo artifact store used by trusted CI verification. Local developers
+may read it only through an approved read-only boundary; local runs do not write
+to it.
+_Avoid_: shared cache when the trust boundary is relevant
+
+**cache mode**:
+The local and remote read/write permissions for one Turbo run. The supported
+local opt-in mode reads and writes locally and reads remotely.
+_Avoid_: cache policy when referring to one command's permissions
+
+**cache result**:
+Whether a task reused an artifact (`HIT`) or had to execute (`MISS`).
+_Avoid_: cache source when describing only hit or miss
+
+**cache source**:
+Where a reused artifact came from: `LOCAL` or `REMOTE`; a miss has no source.
+_Avoid_: cache result when describing the artifact origin
+
 **framework-agnostic**:
 Said of a package whose enforced core imports no NestJS, no TypeORM and no vendor SDK, so any bot can use it. It describes named core paths, not always a whole package — several packages ship explicit outer adapters alongside a pure core.
 _Avoid_: "pure package", "no dependencies" — the claim is about framework coupling, not about having none

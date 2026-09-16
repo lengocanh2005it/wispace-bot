@@ -86,6 +86,7 @@ Full diagram, module map, and DB tables: [docs/project-overview.md § Architectu
 | File                                                                                                   | Description                                                |
 | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md)                                   | Monorepo roadmap: cross-platform DB, independent CI/CD     |
+| [docs/local-turbo-cache.md](docs/local-turbo-cache.md)                                                 | Local Turbo cache workflow, credentials, diagnostics        |
 | [docs/project-overview.md](docs/project-overview.md)                                                   | Architecture, code structure, DB, API, cron, quota runbook |
 | [docs/vault-secrets.md](docs/vault-secrets.md)                                                         | Vault runtime secret contract and bootstrap runbook        |
 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md)   | Chat rate limit V1 + H1–H7                                 |
