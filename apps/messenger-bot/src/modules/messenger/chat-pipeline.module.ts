@@ -95,7 +95,10 @@ import {
   type StudyReminderOperationsPort,
 } from '../study-reminder/domain/ports/study-reminder-operations.port';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
-import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
+import {
+  readEnvBoolean,
+  readEnvPositiveInt,
+} from '@messenger/shared/config/env-helpers';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -291,10 +294,20 @@ import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
         const contentClassifier = new LlmContentClassifier({
           adapter,
           model: classifierModel,
+          maxInputChars: Math.max(
+            1,
+            readEnvPositiveInt(
+              configService,
+              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
+              512,
+            ),
+          ),
           timeoutMs:
             Number.isFinite(classifierTimeoutRaw) && classifierTimeoutRaw > 0
               ? Math.floor(classifierTimeoutRaw)
               : 1200,
+          onInputShape: (shape) =>
+            metrics.incClassifierInput(shape, 'messenger'),
           logger: new Logger('LlmContentClassifier'),
         });
         return new PlatformAgentService(

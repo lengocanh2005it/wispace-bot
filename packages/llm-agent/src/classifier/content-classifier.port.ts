@@ -38,7 +38,7 @@ export interface ContentClassifierPort {
   /**
    * Classify one user message. Never throws — every failure path returns
    * `{ ok: false, reason }`. `userText` is the raw learner message; the
-   * implementation applies secret redaction + truncation itself.
+   * implementation applies secret redaction + bounded projection itself.
    */
   classify(userText: string, correlationId?: string): Promise<ClassifyResult>;
 }

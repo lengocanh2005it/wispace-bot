@@ -598,6 +598,14 @@ _Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection
 Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`. Fails open — any timeout, error, parse failure or open circuit means the turn proceeds as if the tier were absent.
 _Avoid_: moderation, filter — it decides nothing on its own
 
+**classifier input ceiling**:
+The maximum number of Unicode code points in the redacted learner text sent to the second-tier classifier. It bounds classifier cost; exceeding it selects a bounded head-and-tail sample instead of silently dropping one side of the message.
+_Avoid_: chat message limit, tier-one length limit
+
+**head-and-tail sample**:
+A bounded classifier view that preserves the beginning and end of a learner message and marks the omitted middle. It is not evidence that the omitted middle is safe.
+_Avoid_: full message, complete scan
+
 **shadow / enforce**:
 The classifier's two modes. In **shadow** a non-SAFE verdict is only recorded as a `CLASSIFIER_FLAGGED` event; in **enforce** it can also short-circuit the turn with a canned reply, subject to a confidence threshold. Enforce is flipped only after reviewing a shadow window.
 _Avoid_: dry run, passive mode

@@ -37,6 +37,12 @@ describe('CLASSIFIER_SYSTEM_PROMPT', () => {
     expect(p.toLowerCase()).toContain('essay');
   });
 
+  it('explains the head-and-tail sample marker', () => {
+    expect(p).toContain('head-and-tail');
+    expect(p).toContain('middle was omitted');
+    expect(p).toContain('not safe');
+  });
+
   it('carries a few-shot block', () => {
     expect(p).toContain('Examples:');
     // at least 8 example JSON objects

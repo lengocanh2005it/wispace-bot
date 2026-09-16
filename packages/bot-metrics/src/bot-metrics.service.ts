@@ -167,6 +167,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private dataQualityRuns: Counter;
   private dataQualityFailures: Counter;
   private llmClassifierVerdict: Counter<string>;
+  private llmClassifierInput: Counter<string>;
   private outboundRateLimitDecisions: Counter<string>;
   private platformConnectivityReady: Gauge<string>;
   private platformConnectivityState: Gauge<string>;
@@ -592,6 +593,12 @@ export class BotMetricsService implements OnModuleDestroy {
       labelNames: ['label', 'mode', 'platform'],
       registers: [this.registry],
     });
+    this.llmClassifierInput = new Counter({
+      name: `${this.prefix}_llm_classifier_input_total`,
+      help: 'LLM input-classifier input shapes by projection strategy (#1186)',
+      labelNames: ['shape', 'platform'],
+      registers: [this.registry],
+    });
     this.outboundRateLimitDecisions = new Counter({
       name: `${this.prefix}_outbound_rate_limit_decisions_total`,
       help: 'Outbound learner-message rate-limit decisions',
@@ -810,6 +817,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** #649 — an LLM input-classifier verdict. `label` ∈ SAFE|INJECTION|DISCLOSURE_PROBE or an unavailable reason. */
   incClassifierVerdict(label: string, mode: string, platform: string): void {
     this.llmClassifierVerdict.inc({ label, mode, platform });
+  }
+
+  /** #1186 — classifier input shape; shape is full or head_tail. */
+  incClassifierInput(shape: 'full' | 'head_tail', platform: string): void {
+    this.llmClassifierInput.inc({ shape, platform });
   }
 
   incOutboundRateLimitDecision(platform: string, outcome: string): void {

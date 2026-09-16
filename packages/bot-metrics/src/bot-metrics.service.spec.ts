@@ -486,4 +486,20 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
       '_llm_classifier_verdict_total{label="SAFE",mode="enforce",platform="messenger"} 1',
     );
   });
+
+  it('exposes llm_classifier_input_total with shape/platform', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'messenger',
+      collectDefaults: false,
+    });
+    svc.incClassifierInput('full', 'messenger');
+    svc.incClassifierInput('head_tail', 'messenger');
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      '_llm_classifier_input_total{shape="full",platform="messenger"} 1',
+    );
+    expect(out).toContain(
+      '_llm_classifier_input_total{shape="head_tail",platform="messenger"} 1',
+    );
+  });
 });

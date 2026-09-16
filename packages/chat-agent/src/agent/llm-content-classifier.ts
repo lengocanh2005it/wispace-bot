@@ -13,7 +13,8 @@ const LABELS: readonly ClassifierLabel[] = [
   'INJECTION',
   'DISCLOSURE_PROBE',
 ];
-const MAX_INPUT_CHARS = 512;
+const DEFAULT_MAX_INPUT_CHARS = 512;
+const SAMPLE_MARKER = '…';
 const MAX_REASON_CHARS = 100;
 const CIRCUIT_FAILURE_THRESHOLD = 5;
 const CIRCUIT_OPEN_MS = 30_000;
@@ -22,15 +23,18 @@ export interface LlmContentClassifierDeps {
   adapter: LlmProviderAdapter;
   model: string;
   timeoutMs: number;
+  maxInputChars: number;
+  onInputShape?: (shape: 'full' | 'head_tail') => void;
   logger?: { warn(message: string): void };
 }
 
 /**
  * #649 — second-tier input classifier. Calls the provider's single-shot
- * JSON endpoint on its own path: own `AbortSignal.timeout` deadline (which
- * aborts the in-flight request, not just the wrapper promise), no retry, no
- * shared concurrency budget, and a local circuit breaker. Never throws —
- * every failure returns `{ ok: false, reason }` and the caller fails open.
+ * JSON endpoint on its own path: secret redaction + deterministic bounded
+ * full/head-tail projection, own `AbortSignal.timeout` deadline (which aborts
+ * the in-flight request, not just the wrapper promise), no retry, no shared
+ * concurrency budget, and a local circuit breaker. Never throws — every
+ * provider failure returns `{ ok: false, reason }` and the caller fails open.
  *
  * Circuit breaker: `CIRCUIT_FAILURE_THRESHOLD` consecutive failures open it
  * for `CIRCUIT_OPEN_MS`; the first call afterwards is a single half-open
@@ -52,7 +56,15 @@ export class LlmContentClassifier implements ContentClassifierPort {
       return { ok: false, reason: 'skipped_circuit_open' };
     }
 
-    const cleaned = redactSecrets(userText).text.slice(0, MAX_INPUT_CHARS);
+    const cleaned = redactSecrets(userText).text;
+    const projected = projectClassifierInput(cleaned, this.deps.maxInputChars);
+    try {
+      this.deps.onInputShape?.(projected.shape);
+    } catch {
+      this.deps.logger?.warn(
+        'LlmContentClassifier input-shape telemetry failed; continuing',
+      );
+    }
     const signal = AbortSignal.timeout(this.deps.timeoutMs);
 
     let content: string;
@@ -61,7 +73,7 @@ export class LlmContentClassifier implements ContentClassifierPort {
         feature: 'FREE_FORM_CHAT',
         model: this.deps.model,
         systemPrompt: CLASSIFIER_SYSTEM_PROMPT,
-        userContent: cleaned,
+        userContent: projected.text,
         maxOutputTokens: 120,
         correlationId,
         signal,
@@ -149,4 +161,33 @@ export class LlmContentClassifier implements ContentClassifierPort {
       }
     }
   }
+}
+
+function projectClassifierInput(
+  text: string,
+  maxInputChars: number,
+): { text: string; shape: 'full' | 'head_tail' } {
+  const codePoints = Array.from(text);
+  const limit = Number.isFinite(maxInputChars)
+    ? Math.max(1, Math.floor(maxInputChars))
+    : DEFAULT_MAX_INPUT_CHARS;
+  if (codePoints.length <= limit) {
+    return { text, shape: 'full' };
+  }
+
+  const marker = Array.from(SAMPLE_MARKER);
+  if (limit <= marker.length) {
+    return { text: marker.slice(0, limit).join(''), shape: 'head_tail' };
+  }
+
+  const remaining = limit - marker.length;
+  const headLength = Math.floor(remaining / 2);
+  const tailLength = remaining - headLength;
+  return {
+    text:
+      codePoints.slice(0, headLength).join('') +
+      SAMPLE_MARKER +
+      codePoints.slice(-tailLength).join(''),
+    shape: 'head_tail',
+  };
 }
