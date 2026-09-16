@@ -4,7 +4,6 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import { isAbortError } from '@wispace/bot-common/utils';
 import type {
   PlatformAgentReply,
   PlatformAgentToolContext,
@@ -17,19 +16,17 @@ import {
 } from '@wispace/reschedule-confirm';
 import {
   executePrecreateExerciseTool,
-  isWriteToolName,
-  refundConsumedWriteToolBudget,
-  runWriteToolBudgetGate,
+  PlatformToolExecutorPipeline,
+  defaultExplicitIntent,
+  withPlatformToolDecoration,
   type WriteToolBudgetPort,
 } from '@wispace/chat-agent';
 import {
-  isAgentToolName,
-  parseAndValidateToolArguments,
-  sanitizeUntrustedTextForLlm,
   type AgentToolName,
   type GetUpcomingStudySessionsArgs,
   type ListStudyCalendarEntriesArgs,
   type RescheduleStudySessionArgs,
+  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
   readPastDays,
@@ -72,12 +69,6 @@ import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/messenger-report-subscription-intent.utils';
 
-function throwIfToolAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
-  }
-}
-
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
 export const MESSENGER_TOOL_IDENTITY_PROVIDER = Symbol(
@@ -110,6 +101,7 @@ const REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT = {
 @Injectable()
 export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   private readonly logger = new Logger(MessengerAgentToolsService.name);
+  private readonly pipeline: PlatformToolExecutorPipeline;
 
   constructor(
     @Inject(MESSENGER_REPOSITORY)
@@ -146,7 +138,63 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       tool: string,
       reason: 'per_message',
     ) => void,
-  ) {}
+  ) {
+    this.pipeline = new PlatformToolExecutorPipeline({
+      handlers: {
+        get_learning_progress_report: ({ ctx, signal }) =>
+          this.getLearningProgressReport(ctx.externalUserId, signal),
+        get_user_goals: ({ ctx }) => this.getUserGoals(ctx),
+        get_upcoming_study_sessions: ({ args, ctx }) =>
+          this.getUpcomingStudySessions(
+            ctx,
+            args as GetUpcomingStudySessionsArgs,
+          ),
+        list_study_calendar_entries: ({ args, ctx }) =>
+          this.listStudyCalendarEntries(
+            ctx,
+            args as ListStudyCalendarEntriesArgs,
+          ),
+        preview_next_study_reminder: ({ ctx }) =>
+          this.previewNextStudyReminder(ctx),
+        reschedule_study_session: ({ args, ctx, signal, canonicalArgs }) =>
+          this.rescheduleStudySession(
+            ctx,
+            args as Partial<RescheduleStudySessionArgs>,
+            canonicalArgs,
+            signal,
+          ),
+        register_exam_report_notifications: ({ ctx }) =>
+          this.registerExamReportNotifications(ctx),
+        precreate_next_exercise: ({ ctx, signal }) =>
+          this.precreateNextExercise(ctx, signal),
+      },
+      getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
+      currentIdentityProvider: this.currentIdentityProvider,
+      policyDeniedInc: this.policyDeniedInc,
+      writeToolBudget: this.writeToolBudget,
+      writeToolPerMessageCaps: this.writeToolPerMessageCaps,
+      writeToolBudgetDeniedInc: this.writeToolBudgetDeniedInc,
+      checkExplicitIntent: (toolName, userText) =>
+        this.checkExplicitIntent(toolName, userText),
+      intentDeniedResult: (toolName) =>
+        toolName === 'register_exam_report_notifications'
+          ? REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT
+          : { error: 'intent_unclear' },
+      decorateResult: ({ ctx, decoration }) => {
+        if (Array.isArray(decoration)) {
+          this.pushRichFollowUp(
+            ctx,
+            ...(decoration as Array<MessengerRichFollowUp | undefined>),
+          );
+          return;
+        }
+        this.pushRichFollowUp(ctx, decoration as MessengerRichFollowUp);
+      },
+      logger: {
+        warn: (message) => this.logger.warn(message),
+      },
+    });
+  }
 
   async execute(
     toolName: string,
@@ -154,85 +202,23 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    throwIfToolAborted(signal);
-    if (!isAgentToolName(toolName)) {
-      return { error: `Unknown tool: ${toolName}` };
-    }
+    return this.pipeline.execute(toolName, argsJson, ctx, signal);
+  }
 
-    const parsed = parseAndValidateToolArguments(toolName, argsJson, {
-      allowMissingRequired: true,
-    });
-    if (!parsed.ok) {
-      this.policyDeniedInc?.(toolName, 'invalid_arguments');
-      return { error: parsed.error };
+  private checkExplicitIntent(
+    toolName: AgentToolName,
+    userText: string,
+  ): boolean | undefined {
+    if (toolName === 'reschedule_study_session') {
+      return isRescheduleIntent(userText);
     }
-
-    if (!this.currentIdentityProvider) {
-      this.policyDeniedInc?.(toolName, 'missing_identity_provider');
-      return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
+    if (toolName === 'register_exam_report_notifications') {
+      return hasMessengerReportSubscriptionIntent(userText);
     }
-
-    if (this.currentIdentityProvider) {
-      try {
-        const identity = await this.currentIdentityProvider(ctx.externalUserId);
-        throwIfToolAborted(signal);
-        if (
-          !identity ||
-          !Number.isInteger(identity.userId) ||
-          identity.userId <= 0 ||
-          typeof identity.mappingVersion !== 'string' ||
-          !identity.mappingVersion.trim()
-        ) {
-          this.policyDeniedInc?.(toolName, 'missing_mapping');
-          return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
-        }
-        ctx.userId = identity.userId;
-        ctx.mappingVersion = identity.mappingVersion;
-      } catch (error) {
-        if (signal?.aborted || isAbortError(error)) {
-          throw error;
-        }
-        const safeError = this.safeErrorMessage(error, ctx.externalUserId);
-        this.logger.warn(
-          `Current-mapping lookup failed for ${maskExternalId(ctx.externalUserId)}: ${safeError}`,
-        );
-        this.policyDeniedInc?.(toolName, 'mapping_lookup_failed');
-        return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
-      }
-    }
-
-    if (isWriteToolName(toolName) && this.writeToolBudget && ctx.userId) {
-      const denial = await runWriteToolBudgetGate(toolName, ctx, {
-        budget: this.writeToolBudget,
-        perMessageCaps: this.writeToolPerMessageCaps,
-        deniedInc: this.writeToolBudgetDeniedInc,
-      });
-      throwIfToolAborted(signal);
-      if (denial) return denial;
-    }
-
-    try {
-      return await this.dispatch(
-        toolName,
-        parsed.args,
-        ctx,
-        signal,
-        parsed.canonicalArgs,
-      );
-    } catch (error) {
-      if (signal?.aborted || isAbortError(error)) {
-        throw error;
-      }
-      const safeError = this.safeErrorMessage(error, ctx.externalUserId);
-      this.logger.warn(
-        `Tool ${toolName} failed for externalUserId=${maskExternalId(
-          ctx.externalUserId,
-        )}: ${safeError}`,
-      );
-      return {
-        error: safeError,
-      };
-    }
+    // precreate_next_exercise applies its strict intent/selection gate in the
+    // shared result helper after the common identity and budget prologue.
+    if (toolName === 'precreate_next_exercise') return undefined;
+    return defaultExplicitIntent(toolName, userText);
   }
 
   private safeErrorMessage(error: unknown, externalUserId: string): string {
@@ -243,62 +229,9 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     return maskExternalIdInText(sanitized, externalUserId);
   }
 
-  private async dispatch(
-    toolName: AgentToolName,
-    args: Record<string, unknown>,
-    ctx: PlatformAgentToolContext,
-    signal?: AbortSignal,
-    canonicalArgs?: string,
-  ): Promise<unknown> {
-    // Tool execution timed out (agent moved on) — do not start new side effects.
-    throwIfToolAborted(signal);
-
-    switch (toolName) {
-      case 'get_learning_progress_report':
-        return this.getLearningProgressReport(ctx.externalUserId, signal);
-      case 'get_user_goals':
-        return this.getUserGoals(ctx);
-      case 'get_upcoming_study_sessions':
-        return this.getUpcomingStudySessions(
-          ctx,
-          args as GetUpcomingStudySessionsArgs,
-        );
-      case 'list_study_calendar_entries':
-        return this.listStudyCalendarEntries(
-          ctx,
-          args as ListStudyCalendarEntriesArgs,
-        );
-      case 'preview_next_study_reminder':
-        return this.previewNextStudyReminder(ctx);
-      case 'reschedule_study_session':
-        return this.rescheduleStudySession(
-          ctx,
-          args as Partial<RescheduleStudySessionArgs>,
-          canonicalArgs,
-          signal,
-        );
-      case 'register_exam_report_notifications':
-        return this.registerExamReportNotifications(ctx);
-      case 'precreate_next_exercise': {
-        const precreateResult = await this.precreateNextExercise(ctx, signal);
-        await refundConsumedWriteToolBudget(
-          ctx,
-          this.writeToolBudget,
-          precreateResult,
-        );
-        return precreateResult;
-      }
-      default: {
-        const exhaustiveToolName: never = toolName;
-        return { error: `Unhandled tool: ${exhaustiveToolName}` };
-      }
-    }
-  }
-
   private async getUserGoals(ctx: PlatformAgentToolContext): Promise<unknown> {
     const goals = await this.memoizedGoals.getUserGoals(ctx.externalUserId);
-    this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
-    return goals;
+    return withPlatformToolDecoration(goals, buildUserGoalsRichFollowUp(goals));
   }
 
   async tryFastDefaultReschedule(
@@ -429,17 +362,19 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     const entries = list.entries.map(
       ({ ownerUserId: _ownerUserId, ...entry }) => entry,
     );
-    this.pushRichFollowUp(ctx, buildCalendarEntriesRichFollowUp(entries));
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
 
-    return {
-      ...list,
-      entries,
-      reminderNotice:
-        list.timeRange === 'upcoming' && entries.length > 0
-          ? getStudyReminderLeadTimeNotice(minutesBefore)
-          : undefined,
-    };
+    return withPlatformToolDecoration(
+      {
+        ...list,
+        entries,
+        reminderNotice:
+          list.timeRange === 'upcoming' && entries.length > 0
+            ? getStudyReminderLeadTimeNotice(minutesBefore)
+            : undefined,
+      },
+      buildCalendarEntriesRichFollowUp(entries),
+    );
   }
 
   private async getUpcomingStudySessions(
@@ -461,18 +396,19 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       ),
     }));
 
-    this.pushRichFollowUp(ctx, ...buildStudySessionsRichFollowUps(mapped));
-
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
 
-    return {
-      count: sessions.length,
-      sessions: mapped,
-      reminderNotice:
-        mapped.length > 0
-          ? getStudyReminderLeadTimeNotice(minutesBefore)
-          : undefined,
-    };
+    return withPlatformToolDecoration(
+      {
+        count: sessions.length,
+        sessions: mapped,
+        reminderNotice:
+          mapped.length > 0
+            ? getStudyReminderLeadTimeNotice(minutesBefore)
+            : undefined,
+      },
+      buildStudySessionsRichFollowUps(mapped),
+    );
   }
 
   private async previewNextStudyReminder(
@@ -508,16 +444,14 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       .join(' ')
       .replace(/\s+/g, ' ');
 
-    this.pushRichFollowUp(
-      ctx,
+    return withPlatformToolDecoration(
+      {
+        hasSession: true,
+        scheduledTimeLabel,
+        reminder: bundle.text,
+      },
       buildReminderPreviewRichFollowUp({ scheduledTimeLabel, teaser }),
     );
-
-    return {
-      hasSession: true,
-      scheduledTimeLabel,
-      reminder: bundle.text,
-    };
   }
 
   private async rescheduleStudySession(
@@ -527,9 +461,6 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     signal?: AbortSignal,
   ): Promise<unknown> {
     this.throwIfAborted(signal);
-    if (ctx.userText !== undefined && !isRescheduleIntent(ctx.userText)) {
-      return { error: 'intent_unclear' };
-    }
     if (!ctx.userId) {
       return {
         rescheduled: false,
@@ -607,24 +538,21 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       throw new RescheduleStageAbortedError(signal.reason);
     }
 
-    this.pushRichFollowUp(ctx, staged.richFollowUp);
-
-    return {
-      pendingConfirmation: true,
-      sessionLabel: staged.sessionLabel,
-      summary: staged.summary,
-      message:
-        'Đã gửi nút xác nhận. Chỉ đổi lịch sau khi học viên bấm «Xác nhận đổi lịch» trên Messenger.',
-    };
+    return withPlatformToolDecoration(
+      {
+        pendingConfirmation: true,
+        sessionLabel: staged.sessionLabel,
+        summary: staged.summary,
+        message:
+          'Đã gửi nút xác nhận. Chỉ đổi lịch sau khi học viên bấm «Xác nhận đổi lịch» trên Messenger.',
+      },
+      staged.richFollowUp,
+    );
   }
 
   private async registerExamReportNotifications(
     ctx: PlatformAgentToolContext,
   ): Promise<unknown> {
-    if (!hasMessengerReportSubscriptionIntent(ctx.userText)) {
-      return REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT;
-    }
-
     const linkContext = await this.resolveLinkContext(ctx);
     if (!linkContext) {
       return {

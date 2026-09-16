@@ -426,6 +426,18 @@ _Avoid_: `AgentToolName` for an unchecked string, tool identifier when the sourc
 Shared projections of tool-spec metadata used for observations, learner-facing labels, grounding claims, and write-budget classification. The projections are generated from the specs so a newly registered tool cannot silently omit one of these policies.
 _Avoid_: satellite map, manually maintained tool map
 
+**tool-executor pipeline**:
+The shared lifecycle that turns an external tool request into a policy-checked platform-handler invocation and applies platform result decoration. It owns ordering and fail-closed boundaries, but not platform ports or tool execution.
+_Avoid_: dispatcher when referring to the full lifecycle, platform handler, tool spec
+
+**normalized platform identity**:
+A validated mapping from a platform external identity to a WISPACE learner identity that linked tool handlers can trust. The platform adapter owns lookup; the shared pipeline owns the validation boundary and missing-identity outcome.
+_Avoid_: raw platform identity, user context, platform token
+
+**result decoration**:
+Platform-specific delivery additions attached to an otherwise valid tool result, such as Messenger quick replies. Decoration cannot choose a handler or change policy, identity, budget, or abort behavior.
+_Avoid_: dispatch, tool side effect, platform policy
+
 **feature**:
 String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `'STUDY_REMINDER'`. Used for usage tracking and metrics.
 _Avoid_: use case, purpose
@@ -659,6 +671,10 @@ _Avoid_: data port, service interface
 **platform handler**:
 Application-owned execution or result-decoration logic for an agent tool on one platform. Shared tool specs and metadata may classify a tool, but platform handlers own platform ports, identity wiring, and delivery-specific behavior.
 _Avoid_: tool spec, shared executor when referring to platform-owned behavior
+
+**executor conformance**:
+Proof that every registered tool's capability rules are enforced consistently by every production platform executor, including identity, explicit intent or confirmation, write budget, bounded policy metrics, and incomplete-handler rejection.
+_Avoid_: executor parity, handler coverage without policy checks
 
 **delivery failure classification**:
 Platform-owned interpretation of an outbound delivery failure that decides whether a durable job is terminal or retryable and supplies the bounded error text to persist. It is distinct from the provider's `OutboundDeliveryOutcome`.

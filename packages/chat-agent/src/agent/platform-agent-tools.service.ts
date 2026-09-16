@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
-  isAgentToolName,
-  type AgentToolName,
   type GetUpcomingStudySessionsArgs,
   type ListStudyCalendarEntriesArgs,
   type RescheduleStudySessionArgs,
@@ -10,16 +8,8 @@ import {
   readPositiveInteger,
   readValidatedDate,
   readValidatedTime,
-  parseAndValidateToolArguments,
-  getAgentToolDefinition,
-  detectPromptInjection,
   sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
-import {
-  isWriteToolName,
-  refundConsumedWriteToolBudget,
-  runWriteToolBudgetGate,
-} from './write-tool-budget';
 import {
   errorMessage,
   maskExternalId,
@@ -42,12 +32,7 @@ import type {
   RescheduleStagePort,
 } from './platform-agent.types';
 import { executePrecreateExerciseTool } from './precreate-exercise-result';
-
-function throwIfToolAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
-  }
-}
+import { PlatformToolExecutorPipeline } from './platform-tool-executor-pipeline';
 
 /**
  * Shared WISPACE tool executor for the agent loop — implements the Discord
@@ -59,6 +44,7 @@ function throwIfToolAborted(signal?: AbortSignal): void {
 @Injectable()
 export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private readonly logger = new Logger(PlatformAgentToolsService.name);
+  private readonly pipeline: PlatformToolExecutorPipeline;
 
   constructor(
     private readonly goalsPort: GoalsCapabilityPort,
@@ -66,7 +52,48 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     private readonly stagePort: RescheduleStagePort,
     private readonly options: PlatformAgentToolsOptions,
     private readonly exercisePort?: ExerciseCapabilityPort,
-  ) {}
+  ) {
+    this.pipeline = new PlatformToolExecutorPipeline({
+      handlers: {
+        get_learning_progress_report: ({ ctx, signal }) =>
+          this.getLearningProgressReport(ctx, signal),
+        get_user_goals: ({ ctx, signal }) => this.getUserGoals(ctx, signal),
+        get_upcoming_study_sessions: ({ args, ctx, signal }) =>
+          this.getUpcomingStudySessions(
+            ctx,
+            args as GetUpcomingStudySessionsArgs,
+            signal,
+          ),
+        list_study_calendar_entries: ({ args, ctx, signal }) =>
+          this.listStudyCalendarEntries(
+            ctx,
+            args as ListStudyCalendarEntriesArgs,
+            signal,
+          ),
+        preview_next_study_reminder: ({ ctx, signal }) =>
+          this.previewNextStudyReminder(ctx, signal),
+        reschedule_study_session: ({ args, ctx, signal }) =>
+          this.rescheduleStudySession(
+            ctx,
+            args as Partial<RescheduleStudySessionArgs>,
+            signal,
+          ),
+        register_exam_report_notifications: ({ ctx }) =>
+          this.registerExamReportNotifications(ctx),
+        precreate_next_exercise: ({ ctx, signal }) =>
+          this.precreateNextExercise(ctx, signal),
+      },
+      getNotLinkedMessage: this.options.getNotLinkedMessage,
+      currentIdentityProvider: this.options.currentIdentityProvider,
+      policyDeniedInc: this.options.policyDeniedInc,
+      writeToolBudget: this.options.writeToolBudget,
+      writeToolPerMessageCaps: this.options.writeToolPerMessageCaps,
+      writeToolBudgetDeniedInc: this.options.writeToolBudgetDeniedInc,
+      logger: {
+        warn: (message) => this.logger.warn(message),
+      },
+    });
+  }
 
   async execute(
     toolName: string,
@@ -74,138 +101,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    throwIfToolAborted(signal);
-    if (!isAgentToolName(toolName)) {
-      return { error: `Unknown tool: ${toolName}` };
-    }
-
-    const parsed = parseAndValidateToolArguments(toolName, argsJson, {
-      allowMissingRequired: true,
-    });
-    if (!parsed.ok) {
-      this.options.policyDeniedInc?.(toolName, 'invalid_arguments');
-      return { error: parsed.error };
-    }
-
-    const capability = getAgentToolDefinition(toolName)?.capability;
-    if (!capability) {
-      this.options.policyDeniedInc?.(toolName, 'missing_capability');
-      return { error: 'Tool execution blocked by policy' };
-    }
-
-    if (
-      ctx.userText !== undefined &&
-      capability.confirmation !== 'none' &&
-      toolName !== 'precreate_next_exercise' &&
-      !this.hasExplicitIntent(toolName, ctx.userText)
-    ) {
-      this.options.policyDeniedInc?.(toolName, 'intent_unclear');
-      return { error: 'intent_unclear' };
-    }
-
-    if (capability.identity === 'linked_wispace_account') {
-      const identity = await this.resolveCurrentIdentity(ctx, toolName, signal);
-      if (!identity) {
-        return {
-          available: false,
-          message: this.options.getNotLinkedMessage(),
-        };
-      }
-      ctx.userId = identity.userId;
-      ctx.mappingVersion = identity.mappingVersion;
-    }
-
-    if (
-      isWriteToolName(toolName) &&
-      this.options.writeToolBudget &&
-      ctx.userId
-    ) {
-      const denial = await runWriteToolBudgetGate(toolName, ctx, {
-        budget: this.options.writeToolBudget,
-        perMessageCaps: this.options.writeToolPerMessageCaps,
-        deniedInc: this.options.writeToolBudgetDeniedInc,
-      });
-      throwIfToolAborted(signal);
-      if (denial) return denial;
-    }
-
-    try {
-      return await this.dispatch(toolName, parsed.args, ctx, signal);
-    } catch (error) {
-      if (signal?.aborted || isAbortError(error)) {
-        throw error;
-      }
-      const safeError = this.safeErrorMessage(error, ctx.externalUserId);
-      this.logger.warn(
-        `Tool ${toolName} failed for externalUserId=${maskExternalId(
-          ctx.externalUserId,
-        )}: ${safeError}`,
-      );
-      return {
-        error: safeError,
-      };
-    }
-  }
-
-  private hasExplicitIntent(
-    toolName: AgentToolName,
-    userText: string,
-  ): boolean {
-    const text = userText.trim().toLowerCase();
-    if (!text) return false;
-    if (detectPromptInjection(text).isInjection) return false;
-    if (toolName === 'reschedule_study_session') {
-      return (
-        /(đổi|dời|chuyển|hoãn|reschedule|move|change)/i.test(text) &&
-        /(lịch|buổi\s*học|giờ\s*học|schedule)/i.test(text)
-      );
-    }
-    if (toolName === 'register_exam_report_notifications') {
-      return /(đăng\s*ký|register).*(báo\s*cáo|report)|(báo\s*cáo|report).*(tự\s*động|automatic)/i.test(
-        text,
-      );
-    }
-    // precreate_next_exercise applies its stricter injection/selection gate
-    // in executePrecreateExerciseTool; this preliminary check only rejects a
-    // plainly unrelated message.
-    return toolName === 'precreate_next_exercise';
-  }
-
-  private async resolveCurrentIdentity(
-    ctx: PlatformAgentToolContext,
-    toolName: AgentToolName,
-    signal?: AbortSignal,
-  ): Promise<{ userId: number; mappingVersion: string } | undefined> {
-    const provider = this.options.currentIdentityProvider;
-    if (typeof provider !== 'function') {
-      this.options.policyDeniedInc?.(toolName, 'missing_identity_provider');
-      return undefined;
-    }
-    try {
-      const identity = await provider(ctx.externalUserId);
-      throwIfToolAborted(signal);
-      if (
-        !identity ||
-        !Number.isInteger(identity.userId) ||
-        identity.userId <= 0 ||
-        typeof identity.mappingVersion !== 'string' ||
-        !identity.mappingVersion.trim()
-      ) {
-        this.options.policyDeniedInc?.(toolName, 'missing_mapping');
-        return undefined;
-      }
-      return identity;
-    } catch (error) {
-      if (signal?.aborted || isAbortError(error)) {
-        throw error;
-      }
-      const safeError = this.safeErrorMessage(error, ctx.externalUserId);
-      this.logger.warn(
-        `Current-mapping lookup failed for ${maskExternalId(ctx.externalUserId)}: ${safeError}`,
-      );
-      this.options.policyDeniedInc?.(toolName, 'mapping_lookup_failed');
-      return undefined;
-    }
+    return this.pipeline.execute(toolName, argsJson, ctx, signal);
   }
 
   private safeErrorMessage(error: unknown, externalUserId: string): string {
@@ -216,132 +112,130 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     return maskExternalIdInText(sanitized, externalUserId);
   }
 
-  private async dispatch(
-    toolName: AgentToolName,
-    args: Record<string, unknown>,
+  private async getUserGoals(
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    // Tool execution timed out (agent moved on) — do not start new side effects.
-    throwIfToolAborted(signal);
+    return this.withLinkedAccount(ctx, () => {
+      ctx.privateDataFetched = true;
+      return this.goalsPort.getUserGoals(this.options.wispaceExternalId(ctx), {
+        signal,
+      });
+    });
+  }
 
-    switch (toolName) {
-      case 'get_user_goals':
-        return this.withLinkedAccount(ctx, () => {
-          ctx.privateDataFetched = true;
-          return this.goalsPort.getUserGoals(
-            this.options.wispaceExternalId(ctx),
-            { signal },
-          );
-        });
-      case 'get_learning_progress_report':
-        return this.withLinkedAccount(ctx, async () => {
-          ctx.privateDataFetched = true;
-          const [goals, taskScores] = await Promise.all([
-            this.goalsPort.getUserGoals(this.options.wispaceExternalId(ctx), {
-              signal,
-            }),
-            this.goalsPort.getTaskScoreAverages(
-              this.options.wispaceExternalId(ctx),
-              { signal },
-            ),
-          ]);
-          return this.formatReport(goals, taskScores);
-        });
-      case 'get_upcoming_study_sessions':
-        return this.withLinkedAccount(ctx, async () => {
-          ctx.privateDataFetched = true;
-          const { limit } = args as GetUpcomingStudySessionsArgs;
-          const sessionLimit = readPositiveLimit(limit, 5);
-          const sessions = await this.calendarPort.getCalendarSessions(
-            this.options.wispaceExternalId(ctx),
-            {
-              timeRange: 'upcoming',
-              limit: sessionLimit,
-              userId: ctx.userId,
-              signal,
-            },
-          );
-          return {
-            count: sessions.length,
-            sessions: this.mapSessions(sessions),
-          };
-        });
-      case 'list_study_calendar_entries':
-        return this.withLinkedAccount(ctx, async () => {
-          ctx.privateDataFetched = true;
-          const {
-            timeRange = 'upcoming',
-            limit,
-            pastDays,
-          } = args as ListStudyCalendarEntriesArgs;
-          const sessions = await this.calendarPort.getCalendarSessions(
-            this.options.wispaceExternalId(ctx),
-            {
-              timeRange,
-              limit: readPositiveLimit(limit, 10),
-              pastDays: readPastDays(pastDays),
-              userId: ctx.userId,
-              signal,
-            },
-          );
-          return { timeRange, entries: this.mapSessions(sessions) };
-        });
-      case 'preview_next_study_reminder':
-        return this.withLinkedAccount(ctx, async () => {
-          ctx.privateDataFetched = true;
-          const sessions = await this.calendarPort.getCalendarSessions(
-            this.options.wispaceExternalId(ctx),
-            { timeRange: 'upcoming', limit: 1, userId: ctx.userId, signal },
-          );
-          const session = sessions[0];
-          return session
-            ? { hasSession: true, session: this.mapSessions([session])[0] }
-            : { hasSession: false };
-        });
-      case 'reschedule_study_session':
-        return this.withLinkedAccount(ctx, () =>
-          this.rescheduleStudySession(
-            ctx,
-            args as Partial<RescheduleStudySessionArgs>,
-            signal,
-          ),
-        );
-      case 'register_exam_report_notifications':
-        // No side effect on Discord/Zalo: the report cron covers every linked
-        // account, so registration is automatic. Be honest about it instead
-        // of claiming a registration that never happened.
-        return this.withLinkedAccount(ctx, () =>
-          Promise.resolve({
-            registered: false,
-            alreadyActive: false,
-            automatic: true,
-            message: this.options.registerReportMessage,
-          }),
-        );
-      case 'precreate_next_exercise': {
-        const precreateResult = await executePrecreateExerciseTool(
-          ctx,
-          this.exercisePort,
-          {
-            getNotLinkedMessage: this.options.getNotLinkedMessage,
-            logger: this.logger,
-            cacheInvalidation: this.options.cacheInvalidation,
-          },
+  private async getLearningProgressReport(
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.withLinkedAccount(ctx, async () => {
+      ctx.privateDataFetched = true;
+      const [goals, taskScores] = await Promise.all([
+        this.goalsPort.getUserGoals(this.options.wispaceExternalId(ctx), {
           signal,
-        );
-        await refundConsumedWriteToolBudget(
-          ctx,
-          this.options.writeToolBudget,
-          precreateResult,
-        );
-        return precreateResult;
-      }
-      default: {
-        const exhaustiveToolName: never = toolName;
-        return { error: `Unhandled tool: ${exhaustiveToolName}` };
-      }
-    }
+        }),
+        this.goalsPort.getTaskScoreAverages(
+          this.options.wispaceExternalId(ctx),
+          { signal },
+        ),
+      ]);
+      return this.formatReport(goals, taskScores);
+    });
+  }
+
+  private async getUpcomingStudySessions(
+    ctx: PlatformAgentToolContext,
+    args: GetUpcomingStudySessionsArgs,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.withLinkedAccount(ctx, async () => {
+      ctx.privateDataFetched = true;
+      const sessionLimit = readPositiveLimit(args.limit, 5);
+      const sessions = await this.calendarPort.getCalendarSessions(
+        this.options.wispaceExternalId(ctx),
+        {
+          timeRange: 'upcoming',
+          limit: sessionLimit,
+          userId: ctx.userId,
+          signal,
+        },
+      );
+      return {
+        count: sessions.length,
+        sessions: this.mapSessions(sessions),
+      };
+    });
+  }
+
+  private async listStudyCalendarEntries(
+    ctx: PlatformAgentToolContext,
+    args: ListStudyCalendarEntriesArgs,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.withLinkedAccount(ctx, async () => {
+      ctx.privateDataFetched = true;
+      const { timeRange = 'upcoming', limit, pastDays } = args;
+      const sessions = await this.calendarPort.getCalendarSessions(
+        this.options.wispaceExternalId(ctx),
+        {
+          timeRange,
+          limit: readPositiveLimit(limit, 10),
+          pastDays: readPastDays(pastDays),
+          userId: ctx.userId,
+          signal,
+        },
+      );
+      return { timeRange, entries: this.mapSessions(sessions) };
+    });
+  }
+
+  private async previewNextStudyReminder(
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.withLinkedAccount(ctx, async () => {
+      ctx.privateDataFetched = true;
+      const sessions = await this.calendarPort.getCalendarSessions(
+        this.options.wispaceExternalId(ctx),
+        { timeRange: 'upcoming', limit: 1, userId: ctx.userId, signal },
+      );
+      const session = sessions[0];
+      return session
+        ? { hasSession: true, session: this.mapSessions([session])[0] }
+        : { hasSession: false };
+    });
+  }
+
+  private async registerExamReportNotifications(
+    ctx: PlatformAgentToolContext,
+  ): Promise<unknown> {
+    // No side effect on Discord/Zalo: the report cron covers every linked
+    // account, so registration is automatic. Be honest about it instead
+    // of claiming a registration that never happened.
+    return this.withLinkedAccount(ctx, () =>
+      Promise.resolve({
+        registered: false,
+        alreadyActive: false,
+        automatic: true,
+        message: this.options.registerReportMessage,
+      }),
+    );
+  }
+
+  private async precreateNextExercise(
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return executePrecreateExerciseTool(
+      ctx,
+      this.exercisePort,
+      {
+        getNotLinkedMessage: this.options.getNotLinkedMessage,
+        logger: this.logger,
+        cacheInvalidation: this.options.cacheInvalidation,
+      },
+      signal,
+    );
   }
 
   private async withLinkedAccount(

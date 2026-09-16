@@ -16,6 +16,27 @@ export type {
 } from './clarification/clarification-state';
 export { CLARIFICATION_STATE_STORE } from './clarification/clarification-state';
 export { PlatformAgentToolsService } from './agent/platform-agent-tools.service';
+export {
+  PlatformToolExecutorPipeline,
+  assertPlatformToolHandlerRegistry,
+  defaultExplicitIntent,
+  PLATFORM_TOOL_CONFORMANCE_MATRIX,
+  withPlatformToolDecoration,
+} from './agent/platform-tool-executor-pipeline';
+export { exercisePlatformToolExecutorConformance } from './agent/platform-tool-executor-conformance';
+export type {
+  PlatformToolExecutorConformanceCase,
+  PlatformToolExecutorConformanceResult,
+} from './agent/platform-tool-executor-conformance';
+export type {
+  PlatformToolDecorationInput,
+  PlatformToolConformanceEntry,
+  PlatformToolExecutorPipelineOptions,
+  PlatformToolHandler,
+  PlatformToolHandlerInput,
+  PlatformToolHandlerRegistry,
+  PlatformToolHandlerResult,
+} from './agent/platform-tool-executor-pipeline';
 export type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,

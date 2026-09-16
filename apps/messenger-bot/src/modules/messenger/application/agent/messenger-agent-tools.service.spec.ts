@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- partial service mocks */
-import type {
-  PlatformAgentReply,
-  PlatformAgentToolContext,
+import {
+  exercisePlatformToolExecutorConformance,
+  type PlatformAgentReply,
+  type PlatformAgentToolContext,
 } from '@wispace/chat-agent';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -111,6 +112,62 @@ describe('MessengerAgentToolsService', () => {
       const { service, ctx } = createService();
       const result = await service.execute('unknown_tool', '{}', ctx);
       expect(result).toEqual({ error: 'Unknown tool: unknown_tool' });
+    });
+
+    it('runs shared executor conformance for Messenger (#762)', async () => {
+      const identity = createService({
+        currentIdentityProvider: jest.fn().mockResolvedValue(undefined),
+      });
+      const policyDeniedCalls: Array<[string, string]> = [];
+      const intent = createService({
+        policyDeniedInc: (toolName, reason) =>
+          policyDeniedCalls.push([toolName, reason]),
+      });
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(false),
+        refundDaily: jest.fn(),
+      };
+      const budgetCase = createService({}, { writeToolBudget: budget });
+      const abortController = new AbortController();
+      const aborted = createService({
+        currentIdentityProvider: jest.fn().mockImplementation(async () => {
+          abortController.abort();
+          return { userId: 42, mappingVersion: 'test:psid-123' };
+        }),
+      });
+
+      const result = await exercisePlatformToolExecutorConformance({
+        identityExecutor: identity.service,
+        identityContext: { externalUserId: 'psid-123' },
+        intentExecutor: intent.service,
+        intentContext: { externalUserId: 'psid-123', userText: 'xem báo cáo' },
+        budgetExecutor: budgetCase.service,
+        budgetContext: {
+          externalUserId: 'psid-123',
+          userText: 'tạo bài tập mới cho mình',
+        },
+        abortedExecutor: aborted.service,
+        abortedContext: { externalUserId: 'psid-123' },
+        abortedSignal: abortController.signal,
+        policyDeniedCalls,
+        intentDenied: (value) =>
+          !!value &&
+          typeof value === 'object' &&
+          (value as { reason?: unknown }).reason === 'intent_unclear',
+        forbiddenMetricValues: ['psid-123'],
+      });
+
+      expect(result).toEqual({
+        identityBlocked: true,
+        intentDenied: true,
+        budgetDenied: true,
+        abortPropagated: true,
+        policyMetricsBounded: true,
+      });
+      expect(policyDeniedCalls).toEqual([
+        ['register_exam_report_notifications', 'intent_unclear'],
+      ]);
     });
 
     it('does not convert cancellation after identity lookup into a tool result', async () => {

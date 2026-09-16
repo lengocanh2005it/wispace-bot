@@ -18,6 +18,7 @@ import {
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
   RESCHEDULE_SCOPE_ERROR_MESSAGE,
 } from '@wispace/reschedule-confirm';
+import { exercisePlatformToolExecutorConformance } from './platform-tool-executor-conformance';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -1323,6 +1324,94 @@ describe('PlatformAgentToolsService cache invalidation (#636)', () => {
     expect(precreate).not.toHaveBeenCalled();
     expect(invalidateGoals).not.toHaveBeenCalled();
   });
+});
+
+describe('PlatformAgentToolsService executor conformance (#762)', () => {
+  it.each([
+    ['discord', buildDiscordOptions],
+    ['zalo', buildZaloOptions],
+  ])(
+    'enforces identity, intent, budget, abort, and bounded metrics for %s',
+    async (platform, buildOptions) => {
+      const externalUserId = `${platform}-1`;
+      const goals: GoalsCapabilityPort = {
+        getUserGoals: jest.fn().mockResolvedValue({}),
+        getTaskScoreAverages: jest.fn().mockResolvedValue([]),
+      };
+      const calendar = buildCalendarService();
+      const stage = { stage: jest.fn() };
+      const exercise = {
+        precreateNextExercise: jest.fn(),
+      } as unknown as ExerciseCapabilityPort;
+      const confirmSender = jest.fn().mockResolvedValue(undefined);
+      const baseOptions = buildOptions(confirmSender);
+      const create = (overrides: Partial<PlatformAgentToolsOptions> = {}) =>
+        new PlatformAgentToolsService(
+          goals,
+          calendar,
+          stage,
+          { ...baseOptions, ...overrides },
+          exercise,
+        );
+
+      const identityExecutor = create({
+        currentIdentityProvider: jest.fn().mockResolvedValue(undefined),
+      });
+      const policyDeniedCalls: Array<[string, string]> = [];
+      const intentExecutor = create({
+        policyDeniedInc: (toolName, reason) =>
+          policyDeniedCalls.push([toolName, reason]),
+      });
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(false),
+        refundDaily: jest.fn(),
+      };
+      const budgetExecutor = create({ writeToolBudget: budget });
+      const abortController = new AbortController();
+      const abortedExecutor = create({
+        currentIdentityProvider: jest.fn().mockImplementation(async () => {
+          abortController.abort();
+          return { userId: 143, mappingVersion: 'test:abort' };
+        }),
+      });
+
+      const result = await exercisePlatformToolExecutorConformance({
+        identityExecutor,
+        identityContext: { externalUserId },
+        intentExecutor,
+        intentContext: {
+          externalUserId,
+          userText: 'xem báo cáo',
+        },
+        budgetExecutor,
+        budgetContext: {
+          externalUserId,
+          userText: 'cho mình bài tập mới',
+        },
+        abortedExecutor,
+        abortedContext: { externalUserId },
+        abortedSignal: abortController.signal,
+        policyDeniedCalls,
+        intentDenied: (value) =>
+          !!value &&
+          typeof value === 'object' &&
+          (value as { error?: unknown }).error === 'intent_unclear',
+        forbiddenMetricValues: [externalUserId],
+      });
+
+      expect(result).toEqual({
+        identityBlocked: true,
+        intentDenied: true,
+        budgetDenied: true,
+        abortPropagated: true,
+        policyMetricsBounded: true,
+      });
+      expect(policyDeniedCalls).toEqual([
+        ['register_exam_report_notifications', 'intent_unclear'],
+      ]);
+    },
+  );
 });
 
 describe('PlatformAgentToolsService no-secrets boundary (#632)', () => {
