@@ -160,6 +160,25 @@ describe('PlatformAgentService', () => {
     );
   });
 
+  it('forwards the stale observation threshold from shared configuration', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const service = buildService(historyService, {
+      config: { OPENAI_STALE_OBSERVATION_ROUNDS: '4' },
+    });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'next question',
+    });
+
+    expect(
+      (LlmAgentService as unknown as jest.Mock).mock.calls[0]?.[0],
+    ).toEqual(expect.objectContaining({ staleObservationRounds: 4 }));
+  });
+
   it('passes the caller signal together with the configured deadline to fast reschedule', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),

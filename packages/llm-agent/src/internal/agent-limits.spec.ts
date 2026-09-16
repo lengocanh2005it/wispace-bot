@@ -27,4 +27,20 @@ describe('AgentLimits', () => {
     expect(limits.maxToolCallsPerRound).toBe(4);
     expect(limits.inputTokenBudget).toBe(Math.floor(24_000 * 0.67));
   });
+
+  it('normalizes the stale observation threshold as a positive integer', () => {
+    expect(
+      new AgentLimits({ staleObservationRounds: 4 }).staleObservationRounds,
+    ).toBe(4);
+    expect(
+      new AgentLimits({ staleObservationRounds: 4.5 }).staleObservationRounds,
+    ).toBe(2);
+    expect(
+      new AgentLimits({ staleObservationRounds: 0 }).staleObservationRounds,
+    ).toBe(2);
+    expect(
+      new AgentLimits({ staleObservationRounds: Number.NaN })
+        .staleObservationRounds,
+    ).toBe(2);
+  });
 });

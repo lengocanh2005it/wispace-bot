@@ -22,6 +22,8 @@ export interface LlmAgentConfig {
    * `pastDays:30` → `pastDays:31` probes. Default: 3.
    */
   maxToolRunsPerNamePerTurn?: number;
+  /** Tool-round age at which a successful observation is downgraded. Default: 2. */
+  staleObservationRounds?: number;
   maxContextChars?: number;
   /** Max LLM call retries on retryable errors. Default: 3. */
   maxLlmRetries?: number;

@@ -4,6 +4,7 @@ const DEFAULT_MAX_TOOL_ROUNDS = 6;
 const DEFAULT_MAX_TOOL_CALLS_PER_ROUND = 4;
 const DEFAULT_MAX_TOOL_EXECUTIONS_PER_TURN = 8;
 const DEFAULT_MAX_TOOL_RUNS_PER_NAME_PER_TURN = 3;
+const DEFAULT_STALE_OBSERVATION_ROUNDS = 2;
 const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
@@ -38,11 +39,18 @@ function nonNegative(value: number | undefined, fallback: number): number {
     : fallback;
 }
 
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isInteger(value) && value > 0
+    ? value
+    : fallback;
+}
+
 export class AgentLimits {
   readonly maxToolRounds: number;
   readonly maxToolCallsPerRound: number;
   readonly maxToolExecutionsPerTurn: number;
   readonly maxToolRunsPerNamePerTurn: number;
+  readonly staleObservationRounds: number;
   readonly maxContextChars: number;
   readonly maxLlmRetries: number;
   readonly retryBaseDelayMs: number;
@@ -67,6 +75,10 @@ export class AgentLimits {
     this.maxToolRunsPerNamePerTurn = positive(
       config.maxToolRunsPerNamePerTurn,
       DEFAULT_MAX_TOOL_RUNS_PER_NAME_PER_TURN,
+    );
+    this.staleObservationRounds = positiveInteger(
+      config.staleObservationRounds,
+      DEFAULT_STALE_OBSERVATION_ROUNDS,
     );
     this.maxContextChars = positive(
       config.maxContextChars,

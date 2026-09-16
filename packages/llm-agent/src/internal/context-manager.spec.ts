@@ -90,4 +90,112 @@ describe('ContextManager', () => {
     );
     expect(messages.some((message) => message.toolCallId === 'new')).toBe(true);
   });
+
+  it('downgrades stale successful observations without breaking pairing', () => {
+    const manager = new ContextManager(
+      new AgentLimits({ staleObservationRounds: 2 }),
+    );
+    const assistant: LlmMessage = {
+      role: 'assistant',
+      content: 'plan',
+      toolCalls: [{ id: 'old-call', name: 'get_user_goals', arguments: '{}' }],
+    };
+    const oldObservation: LlmMessage = {
+      role: 'tool',
+      toolCallId: 'old-call',
+      content: JSON.stringify({ ok: true, data: { targetScore: 7 } }),
+    };
+    const recentObservation: LlmMessage = {
+      role: 'tool',
+      toolCallId: 'recent-call',
+      content: JSON.stringify({ ok: true, data: { targetScore: 8 } }),
+    };
+    const messages = [assistant, oldObservation, recentObservation];
+
+    manager.trackToolObservation(oldObservation, {
+      originRound: 0,
+      succeeded: true,
+    });
+    manager.trackToolObservation(recentObservation, {
+      originRound: 1,
+      succeeded: true,
+    });
+
+    manager.downgradeStaleObservations(messages, 0, 2);
+
+    expect(JSON.parse(oldObservation.content ?? '')).toEqual({
+      ok: true,
+      _observation: 'truncated',
+      reason: 'age',
+      originRound: 0,
+    });
+    expect(recentObservation.content).toContain('targetScore');
+    expect(oldObservation.toolCallId).toBe('old-call');
+    expect(assistant.toolCalls?.[0]?.id).toBe('old-call');
+
+    const downgraded = oldObservation.content;
+    manager.downgradeStaleObservations(messages, 0, 3);
+    expect(oldObservation.content).toBe(downgraded);
+  });
+
+  it('protects recent failures, then downgrades them without copying raw errors', () => {
+    const manager = new ContextManager(
+      new AgentLimits({ staleObservationRounds: 2 }),
+    );
+    const failedObservation: LlmMessage = {
+      role: 'tool',
+      toolCallId: 'failed-call',
+      content: JSON.stringify({
+        ok: false,
+        error: 'upstream timeout with learner secret',
+      }),
+    };
+    manager.trackToolObservation(failedObservation, {
+      originRound: 0,
+      succeeded: false,
+    });
+
+    manager.downgradeStaleObservations([failedObservation], 0, 2);
+    expect(failedObservation.content).toContain('upstream timeout');
+
+    manager.downgradeStaleObservations([failedObservation], 0, 3);
+    expect(JSON.parse(failedObservation.content ?? '')).toEqual({
+      ok: false,
+      error: 'observation_unavailable',
+      _observation: 'truncated',
+      reason: 'age',
+      originRound: 0,
+    });
+    expect(failedObservation.content).not.toContain('learner secret');
+  });
+
+  it('ignores untracked messages and does not copy unknown tool names into markers', () => {
+    const manager = new ContextManager(
+      new AgentLimits({ staleObservationRounds: 1 }),
+    );
+    const untracked: LlmMessage = {
+      role: 'tool',
+      toolCallId: 'untracked-call',
+      content: JSON.stringify({ ok: true, data: 'keep me' }),
+    };
+    const tracked: LlmMessage = {
+      role: 'tool',
+      toolCallId: 'unknown-call',
+      content: JSON.stringify({
+        ok: false,
+        error: 'unknown_tool must never leak',
+      }),
+    };
+    manager.trackToolObservation(tracked, {
+      originRound: 0,
+      succeeded: false,
+    });
+
+    manager.downgradeStaleObservations([untracked, tracked], 0, 3);
+
+    expect(untracked.content).toContain('keep me');
+    expect(tracked.content).not.toContain('unknown_tool');
+    expect(tracked.content).toContain('observation_unavailable');
+    expect(tracked.toolCallId).toBe('unknown-call');
+  });
 });

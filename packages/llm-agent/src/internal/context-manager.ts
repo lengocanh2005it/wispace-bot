@@ -13,6 +13,35 @@ import { composeChatSystemPrompt } from '../chat-system-prompt';
 import { AgentLimits, estimateTokens } from './agent-limits';
 
 const MAX_HISTORY_ENTRY_CHARS = 8_000;
+const RECENT_FAILED_OBSERVATION_ROUNDS = 3;
+
+interface ToolObservationMetadata {
+  originRound: number;
+  succeeded: boolean;
+  downgraded: boolean;
+}
+
+function staleObservationMarker(
+  succeeded: boolean,
+  originRound: number,
+): string {
+  return JSON.stringify(
+    succeeded
+      ? {
+          ok: true,
+          _observation: 'truncated',
+          reason: 'age',
+          originRound,
+        }
+      : {
+          ok: false,
+          error: 'observation_unavailable',
+          _observation: 'truncated',
+          reason: 'age',
+          originRound,
+        },
+  );
+}
 
 /** Injected after the platform system prompt to guide the model's reasoning. */
 export const REASONING_INSTRUCTION = `
@@ -58,6 +87,11 @@ export function estimateContextTokens(messages: LlmMessage[]): number {
  * decides what to do when this class reports an impossible fixed context.
  */
 export class ContextManager {
+  private readonly observationMetadata = new WeakMap<
+    LlmMessage,
+    ToolObservationMetadata
+  >();
+
   constructor(
     private readonly limits: AgentLimits,
     private readonly hooks: ContextManagerHooks = {},
@@ -239,6 +273,56 @@ export class ContextManager {
 
   observationBudget(messages: LlmMessage[]): number {
     return this.limits.observationCharBudget(estimateContextTokens(messages));
+  }
+
+  trackToolObservation(
+    message: LlmMessage,
+    metadata: { originRound: number; succeeded: boolean },
+  ): void {
+    if (message.role !== 'tool') return;
+    this.observationMetadata.set(message, {
+      ...metadata,
+      downgraded: false,
+    });
+  }
+
+  downgradeStaleObservations(
+    messages: LlmMessage[],
+    loopStartIndex: number,
+    currentRound: number,
+  ): void {
+    for (
+      let index = Math.max(0, loopStartIndex);
+      index < messages.length;
+      index++
+    ) {
+      const message = messages[index];
+      if (!message || message.role !== 'tool') continue;
+
+      const metadata = this.observationMetadata.get(message);
+      if (!metadata || metadata.downgraded) continue;
+
+      const age = currentRound - metadata.originRound;
+      if (
+        age < this.limits.staleObservationRounds ||
+        age < 0 ||
+        (!metadata.succeeded && age < RECENT_FAILED_OBSERVATION_ROUNDS)
+      ) {
+        continue;
+      }
+
+      const marker = staleObservationMarker(
+        metadata.succeeded,
+        metadata.originRound,
+      );
+      if (message.content === marker) {
+        metadata.downgraded = true;
+        continue;
+      }
+
+      message.content = marker;
+      metadata.downgraded = true;
+    }
   }
 
   private sanitizeHistory(

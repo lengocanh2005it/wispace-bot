@@ -873,6 +873,9 @@ export class PlatformAgentService {
         maxToolRounds: Number(
           this.configService.get<string>('OPENAI_MAX_TOOL_ROUNDS'),
         ),
+        staleObservationRounds: Number(
+          this.configService.get<string>('OPENAI_STALE_OBSERVATION_ROUNDS'),
+        ),
         maxContextChars: Number(
           this.configService.get<string>('OPENAI_MAX_CONTEXT_CHARS'),
         ),

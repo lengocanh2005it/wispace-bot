@@ -262,6 +262,11 @@ export class LlmAgentService<TToolContext> {
     let previousRoundFailed = false;
 
     for (let round = 0; round < maxToolRounds; round++) {
+      this.contextManager.downgradeStaleObservations(
+        messages,
+        loopMessagesStart,
+        round,
+      );
       let response:
         | Awaited<ReturnType<LlmProviderAdapter['chatWithTools']>>
         | undefined;
@@ -528,10 +533,15 @@ export class LlmAgentService<TToolContext> {
         }
 
         for (const result of toolResults) {
-          messages.push({
+          const toolMessage = {
             role: 'tool',
             toolCallId: result.toolCallId,
             content: result.content,
+          } as const;
+          messages.push(toolMessage);
+          this.contextManager.trackToolObservation(toolMessage, {
+            originRound: round,
+            succeeded: result.succeeded,
           });
         }
 

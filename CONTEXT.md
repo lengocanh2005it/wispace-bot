@@ -430,6 +430,22 @@ _Avoid_: learner profile, user prompt suffix
 One iteration of the LLM function-calling loop. The agent can invoke multiple tools per user message, up to `maxToolRounds` (default 6).
 _Avoid_: iteration, loop count
 
+**tool observation**:
+The projected, sanitized, bounded content returned by one tool execution and sent as a `role='tool'` message for its provider tool call. It is current-turn grounding data, not the raw executor payload.
+_Avoid_: raw tool result, tool transcript
+
+**observation age**:
+The number of tool rounds between an observation's origin round and the current round (`currentRound - originRound`). It is distinct from chat-turn age and history age.
+_Avoid_: model age, chat-turn age
+
+**stale observation**:
+A tool observation whose age reaches the configured `staleObservationRounds` threshold and is eligible for downgrade; recent failed observations remain protected.
+_Avoid_: stale history, expired observation
+
+**observation downgrade**:
+Replacing an already sanitized stale observation with a compact bounded marker before the next provider request, while keeping message roles, tool-call IDs, and provider pairing unchanged.
+_Avoid_: observation deletion, history trimming
+
 **tool schema**:
 The single zod schema per agent tool (ADR-0010). The provider-facing JSON Schema, the argument type, and runtime argument validation all derive from it — never hand-written separately. Capability metadata (effect/identity/authorization/confirmation/idempotency) sits alongside it, not inside it.
 _Avoid_: tool definition JSON, hand-written schema, three representations
