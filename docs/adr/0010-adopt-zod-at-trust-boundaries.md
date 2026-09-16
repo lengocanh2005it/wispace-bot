@@ -30,7 +30,7 @@ Adopt **zod v4** as the runtime schema library at exactly three trust boundaries
 
 - **`packages/contracts`** must stay zero-dependency (verified: no dependencies, no devDependencies, no peerDependencies). Types stay plain; zod schemas live in consuming packages and `z.infer` yields structurally-compatible types.
 - **`packages/chat-metering`** may depend only on `typeorm` + `@wispace/llm-agent` per its clean-architecture rule — no zod.
-- **NestJS HTTP DTOs in the apps** keep `class-validator` (idiomatic `@Body()` + `ValidationPipe` integration). `nestjs-zod` is a later follow-up, not part of this decision.
+- **NestJS HTTP DTOs in the apps** keep `class-validator` (idiomatic `@Body()` + `ValidationPipe` integration). This includes the shared ops routes in `packages/bot-common`, which are HTTP DTOs despite living in a package.
 
 ### Failure semantics differ per boundary — this is intentional
 
@@ -40,7 +40,9 @@ Adopt **zod v4** as the runtime schema library at exactly three trust boundaries
 
 ### Adapter split for structured output
 
-`zodResponseFormat()` is an OpenAI-only API. The OpenAI adapter uses vendor-enforced structured outputs; OpenAI-compatible adapters keep JSON mode + zod parse in our code. The two validation libraries co-exist (zod at these boundaries, class-validator at HTTP DTOs); this repo consolidates onto one **on trigger**, not on a date: when an HTTP DTO needs to share its schema with a zod boundary, or when `nestjs-zod` reaches feature parity that removes that need.
+`zodResponseFormat()` is an OpenAI-only API. The OpenAI adapter uses vendor-enforced structured outputs; OpenAI-compatible adapters keep JSON mode + zod parse in our code. The two validation libraries co-exist (zod at these boundaries, class-validator at HTTP DTOs); this repo consolidates onto one **on trigger**, not on a date: **when an HTTP DTO needs to share its schema with a zod boundary.**
+
+That is the whole trigger, and it is deliberately the only one. It fires from inside the codebase — a developer reaches for a schema that already exists on the other side of the fence and finds it in the wrong library — so it cannot go unnoticed. An earlier draft added "or when `nestjs-zod` reaches feature parity"; that clause was removed on 2026-09-16 because it named no owner, no definition of parity, and no review date, which made it a trigger nobody could ever observe firing. Adopting `nestjs-zod` remains available as a normal proposal; it is simply not a standing condition of this ADR.
 
 ### Declaration convention
 
@@ -69,6 +71,6 @@ zod is declared per-package in `packages/llm-agent`, `packages/student-report`, 
 - **#679**: make each agent tool one zod schema — derive JSON Schema, arg type, and runtime validation from it.
 - **#656**: contract-drift hardening at the WISPACE boundary (shape-validate auth responses, byte caps).
 - **#460**: structured-output work in `@wispace/student-report`.
-- **#487**: interface-typed ops bodies skip `ValidationPipe` — candidate zod-pipe fix.
+- **#487**: ops bodies skip `ValidationPipe`. **Resolved as class-validator, not zod** (2026-09-16). The original "candidate zod-pipe fix" wording was wrong on the mechanism: the defect is a `body?: unknown` metatype on the shared `PlatformOpsController` route, which `ValidationPipe` skips and a zod pipe would skip for the same reason. Swapping libraries there would fire the consolidation trigger above for a reason unrelated to why the trigger exists. #487 was also re-scoped after a re-read: most of its original evidence is stale at HEAD.
 
 Implementation issues must not start until this ADR is merged. Decided in the 2026-09 hand-rolled-vs-stdlib validation review (#659 thread).
