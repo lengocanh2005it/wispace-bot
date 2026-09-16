@@ -107,10 +107,10 @@ export function computeCircuitBreakerTimeout(
  *   const breaker = createCircuitBreaker(fetchFn, { threshold: 5, cooldown: 60000 });
  *   const result = await breaker.fire(); // throws CircuitBreakerOpenError when circuit is open
  */
-export function createCircuitBreaker<T>(
-  fn: (...args: any[]) => Promise<T>,
+export function createCircuitBreaker<T, TArgs extends unknown[] = unknown[]>(
+  fn: (...args: TArgs) => Promise<T>,
   opts: CircuitBreakerOptions = {},
-): CircuitBreaker<any[], T> {
+): CircuitBreaker<TArgs, T> {
   const breaker = new CircuitBreaker(fn, {
     timeout: opts.timeout ?? 60_000,
     errorThresholdPercentage: 50,

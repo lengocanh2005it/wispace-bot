@@ -4,8 +4,19 @@ import {
   ReportScheduleService,
   todayReportDate,
 } from '@wispace/scheduler-core';
+import type { Platform } from '@wispace/contracts';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloReportCronService } from './zalo-report-cron.service';
+
+type ZaloReportCronTestSurface = {
+  sendReportForUser: (
+    link: ZaloAccountLinkEntity,
+    reportDate: string,
+    sentUserIds: Set<number>,
+    forceSend: boolean,
+    canonicalPlatforms?: ReadonlyMap<number, Platform | undefined>,
+  ) => Promise<'sent' | 'skipped' | 'error'>;
+};
 
 jest.mock('@wispace/scheduler-core', () => ({
   ...jest.requireActual('@wispace/scheduler-core'),
@@ -437,7 +448,10 @@ describe('ZaloReportCronService', () => {
     );
 
     const sendReportForUserSpy = jest
-      .spyOn(service as any, 'sendReportForUser')
+      .spyOn(
+        service as unknown as ZaloReportCronTestSurface,
+        'sendReportForUser',
+      )
       .mockResolvedValue('sent');
 
     await service.sendDailyReports();
@@ -530,7 +544,12 @@ describe('ZaloReportCronService', () => {
       metrics as never,
     );
 
-    jest.spyOn(service as any, 'sendReportForUser').mockResolvedValue('sent');
+    jest
+      .spyOn(
+        service as unknown as ZaloReportCronTestSurface,
+        'sendReportForUser',
+      )
+      .mockResolvedValue('sent');
 
     await service.sendDailyReports({ forceSend: true });
 

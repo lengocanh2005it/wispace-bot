@@ -76,7 +76,10 @@ const markSentSchema = z.object({
 });
 
 export class ReengagementApiClient {
-  private readonly breaker: CircuitBreaker<any[], unknown>;
+  private readonly breaker: CircuitBreaker<
+    [fn: () => Promise<unknown>],
+    unknown
+  >;
 
   constructor(
     private readonly config: ReengagementClientConfig,

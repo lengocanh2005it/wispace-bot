@@ -1,4 +1,8 @@
 import { LlmSafetyCore } from './llm-safety-core.service';
+import type {
+  InsertLlmSafetyEvent,
+  LlmSafetyEventRepositoryPort,
+} from './types';
 
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -141,12 +145,14 @@ describe('LlmSafetyCore', () => {
 
   describe('recordClassifierVerdict', () => {
     it('writes a CLASSIFIER_FLAGGED row with a redacted payload and no raw text', async () => {
-      const inserted: any[] = [];
-      const repo = {
-        insert: jest.fn(async (e: any) => {
-          inserted.push(e);
+      const inserted: InsertLlmSafetyEvent[] = [];
+      const repo: LlmSafetyEventRepositoryPort = {
+        insert: jest.fn(async (event: InsertLlmSafetyEvent) => {
+          inserted.push(event);
         }),
-      } as any;
+        countSince: jest.fn().mockResolvedValue(0),
+        deleteOlderThan: jest.fn().mockResolvedValue(0),
+      };
       const core = new LlmSafetyCore(repo);
 
       core.recordClassifierVerdict({
@@ -181,12 +187,14 @@ describe('LlmSafetyCore', () => {
     });
 
     it('truncates reason to the 100-char column width', async () => {
-      const inserted: any[] = [];
-      const repo = {
-        insert: jest.fn(async (e: any) => {
-          inserted.push(e);
+      const inserted: InsertLlmSafetyEvent[] = [];
+      const repo: LlmSafetyEventRepositoryPort = {
+        insert: jest.fn(async (event: InsertLlmSafetyEvent) => {
+          inserted.push(event);
         }),
-      } as any;
+        countSince: jest.fn().mockResolvedValue(0),
+        deleteOlderThan: jest.fn().mockResolvedValue(0),
+      };
       const core = new LlmSafetyCore(repo);
 
       core.recordClassifierVerdict({
@@ -203,11 +211,13 @@ describe('LlmSafetyCore', () => {
     });
 
     it('never throws when the repository rejects', async () => {
-      const repo = {
+      const repo: LlmSafetyEventRepositoryPort = {
         insert: jest.fn(async () => {
           throw new Error('db down');
         }),
-      } as any;
+        countSince: jest.fn().mockResolvedValue(0),
+        deleteOlderThan: jest.fn().mockResolvedValue(0),
+      };
       const core = new LlmSafetyCore(repo);
       expect(() =>
         core.recordClassifierVerdict({

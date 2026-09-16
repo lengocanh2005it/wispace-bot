@@ -34,7 +34,10 @@ export class UserCalendarApiClient {
   // One breaker for all three operations (#656): same upstream host, same
   // sickness — a failing write path must stop hammering just like a failing
   // read path. The op closure carries per-operation retry logging.
-  private readonly breaker: CircuitBreaker<any[], unknown>;
+  private readonly breaker: CircuitBreaker<
+    [run: () => Promise<unknown>],
+    unknown
+  >;
   private readonly maxRetries: number;
   private readonly baseDelayMs: number;
 

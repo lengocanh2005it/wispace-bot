@@ -10,7 +10,7 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
 } from '@wispace/study-reminder-shared';
-import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '../messages/messenger-reminder.messages';
 import { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
@@ -130,8 +130,7 @@ export class WebhookActionExecutorService {
       case 'register_report':
         await this.reportDeliveryService.registerForScheduledReports(
           psid!,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
-          action as any,
+          action,
         );
         break;
 

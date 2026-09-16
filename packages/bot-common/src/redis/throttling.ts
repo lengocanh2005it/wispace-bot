@@ -67,8 +67,23 @@ export function WebhookThrottle(): MethodDecorator & ClassDecorator {
  *
  * Ponytail: 3 lines of logic, no subclass, no trust proxy.
  */
-export function throttleTracker(req: Record<string, any>): string {
-  return req.headers?.['x-real-ip'] || req.socket?.remoteAddress;
+interface ThrottleTrackerRequest {
+  headers?: Record<string, unknown>;
+  socket?: { remoteAddress?: unknown };
+}
+
+export function throttleTracker(
+  req: ThrottleTrackerRequest,
+): string | undefined {
+  const headerIp = req.headers?.['x-real-ip'];
+  if (typeof headerIp === 'string' && headerIp) {
+    return headerIp;
+  }
+
+  const remoteAddress = req.socket?.remoteAddress;
+  return typeof remoteAddress === 'string' && remoteAddress
+    ? remoteAddress
+    : undefined;
 }
 
 // AC5: Webhook routes (Discord/Zalo) apply @WebhookThrottle() which
@@ -88,6 +103,6 @@ export function createBotThrottlerOptions(
   return {
     throttlers: [{ ttl: config.ttlMs, limit: config.limit }],
     storage: new RedisThrottlerStorage(redisService),
-    getTracker: (req) => throttleTracker(req),
+    getTracker: (req) => throttleTracker(req) ?? 'unknown',
   };
 }

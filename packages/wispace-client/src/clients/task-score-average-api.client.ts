@@ -44,7 +44,14 @@ const taskScoreRecordSchema = z.object({
 });
 
 export class TaskScoreAverageApiClient {
-  private readonly breaker: CircuitBreaker<any[], TaskScoreAverageRecord[]>;
+  private readonly breaker: CircuitBreaker<
+    [
+      idHeader: WispaceIdHeader,
+      externalId: string,
+      options?: { signal?: AbortSignal },
+    ],
+    TaskScoreAverageRecord[]
+  >;
 
   constructor(
     private readonly config: WispaceApiClientConfig,

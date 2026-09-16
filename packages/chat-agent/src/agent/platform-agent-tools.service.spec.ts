@@ -1071,7 +1071,7 @@ describe('PlatformAgentToolsService', () => {
       exerciseClient.precreateNextExercise.mockResolvedValue({
         status: 'created',
         exerciseUrl: 'https://x/y',
-      } as any);
+      });
       const svc = makeService({ writeToolBudget: budget });
       const result = await svc.execute(
         'precreate_next_exercise',
@@ -1138,7 +1138,7 @@ describe('PlatformAgentToolsService', () => {
       };
       exerciseClient.precreateNextExercise.mockResolvedValue({
         status: 'finished_all',
-      } as any);
+      });
       const svc = makeService({ writeToolBudget: budget });
       await svc.execute(
         'precreate_next_exercise',
@@ -1160,7 +1160,7 @@ describe('PlatformAgentToolsService', () => {
       exerciseClient.precreateNextExercise.mockResolvedValue({
         status: 'created',
         exerciseUrl: 'https://x/y',
-      } as any);
+      });
       const deniedInc = jest.fn();
       const svc = makeService({
         writeToolBudget: budget,
@@ -1205,7 +1205,7 @@ describe('PlatformAgentToolsService', () => {
       exerciseClient.precreateNextExercise.mockResolvedValue({
         status: 'created',
         exerciseUrl: 'https://x/y',
-      } as any);
+      });
       const svc = makeService({ writeToolBudget: undefined });
       const result = await svc.execute(
         'precreate_next_exercise',
@@ -1224,7 +1224,7 @@ describe('PlatformAgentToolsService', () => {
       goalsService.getUserGoals.mockResolvedValue({
         targetScore: 7,
         examDate: '2026-08-01',
-      } as any);
+      });
       const svc = makeService({ writeToolBudget: budget });
       await svc.execute('get_user_goals', '{}', makeCtx({}));
       expect(budget.checkDailyAllowed).not.toHaveBeenCalled();

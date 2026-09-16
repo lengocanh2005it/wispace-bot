@@ -1,4 +1,7 @@
-import type { MessengerWebhookEvent } from '../domain/entities/messenger.types';
+import type {
+  MessengerWebhookEvent,
+  NotificationCadence,
+} from '../domain/entities/messenger.types';
 import type { RouterContext } from './types/messenger-webhook-router.types';
 import { isUnsupportedUserMessage } from '../domain/utils/webhook-predicates';
 import {
@@ -60,7 +63,7 @@ export type WebhookAction =
       userId: number;
       ref: string;
       topic: string;
-      cadence: string;
+      cadence: NotificationCadence;
     }
   | {
       type: 'send_report';
@@ -113,7 +116,7 @@ export function extractRefFromEvent(
 function resolveLinkContext(ctx: RouterContext): {
   ref: string;
   topic: string;
-  cadence: string;
+  cadence: NotificationCadence;
   userId: number;
 } | null {
   if (ctx.linkContext) {

@@ -31,7 +31,14 @@ const userGoalsResponseSchema = z.object({
 });
 
 export class UserGoalsApiClient {
-  private readonly breaker: CircuitBreaker<any[], UserGoalsRecord>;
+  private readonly breaker: CircuitBreaker<
+    [
+      idHeader: WispaceIdHeader,
+      externalId: string,
+      options?: { signal?: AbortSignal },
+    ],
+    UserGoalsRecord
+  >;
 
   constructor(
     private readonly config: WispaceApiClientConfig,

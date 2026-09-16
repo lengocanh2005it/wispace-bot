@@ -1,9 +1,10 @@
 import { DirectUsageWriter } from './direct-usage-writer';
+import type { LlmUsageRepository } from './llm-usage.repository';
 
 function mockRepo() {
   return {
     insertUsage: jest.fn().mockRejectedValue(new Error('db down')),
-  } as any;
+  } as unknown as LlmUsageRepository;
 }
 
 describe('DirectUsageWriter', () => {

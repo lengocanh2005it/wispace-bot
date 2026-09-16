@@ -5,7 +5,7 @@ describe('throttleTracker', () => {
     const req = {
       headers: { 'x-real-ip': '203.0.113.42' },
       socket: { remoteAddress: '10.0.0.1' },
-    } as any;
+    };
     expect(throttleTracker(req)).toBe('203.0.113.42');
   });
 
@@ -13,7 +13,7 @@ describe('throttleTracker', () => {
     const req = {
       headers: {},
       socket: { remoteAddress: '10.0.0.1' },
-    } as any;
+    };
     expect(throttleTracker(req)).toBe('10.0.0.1');
   });
 
@@ -24,12 +24,12 @@ describe('throttleTracker', () => {
         'x-forwarded-for': '1.2.3.4, 10.0.0.1',
       },
       socket: { remoteAddress: '10.0.0.1' },
-    } as any;
+    };
     expect(throttleTracker(req)).toBe('198.51.100.7');
   });
 
   it('returns undefined when both header and socket are absent (fail closed)', () => {
-    const req = { headers: {}, socket: {} } as any;
+    const req = { headers: {}, socket: {} };
     expect(throttleTracker(req)).toBeUndefined();
   });
 
@@ -37,11 +37,11 @@ describe('throttleTracker', () => {
     const req1 = {
       headers: { 'x-real-ip': '1.1.1.1' },
       socket: { remoteAddress: '10.0.0.1' },
-    } as any;
+    };
     const req2 = {
       headers: { 'x-real-ip': '2.2.2.2' },
       socket: { remoteAddress: '10.0.0.1' },
-    } as any;
+    };
     expect(throttleTracker(req1)).not.toBe(throttleTracker(req2));
   });
 });
