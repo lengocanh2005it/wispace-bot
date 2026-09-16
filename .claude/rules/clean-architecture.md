@@ -117,6 +117,13 @@ presentation → application → domain ← infrastructure
 - `shared/prompts/` — `*.system.txt` (Messenger-specific content), loaded via `loadSystemPromptFile()` from `@wispace/llm-agent`
 - `infrastructure/database/` — Messenger app wiring and migration CLI; shared TypeORM entities/migrations live in `packages/database/` (see `docs/turborepo-migration-plan.md` Phase 2)
 
+**Database portability boundary:** PostgreSQL-specific SQL, physical schema
+details, TypeORM persistence code, and shared database/lock infrastructure
+belong behind the adapter boundary. Domain code, application business logic,
+and public ports must expose database-neutral semantics; see
+[ADR-0025](../../docs/adr/0025-database-portability-boundary.md). The exact
+raw-SQL location guard is tracked by [#1225](https://github.com/lengocanh2005it/wispace-bot/issues/1225).
+
 ## Feature module structure
 
 ```

@@ -841,6 +841,14 @@ _Avoid_: cache result when describing the artifact origin
 Said of a package whose enforced core imports no NestJS, no TypeORM and no vendor SDK, so any bot can use it. It describes named core paths, not always a whole package — several packages ship explicit outer adapters alongside a pure core.
 _Avoid_: "pure package", "no dependencies" — the claim is about framework coupling, not about having none
 
+**database portability boundary**:
+The rule that database-engine-specific persistence code stays behind adapters and infrastructure boundaries, while domain code, application business logic, and public ports remain engine-neutral. It is a boundary about dependencies and observable behavior, not a promise that SQL or migration files are portable.
+_Avoid_: portable SQL promise, drop-in database guarantee
+
+**persistence semantics**:
+The observable atomicity, concurrency, fencing, ordering, and outcome guarantees exposed by a persistence port and preserved by its adapter.
+_Avoid_: SQL syntax contract, query-shape contract
+
 > This glossary deliberately does not inventory `packages/`. That list changes with almost every architecture PR, and two copies of it means the copy nobody edits goes wrong. Boundaries, allowed imports and the per-package exception map live in [`docs/architecture-boundaries.md`](docs/architecture-boundaries.md) and [`.claude/rules/clean-architecture.md`](.claude/rules/clean-architecture.md), which are updated with the code they describe. Define vocabulary here; look up structure there.
 
 ### Naming Conventions
