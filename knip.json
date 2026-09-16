@@ -13,19 +13,45 @@
     "apps/*": {
       "entry": [
         "src/main.ts",
+        "src/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "apps/messenger-bot": {
+      "entry": [
+        "src/main.ts",
         "src/**/*.spec.ts",
+        "src/infrastructure/database/data-source.ts",
         "test/**/*.ts",
-        "scripts/*.mjs",
-        "src/infrastructure/database/data-source.ts"
+        "scripts/*.mjs"
       ],
       "project": [
         "src/**/*.ts",
         "test/**/*.ts"
       ]
     },
+    "apps/zalo-bot": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.spec.ts",
+        "scripts/*.mjs"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
     "packages/*": {
       "entry": [
-        "src/index.ts",
+        "src/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/llm-agent": {
+      "entry": [
         "src/**/*.spec.ts",
         "src/**/*.main.ts"
       ],
@@ -35,9 +61,7 @@
     },
     "packages/database": {
       "entry": [
-        "src/index.ts",
         "src/**/*.spec.ts",
-        "src/**/*.main.ts",
         "src/migrations/*.ts",
         "src/entities/*.ts"
       ],
@@ -46,13 +70,14 @@
       ]
     }
   },
+  "ignoreBinaries": [
+    "tsc"
+  ],
   "ignoreDependencies": [
     "@nestjs/cli",
     "@nestjs/schematics",
     "@nestjs/testing",
     "@swc/cli",
-    "@swc/core",
-    "@swc/jest",
     "lint-staged"
   ]
 }
