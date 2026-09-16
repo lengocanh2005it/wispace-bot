@@ -15,6 +15,7 @@
     "format": "oxfmt apps packages",
     "format:check": "oxfmt --check apps packages",
     "knip": "knip",
+    "knip:deps": "knip --include dependencies,unlisted,unresolved --no-config-hints",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "eval:rehash": "npm run eval:rehash --workspace=@wispace/llm-agent --",
@@ -31,13 +32,14 @@
     "architecture:check": "node scripts/check-architecture.mjs",
     "architecture:test": "node --test scripts/check-architecture.test.mjs",
     "verify:affected": "npm run architecture:check && npm run format:check && npm run lint && turbo run typecheck test build --affected",
-    "verify": "npm run architecture:check && npm run format:check && npm run lint && turbo run typecheck test build"
+    "verify": "npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build"
   },
   "devDependencies": {
-    "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/config": "^12.0.0",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.46",
     "@swc/jest": "^0.2.39",
+    "@types/jest": "^30.0.0",
     "@types/opossum": "^8.1.9",
     "fast-check": "^4.9.0",
     "husky": "^9.1.7",
@@ -48,6 +50,7 @@
     "oxlint": "^1.79.0",
     "oxlint-tsgolint": "^7.0.2001",
     "turbo": "^2.3.0",
+    "typeorm": "^1.1.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "optionalDependencies": {

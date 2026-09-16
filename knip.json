@@ -52,6 +52,7 @@
     "@nestjs/testing",
     "@swc/cli",
     "@swc/core",
-    "@swc/jest"
+    "@swc/jest",
+    "lint-staged"
   ]
 }
