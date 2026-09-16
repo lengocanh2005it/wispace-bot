@@ -406,6 +406,26 @@ _Avoid_: ref check, token result
 Framework-agnostic function-calling orchestration loop (in `packages/llm-agent`). Manages tool rounds, history, grounding checks, prompt injection detection. Provider-neutral — it talks to an `LlmProviderAdapter`, never to a vendor SDK (ADR-0006).
 _Avoid_: chat service, AI service, "the OpenAI loop"
 
+**context budget**:
+The one input-token ceiling for a provider request, covering the current learner turn, system prompt parts, tool schemas, conversation history, and loop-generated messages.
+_Avoid_: output budget, quota
+
+**fixed context**:
+Provider input that is not replayed conversation history: the system prompt parts and tool schemas. Some fixed context is optional under pressure; the current turn and safety rules are not.
+_Avoid_: system prompt (it is only one part of fixed context)
+
+**drop order**:
+The explicit removal order when the context budget is tight: learner-profile section first, reasoning instruction second, then oldest history entries. The current learner turn, core/overlay rules, identity/display-name block, and full tool schemas remain the minimum valid request; if that minimum does not fit, the agent uses its fallback.
+_Avoid_: retention priority, implicit trimming
+
+**learner-profile section**:
+Fresh server-derived learner facts, such as target band and exam date, appended for personalization. It is distinct from the identity/display-name block; facts older than the freshness window are omitted, and this section is optional when the context budget is tight.
+_Avoid_: profile history, model-written facts
+
+**identity/display-name block**:
+Dynamic prompt context that states whether the platform identity is linked and how the bot should address the learner. It is retained even when the optional learner-profile section is removed.
+_Avoid_: learner profile, user prompt suffix
+
 **tool round**:
 One iteration of the LLM function-calling loop. The agent can invoke multiple tools per user message, up to `maxToolRounds` (default 6).
 _Avoid_: iteration, loop count

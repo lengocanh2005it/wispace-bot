@@ -10,6 +10,7 @@ import type {
   ContentClassifierPort,
   LlmExecutionPort,
   AgentToolName,
+  LlmAgentPromptParts,
 } from '@wispace/llm-agent';
 import type { PinnedFact } from './pinned-facts';
 import type { WispaceCacheInvalidationPort } from './wispace-capability.ports';
@@ -106,6 +107,11 @@ export interface PlatformAgentInput {
   signal?: AbortSignal;
 }
 
+export type PlatformPromptSuffixParts = Pick<
+  LlmAgentPromptParts,
+  'identityDisplayName' | 'learnerProfile'
+>;
+
 /** Per-platform agent options — prompt files are owned by each app. */
 export interface PlatformAgentOptions {
   /** Stable platform namespace for clarification state (messenger/discord/zalo). */
@@ -119,12 +125,12 @@ export interface PlatformAgentOptions {
   promptDir: string;
   promptFile: string;
   /**
-   * Appended to the base system prompt (e.g. Messenger's per-user display
-   * name linkage note). Default: no suffix.
+   * Dynamic system-prompt context. A string is a legacy mandatory suffix;
+   * named parts let the context budget drop learner facts independently.
    */
   systemPromptSuffix?: (
     input: PlatformAgentInput,
-  ) => Promise<string | undefined>;
+  ) => Promise<PlatformPromptSuffixParts | string | undefined>;
   /** Called before the LLM loop (Messenger sets OTel span attributes). */
   onBeforeReply?: (input: PlatformAgentInput) => Promise<void>;
   /**

@@ -4,12 +4,16 @@ import {
   LlmAgentPorts,
   LlmRetryExhaustedError,
 } from './agent.service';
+import { AGENT_TOOLS } from './agent.tools';
 import { NOOP_METRICS_PORT } from './ports';
 import type { AgentMetricsPort } from './ports';
-import type { LlmAgentInput } from './types';
+import type { LlmAgentConfig, LlmAgentInput } from './types';
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmToolChatResponse } from './provider/types';
 import { LlmOverloadError } from './execution/bounded-admission';
+import { composeChatSystemPrompt } from './chat-system-prompt';
+import { REASONING_INSTRUCTION } from './internal/context-manager';
+import { estimateTokens } from './internal/agent-limits';
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -127,6 +131,7 @@ function buildService(
     metrics?: AgentMetricsPort;
     platform?: string;
   } = {},
+  config: LlmAgentConfig = {},
 ) {
   const usageRecorder = { recordFromCompletion: jest.fn() };
   const safetyEvents = {
@@ -158,7 +163,7 @@ function buildService(
     logger: { warn: jest.fn(), debug: jest.fn() },
   };
 
-  const service = new LlmAgentService<StubToolContext>({}, ports);
+  const service = new LlmAgentService<StubToolContext>(config, ports);
 
   return {
     service,
@@ -1865,6 +1870,359 @@ describe('LlmAgentService', () => {
   });
 
   describe('reply() — context budget truncation (Fix 3)', () => {
+    it('keeps the no-pressure structured prompt byte-identical (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const { service } = buildService({ adapter });
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        identityDisplayName: 'IDENTITY',
+        learnerProfile: 'PROFILE',
+      };
+      const history = [
+        { role: 'user' as const, content: 'previous question' },
+        { role: 'assistant' as const, content: 'previous answer' },
+      ];
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: 'current question',
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+          history,
+        },
+        TOOL_CONTEXT,
+      );
+
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      expect(request.tools).toEqual(AGENT_TOOLS);
+      expect(request.messages).toEqual([
+        {
+          role: 'system',
+          content: `${composeChatSystemPrompt(promptParts)}\n\n${REASONING_INSTRUCTION}`,
+        },
+        ...history,
+        { role: 'user', content: 'current question' },
+      ]);
+    });
+
+    it('keeps string-only callers compatible when no parts are supplied (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const { service } = buildService({ adapter });
+      const history = [{ role: 'assistant' as const, content: 'previous' }];
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          systemPrompt: 'LEGACY SYSTEM PROMPT',
+          history,
+        },
+        TOOL_CONTEXT,
+      );
+
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      expect(request.messages).toEqual([
+        {
+          role: 'system',
+          content: `LEGACY SYSTEM PROMPT\n\n${REASONING_INSTRUCTION}`,
+        },
+        ...history,
+        { role: 'user', content: BASE_INPUT.userText },
+      ]);
+    });
+
+    it('drops the learner-profile section before history under tight budget (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const { service } = buildService({ adapter }, { maxInputTokens: 10_000 });
+      const promptParts = {
+        core: 'CORE '.repeat(100),
+        overlay: 'OVERLAY '.repeat(100),
+        identityDisplayName: 'IDENTITY '.repeat(20),
+        learnerProfile: 'PROFILE '.repeat(2_000),
+      };
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: 'current question',
+          systemPrompt: [
+            promptParts.core,
+            promptParts.overlay,
+            promptParts.identityDisplayName,
+            promptParts.learnerProfile,
+          ].join('\n\n'),
+          systemPromptParts: promptParts,
+          history: [
+            { role: 'user', content: 'old history' },
+            { role: 'assistant', content: 'newest history' },
+          ],
+        } as LlmAgentInput,
+        TOOL_CONTEXT,
+      );
+
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      const system = request.messages.find(
+        (message: { role: string }) => message.role === 'system',
+      );
+      expect(request.tools).toEqual(AGENT_TOOLS);
+      expect(system.content).not.toContain('PROFILE');
+      expect(system.content).toContain('IDENTITY');
+      expect(system.content).toContain('Xác định ý định');
+      expect(request.messages).toContainEqual({
+        role: 'assistant',
+        content: 'newest history',
+      });
+    });
+
+    it('drops the reasoning instruction before history when the profile is already gone (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const promptParts = {
+        core: 'CORE '.repeat(500),
+        overlay: 'OVERLAY '.repeat(250),
+        identityDisplayName: 'IDENTITY '.repeat(100),
+        learnerProfile: 'PROFILE '.repeat(500),
+      };
+      const systemWithoutProfile = [
+        promptParts.core,
+        promptParts.overlay,
+        promptParts.identityDisplayName,
+      ].join('\n\n');
+      const newestHistory = { role: 'assistant' as const, content: 'newest' };
+      const userMessage = { role: 'user' as const, content: 'current' };
+      const toolTokens = estimateTokens(
+        JSON.stringify(
+          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
+        ),
+      );
+      const budgetWithReasoning =
+        estimateTokens(
+          JSON.stringify([
+            {
+              role: 'system',
+              content: `${systemWithoutProfile}\n\n${REASONING_INSTRUCTION}`,
+            },
+            newestHistory,
+            userMessage,
+          ]),
+        ) + toolTokens;
+      const { service } = buildService(
+        { adapter },
+        { maxInputTokens: budgetWithReasoning - 1 },
+      );
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: userMessage.content,
+          systemPrompt: [systemWithoutProfile, promptParts.learnerProfile].join(
+            '\n\n',
+          ),
+          systemPromptParts: promptParts,
+          history: [newestHistory],
+        } as LlmAgentInput,
+        TOOL_CONTEXT,
+      );
+
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      const system = request.messages.find(
+        (message: { role: string }) => message.role === 'system',
+      );
+      expect(system.content).not.toContain('PROFILE');
+      expect(system.content).not.toContain('Xác định ý định');
+      expect(request.messages).toContainEqual(newestHistory);
+    });
+
+    it('drops history from oldest to newest after optional parts (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        identityDisplayName: 'IDENTITY',
+        learnerProfile: 'PROFILE '.repeat(100),
+      };
+      const oldestHistory = {
+        role: 'user' as const,
+        content: Array.from({ length: 500 }, (_, index) => `old-${index}`).join(
+          ' ',
+        ),
+      };
+      const recentHistory = {
+        role: 'assistant' as const,
+        content: Array.from(
+          { length: 500 },
+          (_, index) => `recent-${index}`,
+        ).join(' '),
+      };
+      const newestHistory = {
+        role: 'user' as const,
+        content: 'NEWEST',
+      };
+      const userMessage = { role: 'user' as const, content: 'current' };
+      const toolTokens = estimateTokens(
+        JSON.stringify(
+          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
+        ),
+      );
+      const systemWithoutOptionalParts = `${composeChatSystemPrompt({
+        core: promptParts.core,
+        overlay: promptParts.overlay,
+        identityDisplayName: promptParts.identityDisplayName,
+      })}`;
+      const budget =
+        estimateTokens(
+          JSON.stringify([
+            {
+              role: 'system',
+              content: systemWithoutOptionalParts,
+            },
+            recentHistory,
+            newestHistory,
+            userMessage,
+          ]),
+        ) + toolTokens;
+      const { service } = buildService({ adapter }, { maxInputTokens: budget });
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: userMessage.content,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+          history: [oldestHistory, recentHistory, newestHistory],
+        },
+        TOOL_CONTEXT,
+      );
+
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      expect(request.messages).toContainEqual(recentHistory);
+      expect(request.messages).toContainEqual(newestHistory);
+      expect(request.messages).not.toContainEqual(oldestHistory);
+    });
+
+    it('does not retain an older entry around a newer entry that cannot fit (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        identityDisplayName: 'IDENTITY',
+      };
+      const oldestHistory = { role: 'user' as const, content: 'OLDEST' };
+      const oversizedMiddleHistory = {
+        role: 'assistant' as const,
+        content: Array.from(
+          { length: 250 },
+          (_, index) => `middle-${index}`,
+        ).join(' '),
+      };
+      const newestHistory = { role: 'user' as const, content: 'NEWEST' };
+      const userMessage = { role: 'user' as const, content: 'current' };
+      const toolTokens = estimateTokens(
+        JSON.stringify(
+          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
+        ),
+      );
+      const system = `${composeChatSystemPrompt(promptParts)}\n\n${REASONING_INSTRUCTION}`;
+      const budget =
+        estimateTokens(
+          JSON.stringify([
+            { role: 'system', content: system },
+            oldestHistory,
+            newestHistory,
+            userMessage,
+          ]),
+        ) + toolTokens;
+      const { service } = buildService({ adapter }, { maxInputTokens: budget });
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: userMessage.content,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+          history: [oldestHistory, oversizedMiddleHistory, newestHistory],
+        },
+        TOOL_CONTEXT,
+      );
+
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      expect(request.messages).toContainEqual(newestHistory);
+      expect(request.messages).not.toContainEqual(oldestHistory);
+      expect(
+        request.messages.some((message: { content?: string }) =>
+          message.content?.includes('middle-'),
+        ),
+      ).toBe(false);
+    });
+
+    it('drops an oversized history entry atomically (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('OK')]);
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        identityDisplayName: 'IDENTITY',
+      };
+      const oversizedHistory = {
+        role: 'assistant' as const,
+        content: Array.from(
+          { length: 700 },
+          (_, index) => `oversized-${index}`,
+        ).join(' '),
+      };
+      const newestHistory = { role: 'user' as const, content: 'NEWEST' };
+      const userMessage = { role: 'user' as const, content: 'current' };
+      const toolTokens = estimateTokens(
+        JSON.stringify(
+          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
+        ),
+      );
+      const system = `${composeChatSystemPrompt(promptParts)}\n\n${REASONING_INSTRUCTION}`;
+      const budget =
+        estimateTokens(
+          JSON.stringify([
+            { role: 'system', content: system },
+            newestHistory,
+            userMessage,
+          ]),
+        ) + toolTokens;
+      const { service } = buildService({ adapter }, { maxInputTokens: budget });
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: userMessage.content,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+          history: [oversizedHistory, newestHistory],
+        },
+        TOOL_CONTEXT,
+      );
+
+      const request = (adapter.chatWithTools as jest.Mock).mock.calls[0][0];
+      expect(request.messages).toContainEqual(newestHistory);
+      expect(
+        request.messages.some((message: { content?: string }) =>
+          message.content?.includes('oversized-'),
+        ),
+      ).toBe(false);
+    });
+
+    it('fails closed without calling the provider when the mandatory floor cannot fit (#1235)', async () => {
+      const adapter = makeAdapter([makeTextResponse('should not run')]);
+      const { service, llmExecution } = buildService(
+        { adapter },
+        { maxInputTokens: 1 },
+      );
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toBeTruthy();
+      expect(adapter.chatWithTools).not.toHaveBeenCalled();
+      expect(llmExecution.run).not.toHaveBeenCalled();
+    });
+
     it('truncates old history when total chars exceed maxContextChars', async () => {
       const response = makeTextResponse('OK');
       const adapter = makeAdapter([response]);

@@ -56,6 +56,7 @@ export {
 export type {
   PlatformAgentInput,
   PlatformAgentOptions,
+  PlatformPromptSuffixParts,
   PlatformAgentReply,
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,

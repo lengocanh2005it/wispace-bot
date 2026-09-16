@@ -939,11 +939,12 @@ export async function runEvalFixture(
       summary: 'prompt mismatch',
     };
   }
-  const systemPrompt = composeChatSystemPrompt({
+  const systemPromptParts = {
     core: CHAT_SYSTEM_PROMPT_CORE,
     overlay: prompt.content,
-    suffix: fixture.systemPromptSuffix,
-  });
+    identityDisplayName: fixture.systemPromptSuffix,
+  };
+  const systemPrompt = composeChatSystemPrompt(systemPromptParts);
 
   const adapter = new ScriptedAdapter(
     fixture.script,
@@ -994,6 +995,7 @@ export async function runEvalFixture(
         userId: fixture.userId,
         userText: fixture.userText,
         systemPrompt,
+        systemPromptParts,
         history: fixture.history,
         correlationId: `eval-${fixture.name}`,
       },

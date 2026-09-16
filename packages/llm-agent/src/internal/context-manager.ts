@@ -4,7 +4,12 @@ import {
   isInjectionSanitizeReason,
   sanitizeUntrustedTextForLlm,
 } from '../utils/prompt-injection.utils';
-import type { ChatHistoryMessage, LlmAgentInput } from '../types';
+import type {
+  ChatHistoryMessage,
+  LlmAgentInput,
+  LlmAgentPromptParts,
+} from '../types';
+import { composeChatSystemPrompt } from '../chat-system-prompt';
 import { AgentLimits, estimateTokens } from './agent-limits';
 
 const MAX_HISTORY_ENTRY_CHARS = 8_000;
@@ -27,7 +32,10 @@ export interface ContextBuildResult {
   messages: LlmMessage[];
   fits: boolean;
   droppedHistoryTokens: number;
+  droppedContextParts: ContextPartName[];
 }
+
+export type ContextPartName = 'learner_profile' | 'reasoning_instruction';
 
 export interface LoopTrimResult {
   fits: boolean;
@@ -59,10 +67,16 @@ export class ContextManager {
     input: LlmAgentInput,
     hooks: ContextManagerHooks = this.hooks,
   ): ContextBuildResult {
-    const system: LlmMessage = {
-      role: 'system',
-      content: `${input.systemPrompt}\n\n${REASONING_INSTRUCTION}`,
-    };
+    const promptParts = input.systemPromptParts;
+    const droppedContextParts: ContextPartName[] = [];
+    let includeLearnerProfile = Boolean(promptParts?.learnerProfile);
+    let includeReasoningInstruction = true;
+    let system = this.buildSystemMessage(
+      input.systemPrompt,
+      promptParts,
+      includeLearnerProfile,
+      includeReasoningInstruction,
+    );
     const user: LlmMessage = {
       role: 'user',
       content: input.userText.trim(),
@@ -70,27 +84,82 @@ export class ContextManager {
     const history = this.sanitizeHistory(input.history ?? [], hooks);
     const selected: ChatHistoryMessage[] = [];
     let droppedHistoryTokens = 0;
+    const allHistoryMessages = this.toMessages(history);
+
+    const exceedsBudget = (candidateSystem: LlmMessage): boolean =>
+      estimateContextTokens([candidateSystem, ...allHistoryMessages, user]) >
+      this.limits.inputTokenBudget;
+
+    if (includeLearnerProfile && exceedsBudget(system)) {
+      includeLearnerProfile = false;
+      droppedContextParts.push('learner_profile');
+      system = this.buildSystemMessage(
+        input.systemPrompt,
+        promptParts,
+        includeLearnerProfile,
+        includeReasoningInstruction,
+      );
+    }
+
+    if (includeReasoningInstruction && exceedsBudget(system)) {
+      includeReasoningInstruction = false;
+      droppedContextParts.push('reasoning_instruction');
+      system = this.buildSystemMessage(
+        input.systemPrompt,
+        promptParts,
+        includeLearnerProfile,
+        includeReasoningInstruction,
+      );
+    }
+
     const fixed = [system, user];
 
     if (estimateContextTokens(fixed) > this.limits.inputTokenBudget) {
-      return { messages: fixed, fits: false, droppedHistoryTokens: 0 };
+      return {
+        messages: fixed,
+        fits: false,
+        droppedHistoryTokens: 0,
+        droppedContextParts,
+      };
     }
 
-    // History is bounded by the most recent entries. The history caps in the
-    // stores keep this scan small; clarity is more valuable than a second
-    // token accumulator that can drift from estimateContextTokens().
-    for (let i = history.length - 1; i >= 0; i--) {
-      const entry = history[i];
-      if (!entry) continue;
-      const candidate = [
-        system,
-        ...this.toMessages([...selected, entry]),
-        user,
-      ];
-      if (estimateContextTokens(candidate) <= this.limits.inputTokenBudget) {
-        selected.unshift(entry);
+    const fitsHistory = (entries: ChatHistoryMessage[]): boolean =>
+      estimateContextTokens([system, ...this.toMessages(entries), user]) <=
+      this.limits.inputTokenBudget;
+
+    if (fitsHistory(history)) {
+      selected.push(...history);
+    } else {
+      const newest = history.at(-1);
+      if (newest && fitsHistory([newest])) {
+        selected.push(...history);
+        // Drop a contiguous oldest prefix so a too-large middle entry cannot
+        // make us retain an older entry while losing a newer one.
+        while (selected.length > 0 && !fitsHistory(selected)) {
+          const removed = selected.shift();
+          if (removed) {
+            droppedHistoryTokens += estimateTokens(removed.content);
+          }
+        }
       } else {
-        droppedHistoryTokens += estimateTokens(entry.content);
+        // If the newest entry cannot fit by itself, retain the existing
+        // newest-to-oldest scan so smaller older entries can still be used.
+        for (let i = history.length - 1; i >= 0; i--) {
+          const entry = history[i];
+          if (!entry) continue;
+          const candidate = [
+            system,
+            ...this.toMessages([...selected, entry]),
+            user,
+          ];
+          if (
+            estimateContextTokens(candidate) <= this.limits.inputTokenBudget
+          ) {
+            selected.unshift(entry);
+          } else {
+            droppedHistoryTokens += estimateTokens(entry.content);
+          }
+        }
       }
     }
 
@@ -103,6 +172,29 @@ export class ContextManager {
       messages,
       fits: estimateContextTokens(messages) <= this.limits.inputTokenBudget,
       droppedHistoryTokens,
+      droppedContextParts,
+    };
+  }
+
+  private buildSystemMessage(
+    systemPrompt: string,
+    promptParts: LlmAgentPromptParts | undefined,
+    includeLearnerProfile: boolean,
+    includeReasoningInstruction: boolean,
+  ): LlmMessage {
+    const composedPrompt = promptParts
+      ? composeChatSystemPrompt({
+          ...promptParts,
+          learnerProfile: includeLearnerProfile
+            ? promptParts.learnerProfile
+            : undefined,
+        })
+      : systemPrompt;
+    return {
+      role: 'system',
+      content: includeReasoningInstruction
+        ? `${composedPrompt}\n\n${REASONING_INSTRUCTION}`
+        : composedPrompt,
     };
   }
 

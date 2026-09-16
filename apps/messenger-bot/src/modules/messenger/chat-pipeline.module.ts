@@ -359,7 +359,10 @@ import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
                 ? `Học viên đã liên kết WISPACE. Tên gọi: ${displayName}.`
                 : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;
               const profileSection = await learnerProfileSuffix(input);
-              return profileSection ? `${base}\n\n${profileSection}` : base;
+              return {
+                identityDisplayName: base,
+                learnerProfile: profileSection,
+              };
             },
             // Learner profile (#207 item 3): persist server-derived facts
             // (band target, exam date) from successful tool results.

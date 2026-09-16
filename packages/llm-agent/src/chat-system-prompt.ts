@@ -1,3 +1,5 @@
+import type { LlmAgentPromptParts } from './types';
+
 /**
  * Canonical free-form chat system prompt shared by all 3 bots.
  *
@@ -72,13 +74,18 @@ Rescheduling (important):
  * (#646): part order (core → overlay → suffix), the `\n\n` separator, and
  * suffix handling live ONLY here — both `PlatformAgentService.buildSystemPrompt`
  * (runtime) and the eval harness call this function, so the two paths cannot
- * drift apart.
+ * drift apart. Named dynamic parts are ordered as identity/display-name then
+ * learner profile; `suffix` remains the legacy compatibility input.
  */
-export function composeChatSystemPrompt(parts: {
-  core: string;
-  overlay: string;
-  suffix?: string | null;
-}): string {
+export function composeChatSystemPrompt(
+  parts: LlmAgentPromptParts & { suffix?: string | null },
+): string {
   const base = `${parts.core}\n\n${parts.overlay}`;
-  return parts.suffix ? `${base}\n\n${parts.suffix}` : base;
+  const suffix =
+    parts.suffix !== undefined
+      ? parts.suffix
+      : [parts.identityDisplayName, parts.learnerProfile]
+          .filter((part): part is string => Boolean(part))
+          .join('\n\n');
+  return suffix ? `${base}\n\n${suffix}` : base;
 }

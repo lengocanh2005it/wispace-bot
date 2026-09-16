@@ -11,6 +11,7 @@ import {
   createEnvLlmExecutionPort,
   type LlmExecutionPort,
   type LlmProviderAdapter,
+  type LlmAgentPromptParts,
   loadSystemPromptFile,
   IntentDetector,
   isAmbiguousMessage,
@@ -279,12 +280,14 @@ export class PlatformAgentService {
       ReturnType<LlmAgentService<PlatformAgentToolContext>['reply']>
     >;
     try {
+      const prompt = await this.buildSystemPrompt(resolvedInput);
       result = await this.agent.reply(
         {
           externalUserId: resolvedInput.externalUserId,
           userId: resolvedInput.userId,
           userText: resolvedInput.userText,
-          systemPrompt: await this.buildSystemPrompt(resolvedInput),
+          systemPrompt: prompt.systemPrompt,
+          systemPromptParts: prompt.systemPromptParts,
           history: history as Parameters<
             LlmAgentService<PlatformAgentToolContext>['reply']
           >[0]['history'],
@@ -1007,21 +1010,42 @@ export class PlatformAgentService {
     }
   }
 
-  private async buildSystemPrompt(input: PlatformAgentInput): Promise<string> {
+  private async buildSystemPrompt(input: PlatformAgentInput): Promise<{
+    systemPrompt: string;
+    systemPromptParts: LlmAgentPromptParts;
+  }> {
     const overlay = loadSystemPromptFile(
       this.options.promptDir,
       this.options.promptFile,
     );
     // Shared composer (#646) — the eval harness composes through the same
-    // function, so the two paths cannot drift apart. Suffixes carry
+    // function, so the two paths cannot drift apart. Dynamic parts carry
     // user-controlled data (display name, profile facts) — the no-secrets
     // invariant (#632) applies at this single consumption point, so every
     // current and future suffix builder inherits it.
     const suffix = await this.options.systemPromptSuffix?.(input);
-    return composeChatSystemPrompt({
-      core: CHAT_SYSTEM_PROMPT_CORE,
-      overlay,
-      suffix: suffix ? redactSecrets(suffix).text : undefined,
-    });
+    const systemPromptParts: LlmAgentPromptParts =
+      typeof suffix === 'string'
+        ? {
+            core: CHAT_SYSTEM_PROMPT_CORE,
+            overlay,
+            identityDisplayName: redactPromptPart(suffix),
+          }
+        : {
+            core: CHAT_SYSTEM_PROMPT_CORE,
+            overlay,
+            identityDisplayName: redactPromptPart(suffix?.identityDisplayName),
+            learnerProfile: redactPromptPart(suffix?.learnerProfile),
+          };
+    return {
+      systemPrompt: composeChatSystemPrompt(systemPromptParts),
+      systemPromptParts,
+    };
   }
+}
+
+function redactPromptPart(
+  value: string | null | undefined,
+): string | undefined {
+  return value ? redactSecrets(value).text : undefined;
 }

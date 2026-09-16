@@ -346,7 +346,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             // Single retry layer — retryWithBackoff in PlatformAgentService
             maxLlmRetries: 0,
             toolExecutionTimeoutMs: 35_000,
-            systemPromptSuffix: learnerProfileSuffix,
+            systemPromptSuffix: async (input) => {
+              const learnerProfile = await learnerProfileSuffix(input);
+              return learnerProfile ? { learnerProfile } : undefined;
+            },
             // Learner profile (#207 item 3): persist server-derived facts
             // (band target, exam date) from successful tool results.
             onToolResult: createLearnerProfileRecorder(

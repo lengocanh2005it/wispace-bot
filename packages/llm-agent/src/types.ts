@@ -37,6 +37,14 @@ export interface LlmAgentConfig {
   maxInputTokens?: number;
 }
 
+/** Named chat prompt parts used by the context budget policy. */
+export interface LlmAgentPromptParts {
+  core: string;
+  overlay: string;
+  identityDisplayName?: string | null;
+  learnerProfile?: string | null;
+}
+
 export interface LlmAgentInput {
   /** Platform-specific user id (psid, discord user id, zalo uid...) — used for logging/telemetry only. */
   externalUserId: string;
@@ -45,6 +53,8 @@ export interface LlmAgentInput {
   userText: string;
   /** Fully-built system prompt (base persona + per-user linkage note) — composed by the caller. */
   systemPrompt: string;
+  /** Optional named parts; when present they are the source of truth for context trimming. */
+  systemPromptParts?: LlmAgentPromptParts;
   history?: ChatHistoryMessage[];
   /** Correlation id (e.g. platform message id) for LLM usage telemetry. */
   correlationId?: string;

@@ -18,6 +18,7 @@ export type {
   ChatHistoryMessage,
   LlmAgentConfig,
   LlmAgentInput,
+  LlmAgentPromptParts,
   LlmAgentReply,
 } from '../types';
 
