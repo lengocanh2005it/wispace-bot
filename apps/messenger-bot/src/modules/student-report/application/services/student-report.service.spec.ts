@@ -10,7 +10,7 @@ import {
   buildStudentReportApiUnavailableMessage,
   buildStudentReportNoScoreDataMessage,
 } from '@wispace/student-report';
-import { TaskScoreAverageApiService } from '../infrastructure/wispace/task-score-average-api.service';
+import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
 import { StudentReportService } from './student-report.service';
 
 const mockAdapter = {

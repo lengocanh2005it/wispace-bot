@@ -5,7 +5,7 @@ import {
 } from './zalo-link-completion.service';
 import type { ZaloAccountLinkService } from './zalo-account-link.service';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
-import type { ZaloLinkVerifyRecordRepositoryPort } from '../domain/ports/zalo-link-verify-record.repository.port';
+import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
 
 describe('ZaloLinkCompletionService', () => {
   const buildService = (

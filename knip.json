@@ -1,0 +1,57 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.mjs",
+        ".github/scripts/*.{js,mjs}"
+      ],
+      "project": [
+        "scripts/**/*.{js,mjs}"
+      ]
+    },
+    "apps/*": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.spec.ts",
+        "test/**/*.ts",
+        "scripts/*.mjs",
+        "src/infrastructure/database/data-source.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+      ]
+    },
+    "packages/*": {
+      "entry": [
+        "src/index.ts",
+        "src/**/*.spec.ts",
+        "src/**/*.main.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/database": {
+      "entry": [
+        "src/index.ts",
+        "src/**/*.spec.ts",
+        "src/**/*.main.ts",
+        "src/migrations/*.ts",
+        "src/entities/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    }
+  },
+  "ignoreDependencies": [
+    "@nestjs/cli",
+    "@nestjs/schematics",
+    "@nestjs/testing",
+    "@swc/cli",
+    "@swc/core",
+    "@swc/jest"
+  ]
+}
