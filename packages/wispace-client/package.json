@@ -46,7 +46,7 @@
     "date-fns": "^4.4.0",
     "opossum": "^10.0.0",
     "undici": "^8.10.2",
-    "zod": "^4.6.2"
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

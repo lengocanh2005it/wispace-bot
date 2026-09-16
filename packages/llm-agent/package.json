@@ -69,7 +69,7 @@
     "@wispace/chat-history": "*",
     "ioredis": "^6.0.0",
     "openai": "^7.15.0",
-    "zod": "^4.6.2"
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@swc/jest": "^0.2.39",
