@@ -14,6 +14,7 @@ import {
   detectPrivacyIntent,
   isConfirmationResponse,
   isCancellationResponse,
+  PrivacyStateService,
 } from '@wispace/llm-agent';
 import type { PrivacyIntent } from '@wispace/llm-agent';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
@@ -31,8 +32,10 @@ import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.reposi
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { MessengerAgentService } from '../agent/messenger-agent.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
-import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';
-import { buildChatDroppedMessage } from '../messages/chat-delivery.messages';
+import {
+  buildChatDeliveryErrorMessage,
+  buildChatDroppedMessage,
+} from '../messages/chat-delivery.messages';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
@@ -41,7 +44,6 @@ import {
   capMergedChatUserText,
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
-import { PrivacyStateService } from '@wispace/llm-agent';
 import {
   PRIVACY_CLEANUP_STORES,
   PrivacyDataService,
@@ -51,8 +53,8 @@ import { createMessengerChatPipelineAdapters } from '../../infrastructure/adapte
 import {
   PlatformChatHistoryService,
   readChatFlushRetrySettings,
+  ChatRuntimeConfig,
 } from '@wispace/chat-agent';
-import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { isValidApprovalToken } from '@wispace/reschedule-confirm';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';

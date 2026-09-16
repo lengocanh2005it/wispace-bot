@@ -22,6 +22,7 @@ import {
   type LlmExecutionPort,
   type LlmProviderAdapter,
   type LlmUsageRecorderPort,
+  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -33,7 +34,6 @@ import {
   buildReminderOutput,
   formatReminder,
 } from '../../domain/utils/reminder-formatter';
-import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
 import {
   REMINDER_STUDENT_DATA_PORT,
   type ReminderStudentDataPort,

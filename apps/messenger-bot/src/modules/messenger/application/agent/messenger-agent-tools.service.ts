@@ -4,17 +4,11 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import type {
-  PlatformAgentReply,
-  PlatformAgentToolContext,
-  PlatformToolExecutorPort,
-  CurrentPlatformIdentity,
-} from '@wispace/chat-agent';
 import {
-  RESCHEDULE_SCOPE_ERROR_MESSAGE,
-  RescheduleStageAbortedError,
-} from '@wispace/reschedule-confirm';
-import {
+  type PlatformAgentReply,
+  type PlatformAgentToolContext,
+  type PlatformToolExecutorPort,
+  type CurrentPlatformIdentity,
   executePrecreateExerciseTool,
   PlatformToolExecutorPipeline,
   defaultExplicitIntent,
@@ -22,13 +16,15 @@ import {
   type WriteToolBudgetPort,
 } from '@wispace/chat-agent';
 import {
+  RESCHEDULE_SCOPE_ERROR_MESSAGE,
+  RescheduleStageAbortedError,
+} from '@wispace/reschedule-confirm';
+import {
   type AgentToolName,
   type GetUpcomingStudySessionsArgs,
   type ListStudyCalendarEntriesArgs,
   type RescheduleStudySessionArgs,
   sanitizeUntrustedTextForLlm,
-} from '@wispace/llm-agent';
-import {
   readPastDays,
   readPositiveInteger,
   readPositiveLimit,
@@ -50,7 +46,10 @@ import type { MessengerMappingRepositoryPort } from '../../domain/repositories/m
 import { MessengerMappingService } from '../services/messenger-mapping.service';
 import { STUDY_REMINDER_OPERATIONS_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
+import {
+  MemoizedWispaceGoalsService,
+  PrecreateExerciseApiClient,
+} from '@wispace/wispace-client';
 import { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import {
   buildCalendarEntriesRichFollowUp,
@@ -66,7 +65,6 @@ import {
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
-import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/messenger-report-subscription-intent.utils';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =

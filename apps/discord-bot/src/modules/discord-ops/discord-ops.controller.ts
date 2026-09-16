@@ -7,8 +7,8 @@ import {
   StudyReminderSyncService,
 } from '@wispace/study-reminder-shared';
 import { WispaceCalendarService } from '@wispace/wispace-client';
-import { PrivacyDataService } from '@wispace/database';
 import {
+  PrivacyDataService,
   PRIVACY_CLEANUP_STORES,
   type PrivacyStateCleanup,
 } from '@wispace/database';

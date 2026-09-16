@@ -19,8 +19,6 @@ import {
 import {
   ReportSendJobEntity,
   PlatformReportSendJobRepository,
-} from '@wispace/database';
-import {
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
   ReportClaimStaleResetCronService,

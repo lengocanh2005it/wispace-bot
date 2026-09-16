@@ -7,6 +7,7 @@ import { PlatformStudentReportService } from '@wispace/student-report';
 import {
   PlatformLlmUsageRecorderAdapter,
   provideWiredUsageRecorder,
+  ChatMeteringModule,
 } from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
@@ -35,7 +36,6 @@ import {
   CronLeaderLeaseService,
   ReportClaimStaleResetCronService,
 } from '@wispace/database';
-import { ChatMeteringModule } from '@wispace/chat-metering';
 import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,

@@ -7,8 +7,12 @@ import {
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
-import { collectRuntimeSecretValues, registerRuntimeSecrets } from '../masking';
-import { errorMessage, sanitizeErrorStack } from '../masking';
+import {
+  collectRuntimeSecretValues,
+  registerRuntimeSecrets,
+  errorMessage,
+  sanitizeErrorStack,
+} from '../masking';
 import { RedactedLogger } from '../logging';
 import { loadVaultSecrets, type VaultApplication } from '../secrets';
 

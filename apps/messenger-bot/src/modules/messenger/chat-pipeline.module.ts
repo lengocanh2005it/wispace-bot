@@ -22,6 +22,7 @@ import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
   toUsageRecorderMetrics,
+  PlatformWriteToolBudgetService,
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent/core';
 import { PrivacyStateService } from '@wispace/llm-agent/adapters';
@@ -65,15 +66,14 @@ import { UserDisplayNameService } from '../display-name/application/user-display
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { UserLinkingModule } from './user-linking.module';
-import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
 import {
+  MessengerAgentToolsService,
   MESSENGER_TOOL_IDENTITY_PROVIDER,
   MESSENGER_TOOL_POLICY_DENIED_INC,
   MESSENGER_WRITE_TOOL_BUDGET,
   MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
   MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
 } from './application/agent/messenger-agent-tools.service';
-import { PlatformWriteToolBudgetService } from '@wispace/chat-metering';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';

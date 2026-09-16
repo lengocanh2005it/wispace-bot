@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ReportCronLeaderService } from './report-cron-leader.service';
 
@@ -14,8 +14,6 @@ export interface CronLeaderHeartbeatMetricsPort {
  */
 @Injectable()
 export class CronLeaderHeartbeatService {
-  private readonly logger = new Logger(CronLeaderHeartbeatService.name);
-
   constructor(
     private readonly reportCronLeaderService: ReportCronLeaderService,
     private readonly metrics?: CronLeaderHeartbeatMetricsPort,

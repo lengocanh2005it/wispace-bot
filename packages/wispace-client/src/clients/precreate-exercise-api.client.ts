@@ -9,8 +9,10 @@ import {
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
 import { keepAliveFetch } from '../utils/keep-alive-agent';
 import { validateShape } from '../utils/validate-shape';
-import type { PrecreateExerciseResult } from '../types/precreate-exercise.types';
-import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
+import type {
+  PrecreateExerciseResult,
+  PrecreateExerciseClientConfig,
+} from '../types/precreate-exercise.types';
 
 const precreateResponseSchema = z.object({
   hasRoadmap: z.boolean(),

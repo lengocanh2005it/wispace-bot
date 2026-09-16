@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -9,7 +9,6 @@ import {
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core';
-import { Inject, Optional } from '@nestjs/common';
 import {
   CanonicalPlatformService,
   WebActivityService,

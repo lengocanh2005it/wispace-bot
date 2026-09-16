@@ -6,8 +6,7 @@ import {
   maskExternalIdInText,
   truncatePersistedError,
 } from '@wispace/bot-common/masking';
-import { sleep } from '@wispace/bot-common/utils';
-import { extractQueryRows } from '@wispace/bot-common/utils';
+import { sleep, extractQueryRows } from '@wispace/bot-common/utils';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,

@@ -27,8 +27,6 @@ import {
   ReportOrchestrationService,
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
-} from '@wispace/scheduler-core';
-import {
   CronLeaderHeartbeatService,
   ReportCronLeaderService,
   ReportCronLockService,

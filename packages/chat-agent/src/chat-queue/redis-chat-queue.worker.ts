@@ -26,7 +26,7 @@ export class RedisChatQueueWorkerService
   private readonly runtimeConfig: ChatRuntimeConfig;
 
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly listReadyExternalUserIds: (
       limit: number,
     ) => Promise<string[]>,

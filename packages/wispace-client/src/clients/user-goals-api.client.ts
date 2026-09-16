@@ -5,9 +5,9 @@ import {
   isWispaceRetryable,
   createCircuitBreaker,
   computeCircuitBreakerTimeout,
+  withRetry,
 } from '../utils/with-retry';
 import type { CircuitBreaker } from '../utils/with-retry';
-import { withRetry } from '../utils/with-retry';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   buildWispaceHeaders,

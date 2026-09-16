@@ -8,10 +8,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   TaskScoreAverageApiClient,
   type TaskScoreAverageRecord,
+  MemoizedWispaceGoalsService,
 } from '@wispace/wispace-client';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
 import type { StudentCapacityInput } from '@wispace/student-report';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 // ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import {

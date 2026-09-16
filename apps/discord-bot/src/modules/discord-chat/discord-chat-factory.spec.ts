@@ -4,8 +4,10 @@ import {
   OpenAiAdapter,
   FailoverLlmProviderAdapter,
 } from '@wispace/llm-agent';
-import type { LlmProviderEntryConfig } from '@wispace/llm-agent';
-import type { LlmProviderPolicy } from '@wispace/llm-agent';
+import type {
+  LlmProviderEntryConfig,
+  LlmProviderPolicy,
+} from '@wispace/llm-agent';
 import { DiscordSharedModule } from './discord-shared.module';
 
 const TEST_POLICY: LlmProviderPolicy = {

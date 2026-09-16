@@ -6,6 +6,10 @@ import { readReportClaimLeaseMs } from '@wispace/database';
 import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
+  REPORT_SEND_JOB_REPOSITORY,
+  type ReportSendJobRepositoryPort,
+  ReportSendScheduleService,
+  type ClaimAndSendResult,
 } from '@wispace/scheduler-core';
 import {
   MESSENGER_REPORT_SENT_READER,
@@ -18,12 +22,6 @@ import {
   MessengerPartialSendError,
   isMessengerAmbiguousDeliveryError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
-import {
-  REPORT_SEND_JOB_REPOSITORY,
-  type ReportSendJobRepositoryPort,
-} from '@wispace/scheduler-core';
-import { ReportSendScheduleService } from '@wispace/scheduler-core';
-import type { ClaimAndSendResult } from '@wispace/scheduler-core';
 import { isStudentReportRetryableError } from '@wispace/student-report';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 

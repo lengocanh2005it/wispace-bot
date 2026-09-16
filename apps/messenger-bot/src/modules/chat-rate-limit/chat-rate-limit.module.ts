@@ -1,9 +1,8 @@
 import { Module, Logger } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { CommonModule } from '../../shared/common/common.module';
 import { ConfigService } from '@nestjs/config';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';

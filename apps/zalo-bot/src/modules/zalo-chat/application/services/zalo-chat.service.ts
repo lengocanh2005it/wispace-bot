@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Inject, Optional } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import {
   buildConsentChangedMessage,
   buildGreetingMessage,
@@ -26,6 +25,10 @@ import { PlatformChatQueueService } from '@wispace/chat-agent';
 import {
   isValidApprovalToken,
   RescheduleConfirmationService,
+  RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
+  RESCHEDULE_EXPIRED_MESSAGE,
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  type ReschedulePendingState,
 } from '@wispace/reschedule-confirm';
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
@@ -37,12 +40,6 @@ import {
   detectDisclosureProbe,
   isStopIntent,
 } from '@wispace/llm-agent';
-import {
-  RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
-  RESCHEDULE_EXPIRED_MESSAGE,
-  RESCHEDULE_INVALID_TOKEN_MESSAGE,
-  type ReschedulePendingState,
-} from '@wispace/reschedule-confirm';
 import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,

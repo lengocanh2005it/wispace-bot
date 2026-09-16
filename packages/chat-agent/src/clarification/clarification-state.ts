@@ -523,8 +523,6 @@ interface RedisLikeClient {
 
 /** Redis-backed state with a short TTL; configured Redis failures are fail-closed. */
 export class RedisClarificationStateStore implements ClarificationStateStore {
-  private readonly limits: ClarificationLimits;
-
   constructor(
     private readonly redisClient: {
       isConfiguredEnabled(): boolean;
@@ -532,10 +530,7 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
       getNativeClient(): unknown;
     },
     private readonly keyPrefix: string,
-    limits: ClarificationLimits = DEFAULT_CLARIFICATION_LIMITS,
-  ) {
-    this.limits = normalizeLimits(limits);
-  }
+  ) {}
 
   async get(key: string): Promise<ClarificationState | null> {
     const client = this.client();
@@ -693,12 +688,10 @@ export function createClarificationStateStore(params: {
   config: ClarificationConfigReader;
   redisClient?: RedisClientPort;
 }): ClarificationStateStore {
-  const limits = readClarificationLimits(params.config);
   if (params.redisClient?.isConfiguredEnabled?.() === true) {
     return new RedisClarificationStateStore(
       params.redisClient,
       `chat:clarification:${params.platform}`,
-      limits,
     );
   }
   return new MemoryClarificationStateStore();

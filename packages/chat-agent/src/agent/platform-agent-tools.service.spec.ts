@@ -1,10 +1,10 @@
-import { AGENT_TOOL_NAMES } from '@wispace/llm-agent';
-import { Logger } from '@nestjs/common';
-import { PlatformAgentToolsService } from './platform-agent-tools.service';
 import {
+  AGENT_TOOL_NAMES,
   registerRuntimeSecrets,
   resetRuntimeSecretsForTests,
 } from '@wispace/llm-agent';
+import { Logger } from '@nestjs/common';
+import { PlatformAgentToolsService } from './platform-agent-tools.service';
 import type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,

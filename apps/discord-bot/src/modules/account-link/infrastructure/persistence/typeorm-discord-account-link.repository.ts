@@ -3,8 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { acquireStudyReminderOwnershipMutationLock } from '@wispace/bot-common/locks';
 import { extractQueryRows } from '@wispace/bot-common/utils';
-import type { LinkMappingObservation } from '@wispace/account-link-core/core';
-import type { LinkUpsertResult } from '@wispace/account-link-core/core';
+import type {
+  LinkMappingObservation,
+  LinkUpsertResult,
+} from '@wispace/account-link-core/core';
 import {
   cancelStudyReminderJobsForOwnershipChange,
   nextMappingGenerationAfterTombstone,

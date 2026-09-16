@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LlmAgentService } from '@wispace/llm-agent';
+import {
+  LlmAgentService,
+  buildPromptInjectionBlockedMessage,
+  buildNonDisclosureReply,
+} from '@wispace/llm-agent';
 import type {
   AgentMetricsPort,
   LlmExecutionPort,
   LlmProviderAdapter,
-} from '@wispace/llm-agent';
-import {
-  buildPromptInjectionBlockedMessage,
-  buildNonDisclosureReply,
 } from '@wispace/llm-agent';
 import type {
   PlatformLlmSafetyEventAdapter,

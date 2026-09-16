@@ -2,8 +2,10 @@ import { Module, type DynamicModule, Global, type Type } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
-import { OPS_HEALTH_SERVICE as BOT_COMMON_OPS_HEALTH_SERVICE } from '@wispace/bot-common/health';
-import { PLATFORM_CONNECTIVITY } from '@wispace/bot-common/health';
+import {
+  OPS_HEALTH_SERVICE as BOT_COMMON_OPS_HEALTH_SERVICE,
+  PLATFORM_CONNECTIVITY,
+} from '@wispace/bot-common/health';
 import { CronHeartbeatRegistry } from './cron-heartbeat-registry';
 import { OpsHealthService } from './ops-health.service';
 import { TypeormOpsHealthRepository } from './typeorm-ops-health.repository';

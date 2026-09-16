@@ -30,6 +30,7 @@ import {
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
   type LlmDegradedModeEvent,
+  buildLlmExecutionConfig,
 } from '@wispace/llm-agent';
 import {
   PlatformLlmSafetyEventAdapter,
@@ -68,13 +69,6 @@ import {
 } from '../clarification/clarification-state';
 
 const FEATURE = 'FREE_FORM_CHAT';
-// Execution-control defaults — same contract and env keys as the Messenger
-// app's `LlmExecutionConfigService`, so all three bots share one documented
-// configuration surface (`LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`,
-// `LLM_GLOBAL_MAX_CONCURRENT`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`,
-// `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_REQUEST_TIMEOUT_MS`,
-// `LLM_GLOBAL_CONCURRENCY_ENABLED`).
-import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
@@ -899,6 +893,12 @@ export class PlatformAgentService {
    * retry budget, and an optional Redis-distributed aggregate budget.
    */
   private buildEnvLlmExecutionPort(): LlmExecutionPort {
+    // Execution-control defaults — same contract and env keys as the Messenger
+    // app's `LlmExecutionConfigService`, so all three bots share one documented
+    // configuration surface (`LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`,
+    // `LLM_GLOBAL_MAX_CONCURRENT`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`,
+    // `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_REQUEST_TIMEOUT_MS`,
+    // `LLM_GLOBAL_CONCURRENCY_ENABLED`).
     const config = buildLlmExecutionConfig();
 
     return createEnvLlmExecutionPort(
@@ -918,15 +918,6 @@ export class PlatformAgentService {
     const raw = this.configService.get<string>(key);
     if (raw === undefined || raw === null) return defaultValue;
     return raw.toLowerCase() === 'true';
-  }
-
-  private readEnvPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key);
-    if (raw === undefined || raw === null) return defaultValue;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0
-      ? Math.floor(value)
-      : defaultValue;
   }
 
   private get classifierEnabled(): boolean {

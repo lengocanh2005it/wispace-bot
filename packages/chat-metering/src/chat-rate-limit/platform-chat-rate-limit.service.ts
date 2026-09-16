@@ -49,7 +49,7 @@ export class PlatformChatRateLimitService {
   private readonly platform: string;
 
   constructor(
-    private readonly options: PlatformChatRateLimitOptions,
+    options: PlatformChatRateLimitOptions,
     configService: ConfigService,
     dailyUsageRepo: Repository<ChatDailyUsageEntity>,
     idempotencyRepo: Repository<ChatIdempotencyEntity>,

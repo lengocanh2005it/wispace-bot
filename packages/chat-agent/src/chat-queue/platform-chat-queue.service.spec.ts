@@ -3,8 +3,10 @@ import { Logger } from '@nestjs/common';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import { ChatRuntimeConfig } from '../chat-runtime-config';
-import { PlatformChatQueueService } from './platform-chat-queue.service';
-import { fallbackSentThisCycle } from './platform-chat-queue.service';
+import {
+  PlatformChatQueueService,
+  fallbackSentThisCycle,
+} from './platform-chat-queue.service';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 

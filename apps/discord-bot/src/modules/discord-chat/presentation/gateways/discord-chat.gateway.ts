@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import {
   GREETING_INTRO,
   buildGreetingMessage,
@@ -42,7 +42,6 @@ import { readPendingOrganicSkipMs } from '@discord/shared/config/discord-link.co
 import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
-import { Inject } from '@nestjs/common';
 import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';

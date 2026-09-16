@@ -2,6 +2,7 @@ import {
   LlmAllProvidersExhaustedError,
   LlmOverloadError,
   LlmProviderCircuitOpenError,
+  retryWithBackoff,
 } from '@wispace/llm-agent/core';
 import type {
   LlmExecutionPort,
@@ -11,7 +12,6 @@ import type {
   LlmProviderAdapter,
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent/core';
-import { retryWithBackoff } from '@wispace/llm-agent/core';
 import {
   errorMessage,
   maskExternalId,
@@ -226,7 +226,7 @@ export class StudentReportCore {
         isRetryable: (error) =>
           isRetryableApiError(error) && error.isRetryable(),
         signal,
-        onRetry: (attempt, delayMs, error) => {
+        onRetry: (attempt, _delayMs, error) => {
           logger.warn(
             `Retrying capacity fetch for report externalUserId=${maskExternalId(
               externalUserId,

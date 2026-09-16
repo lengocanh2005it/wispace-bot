@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
@@ -58,8 +58,6 @@ export interface ClassifiedError {
  */
 @Injectable()
 export class ReportOrchestrationService {
-  private readonly logger = new Logger(ReportOrchestrationService.name);
-
   constructor(
     @Inject(REPORT_CLAIM_REPOSITORY)
     private readonly claimRepo: ReportClaimRepositoryPort,
