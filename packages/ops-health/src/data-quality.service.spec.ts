@@ -5,6 +5,7 @@ import {
 } from './data-quality.service';
 import type {
   DataQualityConfig,
+  DataQualityLockPort,
   DataQualityMetricsPort,
   DataQualityRepositoryPort,
 } from './data-quality.types';
@@ -30,6 +31,19 @@ function buildMetrics(): DataQualityMetricsPort {
     setCheckStatus: jest.fn(),
     incRun: jest.fn(),
     incFailure: jest.fn(),
+  };
+}
+
+/**
+ * `DataQualityLockPort.withLock` is generic and a plain `jest.fn` is not, so a
+ * bare object literal does not satisfy the port. One factory keeps every double
+ * assertable while type-checking.
+ */
+function buildLock(
+  impl: (id: number, fn: () => Promise<unknown>) => Promise<unknown>,
+): DataQualityLockPort & { withLock: jest.Mock } {
+  return { withLock: jest.fn(impl) } as unknown as DataQualityLockPort & {
+    withLock: jest.Mock;
   };
 }
 
@@ -74,11 +88,7 @@ describe('DataQualityService', () => {
         },
       ]),
     });
-    const lock = {
-      withLock: jest.fn(async (_id: number, fn: () => Promise<unknown>) =>
-        fn(),
-      ),
-    };
+    const lock = buildLock(async (_id, fn) => fn());
     const metrics = buildMetrics();
     const service = new DataQualityService(repository, lock, config, metrics);
 
@@ -104,9 +114,7 @@ describe('DataQualityService', () => {
 
   it('skips without querying when another instance holds the lock', async () => {
     const repository = buildRepository();
-    const lock = {
-      withLock: jest.fn().mockResolvedValue(null),
-    };
+    const lock = buildLock(async () => null);
     const metrics = buildMetrics();
     const service = new DataQualityService(repository, lock, config, metrics);
 
@@ -128,11 +136,7 @@ describe('DataQualityService', () => {
         .fn()
         .mockResolvedValue([{ scope: 'inbox.processed_at', count: 1 }]),
     });
-    const lock = {
-      withLock: jest.fn(async (_id: number, fn: () => Promise<unknown>) =>
-        fn(),
-      ),
-    };
+    const lock = buildLock(async (_id, fn) => fn());
     const service = new DataQualityService(repository, lock, config);
 
     const result = await service.run();
@@ -154,9 +158,9 @@ describe('DataQualityService', () => {
 
   it('records an infrastructure failure when lock acquisition fails', async () => {
     const metrics = buildMetrics();
-    const lock = {
-      withLock: jest.fn().mockRejectedValue(new Error('database unavailable')),
-    };
+    const lock = buildLock(async () => {
+      throw new Error('database unavailable');
+    });
     const service = new DataQualityService(
       buildRepository(),
       lock,

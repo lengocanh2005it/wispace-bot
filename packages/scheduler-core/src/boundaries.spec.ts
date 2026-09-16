@@ -1,10 +1,12 @@
 import * as adapters from './adapters';
 import * as core from './core';
 
+const coreExports = core as Record<string, unknown>;
+
 describe('scheduler-core package boundaries', () => {
   it('keeps scheduling contracts and utilities in core', () => {
-    expect(core.ReportScheduleService).toBeUndefined();
-    expect(core.ReportSendJobStatus).toBeUndefined();
+    expect(coreExports.ReportScheduleService).toBeUndefined();
+    expect(coreExports.ReportSendJobStatus).toBeUndefined();
     expect(core.todayReportDate).toBeDefined();
     expect(core.runBatched).toBeDefined();
     expect(core.REPORT_SEND_JOB_REPOSITORY).toBeDefined();

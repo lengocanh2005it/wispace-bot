@@ -72,7 +72,7 @@ describe('MessengerReportDeliveryService', () => {
         userId: 10,
         notificationMessagesToken: 'tok-1',
         topic: 'ielts',
-        cadence: 'weekly' as const,
+        cadence: 'WEEKLY' as const,
         status: 'ACTIVE' as const,
       });
 
@@ -100,7 +100,7 @@ describe('MessengerReportDeliveryService', () => {
           userId: 10,
           notificationMessagesToken: 'tok-1',
           topic: 'ielts',
-          cadence: 'weekly' as const,
+          cadence: 'WEEKLY' as const,
           status: 'ACTIVE' as const,
         }),
       ).rejects.toThrow('has no PSID');
@@ -118,7 +118,7 @@ describe('MessengerReportDeliveryService', () => {
         userId: 10,
         notificationMessagesToken: 'tok-1',
         topic: 'ielts',
-        cadence: 'weekly' as const,
+        cadence: 'WEEKLY' as const,
         status: 'ACTIVE' as const,
       });
 
@@ -143,7 +143,7 @@ describe('MessengerReportDeliveryService', () => {
           userId: 10,
           notificationMessagesToken: 'tok-1',
           topic: 'ielts',
-          cadence: 'weekly' as const,
+          cadence: 'WEEKLY' as const,
           status: 'ACTIVE' as const,
         }),
       ).rejects.toThrow(StudentReportRetryableError);
@@ -210,14 +210,14 @@ describe('MessengerReportDeliveryService', () => {
       repository.findActiveMappingByPsid.mockResolvedValue({
         psid: 'psid-1',
         userId: 10,
-        cadence: 'weekly',
+        cadence: 'WEEKLY',
         topic: 'ielts',
       });
 
       await service.registerForScheduledReports('psid-1', {
         ref: 'ref-1',
         topic: 'ielts',
-        cadence: 'weekly',
+        cadence: 'WEEKLY',
         userId: 10,
       });
 
@@ -237,7 +237,7 @@ describe('MessengerReportDeliveryService', () => {
       await service.registerForScheduledReports('psid-1', {
         ref: 'ref-1',
         topic: 'ielts',
-        cadence: 'weekly',
+        cadence: 'WEEKLY',
         userId: 10,
       });
 
@@ -260,7 +260,7 @@ describe('MessengerReportDeliveryService', () => {
       await service.registerForScheduledReports('psid-1', {
         ref: 'ref-1',
         topic: 'ielts',
-        cadence: 'weekly',
+        cadence: 'WEEKLY',
         userId: 99,
       });
 

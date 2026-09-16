@@ -43,7 +43,7 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
           external_user_id: 'psid-1',
           notification_messages_token: buildPocPsidToken('psid-1'),
           topic: 'ielts',
-          cadence: 'weekly',
+          cadence: 'WEEKLY',
           status: 'ACTIVE',
           created_at: '2026-01-01T00:00:00.000Z',
           updated_at: '2026-01-01T00:00:00.000Z',
@@ -54,7 +54,7 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       psid: 'psid-1',
       userId: 143,
       topic: 'ielts',
-      cadence: 'weekly',
+      cadence: 'WEEKLY',
     });
 
     expect(result).not.toBeNull();
@@ -84,7 +84,7 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       psid: 'psid-1',
       userId: 99,
       topic: 'ielts',
-      cadence: 'weekly',
+      cadence: 'WEEKLY',
     });
 
     expect(result).toBeNull();
@@ -128,7 +128,7 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
           external_user_id: 'psid-1',
           notification_messages_token: buildPocPsidToken('psid-1'),
           topic: 'ielts',
-          cadence: 'weekly',
+          cadence: 'WEEKLY',
           status: 'ACTIVE',
           link_state: 'active',
           mapping_generation: '2',
@@ -244,7 +244,7 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
       platform: 'messenger',
       externalUserId: 'psid-1',
       topic: 'ielts',
-      cadence: 'weekly',
+      cadence: 'WEEKLY',
       status: 'ACTIVE',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),

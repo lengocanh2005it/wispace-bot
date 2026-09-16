@@ -11,6 +11,7 @@
     "check:types": "tsc -p tsconfig.build.json --noEmit",
     "lint": "oxlint",
     "format:check": "oxfmt --check",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

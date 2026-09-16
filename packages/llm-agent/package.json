@@ -61,7 +61,8 @@
     "eval:rehash": "node dist/eval/rehash-fixtures.main.js",
     "eval:rehash:check": "node dist/eval/rehash-fixtures.main.js --check",
     "eval:guardrail": "node dist/eval/guardrail-battery.main.js",
-    "classifier:eval": "node dist/classifier/classifier-eval.main.js"
+    "classifier:eval": "node dist/classifier/classifier-eval.main.js",
+    "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@wispace/bot-common": "*",

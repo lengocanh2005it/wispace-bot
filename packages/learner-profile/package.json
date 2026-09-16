@@ -12,7 +12,8 @@
     "lint": "oxlint",
     "format:check": "oxfmt --check",
     "format": "oxfmt",
-    "test": "jest --maxWorkers=50%"
+    "test": "jest --maxWorkers=50%",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@nestjs/cli": "^12.0.0",
