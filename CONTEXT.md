@@ -550,6 +550,42 @@ _Avoid_: dry run, passive mode
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
 _Avoid_: secrecy, confidentiality
 
+**behavior-affecting change**:
+A change to the chat prompt core or overlay, agent thresholds, or tool schemas that can alter assistant behavior and therefore requires fixture behavior re-validation.
+_Avoid_: prompt-only change — behavior can also change outside prompt text
+
+**fixture hash rewrite**:
+An intentional update of `coreHash` or `promptFiles[].hash` in the LLM eval fixtures after the changed behavior has been reviewed and re-validated. It changes the evaluator's pinned baseline, not the runtime prompt.
+_Avoid_: automatic rehash, self-scoring
+
+**behavior PR**:
+A pull request that changes behavior-affecting code while keeping the existing fixture hashes so regressions remain visible during review.
+_Avoid_: rehash PR
+
+**rehash PR**:
+A follow-up pull request that updates fixture hashes after the behavior PR has been reviewed and the fixtures have been re-validated; it should not include behavior changes by default.
+_Avoid_: prompt PR, hash-only approval
+
+**human approval marker**:
+A machine-readable `eval-rehash-approved` label paired with a fresh approved review from a trusted repository member; it explicitly permits a behavior-affecting change and fixture hash rewrite in one PR. Free-form PR text or a commit message is not sufficient.
+_Avoid_: self-approval, sign-off
+
+**protected eval surface**:
+The production agent sources and evaluator implementation whose changes can alter chat behavior or the guardrail measurement itself. A fixture hash rewrite combined with any change on this surface requires explicit human approval.
+_Avoid_: prompt surface — the evaluator is protected too
+
+**fresh approval**:
+A qualifying approved review that was submitted after the pull request's current head commit and accompanies the `eval-rehash-approved` marker.
+_Avoid_: inherited approval, stale approval
+
+**stale approval**:
+An approval that predates the pull request's latest commit or has been dismissed; it cannot authorize a fixture hash rewrite.
+_Avoid_: reusable approval
+
+**red-then-green flow**:
+The deliberate release sequence in which a reviewed behavior PR may temporarily expose stale fixture hashes, followed by a hash-only rehash PR that restores a green evaluator.
+_Avoid_: self-scoring flow, one-shot rehash
+
 ### Ops & Monitoring
 
 **ops**:

@@ -23,8 +23,9 @@ Read `.claude/rules/prompts.md` before editing.
 1. Decide where the change belongs: **core** (applies to all bots) vs **overlay** (one platform). Never duplicate a core rule into an overlay.
 2. Edit the file — output targets Vietnamese bot messages.
 3. `npx turbo run build --filter=@wispace/chat-agent... --filter=@wispace/messenger-bot...` (chat core) or `--filter=@wispace/messenger-bot...` (app prompt files — copies to `apps/messenger-bot/dist/shared/prompts/`).
-4. **Editing `CHAT_SYSTEM_PROMPT_CORE`** also: (a) update the section-presence guards in `packages/llm-agent/src/chat-system-prompt.spec.ts` and `SYSTEM_PROMPT_LEAK_MARKERS` in `final-output.utils.ts` if you added/renamed a section; (b) re-hash every `packages/llm-agent/fixtures/*.json` `coreHash` — build `@wispace/llm-agent`, then `node -e "const{createHash}=require('crypto');const{CHAT_SYSTEM_PROMPT_CORE}=require('./packages/llm-agent/dist/chat-system-prompt.js');console.log(createHash('sha256').update(CHAT_SYSTEM_PROMPT_CORE.replace(/\r\n/g,'\n'),'utf8').digest('hex'))"` and replace the old hash across the fixtures.
-5. Test: bot preview menu or `POST /messenger/send-reports` with `{ "psid": "..." }` (ops key).
+4. **Editing `CHAT_SYSTEM_PROMPT_CORE`** also: (a) update the section-presence guards in `packages/llm-agent/src/chat-system-prompt.spec.ts` and `SYSTEM_PROMPT_LEAK_MARKERS` in `final-output.utils.ts` if you added/renamed a section; (b) run `npm run eval:rehash:check` to expose stale hashes. Keep old hashes in the behavior PR; use step 5 for the write-mode rehash after review and merge.
+5. **Keep evaluator hash rewrites separate (#1238)**: do not run write-mode `npm run eval:rehash` in a behavior PR. Land the prompt/agent change first, allow the read-only guardrail battery to show the expected stale-hash red state, then rebase main and open a hash-only rehash PR with `Rehashes: #<behavior-pr>` in the body. A combined behavior plus hash PR needs the exact `eval-rehash-approved` label and a fresh current-head APPROVED review from a trusted OWNER or MEMBER who is not the author.
+6. Test: bot preview menu or `POST /messenger/send-reports` with `{ "psid": "..." }` (ops key).
 
 ## Do not
 

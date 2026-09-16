@@ -333,6 +333,9 @@ jobs:
       - name: Test pull request workflow Turbo credential scoping (#287)
         run: bash .github/scripts/tests/pull-request-workflow.test.sh
 
+      - name: Test evaluator rehash policy (#1238)
+        run: bash .github/scripts/tests/check-eval-rehash-pr.test.sh
+
       - name: Test VPS deploy script (fail-closed + crash-safety + migration lock, #199/#201/#203/#204)
         run: bash .github/scripts/tests/vps-deploy.test.sh
 

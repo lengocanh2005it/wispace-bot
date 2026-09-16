@@ -4,7 +4,9 @@ Shared LLM orchestration and deterministic chat eval tooling.
 
 ## Eval fixture prompt hashes
 
-The JSON fixtures pin the LF-normalized SHA-256 hash of the shared prompt core and every referenced platform overlay. A deliberate prompt edit requires both a hash refresh and behavior re-validation.
+The JSON fixtures pin the LF-normalized SHA-256 hash of the shared prompt core and every referenced platform overlay. Keep existing hashes in a behavior PR; after that change is reviewed and merged, use a rebased hash-only rehash PR to refresh them and re-validate behavior.
+
+For a dedicated hash-only rehash PR after the behavior change is reviewed and merged:
 
 Build the package first, then update hashes:
 

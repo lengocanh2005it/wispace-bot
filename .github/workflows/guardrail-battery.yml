@@ -1,5 +1,7 @@
 # #635 — required guardrail battery: 100% on the must-block core set,
 # adversarial bypass rate within threshold. Path-filtered to prompt /
+# #1238: this battery stays read-only; the separate eval-rehash-policy
+# workflow gates prompt/evaluator changes that rewrite fixture hashes.
 # agent / tool-schema changes; skipped (no status reported) for
 # unrelated PRs. Maintainers: enable branch protection for the
 # `guardrail-battery` check once merged.
@@ -11,6 +13,10 @@ on:
       - 'packages/llm-agent/**'
       - 'packages/chat-agent/src/agent/**'
       - 'apps/*/src/shared/prompts/**'
+      - 'apps/messenger-bot/src/modules/messenger/application/agent/**'
+      - 'package.json'
+      - '.github/workflows/guardrail-battery.yml'
+      - '.github/workflows/eval-rehash-policy.yml'
 
 permissions:
   contents: read

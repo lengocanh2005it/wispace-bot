@@ -1,0 +1,58 @@
+# #1238 — keep evaluator hash rewrites independently reviewable.
+name: eval-rehash-policy
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+  pull_request_review:
+    types:
+      - submitted
+      - edited
+      - dismissed
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Check evaluator rehash policy (#1238)
+        env:
+          EVAL_REHASH_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVAL_REHASH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVAL_REHASH_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          trusted_checker="$RUNNER_TEMP/check-eval-rehash-pr.js"
+          if git cat-file -e "$EVAL_REHASH_BASE_SHA:.github/scripts/check-eval-rehash-pr.js" 2>/dev/null; then
+            git show "$EVAL_REHASH_BASE_SHA:.github/scripts/check-eval-rehash-pr.js" > "$trusted_checker"
+            node "$trusted_checker" "$GITHUB_WORKSPACE"
+          else
+            echo "Base branch predates the #1238 checker; bootstrap runs without a token." >&2
+            env -u GITHUB_TOKEN node .github/scripts/check-eval-rehash-pr.js "$GITHUB_WORKSPACE"
+          fi

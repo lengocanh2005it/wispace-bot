@@ -22,7 +22,7 @@ Rule: universal rule → core; platform mechanism → overlay. Never duplicate a
 **Message format is a platform capability, not a universal rule (#991).** Messenger and the Zalo OA text message do not render Markdown; Discord does. Each overlay states the format its platform renders, the core states none, and `prompt-overlay-dedup.spec.ts` fails if an overlay stops stating one.
 
 - **Canonical home of the no-tools rule (#648)** — the "When NOT to call tools" section in the core; greeting/self-intro bullets live only there, not in "WISPACE scope". Do not restate it in other sections or overlays — `chat-system-prompt.spec.ts` asserts the exact occurrence count, and `prompt-overlay-dedup.spec.ts` fails when a core-rule marker reappears in an overlay.
-- **Size budget (#648)** — the spec asserts `CHAT_SYSTEM_PROMPT_CORE.length <= 5800` (raised from 5,000 for the #628 academic-integrity section, after cutting the multi-intent example). Adding prose without cutting something else fails CI; raising the ceiling is a deliberate act (consolidate first). Any core edit requires re-hashing the eval fixtures (`packages/llm-agent/fixtures/*.json` — see AGENTS.md re-hash command).
+- **Size budget (#648)** — the spec asserts `CHAT_SYSTEM_PROMPT_CORE.length <= 5800` (raised from 5,000 for the #628 academic-integrity section, after cutting the multi-intent example). Adding prose without cutting something else fails CI; raising the ceiling is a deliberate act (consolidate first). Any core edit requires re-validating the eval fixtures (`packages/llm-agent/fixtures/*.json`); keep the old hashes in the behavior PR and use the dedicated hash-only rehash PR flow in AGENTS.md after review.
 
 ## Standalone prompts (Messenger)
 
