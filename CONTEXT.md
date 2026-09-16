@@ -463,8 +463,12 @@ Shared projections of tool-spec metadata used for observations, learner-facing l
 _Avoid_: satellite map, manually maintained tool map
 
 **tool summary**:
-A bounded history record of the tools consulted during one learner turn and compact outcomes that may help interpret a follow-up. It is advisory context only; current-turn tool data remains authoritative for personal learner facts.
+A bounded history record of the tools consulted during one learner turn and compact outcomes that may help interpret a follow-up. It is advisory context only; when replayed it is previous-turn synthesis that may be stale, so fresh current-turn tool data wins any conflict while non-sensitive identifiers may still support a follow-up when no conflict exists.
 _Avoid_: fresh result, cached answer
+
+**replayed tool summary**:
+The provider-facing form of a stored tool summary from a previous learner turn. It is explicitly advisory and potentially outdated, and never outranks fresh tool data for a conflicting fact.
+_Avoid_: current tool result, authoritative history
 
 **result line**:
 A deterministic, one-tool line in a tool summary that reports a small set of structured outcome facts without model-written paraphrase.
@@ -475,7 +479,7 @@ A separate bounded part of a tool summary for server-issued identifiers needed b
 _Avoid_: inline identifier, learner-provided ID
 
 **fresh tool data**:
-Structured data returned by a tool during the current learner turn. It is the authority for answering current progress, goal, schedule, and exercise questions.
+Structured data returned by a tool during the current learner turn. It is the authority for answering current progress, goal, schedule, and exercise questions, and wins over replayed summaries or prose history when sources conflict.
 _Avoid_: history snapshot, cached personal data
 
 **tool-executor pipeline**:

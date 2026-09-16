@@ -14,6 +14,8 @@ import { AgentLimits, estimateTokens } from './agent-limits';
 
 const MAX_HISTORY_ENTRY_CHARS = 8_000;
 const RECENT_FAILED_OBSERVATION_ROUNDS = 3;
+const REPLAYED_TOOL_SUMMARY_MARKER =
+  '[Previous-turn tool summary; may be stale. Fresh current-turn tool data takes precedence.]';
 
 interface ToolObservationMetadata {
   originRound: number;
@@ -343,7 +345,10 @@ export class ContextManager {
   private toMessages(history: ChatHistoryMessage[]): LlmMessage[] {
     return history.map((entry) => ({
       role: entry.role === 'tool_summary' ? 'assistant' : entry.role,
-      content: entry.content,
+      content:
+        entry.role === 'tool_summary'
+          ? `${REPLAYED_TOOL_SUMMARY_MARKER}\n${entry.content}`
+          : entry.content,
     }));
   }
 

@@ -2010,7 +2010,7 @@ describe('LlmAgentService', () => {
   });
 
   describe('reply() — tool_summary in history', () => {
-    it('maps tool_summary history entry to assistant role in LLM request', async () => {
+    it('marks replayed summaries as stale without changing provider pairing', async () => {
       const response = makeTextResponse('Dựa trên tra cứu trước...');
       const adapter = makeAdapter([response]);
 
@@ -2031,16 +2031,20 @@ describe('LlmAgentService', () => {
         TOOL_CONTEXT,
       );
 
-      expect(adapter.chatWithTools).toHaveBeenCalledWith(
-        expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({
-              role: 'assistant',
-              content: '[Đã tra cứu: get_upcoming_study_sessions]',
-            }),
-          ]),
-        }),
+      const request = (adapter.chatWithTools as jest.Mock).mock
+        .calls[0]?.[0] as {
+        messages: LlmMessage[];
+      };
+      const summaryMessage = request.messages.find((message) =>
+        message.content?.includes('[Đã tra cứu: get_upcoming_study_sessions]'),
       );
+      expect(summaryMessage).toEqual({
+        role: 'assistant',
+        content: [
+          '[Previous-turn tool summary; may be stale. Fresh current-turn tool data takes precedence.]',
+          '[Đã tra cứu: get_upcoming_study_sessions]',
+        ].join('\n'),
+      });
     });
 
     it('can answer a non-sensitive exercise reference from enriched history without a tool call', async () => {

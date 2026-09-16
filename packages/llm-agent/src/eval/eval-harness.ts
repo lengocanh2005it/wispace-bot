@@ -124,6 +124,8 @@ export interface EvalRequestContract {
   systemPromptContains?: string[];
   /** Every fragment must appear in the latest user message content. */
   userMessageContains?: string[];
+  /** Every fragment must appear in at least one provider message content. */
+  messageContentContains?: string[];
   /** Every named tool's JSON schema must be present in the request. */
   toolsInclude?: string[];
   /**
@@ -534,6 +536,7 @@ export function parseFixture(
           for (const field of [
             'systemPromptContains',
             'userMessageContains',
+            'messageContentContains',
           ] as const) {
             const value = contract[field];
             if (
@@ -1175,6 +1178,17 @@ export async function runEvalFixture(
             if (!userContent.includes(fragment)) {
               failures.push(
                 `requestContracts[${i}] round ${roundIndex}: user message is missing "${fragment}"`,
+              );
+            }
+          }
+          for (const fragment of contract.messageContentContains ?? []) {
+            if (
+              !request.messages.some((message) =>
+                message.content?.includes(fragment),
+              )
+            ) {
+              failures.push(
+                `requestContracts[${i}] round ${roundIndex}: no provider message contains "${fragment}"`,
               );
             }
           }

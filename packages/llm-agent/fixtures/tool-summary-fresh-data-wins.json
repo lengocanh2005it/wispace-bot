@@ -1,0 +1,70 @@
+{
+  "name": "tool-summary-fresh-data-wins",
+  "description": "A current calendar result overrides a conflicting replayed tool summary while the previous summary remains advisory history.",
+  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1019).",
+  "userText": "xem lịch học sắp tới của mình",
+  "externalUserId": "eval-tool-summary-fresh-0019",
+  "userId": 1019,
+  "history": [
+    {
+      "role": "user",
+      "content": "lịch học sắp tới của mình thế nào?"
+    },
+    {
+      "role": "assistant",
+      "content": "Mình đã kiểm tra lịch học cho bạn."
+    },
+    {
+      "role": "tool_summary",
+      "content": "[Đã tra cứu: get_upcoming_study_sessions]\n[Kết quả]\nget_upcoming_study_sessions: count=1; nearest=Ngày mai lúc 19:00"
+    }
+  ],
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": {},
+          "result": {
+            "count": 1,
+            "sessions": [
+              {
+                "scheduledTimeLabel": "Ngày kia lúc 20:00"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "Mình vừa kiểm tra lại: buổi học sắp tới là Ngày kia lúc 20:00."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_upcoming_study_sessions"],
+    "replyTextContains": ["Ngày kia lúc 20:00"],
+    "replyTextNotContains": ["Ngày mai lúc 19:00", "chưa thể tổng hợp"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]\n[Kết quả]\nget_upcoming_study_sessions: count=1; nearest=Ngày kia lúc 20:00",
+    "groundingWarnings": 0,
+    "requestContracts": [
+      {
+        "round": 0,
+        "messageContentContains": [
+          "[Previous-turn tool summary; may be stale. Fresh current-turn tool data takes precedence.]"
+        ]
+      },
+      {
+        "round": 1,
+        "messageContentContains": ["Ngày kia lúc 20:00"]
+      }
+    ]
+  }
+}
