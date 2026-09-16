@@ -1,0 +1,41 @@
+{
+  "name": "tool-summary-follow-up",
+  "description": "A non-sensitive follow-up can resolve an exercise reference from enriched tool_summary history without a fresh tool call.",
+  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1018).",
+  "userText": "Mở bài tập vừa tạo giúp mình",
+  "externalUserId": "eval-tool-summary-follow-up-0018",
+  "userId": 1018,
+  "history": [
+    {
+      "role": "user",
+      "content": "tạo bài tập mới"
+    },
+    {
+      "role": "assistant",
+      "content": "Mình đã tạo bài tập mới cho bạn."
+    },
+    {
+      "role": "tool_summary",
+      "content": "[Đã tra cứu: precreate_next_exercise]\n[Kết quả]\nprecreate_next_exercise: status=created\n[Identifiers]\nprecreate_next_exercise.exerciseUrl=https://wispace.example/exercises/123"
+    }
+  ],
+  "script": [
+    {
+      "text": "Mở bài tập tại đây: https://wispace.example/exercises/123"
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["https://wispace.example/exercises/123"],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}

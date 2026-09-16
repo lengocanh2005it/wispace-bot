@@ -446,6 +446,22 @@ _Avoid_: `AgentToolName` for an unchecked string, tool identifier when the sourc
 Shared projections of tool-spec metadata used for observations, learner-facing labels, grounding claims, and write-budget classification. The projections are generated from the specs so a newly registered tool cannot silently omit one of these policies.
 _Avoid_: satellite map, manually maintained tool map
 
+**tool summary**:
+A bounded history record of the tools consulted during one learner turn and compact outcomes that may help interpret a follow-up. It is advisory context only; current-turn tool data remains authoritative for personal learner facts.
+_Avoid_: fresh result, cached answer
+
+**result line**:
+A deterministic, one-tool line in a tool summary that reports a small set of structured outcome facts without model-written paraphrase.
+_Avoid_: prose summary, tool transcript
+
+**identifier section**:
+A separate bounded part of a tool summary for server-issued identifiers needed by a follow-up action, such as `exerciseUrl` or `calendarId`. It is agent context, not learner-facing prose.
+_Avoid_: inline identifier, learner-provided ID
+
+**fresh tool data**:
+Structured data returned by a tool during the current learner turn. It is the authority for answering current progress, goal, schedule, and exercise questions.
+_Avoid_: history snapshot, cached personal data
+
 **tool-executor pipeline**:
 The shared lifecycle that turns an external tool request into a policy-checked platform-handler invocation and applies platform result decoration. It owns ordering and fail-closed boundaries, but not platform ports or tool execution.
 _Avoid_: dispatcher when referring to the full lifecycle, platform handler, tool spec

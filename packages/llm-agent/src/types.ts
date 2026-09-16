@@ -67,9 +67,11 @@ export interface LlmAgentReply {
   /** True when the agent exhausted maxToolRounds without reaching a final reply. */
   exhausted?: boolean;
   /**
-   * Human-readable summary of tools invoked this turn (e.g. "[Đã tra cứu: tool1; tool2]").
-   * Present only when at least one tool was called. Callers should persist this as a
-   * `tool_summary` history entry so the model knows what it looked up in previous turns.
+   * Bounded advisory summary of tools invoked this turn and deterministic
+   * structured outcomes (e.g. "[Đã tra cứu: tool1; tool2]"). Present only
+   * when at least one tool was called. Callers should persist this as a
+   * `tool_summary` history entry; it never replaces fresh tool data for
+   * personal-data answers.
    */
   toolSummary?: string;
 }

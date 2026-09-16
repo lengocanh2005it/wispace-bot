@@ -34,7 +34,7 @@
     "toolSequence": ["get_upcoming_study_sessions"],
     "replyTextContains": ["Bạn muốn mình hỗ trợ phần nào của Writing không?"],
     "exhausted": false,
-    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]",
+    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]\n[Kết quả]\nget_upcoming_study_sessions: count=0",
     "groundingWarnings": 0
   }
 }

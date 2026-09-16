@@ -62,7 +62,7 @@
     "replyTextContains": ["đã kiểm tra lịch học và tạo bài tập mới"],
     "replyTextNotContains": ["chưa thể tổng hợp"],
     "exhausted": false,
-    "toolSummary": "[Đã tra cứu: list_study_calendar_entries; precreate_next_exercise]",
+    "toolSummary": "[Đã tra cứu: list_study_calendar_entries; precreate_next_exercise]\n[Kết quả]\nlist_study_calendar_entries: count=1; nearest=Ngày mai lúc 19:00\n[Identifiers]\nlist_study_calendar_entries.calendarId=10\nprecreate_next_exercise.exerciseUrl=https://wispace.example/exercises/123",
     "groundingWarnings": 0
   }
 }

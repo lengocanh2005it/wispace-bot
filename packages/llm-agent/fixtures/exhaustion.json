@@ -110,7 +110,7 @@
     ],
     "replyTextNotContains": ["chưa thể tổng hợp"],
     "exhausted": true,
-    "toolSummary": "[Đã tra cứu: get_user_goals; get_upcoming_study_sessions; list_study_calendar_entries; preview_next_study_reminder; register_exam_report_notifications; precreate_next_exercise]",
+    "toolSummary": "[Đã tra cứu: get_user_goals; get_upcoming_study_sessions; list_study_calendar_entries; preview_next_study_reminder; register_exam_report_notifications; precreate_next_exercise]\n[Kết quả]\nlist_study_calendar_entries: count=1; nearest=Tuần trước lúc 19:00\n[Identifiers]\nlist_study_calendar_entries.calendarId=7\nprecreate_next_exercise.exerciseUrl=https://wispace.example/exercises/456",
     "groundingWarnings": 0
   }
 }

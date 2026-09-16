@@ -50,6 +50,10 @@ import { AgentLimits } from './internal/agent-limits';
 import { ContextManager } from './internal/context-manager';
 import { SafetyPipeline } from './internal/safety-pipeline';
 import { ToolRoundExecutor } from './internal/tool-round-executor';
+import {
+  buildToolSummary,
+  type ToolSummaryObservation,
+} from './utils/tool-summary';
 
 export { DEFAULT_TOOL_EXECUTION_TIMEOUT_MS } from './internal/agent-limits';
 
@@ -245,6 +249,7 @@ export class LlmAgentService<TToolContext> {
 
     const toolsCalledThisTurn = new Set<AgentToolName>();
     const groundedToolsThisTurn = new Set<AgentToolName>();
+    const toolObservations: ToolSummaryObservation[] = [];
     const toolRunsPerName = new Map<AgentToolName, number>();
     let toolExecutionsThisTurn = 0;
     const maxToolRounds = this.limits.maxToolRounds;
@@ -356,7 +361,13 @@ export class LlmAgentService<TToolContext> {
               )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
             );
           }
-          return { text: safety.text, toolSummary: safety.toolSummary };
+          return {
+            text: safety.text,
+            toolSummary: buildToolSummary(
+              [...toolsCalledThisTurn],
+              toolObservations,
+            ),
+          };
         }
 
         // Per-round call cap (#162): count DISTINCT (name, args) executions
@@ -496,6 +507,13 @@ export class LlmAgentService<TToolContext> {
         );
         toolExecutionsThisTurn += toolExecution.executedCount;
         const toolResults = toolExecution.results;
+        toolObservations.push(
+          ...toolResults.map(({ toolName, content, succeeded }) => ({
+            toolName,
+            content,
+            succeeded,
+          })),
+        );
 
         previousRoundFailed = toolResults.some((result) => !result.succeeded);
 
@@ -580,10 +598,10 @@ export class LlmAgentService<TToolContext> {
         input.externalUserId,
       )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
     );
-    const toolSummary =
-      toolsCalledThisTurn.size > 0
-        ? `[Đã tra cứu: ${[...toolsCalledThisTurn].join('; ')}]`
-        : undefined;
+    const toolSummary = buildToolSummary(
+      [...toolsCalledThisTurn],
+      toolObservations,
+    );
     return {
       text: buildExhaustionPartialAnswer([...groundedToolsThisTurn]),
       exhausted: true,

@@ -60,6 +60,40 @@ describe('createChatPipelineAdapters', () => {
     ).resolves.toEqual({ text: 'private answer', privateDataFetched: true });
   });
 
+  it('forwards an enriched tool summary without rewriting it', async () => {
+    const toolSummary = [
+      '[Đã tra cứu: precreate_next_exercise]',
+      '[Kết quả]',
+      'precreate_next_exercise: status=created',
+      '[Identifiers]',
+      'precreate_next_exercise.exerciseUrl=https://wispace.example/exercises/123',
+    ].join('\n');
+    const agentService = {
+      reply: jest.fn().mockResolvedValue({
+        text: 'Mình đã tạo bài cho bạn.',
+        toolSummary,
+      }),
+    } as unknown as PlatformAgentService;
+
+    const adapters = createChatPipelineAdapters(
+      {} as never,
+      {} as unknown as PlatformChatHistoryService,
+      agentService,
+      {} as never,
+    );
+
+    await expect(
+      adapters.agent.reply({
+        externalUserId: 'discord-user-1',
+        userText: 'tạo bài tập mới',
+        history: [],
+      }),
+    ).resolves.toEqual({
+      text: 'Mình đã tạo bài cho bạn.',
+      toolSummary,
+    });
+  });
+
   it('propagates an outbound rate-limit outcome to the shared pipeline', async () => {
     const outboundService = {
       sendText: jest.fn().mockResolvedValue('rate_limited'),

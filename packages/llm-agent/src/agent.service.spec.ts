@@ -518,6 +518,69 @@ describe('LlmAgentService', () => {
       expect(result.toolSummary).toContain('get_learning_progress_report');
     });
 
+    it('enriches toolSummary with deterministic result lines and identifiers', async () => {
+      const adapter = makeAdapter([
+        makeMultiToolCallResponse([
+          { name: 'get_user_goals' },
+          { name: 'get_upcoming_study_sessions' },
+          { name: 'list_study_calendar_entries' },
+          { name: 'precreate_next_exercise' },
+        ]),
+        makeTextResponse('Mình đã tra cứu xong.'),
+      ]);
+      const execute = jest.fn().mockImplementation((toolName: string) => {
+        switch (toolName) {
+          case 'get_user_goals':
+            return Promise.resolve({ targetScore: 7, examDate: '2026-11-20' });
+          case 'get_upcoming_study_sessions':
+            return Promise.resolve({
+              count: 2,
+              sessions: [
+                {
+                  scheduledAtIso: '2026-09-18T12:00:00.000Z',
+                  scheduledTimeLabel: 'Ngày mai lúc 19:00',
+                },
+              ],
+            });
+          case 'list_study_calendar_entries':
+            return Promise.resolve({
+              entries: [
+                {
+                  calendarId: 42,
+                  scheduledAtIso: '2026-09-19T12:00:00.000Z',
+                  scheduledTimeLabel: 'Ngày kia lúc 19:00',
+                },
+              ],
+            });
+          case 'precreate_next_exercise':
+            return Promise.resolve({
+              status: 'created',
+              exerciseUrl: 'https://wispace.example/exercises/123',
+            });
+          default:
+            return Promise.resolve({});
+        }
+      });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.toolSummary).toBe(
+        [
+          '[Đã tra cứu: get_user_goals; get_upcoming_study_sessions; list_study_calendar_entries; precreate_next_exercise]',
+          '[Kết quả]',
+          'get_user_goals: targetScore=7; examDate=2026-11-20',
+          'get_upcoming_study_sessions: count=2; nearest=Ngày mai lúc 19:00',
+          'list_study_calendar_entries: count=1; nearest=Ngày kia lúc 19:00',
+          'precreate_next_exercise: status=created',
+          '[Identifiers]',
+          'list_study_calendar_entries.calendarId=42',
+          'precreate_next_exercise.exerciseUrl=https://wispace.example/exercises/123',
+        ].join('\n'),
+      );
+    });
+
     it('rejects an unknown tool before calling the executor and keeps the protocol valid', async () => {
       const adapter = makeAdapter([
         makeToolCallResponse('unknown_tool'),
@@ -1724,6 +1787,54 @@ describe('LlmAgentService', () => {
             expect.objectContaining({
               role: 'assistant',
               content: '[Đã tra cứu: get_upcoming_study_sessions]',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('can answer a non-sensitive exercise reference from enriched history without a tool call', async () => {
+      const exerciseUrl = 'https://wispace.example/exercises/123';
+      const adapter = makeAdapter([
+        makeTextResponse(`Mở bài tập tại đây: ${exerciseUrl}`),
+      ]);
+      const execute = jest.fn();
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(
+        {
+          ...BASE_INPUT,
+          userText: 'Mở bài tập vừa tạo giúp mình',
+          history: [
+            { role: 'user', content: 'tạo bài tập mới' },
+            {
+              role: 'assistant',
+              content: 'Mình đã tạo bài tập mới cho bạn.',
+            },
+            {
+              role: 'tool_summary',
+              content: [
+                '[Đã tra cứu: precreate_next_exercise]',
+                '[Kết quả]',
+                'precreate_next_exercise: status=created',
+                '[Identifiers]',
+                `precreate_next_exercise.exerciseUrl=${exerciseUrl}`,
+              ].join('\n'),
+            },
+          ],
+        },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toContain(exerciseUrl);
+      expect(execute).not.toHaveBeenCalled();
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+      expect(adapter.chatWithTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              role: 'assistant',
+              content: expect.stringContaining(exerciseUrl),
             }),
           ]),
         }),

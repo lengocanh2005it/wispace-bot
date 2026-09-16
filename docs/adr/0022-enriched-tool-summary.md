@@ -1,0 +1,5 @@
+# Enriched tool summaries remain advisory history
+
+**Status: Accepted (#1237)**
+
+`tool_summary` history entries remain bounded text, retaining the existing `[Đã tra cứu: ...]` prefix and adding optional `[Kết quả]` and `[Identifiers]` blocks. Semantic lines are limited to `get_user_goals` (`targetScore`, `examDate`), `get_upcoming_study_sessions`/`list_study_calendar_entries` (`count`, nearest server-derived scheduled label), and `precreate_next_exercise` (`status`); each contributes at most one deterministic key/value line from a successful reliable observation, while unsupported or unreliable tools keep the names-only record. Lines preserve tool-call order and canonical field order; identifiers use canonical field order (`calendarId`, then `exerciseUrl`) and are emitted only from actual values, never synthesized from learner input. The summary is advisory and never replaces current-turn grounding, and the existing 8,000-character history ceiling plus sanitization remain in force without cutting an identifier in half. This avoids a new history schema while reducing unnecessary re-calls without weakening freshness or injection/sanitization boundaries.
