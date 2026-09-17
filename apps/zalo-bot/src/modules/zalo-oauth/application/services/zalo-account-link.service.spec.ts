@@ -66,7 +66,7 @@ describe('ZaloAccountLinkService', () => {
     };
     const repo = {
       manager: {
-        transaction: (fn: (em: typeof em) => unknown) => fn(em),
+        transaction: (fn: (txEm: typeof em) => unknown) => fn(em),
       },
       findOne: jest.fn().mockResolvedValueOnce({ userId: 42 }),
     } as unknown as Repository<ZaloAccountLinkEntity>;

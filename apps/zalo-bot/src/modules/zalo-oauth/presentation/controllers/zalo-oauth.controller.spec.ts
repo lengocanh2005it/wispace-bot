@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import type { Response } from 'express';
 import { LinkPersistenceExhaustedError } from '@wispace/account-link-core/core';
 import { ZaloOauthController } from './zalo-oauth.controller';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
@@ -19,14 +20,22 @@ function buildConfig(): ConfigService {
   } as unknown as ConfigService;
 }
 
-function buildRes() {
+type MockResponse = Response & {
+  redirect: jest.Mock;
+  json: jest.Mock;
+  setHeader: jest.Mock;
+  cookie: jest.Mock;
+  clearCookie: jest.Mock;
+};
+
+function buildRes(): MockResponse {
   return {
     redirect: jest.fn(),
     json: jest.fn(),
     setHeader: jest.fn(),
     cookie: jest.fn(),
     clearCookie: jest.fn(),
-  };
+  } as unknown as MockResponse;
 }
 
 describe('ZaloOauthController', () => {
@@ -109,12 +118,7 @@ describe('ZaloOauthController', () => {
       { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
     );
 
-    const res = {
-      redirect: jest.fn(),
-      json: jest.fn(),
-      setHeader: jest.fn(),
-      cookie: jest.fn(),
-    } as never;
+    const res = buildRes();
     await controller.authorize('token', res);
 
     expect(res.cookie).toHaveBeenCalledWith(

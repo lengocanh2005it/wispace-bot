@@ -6,6 +6,7 @@ import {
 import type { ZaloAccountLinkService } from './zalo-account-link.service';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
+import type { ClarificationStateStore } from '@wispace/chat-agent';
 
 describe('ZaloLinkCompletionService', () => {
   const buildService = (
@@ -52,7 +53,7 @@ describe('ZaloLinkCompletionService', () => {
     const clarificationStateStore = {
       clear:
         overrides.clearClarificationState ?? jest.fn().mockResolvedValue(true),
-    };
+    } as unknown as ClarificationStateStore;
     const linkState = {
       getLink: jest.fn().mockResolvedValue(overrides.mappingState ?? null),
     };
@@ -151,7 +152,7 @@ describe('ZaloLinkCompletionService', () => {
       } as never,
       verifyRecordService,
       { sendText: jest.fn().mockResolvedValue(undefined) } as never,
-      { clear: jest.fn().mockResolvedValue(true) },
+      { clear: jest.fn().mockResolvedValue(true) } as never,
       { getLink: jest.fn().mockResolvedValue(null) } as never,
     );
 
@@ -184,7 +185,7 @@ describe('ZaloLinkCompletionService', () => {
         consumeRecord: jest.fn().mockResolvedValue(undefined),
       } as never,
       { sendText: jest.fn().mockResolvedValue(undefined) } as never,
-      { clear: jest.fn().mockResolvedValue(true) },
+      { clear: jest.fn().mockResolvedValue(true) } as never,
       { getLink: jest.fn().mockResolvedValue(null) } as never,
       welcomeService as never,
       relinkNotifier as never,

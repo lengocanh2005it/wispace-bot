@@ -3,7 +3,12 @@ import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import type { ZaloAccountLinkService } from './zalo-account-link.service';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
+import type { ClarificationStateStore } from '@wispace/chat-agent';
 import { ZaloLinkReconcileCronService } from './zalo-link-reconcile-cron.service';
+
+const defaultClarificationStore = {
+  clear: jest.fn().mockResolvedValue(true),
+} as unknown as ClarificationStateStore;
 
 const DEFAULT_CONFIG: Record<string, string> = {
   ZALO_LINK_RECONCILE_AGE_MS: '120000',
@@ -76,7 +81,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
     );
 
     await cron.handleReconcile();
@@ -109,7 +114,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
     );
 
     await cron.handleReconcile();
@@ -141,7 +146,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
     );
 
     await cron.handleReconcile();
@@ -173,7 +178,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
     );
 
     await cron.handleReconcile();
@@ -202,7 +207,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
     );
 
     await cron.handleReconcile();
@@ -241,7 +246,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
       undefined,
       undefined,
       undefined,
@@ -271,7 +276,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(999_999),
-      { clear: jest.fn().mockResolvedValue(true) },
+      defaultClarificationStore,
     );
 
     await cron.handleReconcile();
