@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import IORedis from 'ioredis';
 import type { RedisOperationMetricsPort } from './redis.client.port';
 import {
@@ -5,6 +6,12 @@ import {
   RedisConnectTimeoutError,
 } from './redis.operation.errors';
 import { RedisService } from './redis.service';
+
+type TestCommand = {
+  name: string;
+  promise: Promise<unknown>;
+  reject: (error: Error) => void;
+};
 
 type MockRedisInstance = {
   options: Record<string, unknown>;
@@ -17,18 +24,13 @@ type MockRedisInstance = {
   multi: jest.Mock;
   quit: jest.Mock;
   disconnect: jest.Mock;
+  sendCommand: (command: TestCommand) => Promise<unknown>;
   pendingCommands: Array<{
     name: string;
     promise: Promise<unknown>;
     reject: (error: Error) => void;
   }>;
   commandError?: Error;
-};
-
-type TestCommand = {
-  name: string;
-  promise: Promise<unknown>;
-  reject: (error: Error) => void;
 };
 
 const mockRedisInstances: MockRedisInstance[] = [];
@@ -156,14 +158,15 @@ jest.mock('ioredis', () => ({
 }));
 
 describe('RedisService', () => {
-  const config = (overrides: Record<string, string | undefined> = {}) => ({
-    get: (key: string) =>
-      ({
-        REDIS_ENABLED: 'true',
-        REDIS_TLS: 'true',
-        ...overrides,
-      })[key],
-  });
+  const config = (overrides: Record<string, string | undefined> = {}) =>
+    ({
+      get: (key: string) =>
+        ({
+          REDIS_ENABLED: 'true',
+          REDIS_TLS: 'true',
+          ...overrides,
+        })[key],
+    }) as unknown as ConfigService;
 
   const createCommand = (name: string): TestCommand => {
     let reject!: (error: Error) => void;
@@ -232,7 +235,7 @@ describe('RedisService', () => {
     const client = mockRedisInstances.at(-1)!;
     client.status = 'connecting';
     const native = service.getNativeClient() as never as {
-      sendCommand: (command: never) => Promise<unknown>;
+      sendCommand: (command: TestCommand) => Promise<unknown>;
     };
 
     await expect(native.sendCommand(createCommand('get'))).rejects.toThrow(
@@ -247,7 +250,7 @@ describe('RedisService', () => {
     const client = mockRedisInstances.at(-1)!;
     client.status = 'ready';
     const native = service.getNativeClient() as never as {
-      sendCommand: (command: never) => Promise<unknown>;
+      sendCommand: (command: TestCommand) => Promise<unknown>;
       connect: () => Promise<void>;
     };
     const sendCommand = jest.spyOn(native, 'sendCommand');
@@ -358,7 +361,7 @@ describe('RedisService', () => {
     await service.onModuleInit();
     const client = mockRedisInstances.at(-1)!;
     const native = service.getNativeClient() as never as {
-      sendCommand: (command: never) => Promise<unknown>;
+      sendCommand: (command: TestCommand) => Promise<unknown>;
       connect: () => Promise<void>;
     };
 

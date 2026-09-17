@@ -19,7 +19,7 @@ Measured on **2026-09-17** after normalizing all workspace scripts (Step 1).
 | `apps/messenger-bot` | 80 | 76 | 🔴 errors |
 | `apps/discord-bot` | 28 | 28 | 🔴 errors |
 | `apps/zalo-bot` | 22 | 22 | 🔴 errors |
-| `packages/bot-common` | 28 | 28 | 🔴 errors |
+| `packages/bot-common` | 28 | 0 | ✅ clean & gated |
 | `packages/llm-agent` | 19 | 0 | ✅ clean & gated |
 | `packages/chat-agent` | 19 | 0 | ✅ clean & gated |
 | `packages/chat-metering` | 15 | 0 | ✅ clean & gated |
@@ -40,7 +40,7 @@ Measured on **2026-09-17** after normalizing all workspace scripts (Step 1).
 | `packages/ops-health` | 0 | 0 | ✅ clean & gated |
 | `packages/webhook-inbound` | 0 | 0 | ✅ clean & gated |
 | `packages/date-utils` | 0 | 0 | ✅ clean & gated |
-| **Total** | **242** | **154** | |
+| **Total** | **242** | **126** | |
 
 ---
 
@@ -87,6 +87,7 @@ packages/webhook-inbound, packages/date-utils
 | 2026-09-17 | `packages/chat-metering` | 15 | 0 | #1232 | Fixed concrete Repository mock casts, optional chaining on safety payload; folded into gated typecheck |
 | 2026-09-17 | `packages/chat-agent` | 19 | 0 | #1232 | Fixed deriveAgentToolMap generic, configGet/freshMappingProvider types, clarification-state constructor; folded into gated typecheck |
 | 2026-09-17 | `packages/llm-agent` | 19 | 0 | #1232 | Fixed chatWithTools request/signal type, failover-adapter async, property spec redundant branch; folded into gated typecheck |
+| 2026-09-17 | `packages/bot-common` | 28 | 0 | #1232 | Fixed LockedTick withLock mock typing, TestOpsController public constructor, redis-user-display-name RedisClientPort, redis.service ConfigService and sendCommand types; folded into gated typecheck |
 
 ---
 

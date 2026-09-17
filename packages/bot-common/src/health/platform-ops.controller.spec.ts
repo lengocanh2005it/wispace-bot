@@ -1,10 +1,15 @@
 import { HttpStatus, RequestMethod } from '@nestjs/common';
 import {
   PlatformOpsController,
+  type PlatformOpsHandlers,
   PrivacyActionBody,
 } from './platform-ops.controller';
 
-class TestOpsController extends PlatformOpsController {}
+class TestOpsController extends PlatformOpsController {
+  public constructor(handlers: PlatformOpsHandlers) {
+    super(handlers);
+  }
+}
 
 const handlers = {
   sendReports: jest.fn(),

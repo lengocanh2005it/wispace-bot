@@ -1,4 +1,8 @@
-import { runLockedTick, type LockedTickItem } from './locked-tick';
+import {
+  runLockedTick,
+  type LockedTickItem,
+  type LockedTickOptions,
+} from './locked-tick';
 
 describe('runLockedTick', () => {
   function build(options?: {
@@ -11,7 +15,7 @@ describe('runLockedTick', () => {
       return options?.lockResult === undefined
         ? run()
         : (options.lockResult as T);
-    });
+    }) as unknown as jest.Mock & LockedTickOptions['withLock'];
     const recordCronSuccess = jest.fn();
     const debug = jest.fn();
     const run = jest.fn().mockResolvedValue(options?.items ?? []);
@@ -95,7 +99,9 @@ describe('runLockedTick', () => {
   });
 
   it('rejects an invalid tick configuration before acquiring the lock', async () => {
-    const withLock = jest.fn(async (run: () => Promise<unknown>) => run());
+    const withLock = jest.fn(async (run: () => Promise<unknown>) =>
+      run(),
+    ) as unknown as jest.Mock & LockedTickOptions['withLock'];
 
     await expect(
       runLockedTick({ name: 'invalid-tick', withLock }),

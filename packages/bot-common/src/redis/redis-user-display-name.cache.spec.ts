@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import type { RedisClientPort } from './redis.client.port';
 import { RedisUserDisplayNameCache } from './redis-user-display-name.cache';
 
 describe('RedisUserDisplayNameCache', () => {
@@ -8,7 +9,11 @@ describe('RedisUserDisplayNameCache', () => {
       {
         isEnabled: () => true,
         isConfiguredEnabled: () => true,
-        getNativeClient: () => ({ del }),
+        ping: async () => 'PONG',
+        getNativeClient: () =>
+          ({ del }) as unknown as ReturnType<
+            RedisClientPort['getNativeClient']
+          >,
       },
       new ConfigService(),
       { platform: 'messenger' },
@@ -24,6 +29,7 @@ describe('RedisUserDisplayNameCache', () => {
       {
         isEnabled: () => false,
         isConfiguredEnabled: () => true,
+        ping: async () => 'PONG',
         getNativeClient: () => null,
       },
       new ConfigService(),
