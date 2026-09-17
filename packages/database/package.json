@@ -13,6 +13,7 @@
     "format:check": "oxfmt --check",
     "format": "oxfmt",
     "test": "jest --maxWorkers=50%",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

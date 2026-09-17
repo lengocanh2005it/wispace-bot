@@ -26,6 +26,11 @@
       "inputs": ["$TURBO_DEFAULT$", "!**/jest.config.*"],
       "outputs": ["**/*.tsbuildinfo"]
     },
+    "typecheck:tests": {
+      "inputs": ["src/**/*.ts", "tsconfig.json"],
+      "outputs": [],
+      "cache": false
+    },
     "test": {
       "dependsOn": ["^build"],
       "inputs": ["src/**", "package.json", "tsconfig.json", "jest.config.*"],

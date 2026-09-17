@@ -62,6 +62,7 @@
     "eval:rehash:check": "node dist/eval/rehash-fixtures.main.js --check",
     "eval:guardrail": "node dist/eval/guardrail-battery.main.js",
     "classifier:eval": "node dist/classifier/classifier-eval.main.js",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

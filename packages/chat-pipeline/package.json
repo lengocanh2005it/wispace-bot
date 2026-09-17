@@ -13,7 +13,8 @@
     "format:check": "oxfmt --check",
     "lint": "oxlint",
     "test": "jest --maxWorkers=50%",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@wispace/chat-history": "*",
