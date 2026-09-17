@@ -1,7 +1,7 @@
 {
   "name": "exhaustion-zero-grounded-tools",
   "description": "#505 golden: every round's tool call fails — exhaustion with ZERO grounded tools yields the no-data partial answer (no tool labels), not a fabricated summary.",
-  "coreHash": "b2aaa2bd509668b4fff7476ae92950335362731e422ee0bc3cbb770705360184",
+  "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

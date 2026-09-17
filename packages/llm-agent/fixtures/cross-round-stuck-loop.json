@@ -1,7 +1,7 @@
 {
   "name": "cross-round-stuck-loop-break",
   "description": "#505 golden: the model repeats the SAME successful tool call across consecutive rounds — the loop detects the stuck loop, stops early without a final text, and reports exhausted with the grounded tool summary (cross-round dedupe; in-round dedupe is a separate fixture).",
-  "coreHash": "b2aaa2bd509668b4fff7476ae92950335362731e422ee0bc3cbb770705360184",
+  "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
