@@ -2,9 +2,9 @@ import { DEFAULT_KEEP_ALIVE_POOL_SIZE } from '../utils/keep-alive-agent';
 import { WispaceConfigService } from './wispace-config.service';
 
 function buildService(
-  values: Record<string, string> = {},
+  values: Record<string, string | undefined> = {},
 ): WispaceConfigService {
-  const config: Record<string, string> = {
+  const config: Record<string, string | undefined> = {
     WISPACE_API_PRECREATE_EXERCISE_URL: 'https://backend.example.com/precreate',
     WISPACE_INTERNAL_KEY: 'internal-key',
     ...values,

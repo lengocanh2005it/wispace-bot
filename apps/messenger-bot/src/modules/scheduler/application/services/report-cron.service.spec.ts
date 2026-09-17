@@ -66,7 +66,7 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
 
     const result = await service.sendScheduledReports({
       forceSend: true,
-      psid: 'psid-1',
+      externalUserId: 'psid-1',
     });
 
     expect(result.sent).toBe(1);
@@ -116,7 +116,9 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
       reportSendOrchestrationService as never,
     );
 
-    const result = await service.sendScheduledReports({ psid: 'psid-1' });
+    const result = await service.sendScheduledReports({
+      externalUserId: 'psid-1',
+    });
 
     expect(result.skipped).toBe(1);
     expect(result.sent).toBe(0);

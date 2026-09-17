@@ -11,18 +11,15 @@ type ExecuteMock = jest.Mock<
   [string, number, (cutoff: Date) => Promise<number>]
 >;
 
+type BuildConfigOverrides = Partial<Omit<CleanupCronJobsConfig, 'lockIds'>> & {
+  lockIds?: Partial<CleanupCronJobsConfig['lockIds']>;
+};
+
 function buildConfig(
-  overrides: Partial<CleanupCronJobsConfig> = {},
+  overrides: BuildConfigOverrides = {},
 ): CleanupCronJobsConfig {
   return {
     platform: 'discord',
-    lockIds: {
-      messageLog: 884_200_911,
-      deadLetter: 884_200_912,
-      idempotencyRecovery: 884_200_914,
-      idempotencyCleanup: 884_200_915,
-      ...(overrides.lockIds ?? {}),
-    },
     messageLogRepo: {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     } as never as Repository<{ createdAt: Date; platform: string }>,
@@ -50,6 +47,15 @@ function buildConfig(
       recoverStuckReservedSlots: jest.fn().mockResolvedValue({ recovered: [] }),
     },
     ...overrides,
+    lockIds: {
+      messageLog: overrides.lockIds?.messageLog ?? 884_200_911,
+      deadLetter: overrides.lockIds?.deadLetter ?? 884_200_912,
+      idempotencyRecovery:
+        overrides.lockIds?.idempotencyRecovery ?? 884_200_914,
+      idempotencyCleanup: overrides.lockIds?.idempotencyCleanup ?? 884_200_915,
+      oauthState: overrides.lockIds?.oauthState,
+      reportClaim: overrides.lockIds?.reportClaim,
+    },
   };
 }
 

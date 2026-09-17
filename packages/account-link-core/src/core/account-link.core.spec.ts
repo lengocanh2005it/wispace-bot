@@ -113,7 +113,9 @@ describe('LinkCompletionCore', () => {
           maxAttempts: 3,
           baseDelayMs: 10,
           rng: () => 0,
-          sleep: async (ms) => delays.push(ms),
+          sleep: async (ms) => {
+            delays.push(ms);
+          },
         },
       },
     );
@@ -307,7 +309,9 @@ describe('LinkReconcileCronCore', () => {
         upserts.push(`${userId}:${externalUserId}`);
         return { relinked: false };
       },
-      consumeRecord: async (intent) => consumed.push(intent.externalUserId),
+      consumeRecord: async (intent) => {
+        consumed.push(intent.externalUserId);
+      },
     });
 
     await expect(
@@ -340,7 +344,9 @@ describe('LinkReconcileCronCore', () => {
           ? { state: 'confirmed-revoked' }
           : undefined,
       upsertLink,
-      consumeRecord: async (intent) => consumed.push(intent.externalUserId),
+      consumeRecord: async (intent) => {
+        consumed.push(intent.externalUserId);
+      },
     });
 
     await core.runBatch({

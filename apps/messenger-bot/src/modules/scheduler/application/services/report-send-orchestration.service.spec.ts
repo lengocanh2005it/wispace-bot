@@ -14,7 +14,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     userId: 10,
     notificationMessagesToken: 'tok-1',
     topic: 'ielts',
-    cadence: 'weekly' as const,
+    cadence: 'WEEKLY' as const,
     status: 'ACTIVE' as const,
   };
 

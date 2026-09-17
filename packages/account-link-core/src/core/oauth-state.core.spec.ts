@@ -6,8 +6,9 @@ describe('OAuthStateCore', () => {
     const rows = new Map<string, { payload: string; createdAt: Date }>();
     const cleanup = jest.fn();
     const store: OAuthStateStore<string> = {
-      save: async (state, payload, createdAt) =>
-        rows.set(state, { payload, createdAt }),
+      save: async (state, payload, createdAt) => {
+        rows.set(state, { payload, createdAt });
+      },
       consume: async (state) => {
         const row = rows.get(state);
         rows.delete(state);

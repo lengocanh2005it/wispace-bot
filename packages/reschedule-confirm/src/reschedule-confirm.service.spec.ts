@@ -778,7 +778,8 @@ describe('RescheduleConfirmationService', () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
       const store = mockStore(true);
-      store.requiresApprovalToken = true;
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
       const service = new RescheduleConfirmationService(
         calendar,
         reschedule,
@@ -1127,7 +1128,7 @@ describe('RescheduleConfirmationService', () => {
       const consume = jest.fn().mockResolvedValue(true);
       const refund = jest.fn().mockResolvedValue(undefined);
       const reschedulePort = mockReschedulePort();
-      reschedulePort.rescheduleSession.mockRejectedValue(
+      (reschedulePort.rescheduleSession as jest.Mock).mockRejectedValue(
         new Error('WISPACE 500'),
       );
       const store = new MemoryRescheduleStore<string>();

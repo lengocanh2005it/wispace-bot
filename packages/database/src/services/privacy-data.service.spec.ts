@@ -4,7 +4,10 @@ import {
   PrivacyDataService,
   type PrivacyEntityRegistry,
 } from './privacy-data.service';
-import type { PrivacyCleanupJobStore } from './privacy-cleanup-job.service';
+import type {
+  PrivacyCleanupJobStatus,
+  PrivacyCleanupJobStore,
+} from './privacy-cleanup-job.service';
 
 class MessengerMappingTarget {}
 class DiscordMappingTarget {}
@@ -231,7 +234,7 @@ describe('PrivacyDataService', () => {
           platform: 'messenger' as const,
           externalUserId: 'psid-123',
           mappingGeneration: '4',
-          status: 'pending' as const,
+          status: 'pending' as PrivacyCleanupJobStatus,
           attemptCount: 0,
         },
       ];

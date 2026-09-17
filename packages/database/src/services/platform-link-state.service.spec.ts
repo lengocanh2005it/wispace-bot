@@ -58,7 +58,7 @@ describe('PlatformLinkStateService', () => {
       expect.stringContaining("link_state = 'confirmed-revoked'"),
       ['9', 'discord', '4', 'Bearer [REDACTED] upstream_unlinked', null],
     );
-    const auditCall = query.mock.calls.at(-1);
+    const auditCall = query.mock.calls[query.mock.calls.length - 1];
     expect(auditCall?.[0]).toContain('platform_link_audit_events');
     expect(auditCall?.[1]?.[1]).toMatch(/^[a-f0-9]{64}$/);
     expect(auditCall?.[1]?.[1]).not.toBe('discord-user-1');

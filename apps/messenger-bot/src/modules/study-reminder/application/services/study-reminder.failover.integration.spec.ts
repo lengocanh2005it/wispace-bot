@@ -19,6 +19,7 @@ const executionConfig: EnvLlmExecutionConfig = {
   baseBackoffMs: 1,
   retryMaxDelayMs: 10_000,
   requestTimeoutMs: 5_000,
+  perAttemptTimeoutMs: 5_000,
   globalConcurrencyEnabled: false,
   redis: null,
   maxQueueDepth: 2,

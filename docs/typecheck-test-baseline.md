@@ -16,7 +16,7 @@ Measured on **2026-09-17** after normalizing all workspace scripts (Step 1).
 
 | Workspace | Baseline | Current | Status |
 |---|---:|---:|---|
-| `apps/messenger-bot` | 80 | 80 | 🔴 errors |
+| `apps/messenger-bot` | 80 | 76 | 🔴 errors |
 | `apps/discord-bot` | 28 | 28 | 🔴 errors |
 | `apps/zalo-bot` | 22 | 22 | 🔴 errors |
 | `packages/bot-common` | 28 | 28 | 🔴 errors |
@@ -24,23 +24,23 @@ Measured on **2026-09-17** after normalizing all workspace scripts (Step 1).
 | `packages/chat-agent` | 19 | 19 | 🔴 errors |
 | `packages/chat-metering` | 15 | 15 | 🔴 errors |
 | `packages/study-reminder-shared` | 14 | 14 | 🔴 errors |
-| `packages/database` | 5 | 5 | 🔴 errors |
-| `packages/account-link-core` | 4 | 4 | 🔴 errors |
-| `packages/cleanup-cron` | 4 | 4 | 🔴 errors |
-| `packages/wispace-client` | 2 | 2 | 🔴 errors |
-| `packages/reschedule-confirm` | 2 | 2 | 🔴 errors |
-| `packages/contracts` | 0 | 0 | ✅ clean |
-| `packages/chat-history` | 0 | 0 | ✅ clean |
-| `packages/student-report` | 0 | 0 | ✅ clean |
-| `packages/chat-queue-core` | 0 | 0 | ✅ clean |
-| `packages/chat-pipeline` | 0 | 0 | ✅ clean |
-| `packages/learner-profile` | 0 | 0 | ✅ clean |
-| `packages/scheduler-core` | 0 | 0 | ✅ clean |
-| `packages/bot-metrics` | 0 | 0 | ✅ clean |
-| `packages/ops-health` | 0 | 0 | ✅ clean |
-| `packages/webhook-inbound` | 0 | 0 | ✅ clean |
-| `packages/date-utils` | 0 | 0 | ✅ clean |
-| **Total** | **242** | **242** | |
+| `packages/database` | 5 | 0 | ✅ clean & gated |
+| `packages/account-link-core` | 4 | 0 | ✅ clean & gated |
+| `packages/cleanup-cron` | 4 | 0 | ✅ clean & gated |
+| `packages/wispace-client` | 2 | 0 | ✅ clean & gated |
+| `packages/reschedule-confirm` | 2 | 0 | ✅ clean & gated |
+| `packages/contracts` | 0 | 0 | ✅ clean & gated |
+| `packages/chat-history` | 0 | 0 | ✅ clean & gated |
+| `packages/student-report` | 0 | 0 | ✅ clean & gated |
+| `packages/chat-queue-core` | 0 | 0 | ✅ clean & gated |
+| `packages/chat-pipeline` | 0 | 0 | ✅ clean & gated |
+| `packages/learner-profile` | 0 | 0 | ✅ clean & gated |
+| `packages/scheduler-core` | 0 | 0 | ✅ clean & gated |
+| `packages/bot-metrics` | 0 | 0 | ✅ clean & gated |
+| `packages/ops-health` | 0 | 0 | ✅ clean & gated |
+| `packages/webhook-inbound` | 0 | 0 | ✅ clean & gated |
+| `packages/date-utils` | 0 | 0 | ✅ clean & gated |
+| **Total** | **242** | **221** | |
 
 ---
 
@@ -60,26 +60,29 @@ packages/webhook-inbound, packages/date-utils
 
 ---
 
-## Known genuine defect (fix first — Step 2)
+## Genuine defects resolved
 
-`apps/messenger-bot` — `messenger-report-delivery.service.spec.ts`:
-
-```
-error TS2820: Type '"weekly"' is not assignable to type 'NotificationCadence | undefined'.
-             Did you mean '"WEEKLY"'?
-```
-
-Nine occurrences. A test asserting a cadence value that production can never emit — and
-passing only because SWC strips types without resolving them. This is the first member of
-the genuine-defect class to fix in Step 2.
+- `apps/messenger-bot` — `report-send-orchestration.service.spec.ts`: `cadence: 'weekly'` → `'WEEKLY'` (NotificationCadence case mismatch, 9 occurrences)
+- `apps/messenger-bot` — `report-cron.service.spec.ts`: `psid` → `externalUserId` in `SendScheduledReportsOptions` (2 occurrences)
+- `apps/messenger-bot` — `scheduler.controller.spec.ts`: fixed constructor arity (11 args vs 8)
+- `apps/messenger-bot` — `study-reminder.failover.integration.spec.ts`: added required `perAttemptTimeoutMs`
+- `packages/database` — `platform-link-state.service.spec.ts`: replaced ES2022 `Array.at(-1)` with index access
+- `packages/database` — `platform-report-claim.repository.spec.ts`: typed queryBuilder harness & learnerQuery args
+- `packages/database` — `privacy-data.service.spec.ts`: typed status as `PrivacyCleanupJobStatus` instead of literal `'pending'`
 
 ---
 
 ## Progress log
 
-| Date | Workspace | Errors before | Errors after | PR |
-|---|---|---:|---:|---|
-| 2026-09-17 | *(Step 1 complete — scripts normalized, baseline established)* | — | — | #1232 |
+| Date | Workspace | Errors before | Errors after | PR | Notes |
+|---|---|---:|---:|---|---|
+| 2026-09-17 | *(Monorepo)* | — | 242 | #1232 | Step 1 complete — scripts normalized, baseline established |
+| 2026-09-17 | `apps/messenger-bot` | 80 | 76 | #1232 | Fixed genuine defects: cadence case, options rename, controller arity, timeout config |
+| 2026-09-17 | `packages/wispace-client` | 2 | 0 | #1232 | Fixed timeWispaceCall mock & config env types; folded into gated typecheck |
+| 2026-09-17 | `packages/reschedule-confirm` | 2 | 0 | #1232 | Fixed requiresApprovalToken & rescheduleSession mock; folded into gated typecheck |
+| 2026-09-17 | `packages/account-link-core` | 4 | 0 | #1232 | Fixed sleep/consumeRecord void return types & oauth-state save; folded into gated typecheck |
+| 2026-09-17 | `packages/cleanup-cron` | 4 | 0 | #1232 | Fixed BuildConfigOverrides lockIds partial overrides; folded into gated typecheck |
+| 2026-09-17 | `packages/database` | 5 | 0 | #1232 | Fixed Array.at, queryBuilder self-ref, tuple index, PrivacyCleanupJobStatus; folded into gated typecheck |
 
 ---
 

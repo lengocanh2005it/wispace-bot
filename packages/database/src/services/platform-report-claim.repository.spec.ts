@@ -496,7 +496,7 @@ function buildPlatformClaimHarness(platform: Platform): PlatformClaimHarness {
     return [];
   });
 
-  const queryBuilder = {
+  const queryBuilder: PlatformClaimHarness['queryBuilder'] = {
     update: jest.fn().mockReturnThis(),
     set: jest.fn((patch: { status?: ClaimRow['status'] }) => {
       queryBuilder.pendingPatch = patch;
@@ -637,7 +637,7 @@ describe.each(['messenger', 'discord', 'zalo'] as const)(
 
 it('keeps learner-level dedupe when the first delivery uses Messenger', async () => {
   let learnerClaimed = false;
-  const learnerQuery = jest.fn(() => {
+  const learnerQuery = jest.fn((_sql?: string, _params?: unknown[]) => {
     if (learnerClaimed) return [];
     learnerClaimed = true;
     return [

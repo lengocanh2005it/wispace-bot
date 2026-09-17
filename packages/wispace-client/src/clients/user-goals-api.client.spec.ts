@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { UserGoalsApiClient } from './user-goals-api.client';
+import type { WispaceClientMetrics } from './wispace-client-types';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { ShapeValidationError } from '../utils/validate-shape';
 
@@ -48,7 +49,10 @@ describe('UserGoalsApiClient', () => {
     const client = new UserGoalsApiClient({
       url: 'https://backend.example.com/api/User/goals',
       internalKey: 'internal-key',
-      metrics: { timeWispaceCall },
+      metrics: {
+        timeWispaceCall:
+          timeWispaceCall as unknown as WispaceClientMetrics['timeWispaceCall'],
+      },
     });
 
     await client.getUserGoals('x-discordid', 'discord-1');
