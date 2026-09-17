@@ -231,5 +231,42 @@ describe('LlmSafetyCore', () => {
       ).not.toThrow();
       await flushMicrotasks();
     });
+
+    it('records CRISIS and ABUSE non-SAFE verdicts (#1054 / #975)', async () => {
+      const inserted: InsertLlmSafetyEvent[] = [];
+      const repo: LlmSafetyEventRepositoryPort = {
+        insert: jest.fn(async (event: InsertLlmSafetyEvent) => {
+          inserted.push(event);
+        }),
+        countSince: jest.fn().mockResolvedValue(0),
+        deleteOlderThan: jest.fn().mockResolvedValue(0),
+      };
+      const core = new LlmSafetyCore(repo);
+
+      core.recordClassifierVerdict({
+        externalUserId: 'psid-crisis-1',
+        label: 'CRISIS',
+        mode: 'shadow',
+        confidence: 0.95,
+        reason: 'self-harm intent',
+        textPreview: 'mình muốn tự tử',
+      });
+
+      core.recordClassifierVerdict({
+        externalUserId: 'psid-abuse-1',
+        label: 'ABUSE',
+        mode: 'enforce',
+        confidence: 0.9,
+        reason: 'bot hostility',
+        textPreview: 'bot ngu quá cút đi',
+      });
+      await flushMicrotasks();
+
+      expect(inserted).toHaveLength(2);
+      expect(inserted[0].payload.label).toBe('CRISIS');
+      expect(inserted[0].eventType).toBe('CLASSIFIER_FLAGGED');
+      expect(inserted[1].payload.label).toBe('ABUSE');
+      expect(inserted[1].eventType).toBe('CLASSIFIER_FLAGGED');
+    });
   });
 });

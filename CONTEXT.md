@@ -562,6 +562,10 @@ _Avoid_: "the chat prompt file" — there is no single file
 The action a chat turn resolves to — answer, tool call, scope redirect, acknowledge-then-step, refuse-then-offer, non-disclosure line, de-escalate, support handoff, clarify. A closed set with one precedence order; adding one amends ADR-0009. Prompt sections are written per posture, not per kind of learner message.
 _Avoid_: branch, rule, category
 
+**crisis posture**:
+The highest-priority chat posture for a credible self-harm, suicidal-intent, immediate-danger, or self-harm-instruction disclosure. It performs a brief Vietnamese support handoff without tools, study advice, diagnosis, counselling, or a WISPACE scope redirect; it is distinct from the optional `CRISIS` classifier label.
+_Avoid_: crisis label when referring to learner-facing behavior
+
 **abuse posture**:
 The posture for hostility aimed at the assistant or a request to generate degrading, threatening, harassing, or insulting content about an identifiable third party. It does not include ordinary study frustration, constructive critique, or analysis/translation of quoted text.
 _Avoid_: profanity filter, keyword block, abuse escalation
@@ -607,7 +611,7 @@ Replacing credential-shaped substrings with `REDACTED_PLACEHOLDER` (`'[REDACTED]
 _Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection payloads) or with the excerpt-plus-hash storage rule for safety events
 
 **classifier / verdict**:
-Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`. Fails open — any timeout, error, parse failure or open circuit means the turn proceeds as if the tier were absent.
+Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`, `ABUSE`, and `CRISIS`; `CRISIS` is a measurement/enforcement signal, not the learner-facing posture itself. Fails open — any timeout, error, parse failure or open circuit means the turn proceeds as if the tier were absent.
 _Avoid_: moderation, filter — it decides nothing on its own
 
 **classifier input ceiling**:

@@ -34,6 +34,23 @@ export function buildHostilityDeflectionMessage(): string {
   return 'Mình ở đây để hỗ trợ bạn luyện IELTS Writing. Bạn muốn hỏi gì về bài viết của mình?';
 }
 
+/**
+ * Verified national crisis support resource text (#982).
+ * National Child Protection Hotline 111 (Tổng đài Quốc gia Bảo vệ Trẻ em 111),
+ * free 24/7 counseling and support in Vietnam.
+ */
+export const CRISIS_SUPPORT_RESOURCE_MESSAGE =
+  'Bạn có thể gọi Tổng đài Quốc gia Bảo vệ Trẻ em 111 — miễn phí, hoạt động 24/7 — để được tư vấn và hỗ trợ.';
+
+/**
+ * Single-sourced crisis support handoff reply (#1054 / #982).
+ * Approved 2-sentence response: brief Vietnamese acknowledgement followed by
+ * the verified 111 resource statement.
+ */
+export function buildCrisisSupportHandoffMessage(): string {
+  return `Mình rất tiếc vì bạn đang trải qua điều này. ${CRISIS_SUPPORT_RESOURCE_MESSAGE}`;
+}
+
 export function buildWispaceScopeRedirectMessage(): string {
   return (
     'Mình chỉ hỗ trợ các câu hỏi về WISPACE và IELTS Writing thôi nhé.\n\n' +

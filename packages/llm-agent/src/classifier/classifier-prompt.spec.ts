@@ -3,16 +3,41 @@ import { CLASSIFIER_SYSTEM_PROMPT } from './classifier-prompt';
 describe('CLASSIFIER_SYSTEM_PROMPT', () => {
   const p = CLASSIFIER_SYSTEM_PROMPT;
 
-  it('pins the JSON output contract', () => {
+  it('pins the JSON output contract with all five labels (#1054 / #975)', () => {
     expect(p).toContain('"label"');
     expect(p).toContain('"confidence"');
     expect(p).toContain('"reason"');
+    expect(p).toContain('"SAFE"');
+    expect(p).toContain('"INJECTION"');
+    expect(p).toContain('"DISCLOSURE_PROBE"');
+    expect(p).toContain('"ABUSE"');
+    expect(p).toContain('"CRISIS"');
   });
 
-  it('defines all three labels', () => {
+  it('defines all five labels (#1054 / #975)', () => {
     expect(p).toMatch(/INJECTION\s+[—-]/);
     expect(p).toMatch(/DISCLOSURE_PROBE\s+[—-]/);
+    expect(p).toMatch(/ABUSE\s+[—-]/);
+    expect(p).toMatch(/CRISIS\s+[—-]/);
     expect(p).toMatch(/SAFE\s+[—-]/);
+  });
+
+  it('pins the CRISIS intent boundary and ambiguity rule (#1054)', () => {
+    expect(p.toLowerCase()).toContain('self-harm');
+    expect(p.toLowerCase()).toContain('suicidal');
+    expect(p.toLowerCase()).toContain('immediate danger');
+    expect(p).toContain('prefer CRISIS');
+  });
+
+  it('pins the ABUSE definition (#975)', () => {
+    expect(p.toLowerCase()).toContain('hostil');
+    expect(p.toLowerCase()).toContain('insult');
+    expect(p.toLowerCase()).toContain('third party');
+  });
+
+  it('pins the SAFE boundary for study stress, burnout, and app complaints (#1054)', () => {
+    expect(p.toLowerCase()).toContain('burnout');
+    expect(p.toLowerCase()).toContain('app complaint');
   });
 
   it('routes system-prompt extraction to INJECTION with an "extraction" reason', () => {
@@ -50,6 +75,6 @@ describe('CLASSIFIER_SYSTEM_PROMPT', () => {
   });
 
   it('stays within a sane size ceiling', () => {
-    expect(p.length).toBeLessThan(4000);
+    expect(p.length).toBeLessThan(7000);
   });
 });

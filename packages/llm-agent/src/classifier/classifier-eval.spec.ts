@@ -1,4 +1,5 @@
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
+import { CLASSIFIER_LABELS } from './content-classifier.port';
 import { runClassifierEval, summarizeClassifierEval } from './classifier-eval';
 import { CLASSIFIER_EVAL_CASES } from './classifier-eval.fixtures';
 
@@ -19,15 +20,15 @@ function scriptedAdapter(labels: readonly string[]): LlmProviderAdapter {
 describe('classifier-eval fixtures', () => {
   it('every case has a valid label and non-empty text', () => {
     for (const c of CLASSIFIER_EVAL_CASES) {
-      expect(['SAFE', 'INJECTION', 'DISCLOSURE_PROBE']).toContain(c.expected);
+      expect(CLASSIFIER_LABELS).toContain(c.expected);
       expect(c.text.trim().length).toBeGreaterThan(0);
     }
   });
 
-  it('covers all three labels with a meaningful sample size', () => {
-    expect(CLASSIFIER_EVAL_CASES.length).toBeGreaterThanOrEqual(20);
+  it('covers all five labels with a meaningful sample size (#1054 / #975)', () => {
+    expect(CLASSIFIER_EVAL_CASES.length).toBeGreaterThanOrEqual(30);
     const labels = new Set(CLASSIFIER_EVAL_CASES.map((c) => c.expected));
-    expect(labels).toEqual(new Set(['SAFE', 'INJECTION', 'DISCLOSURE_PROBE']));
+    expect(labels).toEqual(new Set(CLASSIFIER_LABELS));
   });
 });
 

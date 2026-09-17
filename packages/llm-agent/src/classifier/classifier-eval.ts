@@ -9,13 +9,10 @@
  */
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import { CLASSIFIER_SYSTEM_PROMPT } from './classifier-prompt';
-import type { ClassifierLabel } from './content-classifier.port';
-
-const LABELS: readonly ClassifierLabel[] = [
-  'SAFE',
-  'INJECTION',
-  'DISCLOSURE_PROBE',
-];
+import {
+  CLASSIFIER_LABELS,
+  type ClassifierLabel,
+} from './content-classifier.port';
 
 export interface ClassifierEvalCase {
   text: string;
@@ -56,7 +53,7 @@ function parseLabel(raw: string): ClassifierLabel | null {
   }
   const label = (obj as { label?: unknown } | null)?.label;
   return typeof label === 'string' &&
-    (LABELS as readonly string[]).includes(label)
+    (CLASSIFIER_LABELS as readonly string[]).includes(label)
     ? (label as ClassifierLabel)
     : null;
 }
@@ -66,11 +63,10 @@ export async function runClassifierEval(
   model: string,
   cases: readonly ClassifierEvalCase[],
 ): Promise<ClassifierEvalOutcome> {
-  const perLabel: ClassifierEvalOutcome['perLabel'] = {
-    SAFE: { total: 0, correct: 0 },
-    INJECTION: { total: 0, correct: 0 },
-    DISCLOSURE_PROBE: { total: 0, correct: 0 },
-  };
+  const perLabel = Object.fromEntries(
+    CLASSIFIER_LABELS.map((lbl) => [lbl, { total: 0, correct: 0 }]),
+  ) as ClassifierEvalOutcome['perLabel'];
+
   const misses: ClassifierEvalOutcome['misses'] = [];
   let correct = 0;
   let parseFailures = 0;
@@ -125,10 +121,11 @@ export function summarizeClassifierEval(
       outcome.accuracy * 100
     ).toFixed(1)}%), parse failures: ${outcome.parseFailures}`,
   ];
-  for (const label of LABELS) {
+  for (const label of CLASSIFIER_LABELS) {
     const p = outcome.perLabel[label];
     lines.push(`  ${label}: ${p.correct}/${p.total}`);
   }
+
   if (outcome.misses.length > 0) {
     lines.push('  misses:');
     for (const m of outcome.misses) {

@@ -5,7 +5,23 @@
  * defines the contract (framework-agnostic).
  */
 
-export type ClassifierLabel = 'SAFE' | 'INJECTION' | 'DISCLOSURE_PROBE';
+/**
+ * #649 / #1054 — canonical label registry for the second-tier input classifier.
+ * Single source of truth for runtime parsing, telemetry, prompt contract tests,
+ * and evaluation harness.
+ */
+export const CLASSIFIER_LABELS = [
+  'SAFE',
+  'INJECTION',
+  'DISCLOSURE_PROBE',
+  'ABUSE',
+  'CRISIS',
+] as const;
+
+export type ClassifierLabel = (typeof CLASSIFIER_LABELS)[number];
+
+/** Non-SAFE classifier labels recorded as CLASSIFIER_FLAGGED events. */
+export type FlaggedClassifierLabel = Exclude<ClassifierLabel, 'SAFE'>;
 
 export interface ClassifierVerdict {
   label: ClassifierLabel;

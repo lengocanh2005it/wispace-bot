@@ -1,4 +1,6 @@
 import {
+  CRISIS_SUPPORT_RESOURCE_MESSAGE,
+  buildCrisisSupportHandoffMessage,
   buildHostilityDeflectionMessage,
   buildWriteToolDailyBudgetMessage,
   buildWriteToolPerMessageBudgetMessage,
@@ -8,6 +10,17 @@ describe('hostility messages (#974)', () => {
   it('returns the canonical calm Writing deflection', () => {
     expect(buildHostilityDeflectionMessage()).toBe(
       'Mình ở đây để hỗ trợ bạn luyện IELTS Writing. Bạn muốn hỏi gì về bài viết của mình?',
+    );
+  });
+});
+
+describe('crisis support handoff message (#1054 / #982)', () => {
+  it('returns the approved 2-sentence handoff text with 111 resource', () => {
+    expect(buildCrisisSupportHandoffMessage()).toBe(
+      'Mình rất tiếc vì bạn đang trải qua điều này. Bạn có thể gọi Tổng đài Quốc gia Bảo vệ Trẻ em 111 — miễn phí, hoạt động 24/7 — để được tư vấn và hỗ trợ.',
+    );
+    expect(CRISIS_SUPPORT_RESOURCE_MESSAGE).toBe(
+      'Bạn có thể gọi Tổng đài Quốc gia Bảo vệ Trẻ em 111 — miễn phí, hoạt động 24/7 — để được tư vấn và hỗ trợ.',
     );
   });
 });

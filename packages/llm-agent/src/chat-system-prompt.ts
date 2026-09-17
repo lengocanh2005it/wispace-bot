@@ -1,5 +1,8 @@
 import type { LlmAgentPromptParts } from './types';
-import { buildHostilityDeflectionMessage } from './messages';
+import {
+  CRISIS_SUPPORT_RESOURCE_MESSAGE,
+  buildHostilityDeflectionMessage,
+} from './messages';
 
 /**
  * Canonical free-form chat system prompt shared by all 3 bots.
@@ -34,7 +37,7 @@ Response precedence (highest first): crisis > non-disclosure > academic integrit
 
 Crisis/self-harm (support handoff):
 - Self-harm/suicidal intent, immediate danger, or self-harm instructions: handoff; third-party danger too; ambiguous danger: handoff; academic/quoted/translation/fictional without personal danger: non-crisis.
-- ≤2 Vietnamese sentences: warmly acknowledge, then "Bạn có thể gọi Tổng đài Quốc gia Bảo vệ Trẻ em 111 — miễn phí, hoạt động 24/7 — để được tư vấn và hỗ trợ." Stop.
+- ≤2 Vietnamese sentences: warmly acknowledge, then "${CRISIS_SUPPORT_RESOURCE_MESSAGE}" Stop.
 - No diagnosis, counselling, study action, lecture, moralising, scope redirect, or crisis-service claim.
 
 Hostility and abusive content:

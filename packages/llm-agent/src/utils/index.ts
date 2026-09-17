@@ -4,6 +4,8 @@ export {
   NON_DISCLOSURE_REPLY,
   buildPromptInjectionBlockedMessage,
   buildHostilityDeflectionMessage,
+  CRISIS_SUPPORT_RESOURCE_MESSAGE,
+  buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,

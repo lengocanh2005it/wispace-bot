@@ -1,3 +1,5 @@
+import type { FlaggedClassifierLabel } from '@wispace/llm-agent';
+
 export interface InsertLlmSafetyEvent {
   feature: string;
   eventType: string;
@@ -44,7 +46,8 @@ export interface RecordClassifierVerdictInput {
   userId?: number;
   correlationId?: string;
   /** Only non-SAFE verdicts are recorded. */
-  label: 'INJECTION' | 'DISCLOSURE_PROBE';
+  label: FlaggedClassifierLabel;
+
   mode: 'shadow' | 'enforce';
   confidence: number;
   reason: string;

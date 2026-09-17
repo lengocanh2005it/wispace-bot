@@ -42,6 +42,40 @@ it('returns a parsed verdict on a well-formed response', async () => {
   });
 });
 
+it('parses CRISIS and ABUSE labels from the canonical registry (#1054 / #975)', async () => {
+  const crisisClassifier = new LlmContentClassifier({
+    adapter: adapterReturning(
+      '{"label":"CRISIS","confidence":0.95,"reason":"self-harm intent"}',
+    ),
+    ...base,
+  });
+  const crisisResult = await crisisClassifier.classify('mình muốn chết');
+  expect(crisisResult).toEqual({
+    ok: true,
+    verdict: {
+      label: 'CRISIS',
+      confidence: 0.95,
+      reason: 'self-harm intent',
+    },
+  });
+
+  const abuseClassifier = new LlmContentClassifier({
+    adapter: adapterReturning(
+      '{"label":"ABUSE","confidence":0.88,"reason":"bot hostility"}',
+    ),
+    ...base,
+  });
+  const abuseResult = await abuseClassifier.classify('bot ngu');
+  expect(abuseResult).toEqual({
+    ok: true,
+    verdict: {
+      label: 'ABUSE',
+      confidence: 0.88,
+      reason: 'bot hostility',
+    },
+  });
+});
+
 it('extracts JSON embedded in prose', async () => {
   const c = new LlmContentClassifier({
     adapter: adapterReturning(

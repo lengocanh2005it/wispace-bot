@@ -122,6 +122,8 @@ export {
   NON_DISCLOSURE_REPLY,
   buildPromptInjectionBlockedMessage,
   buildHostilityDeflectionMessage,
+  CRISIS_SUPPORT_RESOURCE_MESSAGE,
+  buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,
@@ -212,10 +214,12 @@ export type {
 
 // Input classifier (#649) — port + prompt; implementation lives in @wispace/chat-agent
 export { CLASSIFIER_SYSTEM_PROMPT } from './classifier/classifier-prompt';
-export type {
-  ClassifierLabel,
-  ClassifierVerdict,
-  ClassifyResult,
-  ClassifyFailureReason,
-  ContentClassifierPort,
+export {
+  CLASSIFIER_LABELS,
+  type ClassifierLabel,
+  type FlaggedClassifierLabel,
+  type ClassifierVerdict,
+  type ClassifyResult,
+  type ClassifyFailureReason,
+  type ContentClassifierPort,
 } from './classifier/content-classifier.port';

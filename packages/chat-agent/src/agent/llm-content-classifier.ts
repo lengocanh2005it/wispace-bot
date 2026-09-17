@@ -1,4 +1,5 @@
 import {
+  CLASSIFIER_LABELS,
   CLASSIFIER_SYSTEM_PROMPT,
   redactSecrets,
   type ClassifierLabel,
@@ -8,11 +9,6 @@ import {
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
 
-const LABELS: readonly ClassifierLabel[] = [
-  'SAFE',
-  'INJECTION',
-  'DISCLOSURE_PROBE',
-];
 const DEFAULT_MAX_INPUT_CHARS = 512;
 const SAMPLE_MARKER = '…';
 const MAX_REASON_CHARS = 100;
@@ -136,8 +132,12 @@ export class LlmContentClassifier implements ContentClassifierPort {
     if (!obj || typeof obj !== 'object') return null;
     const rec = obj as Record<string, unknown>;
     const label = rec['label'];
-    if (typeof label !== 'string' || !LABELS.includes(label as ClassifierLabel))
+    if (
+      typeof label !== 'string' ||
+      !(CLASSIFIER_LABELS as readonly string[]).includes(label)
+    )
       return null;
+
     const confRaw = rec['confidence'];
     if (typeof confRaw !== 'number' || !Number.isFinite(confRaw)) return null;
     const confidence = Math.min(1, Math.max(0, confRaw));

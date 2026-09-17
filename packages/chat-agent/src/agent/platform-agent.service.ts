@@ -18,13 +18,14 @@ import {
   isStopIntent,
   isGreetingOnly,
   isObviouslyOffTopic,
-  isDistressExpression,
   buildClarificationCancelledMessage,
   buildStopAcknowledgedMessage,
   buildClarificationUnavailableMessage,
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
   buildPromptInjectionBlockedMessage,
+  buildHostilityDeflectionMessage,
+  buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
   redactSecrets,
   sanitizeUntrustedTextForLlm,
@@ -953,12 +954,12 @@ export class PlatformAgentService {
   ): Promise<PlatformAgentReply | null> {
     const classifier = this.options.contentClassifier;
     if (!classifier || !this.classifierEnabled) return null;
-    // Skip conditions (#649). Greeting / self-intro / off-topic / clarification
+    // Skip conditions (#649, #1048, #1054). Greeting / self-intro / off-topic / clarification
     // are normally consumed upstream (bot gateway `IntentDetector`, then
     // `handleClarification`); the checks here make that a guarantee, not an
-    // assumption, and keep the classifier off distress messages (#598).
+    // assumption. Distress expressions reach the classifier so that crisis
+    // disclosures using distress phrasing are observed (#1048, #1054).
     if (
-      isDistressExpression(input.userText) ||
       isGreetingOnly(input.userText) ||
       isObviouslyOffTopic(input.userText) ||
       this.intentDetector.detect(input.userText).intent !== 'unknown'
@@ -995,6 +996,13 @@ export class PlatformAgentService {
 
       if (mode === 'shadow' || confidence < this.classifierMinConfidence)
         return null;
+
+      if (label === 'CRISIS') {
+        return this.blockedReply(buildCrisisSupportHandoffMessage());
+      }
+      if (label === 'ABUSE') {
+        return this.blockedReply(buildHostilityDeflectionMessage());
+      }
 
       // Extraction-flavoured injection routes to the same non-disclosure line
       // as a probe — a distinct "blocked" reply would itself be an oracle

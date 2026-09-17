@@ -83,6 +83,8 @@ export {
   NON_DISCLOSURE_REPLY,
   buildPromptInjectionBlockedMessage,
   buildHostilityDeflectionMessage,
+  CRISIS_SUPPORT_RESOURCE_MESSAGE,
+  buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,
@@ -191,10 +193,12 @@ export {
 } from '../execution/circuit-error';
 
 export { CLASSIFIER_SYSTEM_PROMPT } from '../classifier/classifier-prompt';
-export type {
-  ClassifierLabel,
-  ClassifierVerdict,
-  ClassifyResult,
-  ClassifyFailureReason,
-  ContentClassifierPort,
+export {
+  CLASSIFIER_LABELS,
+  type ClassifierLabel,
+  type FlaggedClassifierLabel,
+  type ClassifierVerdict,
+  type ClassifyResult,
+  type ClassifyFailureReason,
+  type ContentClassifierPort,
 } from '../classifier/content-classifier.port';

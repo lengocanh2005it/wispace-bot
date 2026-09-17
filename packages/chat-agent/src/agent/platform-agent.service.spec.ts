@@ -5,7 +5,10 @@ import {
   LlmAgentService,
   buildPromptInjectionBlockedMessage,
   buildNonDisclosureReply,
+  buildCrisisSupportHandoffMessage,
+  buildHostilityDeflectionMessage,
 } from '@wispace/llm-agent';
+
 import type {
   AgentMetricsPort,
   ClassifyResult,
@@ -1580,10 +1583,10 @@ describe('PlatformAgentService', () => {
       );
     });
 
-    it('skips the classifier for a distress message', async () => {
+    it('admits a distress message to the classifier (#1048 / #1054)', async () => {
       const classify = classifierStub({
         ok: true,
-        verdict: { label: 'INJECTION', confidence: 1, reason: 'x' },
+        verdict: { label: 'SAFE', confidence: 0.95, reason: 'study stress' },
       });
       const svc = buildService(historyService, {
         contentClassifier: classify,
@@ -1592,8 +1595,108 @@ describe('PlatformAgentService', () => {
           LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
         },
       });
-      await svc.reply(baseInput('mình áp lực thi quá, muốn bỏ cuộc'));
-      expect(classify.classify).not.toHaveBeenCalled();
+      const r = await svc.reply(baseInput('mình áp lực thi quá, muốn bỏ cuộc'));
+      expect(classify.classify).toHaveBeenCalledWith(
+        'mình áp lực thi quá, muốn bỏ cuộc',
+        undefined,
+      );
+      expect(mockLlmReply).toHaveBeenCalled();
+      expect(r.text).toBe('next answer');
+    });
+
+    it('enforce mode: CRISIS -> support handoff with 111 resource, no LLM call (#1054 / #982)', async () => {
+      const classify = classifierStub({
+        ok: true,
+        verdict: {
+          label: 'CRISIS',
+          confidence: 0.95,
+          reason: 'self-harm intent',
+        },
+      });
+      const recordClassifierVerdict = jest.fn();
+      const svc = buildService(historyService, {
+        contentClassifier: classify,
+        config: {
+          LLM_INPUT_CLASSIFIER_ENABLED: 'true',
+          LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
+        },
+        safetyEventService: {
+          recordClassifierVerdict,
+          recordGroundingWarning: jest.fn(),
+          recordInjectionEvent: jest.fn(),
+        } as unknown as Partial<PlatformLlmSafetyEventAdapter>,
+      });
+      const r = await svc.reply(baseInput('mình muốn chết'));
+      expect(r.text).toBe(buildCrisisSupportHandoffMessage());
+      expect(r.text).toContain('Tổng đài Quốc gia Bảo vệ Trẻ em 111');
+      expect(r.skipHistory).toBe(true);
+      expect(r.privateDataFetched).toBe(false);
+      expect(mockLlmReply).not.toHaveBeenCalled();
+      expect(recordClassifierVerdict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          label: 'CRISIS',
+          mode: 'enforce',
+          confidence: 0.95,
+        }),
+      );
+    });
+
+    it('enforce mode: ABUSE -> hostility deflection, no LLM call (#1054 / #974)', async () => {
+      const classify = classifierStub({
+        ok: true,
+        verdict: {
+          label: 'ABUSE',
+          confidence: 0.9,
+          reason: 'bot hostility',
+        },
+      });
+      const recordClassifierVerdict = jest.fn();
+      const svc = buildService(historyService, {
+        contentClassifier: classify,
+        config: {
+          LLM_INPUT_CLASSIFIER_ENABLED: 'true',
+          LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
+        },
+        safetyEventService: {
+          recordClassifierVerdict,
+          recordGroundingWarning: jest.fn(),
+          recordInjectionEvent: jest.fn(),
+        } as unknown as Partial<PlatformLlmSafetyEventAdapter>,
+      });
+      const r = await svc.reply(baseInput('bot ngu quá cút đi'));
+      expect(r.text).toBe(buildHostilityDeflectionMessage());
+      expect(r.skipHistory).toBe(true);
+      expect(r.privateDataFetched).toBe(false);
+      expect(mockLlmReply).not.toHaveBeenCalled();
+
+      expect(recordClassifierVerdict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          label: 'ABUSE',
+          mode: 'enforce',
+          confidence: 0.9,
+        }),
+      );
+    });
+
+    it('enforce mode: low-confidence CRISIS verdict fails open to normal LLM path', async () => {
+      const classify = classifierStub({
+        ok: true,
+        verdict: {
+          label: 'CRISIS',
+          confidence: 0.4,
+          reason: 'ambiguous danger',
+        },
+      });
+      const svc = buildService(historyService, {
+        contentClassifier: classify,
+        config: {
+          LLM_INPUT_CLASSIFIER_ENABLED: 'true',
+          LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
+          LLM_INPUT_CLASSIFIER_MIN_CONFIDENCE: '0.6',
+        },
+      });
+      const r = await svc.reply(baseInput('mình buồn quá'));
+      expect(r.text).toBe('next answer');
       expect(mockLlmReply).toHaveBeenCalled();
     });
 
@@ -1643,7 +1746,6 @@ describe('PlatformAgentService', () => {
       ['greeting', 'chào bạn'],
       ['self-intro', 'bạn là ai vậy'],
       ['off-topic', 'thời tiết Hà Nội hôm nay thế nào'],
-      ['distress', 'mình áp lực thi quá, muốn bỏ cuộc'],
     ])('skips the classifier for a %s message', async (_kind, text) => {
       const classify = classifierStub({
         ok: true,
