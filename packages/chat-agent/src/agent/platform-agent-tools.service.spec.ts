@@ -9,6 +9,7 @@ import type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,
   GoalsCapabilityPort,
+  WispaceGoalsRecord,
 } from './wispace-capability.ports';
 import type {
   PlatformAgentToolContext,
@@ -260,7 +261,7 @@ describe('PlatformAgentToolsService', () => {
     });
 
     it('marks the tool context as private-data-fetched', async () => {
-      goalsService.getUserGoals.mockResolvedValue({});
+      goalsService.getUserGoals.mockResolvedValue({} as WispaceGoalsRecord);
 
       const ctx: PlatformAgentToolContext = {
         externalUserId: 'discord-1',
@@ -834,7 +835,7 @@ describe('PlatformAgentToolsService', () => {
         getTaskScoreAverages: jest.fn(),
       };
       const zaloService = new PlatformAgentToolsService(
-        goalsServiceWithSpy,
+        goalsServiceWithSpy as unknown as GoalsCapabilityPort,
         buildCalendarService(),
         stagePort,
         buildZaloOptions(confirmSender),

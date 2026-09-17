@@ -1945,7 +1945,9 @@ describe('LlmAgentService', () => {
 
     it('aborts the provider request when the global timeout expires', async () => {
       const adapter = makeAdapter([]);
-      const chatWithTools = jest.fn(() => new Promise<never>(() => undefined));
+      const chatWithTools = jest.fn(
+        (_req?: unknown) => new Promise<never>(() => undefined),
+      );
       adapter.chatWithTools = chatWithTools;
       const { service } = buildService({ adapter });
       const timedService = new LlmAgentService<StubToolContext>(
@@ -1956,11 +1958,11 @@ describe('LlmAgentService', () => {
       await expect(
         timedService.reply(BASE_INPUT, TOOL_CONTEXT),
       ).rejects.toThrow('Agent loop timed out');
-      const request = chatWithTools.mock.calls[0]?.[0] as {
-        signal?: AbortSignal;
-      };
-      expect(request.signal).toBeInstanceOf(AbortSignal);
-      expect(request.signal?.aborted).toBe(true);
+      const request = chatWithTools.mock.calls[0]?.[0] as
+        | { signal?: AbortSignal }
+        | undefined;
+      expect(request?.signal).toBeInstanceOf(AbortSignal);
+      expect(request?.signal?.aborted).toBe(true);
       void service;
     });
   });

@@ -1,6 +1,10 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { runEvalFixture, ScriptedToolExecutor } from './eval-harness';
+import {
+  runEvalFixture,
+  ScriptedToolExecutor,
+  type EvalFixture,
+} from './eval-harness';
 
 describe('eval harness self-checks (negative assertions)', () => {
   it('fails when the expected tool sequence does not match', async () => {
@@ -91,7 +95,7 @@ describe('eval harness self-checks (negative assertions)', () => {
         toolCalls: [{ name: 'get_user_goals', args: { limit: 3 } }],
       },
     ]);
-    await executor.execute('get_user_goals', '{"limit":9}');
+    await executor.execute('get_user_goals', '{"limit":9}', {});
     expect(executor.argsMismatches.length).toBe(1);
     expect(executor.argsMismatches[0]).toContain(
       'tool "get_user_goals" args mismatch',
@@ -103,7 +107,7 @@ describe('eval harness self-checks (negative assertions)', () => {
       { toolCalls: [{ name: 'get_user_goals', args: {} }] },
     ]);
     await executor
-      .execute('precreate_next_exercise', '{}')
+      .execute('precreate_next_exercise', '{}', {})
       .catch(() => undefined);
     expect(executor.unexpectedAttempts.length).toBe(1);
     expect(executor.unexpectedAttempts[0]).toContain(
@@ -157,13 +161,13 @@ describe('eval harness self-checks (negative assertions)', () => {
 });
 
 describe('#505 state-based + token mechanisms', () => {
-  const baseFixture = () =>
+  const baseFixture = (): EvalFixture =>
     JSON.parse(
       readFileSync(
         join(__dirname, '../../fixtures/single-tool-user-goals.json'),
         'utf8',
       ),
-    ) as Record<string, unknown>;
+    ) as unknown as EvalFixture;
 
   it('requestNotContains: fails when the guarded string appears in a provider request', async () => {
     const fixture = baseFixture();

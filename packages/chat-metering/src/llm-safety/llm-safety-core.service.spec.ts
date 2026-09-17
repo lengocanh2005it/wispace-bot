@@ -176,12 +176,14 @@ describe('LlmSafetyCore', () => {
       expect(row.externalUserId).toBe('psid-1');
       expect(row.userId).toBe(42);
       expect(row.correlationId).toBe('mid-1');
-      expect(row.payload.label).toBe('INJECTION');
-      expect(row.payload.mode).toBe('shadow');
-      expect(row.payload.confidence).toBe(0.91);
-      expect(row.payload.textExcerpt).toBeDefined();
-      expect(row.payload.textHash).toMatch(/^[0-9a-f]{64}$/);
-      expect(JSON.stringify(row.payload)).not.toContain(
+      expect(row.payload).toBeDefined();
+      const payload = row.payload!;
+      expect(payload.label).toBe('INJECTION');
+      expect(payload.mode).toBe('shadow');
+      expect(payload.confidence).toBe(0.91);
+      expect(payload.textExcerpt).toBeDefined();
+      expect(payload.textHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.stringify(payload)).not.toContain(
         'sk-abcdef1234567890abcdef1234567890',
       );
     });
@@ -263,10 +265,10 @@ describe('LlmSafetyCore', () => {
       await flushMicrotasks();
 
       expect(inserted).toHaveLength(2);
-      expect(inserted[0].payload.label).toBe('CRISIS');
-      expect(inserted[0].eventType).toBe('CLASSIFIER_FLAGGED');
-      expect(inserted[1].payload.label).toBe('ABUSE');
-      expect(inserted[1].eventType).toBe('CLASSIFIER_FLAGGED');
+      expect(inserted[0]?.payload?.label).toBe('CRISIS');
+      expect(inserted[0]?.eventType).toBe('CLASSIFIER_FLAGGED');
+      expect(inserted[1]?.payload?.label).toBe('ABUSE');
+      expect(inserted[1]?.eventType).toBe('CLASSIFIER_FLAGGED');
     });
   });
 });

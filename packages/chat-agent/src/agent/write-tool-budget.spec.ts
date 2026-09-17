@@ -1,4 +1,8 @@
-import { AGENT_TOOLS, getAgentToolDefinition } from '@wispace/llm-agent';
+import {
+  AGENT_TOOLS,
+  getAgentToolDefinition,
+  type AgentToolName,
+} from '@wispace/llm-agent';
 import {
   BUDGET_EXEMPT_TOOLS,
   WRITE_TOOL_NAMES,
@@ -11,7 +15,7 @@ describe('write-tool budget registry (#626)', () => {
       (t) =>
         t.capability.effect !== 'read_only' &&
         !isWriteToolName(t.name) &&
-        !BUDGET_EXEMPT_TOOLS.has(t.name),
+        !BUDGET_EXEMPT_TOOLS.has(t.name as AgentToolName),
     ).map((t) => t.name);
     expect(unclassified).toEqual([]);
   });

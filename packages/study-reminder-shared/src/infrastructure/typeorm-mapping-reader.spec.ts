@@ -1,5 +1,8 @@
 import { Repository } from 'typeorm';
-import { TypeormMappingReader } from './typeorm-mapping-reader';
+import {
+  TypeormMappingReader,
+  type AccountLinkRow,
+} from './typeorm-mapping-reader';
 
 describe('TypeormMappingReader — reminder consent filter (#596)', () => {
   let query: jest.Mock;
@@ -9,7 +12,7 @@ describe('TypeormMappingReader — reminder consent filter (#596)', () => {
   beforeEach(() => {
     query = jest.fn().mockResolvedValue([]);
     findOne = jest.fn().mockResolvedValue(null);
-    const repo = { query, findOne } as unknown as Repository<unknown>;
+    const repo = { query, findOne } as unknown as Repository<AccountLinkRow>;
     reader = new TypeormMappingReader(repo, 'discord_account_links');
   });
 

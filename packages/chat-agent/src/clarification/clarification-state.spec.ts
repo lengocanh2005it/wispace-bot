@@ -92,15 +92,15 @@ describe('ClarificationStateMachine', () => {
     const state = machine.start(now);
 
     const first = machine.recordIrrelevant(state, now + 1);
-    const second = machine.recordIrrelevant(first.state, now + 2);
-    const third = machine.recordIrrelevant(second.state, now + 3);
+    const second = machine.recordIrrelevant(first.state!, now + 2);
+    const third = machine.recordIrrelevant(second.state!, now + 3);
 
     expect(first.action).toBe('clarify');
     expect(second.action).toBe('clarify');
     expect(third.action).toBe('reset_menu');
-    expect(third.state.menuResets).toBe(1);
+    expect(third.state!.menuResets).toBe(1);
 
-    const afterReset = machine.recordIrrelevant(third.state, now + 4);
+    const afterReset = machine.recordIrrelevant(third.state!, now + 4);
     expect(afterReset.action).toBe('clarify');
     const afterFreshLimit = machine.recordIrrelevant(
       machine.recordIrrelevant(afterReset.state!, now + 5).state!,
@@ -115,7 +115,7 @@ describe('ClarificationStateMachine', () => {
     const state = machine.start(now);
     const next = machine.recordIrrelevant(state, now + 1).state;
 
-    expect(next.version).toBeGreaterThan(state.version);
+    expect(next!.version).toBeGreaterThan(state.version);
   });
 
   it('rejects a stale memory write using the expected version', async () => {
@@ -230,7 +230,6 @@ describe('ClarificationStateMachine', () => {
         getNativeClient: () => client,
       },
       'chat:clarification:test',
-      { ttlMs: 1_000, maxAttempts: 1, maxMenuResets: 0 },
     );
 
     await expect(store.get('u1')).resolves.toMatchObject({

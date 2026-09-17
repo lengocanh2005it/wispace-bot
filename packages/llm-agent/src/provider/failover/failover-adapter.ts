@@ -85,7 +85,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     return this.runFailover((c, req) => c.chatWithTools(req), request);
   }
 
-  isRetryableError(): boolean {
+  isRetryableError(_error?: unknown): boolean {
     return false;
   }
 

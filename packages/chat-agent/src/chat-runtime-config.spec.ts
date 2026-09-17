@@ -106,7 +106,7 @@ describe('ChatRuntimeConfig', () => {
       CHAT_DEBOUNCE_MS: '100',
     };
     const config = new ChatRuntimeConfig({
-      get: (key: string) => values[key],
+      get: <T = string>(key: string) => values[key] as T | undefined,
     });
 
     values.CHAT_QUEUE_STORE = 'memory';
@@ -133,7 +133,7 @@ describe('ChatRuntimeConfig', () => {
       for (const key of keys) process.env[key] = values[key];
 
       const config = new ChatRuntimeConfig({
-        get: (key: string) => values[key],
+        get: <T = string>(key: string) => values[key] as T | undefined,
       });
 
       expect(config.history(prefix)).toEqual({

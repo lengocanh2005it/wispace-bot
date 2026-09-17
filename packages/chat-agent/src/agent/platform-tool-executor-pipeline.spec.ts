@@ -4,6 +4,7 @@ import {
   PlatformToolExecutorPipeline,
   assertPlatformToolHandlerRegistry,
   withPlatformToolDecoration,
+  type PlatformToolHandler,
 } from './platform-tool-executor-pipeline';
 
 describe('PlatformToolExecutorPipeline', () => {
@@ -20,7 +21,9 @@ describe('PlatformToolExecutorPipeline', () => {
       }),
       refundDaily: jest.fn(),
     };
-    const handlers = deriveAgentToolMap(() => async () => ({ ok: true }));
+    const handlers = deriveAgentToolMap<PlatformToolHandler>(
+      () => async () => ({ ok: true }),
+    );
     handlers.precreate_next_exercise = async () => {
       order.push('handler');
       return withPlatformToolDecoration({ status: 'created' }, 'buttons');

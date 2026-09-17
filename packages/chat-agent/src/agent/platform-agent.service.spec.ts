@@ -884,7 +884,7 @@ describe('PlatformAgentService', () => {
     const service = buildService(historyService, {
       clarificationStore,
       platform: 'zalo',
-      metrics: { degradedModeInc } as AgentMetricsPort,
+      metrics: { degradedModeInc } as unknown as AgentMetricsPort,
     });
 
     await service.reply({

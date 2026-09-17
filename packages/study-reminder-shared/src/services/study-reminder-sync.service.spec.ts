@@ -53,8 +53,10 @@ describe('StudyReminderSyncService', () => {
 
     jobRepo = {
       upsertPendingJobs: jest.fn().mockResolvedValue([]),
+      cancelPendingJobsForExternalUser: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn().mockResolvedValue(0),
       cancelJobsFromOtherPlatforms: jest.fn().mockResolvedValue(0),
+      markDeliveryKey: jest.fn(),
       findDueJobs: jest.fn(),
       claimJob: jest.fn(),
       markSent: jest.fn(),

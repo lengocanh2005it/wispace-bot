@@ -1,10 +1,12 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
+import type { ChatDailyUsageEntity } from '../entities/chat-daily-usage.entity';
+import type { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';
 import { PlatformChatRateLimitService } from './platform-chat-rate-limit.service';
 
 describe('PlatformChatRateLimitService', () => {
-  const dailyUsageRepo = {} as Repository<unknown>;
-  const idempotencyRepo = {} as Repository<unknown>;
+  const dailyUsageRepo = {} as Repository<ChatDailyUsageEntity>;
+  const idempotencyRepo = {} as Repository<ChatIdempotencyEntity>;
 
   function buildConfig(
     values: Record<string, string | undefined>,

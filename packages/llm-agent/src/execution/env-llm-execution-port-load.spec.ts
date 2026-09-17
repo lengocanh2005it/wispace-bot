@@ -58,7 +58,7 @@ describe('429-storm load test (#514)', () => {
 
     // fn calls adapter.chatWithTools — the adapter throws 429
     await expect(
-      port.run((signal) => adapter.chatWithTools({} as never, signal), {
+      port.run((signal) => adapter.chatWithTools({ signal } as never), {
         feature: 'test',
       }),
     ).rejects.toThrow();
@@ -98,7 +98,7 @@ describe('429-storm load test (#514)', () => {
     );
 
     await expect(
-      port.run((signal) => adapter.chatWithTools({} as never, signal), {
+      port.run((signal) => adapter.chatWithTools({ signal } as never), {
         feature: 'test',
       }),
     ).rejects.toThrow();
@@ -138,7 +138,7 @@ describe('429-storm load test (#514)', () => {
     );
 
     const result = await port.run(
-      (signal) => adapter.chatWithTools({} as never, signal),
+      (signal) => adapter.chatWithTools({ signal } as never),
       { feature: 'test' },
     );
     expect(result).toEqual({ content: 'ok', toolCalls: [] });

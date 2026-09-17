@@ -16,6 +16,7 @@ describe('StudyReminderDispatchService', () => {
     preloadDisplayNames: jest.Mock;
     classifyFailure: jest.Mock;
     rng?: () => number;
+    filterDormantUserIds?: jest.Mock;
   };
 
   const defaultSettings = {
@@ -54,6 +55,8 @@ describe('StudyReminderDispatchService', () => {
 
   beforeEach(() => {
     jobRepo = {
+      upsertPendingJobs: jest.fn(),
+      cancelPendingJobsForExternalUser: jest.fn(),
       resetStuckProcessingJobs: jest.fn().mockResolvedValue(0),
       findDueJobs: jest.fn().mockResolvedValue([]),
       claimJob: jest.fn().mockResolvedValue(null),
@@ -727,7 +730,7 @@ describe('StudyReminderDispatchService', () => {
     const job1 = makeJob({ id: 1 });
     const job2 = makeJob({ id: 2 });
     jobRepo.findDueJobs.mockResolvedValue([job1, job2]);
-    jobRepo.claimJob.mockImplementation((id) =>
+    jobRepo.claimJob.mockImplementation((_platform, id) =>
       Promise.resolve(id === 1 ? job1 : job2),
     );
     messageSender.sendText.mockRejectedValue(new Error('Send fail'));
@@ -944,7 +947,7 @@ describe('StudyReminderDispatchService', () => {
       it('never calls filterDormantUserIds when option is absent', async () => {
         const job = makeJob({ id: 1, userId: 101, externalUserId: 'u101' });
         jobRepo.findDueJobs.mockResolvedValue([job]);
-        jobRepo.claimJob.mockResolvedValue({ job, leaseToken: 'lease-1' });
+        jobRepo.claimJob.mockResolvedValue({ ...job, leaseToken: 'lease-1' });
 
         build();
 

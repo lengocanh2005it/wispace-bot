@@ -17,7 +17,12 @@ class FakeOutbound {
   }
 }
 
-class FakeMappingEntity {}
+class FakeMappingEntity {
+  id!: string;
+  platform!: string;
+  externalUserId!: string;
+  userId!: number;
+}
 
 class FakeCanonicalPlatformService {
   getCanonicalPlatformForUser(): Promise<'discord'> {

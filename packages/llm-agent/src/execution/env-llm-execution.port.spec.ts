@@ -4,9 +4,9 @@ import { OpenAiAdapter } from '../provider/openai/openai-adapter';
 import type { LlmJsonRequest } from '../provider/types';
 import { LlmAllProvidersExhaustedError } from '../provider/failover/failover.errors';
 import { LlmOverloadError } from './bounded-admission';
+import type { LlmExecutionPort } from '../ports';
 import {
   createEnvLlmExecutionPort,
-  type LlmExecutionPort,
   type EnvLlmExecutionConfig,
 } from './env-llm-execution.port';
 import { LlmProviderCircuitOpenError } from './circuit-error';
@@ -412,8 +412,9 @@ describe('createEnvLlmExecutionPort', () => {
       status: 429,
     });
     const adapter = makeAdapter();
-    (adapter as { isRetryableError: () => boolean }).isRetryableError = () =>
-      true;
+    (
+      adapter as unknown as { isRetryableError: () => boolean }
+    ).isRetryableError = () => true;
     const port = createEnvLlmExecutionPort(
       { ...DEFAULT_CONFIG, maxAttempts: 3, baseBackoffMs: 1 },
       adapter,
@@ -506,7 +507,7 @@ describe('createEnvLlmExecutionPort', () => {
 
       const execution = makeEnvExecutionPort(adapter);
       const result = await execution.run(
-        (signal) => adapter.generateJson(makeJsonRequest(signal)),
+        (signal?: AbortSignal) => adapter.generateJson(makeJsonRequest(signal)),
         { feature: 'FREE_FORM_CHAT' },
       );
 
@@ -533,7 +534,8 @@ describe('createEnvLlmExecutionPort', () => {
       const execution = makeEnvExecutionPort(adapter);
       const run = (): Promise<unknown> =>
         execution.run(
-          (signal) => adapter.generateJson(makeJsonRequest(signal)),
+          (signal?: AbortSignal) =>
+            adapter.generateJson(makeJsonRequest(signal)),
           { feature: 'FREE_FORM_CHAT' },
         );
 

@@ -64,11 +64,6 @@ describe('readValidatedDate/readValidatedTime property (#621 fuzz)', () => {
           // Format-wrong inputs of the WRONG kind are undefined for both
           // parsers; format-matching-but-invalid values (25:00, 2025-02-30)
           // are the documented semantic gap below.
-          if (garbage === '25:00') {
-            expect(readValidatedDate(garbage)).toBeUndefined();
-            expect(readValidatedTime(garbage)).toBe('25:00');
-            return;
-          }
           expect(readValidatedDate(garbage)).toBeUndefined();
           expect(readValidatedTime(garbage)).toBeUndefined();
         },

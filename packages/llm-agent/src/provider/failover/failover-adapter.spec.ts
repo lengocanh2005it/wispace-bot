@@ -426,7 +426,7 @@ describe('FailoverLlmProviderAdapter', () => {
       let callCountA = 0;
       const candidateA2 = makeCandidate({
         name: 'a',
-        generateJson: () => {
+        generateJson: async () => {
           callCountA++;
           return {
             content: 'retry-ok',
@@ -515,7 +515,7 @@ describe('FailoverLlmProviderAdapter', () => {
       let callCount = 0;
       const candidateA = makeCandidate({
         name: 'a',
-        generateJson: () => {
+        generateJson: async () => {
           callCount++;
           if (callCount === 1) {
             throw Object.assign(new Error('server error'), { status: 500 });

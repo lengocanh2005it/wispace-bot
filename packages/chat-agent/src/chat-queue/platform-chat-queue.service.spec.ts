@@ -24,7 +24,7 @@ jest.mock('@wispace/chat-pipeline', () => ({
 }));
 
 describe('PlatformChatQueueService', () => {
-  const configGet = jest.fn((key: string) => {
+  const configGet = jest.fn((key: string): string | undefined => {
     if (key === 'CHAT_DEBOUNCE_MS') return '2000';
     return undefined;
   });
@@ -680,7 +680,6 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-1',
         userId: 42,
-        leaseToken: 'lease-1',
         leaseToken: 'lease-discord-1',
       });
 
@@ -966,7 +965,9 @@ describe('PlatformChatQueueService', () => {
       const { service, queueStore } = buildDistributedServiceWithRetry(true);
       await service.onModuleInit();
 
-      queueStore.claimReadyBuffer.mockResolvedValue({
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
         externalUserId: 'discord-rate-limited',
         texts: ['hello'],
         lastIdempotencyKey: 'key-rate-limited',
@@ -996,7 +997,7 @@ describe('PlatformChatQueueService', () => {
 
   describe('fresh-mapping revalidation (#397)', () => {
     const buildDistributedService = (
-      freshMappingProvider?: (externalUserId: string) => Promise<unknown>,
+      freshMappingProvider?: PlatformChatQueueOptions['freshMappingProvider'],
       clarificationStateClearer?: (externalUserId: string) => Promise<void>,
       retryEnabled = false,
     ) => {

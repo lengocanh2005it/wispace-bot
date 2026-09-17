@@ -45,6 +45,7 @@ describe('StudyReminderWorkerService', () => {
     retryBackoffMinutes: 5,
     jobRetentionDays: 30,
     stuckProcessingMs: 600_000,
+    leaseMs: 600_000,
     maxRetries: 3,
   };
 
@@ -77,6 +78,9 @@ describe('StudyReminderWorkerService', () => {
     } as unknown as jest.Mocked<StudyReminderDispatchService>;
 
     jobRepo = {
+      upsertPendingJobs: jest.fn().mockResolvedValue([]),
+      cancelPendingJobsForExternalUser: jest.fn(),
+      markDeliveryKey: jest.fn(),
       deleteSentJobs: jest.fn().mockResolvedValue(0),
       deleteTerminalJobsOlderThan: jest.fn().mockResolvedValue(0),
       cancelStaleJobsForExternalUserId: jest.fn(),
