@@ -61,9 +61,36 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
       'crisis > non-disclosure > academic integrity > abuse > study stress > scope redirect > tool call > normal answer',
     );
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
-      'Do NOT call tools for scope redirects, study stress, non-disclosure, greetings, bot identity, abuse, or general IELTS questions.',
+      'Do NOT call tools for scope redirects, study stress, crisis, non-disclosure, greetings, bot identity, abuse, or general IELTS questions.',
     );
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('targeted abusive content');
+  });
+
+  it('pins the crisis support-handoff posture (#982)', () => {
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'Crisis/self-harm (support handoff)',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'Self-harm/suicidal intent, immediate danger, or self-harm instructions',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'fictional without personal danger',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'Tổng đài Quốc gia Bảo vệ Trẻ em 111',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'miễn phí, hoạt động 24/7 — để được tư vấn và hỗ trợ',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'No diagnosis, counselling, study action, lecture, moralising, scope redirect, or crisis-service claim',
+    );
+  });
+
+  it('keeps crisis in the canonical no-tools rule', () => {
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'Do NOT call tools for scope redirects, study stress, crisis',
+    );
   });
 
   it('keeps the learner-facing Vietnamese strings verbatim', () => {

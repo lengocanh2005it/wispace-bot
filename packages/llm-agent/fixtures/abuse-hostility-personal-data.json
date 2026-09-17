@@ -1,7 +1,7 @@
 {
   "name": "abuse-hostility-personal-data",
   "description": "#974: abuse outranks a personal-data request, so the fixed hostility deflection is returned without a tool call.",
-  "coreHash": "dfab02fa13c7492759861ab3b92c604a34f7e0e2cbe29f601665ba2b70fd9f3d",
+  "coreHash": "b2aaa2bd509668b4fff7476ae92950335362731e422ee0bc3cbb770705360184",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
