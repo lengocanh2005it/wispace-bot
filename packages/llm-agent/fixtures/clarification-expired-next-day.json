@@ -1,7 +1,7 @@
 {
   "name": "clarification-expired-next-day",
   "description": "Next-day resumption: the abandoned clarification state has expired (Redis TTL), so a bare numbered answer is a normal question for the agent — no clarification menu, no tools execute, and the reply stays grounded.",
-  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

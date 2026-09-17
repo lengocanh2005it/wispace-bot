@@ -1,7 +1,7 @@
 {
   "name": "single-tool-user-goals",
   "description": "A single-intent request resolves via exactly one tool call; score claims in the reply are grounded by that tool.",
-  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

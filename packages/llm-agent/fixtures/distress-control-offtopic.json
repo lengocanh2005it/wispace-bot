@@ -1,7 +1,7 @@
 {
   "name": "distress-control-offtopic",
   "description": "#598 control: a genuinely out-of-scope message (weather) still gets the plain pre-LLM scope redirect — the empathy branch must not widen scope. Empty script = early return, the adapter is never invoked.",
-  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

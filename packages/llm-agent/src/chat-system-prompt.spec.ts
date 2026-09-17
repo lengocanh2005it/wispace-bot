@@ -74,14 +74,15 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Zalo');
   });
 
-  it('stays under the size budget (#648) — raising the ceiling is a deliberate act, not a reflex', () => {
-    expect(CHAT_SYSTEM_PROMPT_CORE.length).toBeLessThanOrEqual(5800);
+  it('stays under the size budget (#996) — raising the ceiling is a deliberate act, not a reflex', () => {
+    expect(CHAT_SYSTEM_PROMPT_CORE.length).toBeLessThanOrEqual(5200);
   });
 
-  it('states the no-tools rule exactly 5 times (#648) — one per category, no restatements', () => {
-    const count = (CHAT_SYSTEM_PROMPT_CORE.match(/do NOT call tools/gi) ?? [])
-      .length;
-    expect(count).toBe(5);
+  it('states the no-tools rule exactly once (#996)', () => {
+    expect(
+      CHAT_SYSTEM_PROMPT_CORE.match(/do NOT call tools/gi) ?? [],
+    ).toHaveLength(1);
+    expect(CHAT_SYSTEM_PROMPT_CORE).not.toMatch(/no tool calls/i);
   });
 });
 

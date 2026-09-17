@@ -1,6 +1,6 @@
 {
-  "name": "greeting",
-  "description": "Greeting variants must resolve to a direct reply with no tool calls and no toolSummary.",
+  "name": "greeting-detector-miss",
+  "description": "A greeting outside the keyword detector still gets the shared warm WISPACE backstop with no tool calls.",
   "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
   "promptFiles": [
     {
@@ -8,9 +8,9 @@
       "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
     }
   ],
-  "userText": "chào bạn",
-  "externalUserId": "eval-greeting-0001",
-  "userId": 1001,
+  "userText": "chào mọi người",
+  "externalUserId": "eval-greeting-detector-miss-0001",
+  "userId": 1701,
   "script": [
     {
       "text": "Chào bạn nha! Mình là trợ lý của WISPACE. Bạn cần hỗ trợ gì về việc học IELTS Writing không?"

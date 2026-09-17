@@ -1,7 +1,7 @@
 {
   "name": "side-effect-auth-unlinked",
   "description": "Unlinked-user guidance for register_exam_report_notifications at the eval layer: the harness has no auth gate (that lives in the app-level executor - see platform-agent-tools.service.spec unlinked coverage), so this fixture is a passthrough labeling of the scripted reply, NOT a claim that the tool was blocked here.",
-  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

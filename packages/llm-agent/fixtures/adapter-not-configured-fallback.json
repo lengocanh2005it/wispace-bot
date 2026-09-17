@@ -2,7 +2,7 @@
   "name": "adapter-not-configured-fallback",
   "description": "#505 golden: when the adapter reports unconfigured, the loop returns the static chat-failure fallback WITHOUT calling the model — the scripted reply is never reached (empty script, adapter never invoked).",
   "adapterConfigured": false,
-  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
+  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
