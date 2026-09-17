@@ -1,0 +1,27 @@
+{
+  "name": "abuse-hostility-direct",
+  "description": "#974: direct hostility aimed at the assistant receives the fixed calm Writing deflection and makes no tool calls.",
+  "coreHash": "dfab02fa13c7492759861ab3b92c604a34f7e0e2cbe29f601665ba2b70fd9f3d",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
+    }
+  ],
+  "userText": "bạn bị ngu",
+  "externalUserId": "eval-abuse-hostility-0001",
+  "userId": 1982,
+  "script": [
+    {
+      "text": "Mình ở đây để hỗ trợ bạn luyện IELTS Writing. Bạn muốn hỏi gì về bài viết của mình?"
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": [
+      "Mình ở đây để hỗ trợ bạn luyện IELTS Writing. Bạn muốn hỏi gì về bài viết của mình?"
+    ],
+    "exhausted": false,
+    "toolSummary": null
+  }
+}

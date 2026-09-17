@@ -121,6 +121,7 @@ export {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   NON_DISCLOSURE_REPLY,
   buildPromptInjectionBlockedMessage,
+  buildHostilityDeflectionMessage,
   buildNonDisclosureReply,
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,

@@ -25,6 +25,15 @@ export function buildPromptInjectionBlockedMessage(): string {
   );
 }
 
+/**
+ * Fixed calm response for hostility aimed at the assistant (#974).
+ * Keep this stable so a future classifier can reuse the same learner-facing
+ * copy instead of inventing a second deflection.
+ */
+export function buildHostilityDeflectionMessage(): string {
+  return 'Mình ở đây để hỗ trợ bạn luyện IELTS Writing. Bạn muốn hỏi gì về bài viết của mình?';
+}
+
 export function buildWispaceScopeRedirectMessage(): string {
   return (
     'Mình chỉ hỗ trợ các câu hỏi về WISPACE và IELTS Writing thôi nhé.\n\n' +

@@ -2,6 +2,7 @@ import {
   CHAT_SYSTEM_PROMPT_CORE,
   composeChatSystemPrompt,
 } from './chat-system-prompt';
+import { buildHostilityDeflectionMessage } from './messages';
 
 describe('CHAT_SYSTEM_PROMPT_CORE', () => {
   it('keeps the universal instruction sections (English)', () => {
@@ -9,6 +10,7 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('OUT-OF-SCOPE');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Study stress & discouragement');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Academic integrity');
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Hostility and abusive content');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('When NOT to call tools');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('never fabricate');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Multi-intent requests');
@@ -49,6 +51,19 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
       'nộp bài người khác viết bị tính là gian lận học thuật',
     );
+  });
+
+  it('pins the abuse posture and shared precedence (#974)', () => {
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      buildHostilityDeflectionMessage(),
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'crisis > non-disclosure > academic integrity > abuse > study stress > scope redirect > tool call > normal answer',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'Do NOT call tools for scope redirects, study stress, non-disclosure, greetings, bot identity, abuse, or general IELTS questions.',
+    );
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('targeted abusive content');
   });
 
   it('keeps the learner-facing Vietnamese strings verbatim', () => {

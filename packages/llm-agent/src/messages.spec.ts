@@ -1,7 +1,16 @@
 import {
+  buildHostilityDeflectionMessage,
   buildWriteToolDailyBudgetMessage,
   buildWriteToolPerMessageBudgetMessage,
 } from './messages';
+
+describe('hostility messages (#974)', () => {
+  it('returns the canonical calm Writing deflection', () => {
+    expect(buildHostilityDeflectionMessage()).toBe(
+      'Mình ở đây để hỗ trợ bạn luyện IELTS Writing. Bạn muốn hỏi gì về bài viết của mình?',
+    );
+  });
+});
 
 describe('write-tool budget messages (#626)', () => {
   it('daily message names the action per tool', () => {

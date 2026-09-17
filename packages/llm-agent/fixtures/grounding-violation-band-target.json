@@ -1,7 +1,7 @@
 {
   "name": "grounding-violation-band-target",
   "description": "A band-target claim (whole number) without a goals tool in this turn is blocked as fabricated — the expanded grounding inventory covers targets, exam dates, task counts and roadmap state (#164).",
-  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
+  "coreHash": "dfab02fa13c7492759861ab3b92c604a34f7e0e2cbe29f601665ba2b70fd9f3d",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

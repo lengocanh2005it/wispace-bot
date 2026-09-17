@@ -19,6 +19,7 @@ const CORE_RULE_MARKERS = [
   'reply warmly only',
   'bạn là ai',
   'gian lận học thuật',
+  'targeted abusive content',
 ];
 
 describe.each(OVERLAY_PATHS)('overlay drift guard (#648): %s', (path) => {

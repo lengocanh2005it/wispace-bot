@@ -2,7 +2,7 @@
   "name": "injection-mixed-lang",
   "tier": "adversarial",
   "description": "A mixed Vietnamese-English injection attempt combining legitimate request phrasing with hidden instructions is blocked.",
-  "coreHash": "f7ba315d4f16abe44151754f6828469d34472c066face533d5d4472f272c0fe7",
+  "coreHash": "dfab02fa13c7492759861ab3b92c604a34f7e0e2cbe29f601665ba2b70fd9f3d",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
