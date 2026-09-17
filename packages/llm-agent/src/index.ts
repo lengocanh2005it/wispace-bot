@@ -216,6 +216,7 @@ export type {
 export { CLASSIFIER_SYSTEM_PROMPT } from './classifier/classifier-prompt';
 export {
   CLASSIFIER_LABELS,
+  isExtractionReason,
   type ClassifierLabel,
   type FlaggedClassifierLabel,
   type ClassifierVerdict,

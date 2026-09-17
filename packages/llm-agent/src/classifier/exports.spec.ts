@@ -3,13 +3,13 @@ import {
   CLASSIFIER_SYSTEM_PROMPT,
   CRISIS_SUPPORT_RESOURCE_MESSAGE,
   buildCrisisSupportHandoffMessage,
-  isDistressExpression,
+  isExtractionReason,
 } from '../index';
 
-it('re-exports the classifier prompt and isDistressExpression from the package root', () => {
+it('re-exports the classifier prompt and isExtractionReason from the package root', () => {
   expect(typeof CLASSIFIER_SYSTEM_PROMPT).toBe('string');
-  expect(isDistressExpression('mình chán quá muốn bỏ cuộc')).toBe(true);
-  expect(isDistressExpression('cách viết Task 1')).toBe(false);
+  expect(isExtractionReason('system prompt extraction')).toBe(true);
+  expect(isExtractionReason('safe question')).toBe(false);
 });
 
 it('re-exports the canonical classifier labels registry (#1054)', () => {

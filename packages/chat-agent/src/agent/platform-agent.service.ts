@@ -27,6 +27,7 @@ import {
   buildHostilityDeflectionMessage,
   buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
+  isExtractionReason,
   redactSecrets,
   sanitizeUntrustedTextForLlm,
   type LlmDegradedAction,
@@ -254,6 +255,13 @@ export class PlatformAgentService {
       };
     }
 
+    const classifierBlock = clarification.choiceConsumed
+      ? null
+      : await this.runInputClassifier(resolvedInput);
+    if (classifierBlock) {
+      return classifierBlock;
+    }
+
     let history = identity ? effectiveInput.history : [];
     if (identity && (identityChanged || effectiveInput.history === undefined)) {
       try {
@@ -268,13 +276,6 @@ export class PlatformAgentService {
         );
         throw error;
       }
-    }
-
-    const classifierBlock = clarification.choiceConsumed
-      ? null
-      : await this.runInputClassifier(resolvedInput);
-    if (classifierBlock) {
-      return classifierBlock;
     }
 
     let result: Awaited<
@@ -940,13 +941,17 @@ export class PlatformAgentService {
     return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0;
   }
 
-  private blockedReply(text: string): PlatformAgentReply {
+  private shortCircuitReply(text: string): PlatformAgentReply {
     return {
       text,
       privateDataFetched: false,
       richFollowUps: [],
       skipHistory: true,
     };
+  }
+
+  private blockedReply(text: string): PlatformAgentReply {
+    return this.shortCircuitReply(text);
   }
 
   private async runInputClassifier(
@@ -998,18 +1003,17 @@ export class PlatformAgentService {
         return null;
 
       if (label === 'CRISIS') {
-        return this.blockedReply(buildCrisisSupportHandoffMessage());
+        return this.shortCircuitReply(buildCrisisSupportHandoffMessage());
       }
       if (label === 'ABUSE') {
-        return this.blockedReply(buildHostilityDeflectionMessage());
+        return this.shortCircuitReply(buildHostilityDeflectionMessage());
       }
 
       // Extraction-flavoured injection routes to the same non-disclosure line
       // as a probe — a distinct "blocked" reply would itself be an oracle
       // (#625). The classifier prompt emits `reason: "extraction"` for this.
       const text =
-        label === 'DISCLOSURE_PROBE' ||
-        reason.toLowerCase().includes('extraction')
+        label === 'DISCLOSURE_PROBE' || isExtractionReason(reason)
           ? buildNonDisclosureReply()
           : buildPromptInjectionBlockedMessage();
       return this.blockedReply(text);

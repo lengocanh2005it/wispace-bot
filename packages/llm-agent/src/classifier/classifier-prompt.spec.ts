@@ -1,3 +1,4 @@
+import { CLASSIFIER_LABELS } from './content-classifier.port';
 import { CLASSIFIER_SYSTEM_PROMPT } from './classifier-prompt';
 
 describe('CLASSIFIER_SYSTEM_PROMPT', () => {
@@ -7,19 +8,15 @@ describe('CLASSIFIER_SYSTEM_PROMPT', () => {
     expect(p).toContain('"label"');
     expect(p).toContain('"confidence"');
     expect(p).toContain('"reason"');
-    expect(p).toContain('"SAFE"');
-    expect(p).toContain('"INJECTION"');
-    expect(p).toContain('"DISCLOSURE_PROBE"');
-    expect(p).toContain('"ABUSE"');
-    expect(p).toContain('"CRISIS"');
+    for (const label of CLASSIFIER_LABELS) {
+      expect(p).toContain(`"${label}"`);
+    }
   });
 
   it('defines all five labels (#1054 / #975)', () => {
-    expect(p).toMatch(/INJECTION\s+[—-]/);
-    expect(p).toMatch(/DISCLOSURE_PROBE\s+[—-]/);
-    expect(p).toMatch(/ABUSE\s+[—-]/);
-    expect(p).toMatch(/CRISIS\s+[—-]/);
-    expect(p).toMatch(/SAFE\s+[—-]/);
+    for (const label of CLASSIFIER_LABELS) {
+      expect(p).toMatch(new RegExp(`${label}\\s+[—-]|${label}\\s+--`));
+    }
   });
 
   it('pins the CRISIS intent boundary and ambiguity rule (#1054)', () => {

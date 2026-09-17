@@ -32,6 +32,13 @@ export interface ClassifierVerdict {
 }
 
 /**
+ * #625 — returns true if classifier reason indicates a system-prompt extraction attempt.
+ */
+export function isExtractionReason(reason: string): boolean {
+  return reason.toLowerCase().includes('extraction');
+}
+
+/**
  * Why the classifier produced no usable verdict. `skipped_circuit_open` means
  * the local circuit breaker was open and the call was not attempted; the
  * others mean the call ran and failed.

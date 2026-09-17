@@ -1641,6 +1641,40 @@ describe('PlatformAgentService', () => {
       );
     });
 
+    it('enforce mode: CRISIS verdict returns handoff without touching history service, even if history would fail', async () => {
+      const classify = classifierStub({
+        ok: true,
+        verdict: {
+          label: 'CRISIS',
+          confidence: 0.95,
+          reason: 'self-harm intent',
+        },
+      });
+      const failingHistory = {
+        getHistory: jest.fn().mockImplementation(async () => {
+          throw new Error('redis down');
+        }),
+        appendTurns: jest.fn(),
+        clear: jest.fn().mockResolvedValue(undefined),
+      } as unknown as PlatformChatHistoryService;
+      const svc = buildService(failingHistory, {
+        contentClassifier: classify,
+        config: {
+          LLM_INPUT_CLASSIFIER_ENABLED: 'true',
+          LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
+        },
+        safetyEventService: {
+          recordClassifierVerdict: jest.fn(),
+          recordGroundingWarning: jest.fn(),
+          recordInjectionEvent: jest.fn(),
+        } as unknown as Partial<PlatformLlmSafetyEventAdapter>,
+      });
+      const r = await svc.reply(baseInput('mình muốn chết'));
+      expect(r.text).toBe(buildCrisisSupportHandoffMessage());
+      expect(failingHistory.getHistory).not.toHaveBeenCalled();
+      expect(mockLlmReply).not.toHaveBeenCalled();
+    });
+
     it('enforce mode: ABUSE -> hostility deflection, no LLM call (#1054 / #974)', async () => {
       const classify = classifierStub({
         ok: true,
