@@ -38,6 +38,13 @@ describe('isObviouslyOffTopic', () => {
   it('keeps in-scope no-diacritic text allowed', () => {
     expect(isObviouslyOffTopic('xem lich hoc')).toBe(false);
   });
+
+  it('keeps potential crisis disclosures in the shared prompt path', () => {
+    expect(isObviouslyOffTopic('Em đang khủng hoảng tâm lý, muốn tự tử')).toBe(
+      false,
+    );
+    expect(isObviouslyOffTopic('Em cần bác sĩ vì muốn tự tử')).toBe(false);
+  });
 });
 
 describe('isGreetingOnly', () => {

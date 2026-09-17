@@ -101,15 +101,15 @@ const OFF_TOPIC_PATTERNS = [
   /chinh\s*tri|bau\s*cu|tong\s*thong/i,
   /python|javascript|java\s+code|lap\s*trinh\s+web/i,
   /toan\s+lop|vat\s*ly|hoa\s*hoc(?!\s*ielts)/i,
-  /bac\s*si|kham\s*benh|thuoc|dieu\s*tri|y\s*khoa|phap\s*luat|luat\s*su|tu\s*van\s*phap\s*luat|tam\s*ly|tu\s*van\s*tam\s*ly/i,
+  // Keep medical/safety wording in the shared prompt path for crisis handoff.
+  /phap\s*luat|luat\s*su|tu\s*van\s*phap\s*luat/i,
 ] as const;
 
 /**
  * Study-related stress / discouragement (#598): these messages deserve the
  * empathy-first prompt branch, so they must reach the LLM instead of the
  * pre-LLM canned replies. Tight hand-rolled list — a false positive only
- * means a warmer reply; keep crisis/self-harm vocabulary OUT (explicit
- * non-goal of #598).
+ * means a warmer reply; crisis handling remains a separate prompt posture.
  */
 const DISTRESS_PATTERNS = [
   /ap\s*luc/,

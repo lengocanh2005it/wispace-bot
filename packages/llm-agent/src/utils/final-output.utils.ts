@@ -16,6 +16,7 @@ export const SYSTEM_PROMPT_LEAK_MARKERS = [
   'You are the WISPACE assistant',
   'WISPACE scope (mandatory)',
   'OUT-OF-SCOPE questions',
+  'Crisis/self-harm (support handoff)',
   'Non-disclosure of internal details',
   'When NOT to call tools',
   'Do NOT act as a general-purpose assistant',

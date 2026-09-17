@@ -66,6 +66,8 @@ We do not enumerate learner messages. We enumerate the places where we disagree 
 
 A section proposed without evidence is a guess about the input space. The evidence for one is a reviewed sample of real messages that took the default posture and were answered badly. `llm_safety_events` already stores redacted excerpts plus hashes (#122), and the input classifier's shadow window (#649) already produces a reviewable stream. Sampling replaces enumeration.
 
+For **#982**, the reviewed incident report records a first-person life-safety disclosure that matched the study-stress posture and received study advice before a crisis posture existed ([issue #982](https://github.com/lengocanh2005it/wispace-bot/issues/982)). The crisis fixtures are regression cases for that reviewed failure, not the evidence for adding the posture.
+
 ## Alternatives considered
 
 | Alternative | Reason for rejection |

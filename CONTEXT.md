@@ -562,14 +562,6 @@ _Avoid_: "the chat prompt file" — there is no single file
 The action a chat turn resolves to — answer, tool call, scope redirect, acknowledge-then-step, refuse-then-offer, non-disclosure line, de-escalate, support handoff, clarify. A closed set with one precedence order; adding one amends ADR-0009. Prompt sections are written per posture, not per kind of learner message.
 _Avoid_: branch, rule, category
 
-**crisis posture**:
-The highest-priority support-handoff posture for a credible self-harm or suicidal-intent disclosure, an immediate danger report, or a request for self-harm instructions. It does not cover ordinary study frustration or clearly academic/translation content; when a personal danger signal is ambiguous, prefer the handoff.
-_Avoid_: crisis branch, self-harm branch
-
-**support resource**:
-A currently operating, human-verified Vietnamese helpline or support service named in a crisis handoff, with availability and cost stated only when verified.
-_Avoid_: hotline list, candidate hotline
-
 **abuse posture**:
 The posture for hostility aimed at the assistant or a request to generate degrading, threatening, harassing, or insulting content about an identifiable third party. It does not include ordinary study frustration, constructive critique, or analysis/translation of quoted text.
 _Avoid_: profanity filter, keyword block, abuse escalation
