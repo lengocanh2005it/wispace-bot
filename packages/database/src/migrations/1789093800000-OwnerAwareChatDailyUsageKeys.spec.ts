@@ -1,16 +1,32 @@
 import type { QueryRunner } from 'typeorm';
-import { OwnerAwareChatDailyUsageKeys1789093800000 } from './1789093800000-OwnerAwareChatDailyUsageKeys';
+import {
+  currentChatUsageDate,
+  OwnerAwareChatDailyUsageKeys1789093800000,
+} from './1789093800000-OwnerAwareChatDailyUsageKeys';
 
 describe('OwnerAwareChatDailyUsageKeys1789093800000', () => {
-  function makeRunner(): { runner: QueryRunner; queries: string[] } {
+  it('uses the configured chat timezone for the one-day backfill', () => {
+    const now = new Date('2026-09-18T23:30:00.000Z');
+
+    expect(currentChatUsageDate(now, 'UTC')).toBe('2026-09-18');
+    expect(currentChatUsageDate(now, 'Asia/Ho_Chi_Minh')).toBe('2026-09-19');
+  });
+
+  function makeRunner(): {
+    runner: QueryRunner;
+    queries: string[];
+    params: unknown[][];
+  } {
     const queries: string[] = [];
+    const params: unknown[][] = [];
     const runner = {
-      query: async (sql: string) => {
+      query: async (sql: string, queryParams?: unknown[]) => {
         queries.push(sql);
+        params.push(queryParams ?? []);
         return [];
       },
     } as unknown as QueryRunner;
-    return { runner, queries };
+    return { runner, queries, params };
   }
 
   it('replaces the legacy conflict target with owner-aware uniqueness', async () => {
@@ -33,7 +49,7 @@ describe('OwnerAwareChatDailyUsageKeys1789093800000', () => {
     expect(joined).toContain('WHERE "user_id" IS NULL');
   });
 
-  it('drops the legacy key before adding the owner-aware keys', async () => {
+  it('creates owner-aware keys before dropping the legacy key', async () => {
     const { runner, queries } = makeRunner();
     await new OwnerAwareChatDailyUsageKeys1789093800000().up(runner);
 
@@ -49,11 +65,11 @@ describe('OwnerAwareChatDailyUsageKeys1789093800000', () => {
     );
 
     expect(dropAt).toBeGreaterThanOrEqual(0);
-    expect(linkedAt).toBeGreaterThan(dropAt);
+    expect(linkedAt).toBeLessThan(dropAt);
   });
 
   it('copies only current-day anonymous rows with an active mapping', async () => {
-    const { runner, queries } = makeRunner();
+    const { runner, queries, params } = makeRunner();
     await new OwnerAwareChatDailyUsageKeys1789093800000().up(runner);
     const backfill = queries.find((sql) =>
       sql.includes('INSERT INTO "chat_daily_usage"'),
@@ -61,13 +77,14 @@ describe('OwnerAwareChatDailyUsageKeys1789093800000', () => {
 
     expect(backfill).toBeDefined();
     expect(backfill).toContain('WHERE usage."user_id" IS NULL');
-    expect(backfill).toContain(
-      `AND usage."usage_date" = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`,
-    );
+    expect(backfill).toContain('AND usage."usage_date" = $1::date');
+    expect(backfill).toContain('user_id IS NOT NULL');
+    expect(backfill).toContain('external_user_id IS NOT NULL');
     expect(backfill).toContain('FROM user_platform_mappings');
     expect(backfill).toContain('FROM discord_account_links');
     expect(backfill).toContain('FROM zalo_account_links');
     expect(backfill).toContain('DO NOTHING');
+    expect(params[params.length - 1]).toEqual([currentChatUsageDate()]);
   });
 
   it('runs the backfill after the owner-aware keys exist', async () => {

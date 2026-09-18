@@ -30,6 +30,7 @@ import {
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
   buildLearnerUsageQuery,
+  buildLegacyLearnerUsageQuery,
   PlatformReportClaimRepository,
   PlatformReportSendJobRepository,
   CronLeaderLeaseEntity,
@@ -75,6 +76,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
       requireEnv: true,
       lenientEnabledCheck: true,
       learnerUsageQuery: buildLearnerUsageQuery,
+      legacyLearnerUsageQuery: buildLegacyLearnerUsageQuery,
     }),
   ],
   providers: [

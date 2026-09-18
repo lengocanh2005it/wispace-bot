@@ -77,7 +77,10 @@ export { TypeormRescheduleStore } from './services/typeorm-reschedule-store';
 export { RescheduleRecoveryCronService } from './services/reschedule-recovery-cron.service';
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
-export { buildLearnerUsageQuery } from './services/learner-usage-query';
+export {
+  buildLearnerUsageQuery,
+  buildLegacyLearnerUsageQuery,
+} from './services/learner-usage-query';
 export {
   PrivacyDataService,
   hasPrivacyCleanupAdapter,

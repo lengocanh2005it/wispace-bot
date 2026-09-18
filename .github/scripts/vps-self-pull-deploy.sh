@@ -498,8 +498,19 @@ image_missing_cause() {
 schema_revision() {
   if [ -s "$SCHEMA_STATE_FILE" ]; then
     cat "$SCHEMA_STATE_FILE"
-  elif [ -s "$STATE_DIR/${APP_ORDER[0]}.sha" ]; then
+  elif [ ! -f "$COMPATIBILITY_STATE_FILE" ] && [ -s "$STATE_DIR/${APP_ORDER[0]}.sha" ]; then
     cat "$STATE_DIR/${APP_ORDER[0]}.sha"
+  fi
+}
+
+SCHEMA_REVISION_BEFORE_ROLLOUT=""
+SCHEMA_ROLLOUT_STARTED=false
+
+schema_revision_for_barrier() {
+  if [ "$SCHEMA_ROLLOUT_STARTED" = true ]; then
+    printf %s "$SCHEMA_REVISION_BEFORE_ROLLOUT"
+  else
+    schema_revision
   fi
 }
 
@@ -513,7 +524,7 @@ record_schema_revision() { # run_migrations sha
 # so a missing owner image is not a reason to hold the dependent bots back.
 schema_current_for() { # target_sha
   local applied
-  applied=$(schema_revision)
+  applied=$(schema_revision_for_barrier)
   [ -n "$applied" ] || return 1
   [ "$applied" = "$1" ] && return 0
   git merge-base --is-ancestor "$applied" "$1" >/dev/null 2>&1 || return 1
@@ -522,18 +533,32 @@ schema_current_for() { # target_sha
 
 # app -> "health_path:run_migrations"
 declare -A APPS=(
-  [messenger-bot]="/health/ready:true"
+  # Deploy every new image without migrations first. Messenger runs the
+  # migration only after all three owner-aware compatibility images serve.
+  [messenger-bot]="/health/ready:false"
   [discord-bot]="/health/ready:false"
   [zalo-bot]="/health/ready:false"
 )
 
 APP_ORDER=(messenger-bot discord-bot zalo-bot)
+COMPATIBILITY_STATE_FILE="$STATE_DIR/${APP_ORDER[0]}.compat.sha"
+
+record_compatibility_state() { # app run_migrations sha
+  if [ "$1" = "${APP_ORDER[0]}" ] && [ "$2" != "true" ]; then
+    printf %s "$3" > "$COMPATIBILITY_STATE_FILE"
+  fi
+}
 
 deploy_app() {
   local app="$1"
   local is_migration_owner="${2:-false}"
+  local force_deploy="${3:-false}"
+  local run_migrations_override="${4:-}"
   local health_path run_migrations target_dir image state_file fail_marker image_digest migration_cmd
   IFS=':' read -r health_path run_migrations <<< "${APPS[$app]}"
+  if [ -n "$run_migrations_override" ]; then
+    run_migrations="$run_migrations_override"
+  fi
   target_dir="$TARGET_BASE_DIR/${app}"
   image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
   state_file="$STATE_DIR/${app}.sha"
@@ -544,8 +569,10 @@ deploy_app() {
     return 1
   fi
 
-  if [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
+  if [ "$force_deploy" != "true" ] && [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
+    record_compatibility_state "$app" "$run_migrations" "$NEW_SHA"
     record_schema_revision "$run_migrations" "$NEW_SHA"
+    [ "$run_migrations" = "true" ] && rm -f "$COMPATIBILITY_STATE_FILE"
     return 0
   fi
 
@@ -579,14 +606,16 @@ deploy_app() {
   # carries the target digest, the deploy succeeded previously but the
   # state file was not written (e.g. post-switch monitor flapped). Skip
   # the full deploy cycle to avoid an infinite redeploy loop.
-  if [ -n "$image_digest" ]; then
+  if [ "$run_migrations" != "true" ] && [ -n "$image_digest" ]; then
     local running_digest
     running_digest=$(docker inspect --format '{{.Image}}' \
       "$(docker ps --filter "name=^${app}-" --format '{{.Names}}' | head -1)" 2>/dev/null || true)
     if [ "$running_digest" = "$image_digest" ]; then
       echo "$app: already running target image ($image_digest) — skipping deploy"
       echo "$NEW_SHA" > "$state_file"
+      record_compatibility_state "$app" "$run_migrations" "$NEW_SHA"
       record_schema_revision "$run_migrations" "$NEW_SHA"
+      [ "$run_migrations" = "true" ] && rm -f "$COMPATIBILITY_STATE_FILE"
       if [ -f "$fail_marker" ]; then
         echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
         rm -f "$fail_marker"
@@ -629,7 +658,9 @@ deploy_app() {
     bash vps-deploy.sh
   ); then
     echo "$NEW_SHA" > "$state_file"
+    record_compatibility_state "$app" "$run_migrations" "$NEW_SHA"
     record_schema_revision "$run_migrations" "$NEW_SHA"
+    [ "$run_migrations" = "true" ] && rm -f "$COMPATIBILITY_STATE_FILE"
     if [ -f "$fail_marker" ]; then
       echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
       rm -f "$fail_marker"
@@ -695,8 +726,16 @@ if [ -n "$RESOLVED_SHA" ] && [ "$RESOLVED_SHA" != "$NEW_SHA" ]; then
   NEW_SHA="$RESOLVED_SHA"
 fi
 
-# Messenger owns the shared schema migration. Keep it first and make the
-# schema state it leaves behind the barrier for Discord and Zalo (#283).
+SCHEMA_REVISION_BEFORE_ROLLOUT=$(schema_revision || true)
+MIGRATION_NEEDED_BEFORE_ROLLOUT=false
+if ! schema_current_for "$NEW_SHA"; then
+  MIGRATION_NEEDED_BEFORE_ROLLOUT=true
+fi
+
+# Messenger owns the shared schema migration. First roll out every bot without
+# migrations; only then run the owner deploy again with migrations enabled.
+# This keeps old and new images safe while the legacy key still exists and
+# leaves the old schema untouched if any app fails (#1177/#283).
 #
 # Exit 2 means "owner has no image at this sha" — a question, not a verdict.
 # The barrier's real condition is whether the schema is at the revision this
@@ -707,7 +746,10 @@ fi
 # page, as #338 requires.
 BARRIER_RC=0
 ci_clear_app_failure "${APP_ORDER[0]}"
-deploy_app "${APP_ORDER[0]}" true || BARRIER_RC=$?
+deploy_app "${APP_ORDER[0]}" true "$MIGRATION_NEEDED_BEFORE_ROLLOUT" || BARRIER_RC=$?
+if [ "$BARRIER_RC" = 0 ]; then
+  SCHEMA_ROLLOUT_STARTED=true
+fi
 
 if [ "$BARRIER_RC" = 2 ]; then
   OWNER_IMAGE="${REGISTRY}/${REPO_LC}/${APP_ORDER[0]}:${NEW_SHA}"
@@ -735,7 +777,7 @@ fi
 PENDING_APPS=()
 DEPLOY_FAILURE=0
 if [ "$BARRIER_RC" = 0 ]; then
-  echo "Migration barrier ready — deploying dependent bots"
+  echo "Compatibility rollout ready — deploying dependent bots before migration"
   for app in "${APP_ORDER[@]:1}"; do
     case "${CI_APP_STATE[$app]-failed}" in
       pending)
@@ -748,7 +790,7 @@ if [ "$BARRIER_RC" = 0 ]; then
       pass)
         ci_clear_app_failure "$app"
         app_rc=0
-        deploy_app "$app" || app_rc=$?
+        deploy_app "$app" false "$MIGRATION_NEEDED_BEFORE_ROLLOUT" || app_rc=$?
         case "$app_rc" in
           0) ;;
           3)
@@ -765,8 +807,37 @@ if [ "$BARRIER_RC" = 0 ]; then
     esac
   done
 else
-  echo "ERROR: migration barrier not ready — skipping Discord/Zalo deploys" >&2
+  echo "ERROR: compatibility rollout not ready — migration barrier blocked; skipping Discord/Zalo deploys" >&2
   DEPLOY_FAILURE=1
+fi
+
+if [ "$BARRIER_RC" = 0 ] && [ "$DEPLOY_FAILURE" = 0 ] && [ "${#PENDING_APPS[@]}" -eq 0 ]; then
+  if schema_current_for "$NEW_SHA"; then
+    echo "Migration barrier ready — schema already current"
+    printf %s "$NEW_SHA" > "$SCHEMA_STATE_FILE"
+    rm -f "$COMPATIBILITY_STATE_FILE"
+  else
+    # A breaking key migration is allowed only when every dependent image is
+    # present. A skipped image would leave an old ON CONFLICT target serving
+    # after the owner commits the new indexes.
+    for app in "${APP_ORDER[@]:1}"; do
+      image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
+      if ! docker manifest inspect "$image" >/dev/null 2>&1; then
+        echo "ERROR: $app image is unavailable; refusing to commit owner-aware schema" >&2
+        DEPLOY_FAILURE=1
+      fi
+    done
+
+    if [ "$DEPLOY_FAILURE" = 0 ]; then
+      echo "All compatibility images are serving — applying owner-aware migration"
+      MIGRATION_RC=0
+      deploy_app "${APP_ORDER[0]}" true true true || MIGRATION_RC=$?
+      if [ "$MIGRATION_RC" != 0 ]; then
+        echo "ERROR: owner-aware migration failed — retaining compatibility schema" >&2
+        DEPLOY_FAILURE=1
+      fi
+    fi
+  fi
 fi
 
 if [ "${#PENDING_APPS[@]}" -gt 0 ]; then

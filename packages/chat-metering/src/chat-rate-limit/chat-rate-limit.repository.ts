@@ -69,6 +69,7 @@ export class ChatRateLimitRepository {
     private readonly platform: string,
     private readonly hooks: ChatRateLimitRepositoryHooks = {},
     private readonly learnerUsageQuery?: LearnerUsageQueryFactory,
+    private readonly legacyLearnerUsageQuery?: LearnerUsageQueryFactory,
   ) {}
 
   async getDailyUsageCount(
@@ -77,10 +78,18 @@ export class ChatRateLimitRepository {
     userId?: number,
   ): Promise<number> {
     if (userId !== undefined) {
-      return this.getLearnerUsageCount(this.dailyUsageRepo.manager, {
-        usageDate,
-        userId,
-      });
+      const manager = this.dailyUsageRepo.manager;
+      const schemaMode = await this.readUsageSchemaMode(manager);
+      return this.getLearnerUsageCount(
+        manager,
+        {
+          usageDate,
+          userId,
+          platform: this.platform,
+          externalUserId,
+        },
+        this.learnerUsageQueryForSchema(schemaMode),
+      );
     }
 
     // Anonymous bucket: the channel row with no learner owner. A linked row for
@@ -190,22 +199,44 @@ export class ChatRateLimitRepository {
           }
         }
 
+        const schemaMode = await this.readUsageSchemaMode(manager);
         let rows: Array<{ free_form_count: number }>;
         if (input.userId !== undefined) {
-          // The user lock makes the aggregate check and the owner-scoped
-          // increment one learner-scoped critical section. The write only ever
-          // touches the learner's own row; an anonymous row for the same
-          // channel/date is neither read nor rewritten (#1177).
-          const usedBefore = await this.getLearnerUsageCount(manager, {
-            usageDate: input.usageDate,
-            userId: input.userId,
-          });
+          // Before the owner-aware indexes commit, preserve the legacy
+          // mapping-aware aggregate and upsert. The deploy script rolls every
+          // bot onto this compatibility path before applying the migration.
+          const usedBefore = await this.getLearnerUsageCount(
+            manager,
+            {
+              usageDate: input.usageDate,
+              userId: input.userId,
+              platform: this.platform,
+              externalUserId: input.externalUserId,
+            },
+            this.learnerUsageQueryForSchema(schemaMode),
+          );
           if (usedBefore >= input.dailyLimit) {
             throw new DailyLimitExceededError();
           }
 
           rows = await manager.query(
+            schemaMode === 'legacy'
+              ? `
+              INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
+              VALUES ($1, $2, $3, $4::date, 1)
+              ON CONFLICT (platform, external_user_id, usage_date)
+              DO UPDATE SET
+                free_form_count = CASE
+                  WHEN chat_daily_usage.user_id IS NOT NULL
+                    AND chat_daily_usage.user_id IS DISTINCT FROM EXCLUDED.user_id
+                  THEN 1
+                  ELSE chat_daily_usage.free_form_count + 1
+                END,
+                user_id = EXCLUDED.user_id,
+                updated_at = now()
+              RETURNING free_form_count
             `
+              : `
               INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
               VALUES ($1, $2, $3, $4::date, 1)
               ON CONFLICT (platform, external_user_id, usage_date, user_id)
@@ -224,7 +255,24 @@ export class ChatRateLimitRepository {
           );
         } else {
           rows = await manager.query(
+            schemaMode === 'legacy'
+              ? `
+              INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
+              VALUES ($1, $2, $3, $4::date, 1)
+              ON CONFLICT (platform, external_user_id, usage_date)
+              DO UPDATE SET
+                free_form_count = CASE
+                  WHEN chat_daily_usage.user_id IS NULL
+                  THEN chat_daily_usage.free_form_count + 1
+                  ELSE 1
+                END,
+                user_id = NULL,
+                updated_at = now()
+              WHERE chat_daily_usage.user_id IS NOT NULL
+                OR chat_daily_usage.free_form_count < $5
+              RETURNING free_form_count
             `
+              : `
               INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
               VALUES ($1, $2, $3, $4::date, 1)
               ON CONFLICT (platform, external_user_id, usage_date)
@@ -251,10 +299,16 @@ export class ChatRateLimitRepository {
 
         let freeFormCount = rows[0]?.free_form_count ?? 0;
         if (input.userId !== undefined) {
-          freeFormCount = await this.getLearnerUsageCount(manager, {
-            usageDate: input.usageDate,
-            userId: input.userId,
-          });
+          freeFormCount = await this.getLearnerUsageCount(
+            manager,
+            {
+              usageDate: input.usageDate,
+              userId: input.userId,
+              platform: this.platform,
+              externalUserId: input.externalUserId,
+            },
+            this.learnerUsageQueryForSchema(schemaMode),
+          );
         }
         await this.hooks.onReserved?.(manager, {
           externalUserId: input.externalUserId,
@@ -355,10 +409,17 @@ export class ChatRateLimitRepository {
 
       let usedAfter = usageRows[0]?.free_form_count ?? 0;
       if (ownerUserId !== undefined) {
-        usedAfter = await this.getLearnerUsageCount(manager, {
-          usageDate,
-          userId: ownerUserId,
-        });
+        const schemaMode = await this.readUsageSchemaMode(manager);
+        usedAfter = await this.getLearnerUsageCount(
+          manager,
+          {
+            usageDate,
+            userId: ownerUserId,
+            platform: this.platform,
+            externalUserId: externalUserId,
+          },
+          this.learnerUsageQueryForSchema(schemaMode),
+        );
       }
       await this.hooks.onReleased?.(manager, {
         externalUserId,
@@ -592,10 +653,17 @@ export class ChatRateLimitRepository {
 
         let usedAfter = usageRows[0]?.free_form_count ?? 0;
         if (ownerUserId !== undefined) {
-          usedAfter = await this.getLearnerUsageCount(manager, {
-            usageDate: row.usage_date,
-            userId: ownerUserId,
-          });
+          const schemaMode = await this.readUsageSchemaMode(manager);
+          usedAfter = await this.getLearnerUsageCount(
+            manager,
+            {
+              usageDate: row.usage_date,
+              userId: ownerUserId,
+              platform: this.platform,
+              externalUserId: row.external_user_id,
+            },
+            this.learnerUsageQueryForSchema(schemaMode),
+          );
         }
         await this.hooks.onReleased?.(manager, {
           externalUserId: row.external_user_id,
@@ -635,6 +703,7 @@ export class ChatRateLimitRepository {
 
   async recoverAllStuckReserved(stuckBefore: Date): Promise<string[]> {
     return this.idempotencyRepo.manager.transaction(async (manager) => {
+      const schemaMode = await this.readUsageSchemaMode(manager);
       const deliveredRows = extractQueryRows<{
         idempotency_key: string;
       }>(
@@ -778,6 +847,52 @@ export class ChatRateLimitRepository {
             params,
           );
         }
+
+        // Keep the event projection complete for bulk recovery as well as the
+        // single-row paths. Group the read-back by bucket so one page does not
+        // issue one count query per idempotency key.
+        const usedAfterByBucket = new Map<string, number>();
+        for (const row of page) {
+          const rawUsageDate = row.usage_date as unknown;
+          const usageDate =
+            rawUsageDate instanceof Date
+              ? rawUsageDate.toISOString().slice(0, 10)
+              : String(row.usage_date ?? '').slice(0, 10);
+          const ownerUserId = row.user_id ?? undefined;
+          const bucketKey =
+            ownerUserId === undefined
+              ? `anonymous:${usageDate}:${row.external_user_id}`
+              : `learner:${usageDate}:${ownerUserId}`;
+          let usedAfter = usedAfterByBucket.get(bucketKey);
+          if (usedAfter === undefined) {
+            usedAfter =
+              ownerUserId === undefined
+                ? await this.getAnonymousUsageCount(
+                    manager,
+                    row.external_user_id,
+                    usageDate,
+                  )
+                : await this.getLearnerUsageCount(
+                    manager,
+                    {
+                      usageDate,
+                      userId: ownerUserId,
+                      platform: this.platform,
+                      externalUserId: row.external_user_id,
+                    },
+                    this.learnerUsageQueryForSchema(schemaMode),
+                  );
+            usedAfterByBucket.set(bucketKey, usedAfter);
+          }
+          await this.hooks.onReleased?.(manager, {
+            externalUserId: row.external_user_id,
+            userId: ownerUserId,
+            usageDate,
+            idempotencyKey: row.idempotency_key,
+            reason: 'stuck_recover',
+            usedAfter,
+          });
+        }
       }
 
       return [
@@ -790,16 +905,82 @@ export class ChatRateLimitRepository {
   private async getLearnerUsageCount(
     manager: EntityManager,
     input: Parameters<NonNullable<LearnerUsageQueryFactory>>[0],
+    queryFactory = this.learnerUsageQuery,
   ): Promise<number> {
-    if (!this.learnerUsageQuery) {
+    if (!queryFactory) {
       throw new Error('Learner usage query is not configured');
     }
-    const query = this.learnerUsageQuery(input);
+    const query = queryFactory(input);
     const rows: Array<{ used: string | number }> = await manager.query(
       query.sql,
       query.params,
     );
     return Number(rows[0]?.used ?? 0);
+  }
+
+  private learnerUsageQueryForSchema(
+    schemaMode: 'legacy' | 'owner-aware',
+  ): LearnerUsageQueryFactory | undefined {
+    return schemaMode === 'legacy'
+      ? this.legacyLearnerUsageQuery
+      : this.learnerUsageQuery;
+  }
+
+  private async getAnonymousUsageCount(
+    manager: EntityManager,
+    externalUserId: string,
+    usageDate: string,
+  ): Promise<number> {
+    const rows: Array<{ free_form_count: string | number }> =
+      await manager.query(
+        `
+          SELECT COALESCE(free_form_count, 0)::int AS free_form_count
+          FROM chat_daily_usage
+          WHERE platform = $1
+            AND external_user_id = $2
+            AND usage_date = $3::date
+            AND user_id IS NULL
+        `,
+        [this.platform, externalUserId, usageDate],
+      );
+    return Number(rows[0]?.free_form_count ?? 0);
+  }
+
+  private async readUsageSchemaMode(
+    manager: EntityManager,
+  ): Promise<'legacy' | 'owner-aware'> {
+    const rows: Array<{
+      legacy_index: boolean;
+      linked_index: boolean;
+      anonymous_index: boolean;
+    }> = await manager.query(`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND indexname = 'uq_chat_daily_usage_platform_external_date'
+        ) AS legacy_index,
+        EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND indexname = 'uq_chat_daily_usage_linked'
+        ) AS linked_index,
+        EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND indexname = 'uq_chat_daily_usage_anonymous'
+        ) AS anonymous_index
+    `);
+    const state = rows[0];
+    if (state?.legacy_index && !state.linked_index && !state.anonymous_index) {
+      return 'legacy';
+    }
+    if (!state?.legacy_index && state?.linked_index && state.anonymous_index) {
+      return 'owner-aware';
+    }
+    throw new Error(
+      'chat_daily_usage uniqueness schema is not in a supported rollout state',
+    );
   }
 
   private mapIdempotency(row: {

@@ -49,6 +49,16 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
           return [];
         }
 
+        if (normalized.includes('FROM pg_indexes')) {
+          return [
+            {
+              legacy_index: false,
+              linked_index: true,
+              anonymous_index: true,
+            },
+          ];
+        }
+
         if (normalized.includes('COALESCE(SUM(')) {
           const [usageDate, userId] = params as [string, number];
           // Learner bucket only — anonymous rows are never adopted (#1177).
@@ -210,13 +220,21 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
       createQueryBuilder: jest.fn(() => {
         const qb: {
           select: () => typeof qb;
+          addSelect: () => typeof qb;
+          from: () => typeof qb;
           where: () => typeof qb;
           andWhere: () => typeof qb;
+          groupBy: () => typeof qb;
+          setParameter: () => typeof qb;
           getRawOne: () => Promise<{ count: number }>;
         } = {
           select: jest.fn(() => qb),
+          addSelect: jest.fn(() => qb),
+          from: jest.fn(() => qb),
           where: jest.fn(() => qb),
           andWhere: jest.fn(() => qb),
+          groupBy: jest.fn(() => qb),
+          setParameter: jest.fn(() => qb),
           getRawOne: jest.fn(() => Promise.resolve({ count: 0 })),
         };
         return qb;

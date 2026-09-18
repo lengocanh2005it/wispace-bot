@@ -673,12 +673,14 @@ channel, while the outbound rate-limit backstop uses the learner bucket when
 The owner-aware schema shipped in migration
 `1789093800000-OwnerAwareChatDailyUsageKeys`: it drops the legacy
 `(platform, external_user_id, usage_date)` unique key and adds owner-aware
-partial keys, so a learner row and an anonymous row coexist. The legacy key
-cannot be retained alongside coexistence, so the migration and the owner-aware
-bots must reach every platform in the same release — a pre-#1177 image fails
-its reserve on the new schema. Ambiguous current-day legacy rows are copied to
-both logical buckets to avoid granting quota; runtime never adopts anonymous
-rows. On a relink to a different WISPACE user, no quota state is transferred.
+partial keys, so a learner row and an anonymous row coexist. Self-pull first
+deploys all three bots with the legacy-key compatibility path, then runs the
+Messenger migration only after every dependent image is available and serving;
+a failed migration leaves the old schema safe for retry. After the contract
+commits, the same repository uses owner-scoped SQL and rollback must retain
+that schema. Ambiguous current-day legacy rows are copied to both logical
+buckets to avoid granting quota; runtime never adopts anonymous rows. On a
+relink to a different WISPACE user, no quota state is transferred.
 See
 [issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637), [issue
 #1177](https://github.com/lengocanh2005it/wispace-bot/issues/1177), and

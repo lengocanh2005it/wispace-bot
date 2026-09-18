@@ -64,29 +64,21 @@ anonymous row into both the learner and anonymous logical buckets; older
 ambiguous rows remain anonymous. This can deny extra quota for one day, but it
 cannot grant quota that historical identity churn may already have consumed.
 
-Because the migration owner deploys before the dependent bots, the schema
-change was specified as an expand/contract rollout. Implementing it exposed a
-hard constraint: owner-aware coexistence and the legacy conflict target are
-mutually exclusive. Postgres can only resolve
-`ON CONFLICT (platform, external_user_id, usage_date)` against a non-partial
-unique index on exactly those columns, and such an index forbids the second
-row that a learner row and an anonymous row need for the same channel/date.
-Keeping it would leave the reset vulnerability in place for every channel that
-is ever linked after an anonymous turn.
+Because the migration owner deploys before the dependent bots, the rollout is
+an actual expand/contract sequence. The shared repository detects the indexed
+schema state: while the legacy key exists, every bot uses the old
+mapping-aware reserve SQL; after the owner-aware indexes commit, it switches to
+owner-scoped SQL. Self-pull deploys all three compatibility images first,
+verifies their images are available, then runs the Messenger migration in a
+forced second deploy. A failed migration therefore leaves the legacy schema
+and the compatibility path serving safely.
 
-The shipped migration therefore swaps the key in one step: it drops the legacy
-index and adds the two owner-aware partial indexes, and the release that
-applies it must cut every bot over to the owner-aware code. Two operational
-consequences follow and must be planned for:
-
-- Discord and Zalo images from the previous release cannot serve traffic on the
-  new schema; their reserve would fail with a missing conflict target. The
-  Messenger-first migration barrier (#283) must be treated as "migration and
-  all consumers in one release", not as a compatibility window.
-- Rolling back to a pre-#1177 image requires the legacy key, which cannot be
-  restored while both owners coexist. A failed release must roll forward, or
-  roll back after resolving the coexisting rows; `down` deliberately fails
-  instead of merging the buckets.
+The migration creates the owner-aware partial indexes before dropping the old
+key inside the migration transaction, backfills the configured current quota
+day, and then commits the contract. A failed release after that commit keeps
+the new schema; the new repository remains compatible with it and the down
+migration deliberately refuses to merge coexisting buckets. Pre-#1177 images
+must not be restored after the contract has committed.
 
 ## Consequences
 
@@ -122,8 +114,9 @@ npx turbo run lint test build --filter=@wispace/chat-metering... --filter=@wispa
   existing table preserve the current persistence boundary with less schema
   surface. A dedicated table is an upgrade only if row-level complexity or
   throughput justifies it.
-- **Breaking migration during the Messenger-first rollout:** rejected; old
-  Discord/Zalo images must not hit a removed conflict target.
+- **Breaking migration during the Messenger-first rollout:** rejected; the
+  two-phase compatibility rollout keeps old and new images safe until the
+  owner-aware contract commits.
 
 ## References
 

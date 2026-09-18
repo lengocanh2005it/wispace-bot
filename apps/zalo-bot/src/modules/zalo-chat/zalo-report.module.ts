@@ -38,6 +38,7 @@ import {
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
   buildLearnerUsageQuery,
+  buildLegacyLearnerUsageQuery,
   PlatformReportClaimRepository,
   ReportClaimStaleResetCronService,
 } from '@wispace/database';
@@ -68,6 +69,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     BotCommonModule,
     ChatMeteringModule.forPlatform('zalo', {
       learnerUsageQuery: buildLearnerUsageQuery,
+      legacyLearnerUsageQuery: buildLegacyLearnerUsageQuery,
     }),
   ],
   providers: [

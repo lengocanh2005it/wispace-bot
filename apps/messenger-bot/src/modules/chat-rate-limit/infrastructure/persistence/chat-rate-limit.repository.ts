@@ -11,7 +11,10 @@ import type {
   ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
 } from '../../domain/entities/chat-idempotency.types';
-import { buildLearnerUsageQuery } from '@wispace/database';
+import {
+  buildLearnerUsageQuery,
+  buildLegacyLearnerUsageQuery,
+} from '@wispace/database';
 import { ChatQuotaEventRecorderService } from '../../application/services/chat-quota-event-recorder.service';
 import type { ChatQuotaRepositoryPort } from '../../domain/repositories/chat-quota.repository.port';
 
@@ -54,6 +57,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
           }),
       },
       buildLearnerUsageQuery,
+      buildLegacyLearnerUsageQuery,
     );
   }
 
@@ -162,14 +166,37 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     usageDate: string,
     dailyLimit: number,
   ): Promise<number> {
-    // Owner-aware rows (#1177): a channel can hold both a learner row and an
-    // anonymous row for the same date, so count distinct channels.
+    // Count logical owners, not physical channel rows: a learner may have
+    // several linked platforms and the cap is their aggregate (#1177).
     const row = await this.dailyUsageRepo
       .createQueryBuilder('usage')
-      .select('COUNT(DISTINCT usage.external_user_id)::int', 'count')
-      .where('usage.usage_date = :usageDate', { usageDate })
-      .andWhere('usage.platform = :platform', { platform: PLATFORM })
-      .andWhere('usage.free_form_count >= :dailyLimit', { dailyLimit })
+      .select(
+        `COUNT(*) FILTER (WHERE bucket.used >= :dailyLimit)::int`,
+        'count',
+      )
+      .from(
+        (subQuery) =>
+          subQuery
+            .select(
+              `CASE WHEN usage.user_id IS NULL
+                THEN 'anonymous:' || usage.platform || ':' || usage.external_user_id
+                ELSE 'learner:' || usage.user_id::text
+              END`,
+              'bucket',
+            )
+            .addSelect('SUM(usage.free_form_count)', 'used')
+            .from('chat_daily_usage', 'usage')
+            .where('usage.usage_date = :usageDate', { usageDate })
+            .andWhere('usage.platform = :platform', { platform: PLATFORM })
+            .groupBy(
+              `CASE WHEN usage.user_id IS NULL
+                THEN 'anonymous:' || usage.platform || ':' || usage.external_user_id
+                ELSE 'learner:' || usage.user_id::text
+              END`,
+            ),
+        'bucket',
+      )
+      .setParameter('dailyLimit', dailyLimit)
       .getRawOne<{ count: number }>();
 
     return row?.count ?? 0;

@@ -41,6 +41,7 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
   cat > "$dir/repo/.github/scripts/vps-deploy.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "FAKE vps-deploy ${APP_NAME:-unknown}" >> "${FAKE_DEPLOY_LOG:?}"
+echo "FAKE migrations ${RUN_MIGRATIONS:-unset}" >> "${FAKE_DEPLOY_LOG:?}"
 echo "FAKE app network ${APP_NETWORK:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
 echo "FAKE migration lock ${MIGRATION_LOCK_ID:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
 echo "locked" > "${FAKE_DEPLOY_STARTED:?}"
@@ -304,9 +305,11 @@ code=$(run_script "$dir")
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
 grep -q "^git fetch" "$dir/git.log" || fail "fetch not called"
 grep -q "^git reset" "$dir/git.log" || fail "reset not called"
-[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 3 ] || fail "expected 3 deploys: $(cat "$dir/deploy.log" 2>/dev/null)"
+[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 4 ] || fail "expected 4 deploys (compatibility + migration): $(cat "$dir/deploy.log" 2>/dev/null)"
 order=$(sed -E 's/^FAKE vps-deploy ([^ ]+).*/\1/' "$dir/deploy.log" | tr '\n' ' ')
-[ "$order" = "messenger-bot discord-bot zalo-bot " ] || fail "migration owner must deploy first, got: $order"
+[ "$order" = "messenger-bot discord-bot zalo-bot messenger-bot " ] || fail "migration owner must deploy first and last, got: $order"
+first_migrations=$(grep '^FAKE migrations' "$dir/deploy.log" | tr '\n' ' ')
+[ "$first_migrations" = "FAKE migrations false FAKE migrations false FAKE migrations false FAKE migrations true " ] || fail "unexpected migration rollout flags: $first_migrations"
 for app in messenger-bot discord-bot zalo-bot; do
   [ "$(cat "$dir/state/$app.sha")" = "$SHA_B" ] || fail "$app state sha != $SHA_B"
 done
@@ -314,7 +317,7 @@ if grep -q 'api/v2/alerts' "$dir/curl.log" 2>/dev/null; then fail "alert should 
 pass "success path"
 
 echo "Test 3b: self-pull passes the shared app network to each deploy"
-[ "$(grep -c '^FAKE app network app_n8n_db_network$' "$dir/deploy-network.log")" -eq 3 ] || fail "shared app network was not passed to all deploys"
+[ "$(grep -c '^FAKE app network app_n8n_db_network$' "$dir/deploy-network.log")" -eq 4 ] || fail "shared app network was not passed to all deploys"
 pass "self-pull passes app network"
 
 echo "Test 3c: self-pull passes the migration lock contract to the owner"
@@ -461,7 +464,7 @@ wait "$bg_pid" || true
 grep -q "Another self-pull run is still in progress" "$dir/run.out" || fail "second run did not report skip"
 [ "$(grep -c '^git fetch' "$dir/git.log")" -eq 1 ] || fail "expected exactly 1 fetch (second run must not fetch/reset under lock)"
 [ "$(grep -c '^git reset' "$dir/git.log")" -eq 1 ] || fail "expected exactly 1 reset"
-[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 3 ] || fail "first run deploys incomplete"
+[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 4 ] || fail "first run deploys incomplete"
 pass "concurrency lock respected"
 
 echo "Test 5: stall recovery -> marker cleared + resolved alert posted"
@@ -821,7 +824,7 @@ grep -q "refusing to deploy" "$dir/run.out" || fail "login failure did not fail 
 pass "login failure fails closed before CI/image fallback"
 
 echo "Test 20: every self-pull app uses readiness for the promotion gate (#776)"
-grep -q '\[messenger-bot\]="/health/ready:true"' "$SCRIPT" || fail "Messenger self-pull readiness path changed"
+grep -q '\[messenger-bot\]="/health/ready:false"' "$SCRIPT" || fail "Messenger compatibility rollout path changed"
 grep -q '\[discord-bot\]="/health/ready:false"' "$SCRIPT" || fail "Discord self-pull readiness path changed"
 grep -q '\[zalo-bot\]="/health/ready:false"' "$SCRIPT" || fail "Zalo self-pull readiness path changed"
 pass "self-pull deploy readiness paths remain fail-closed"

@@ -34,11 +34,16 @@ export class ChatMeteringModule {
       requireEnv?: boolean;
       lenientEnabledCheck?: boolean;
       learnerUsageQuery?: LearnerUsageQueryFactory;
+      legacyLearnerUsageQuery?: LearnerUsageQueryFactory;
     },
   ): DynamicModule {
     const rateLimitOptions: PlatformChatRateLimitOptions = { platform };
     if (options?.learnerUsageQuery) {
       rateLimitOptions.learnerUsageQuery = options.learnerUsageQuery;
+    }
+    if (options?.legacyLearnerUsageQuery) {
+      rateLimitOptions.legacyLearnerUsageQuery =
+        options.legacyLearnerUsageQuery;
     }
     if (options?.requireEnv !== undefined) {
       rateLimitOptions.requireEnv = options.requireEnv;

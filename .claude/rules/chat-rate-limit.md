@@ -57,10 +57,13 @@ never retry or send a fallback for that outcome. See
   to another learner does not transfer the old learner's quota. Refund, stuck
   recovery, audit, rebuild and erasure all target the charge owner captured in
   `chat_idempotency` at reserve time, not the current mapping.
-- The owner-aware schema replaced the legacy
-  `(platform, external_user_id, usage_date)` unique key, so a pre-#1177 image
-  cannot serve traffic on it: the migration and every bot must cut over in the
-  same release.
+- The owner-aware schema replaces the legacy
+  `(platform, external_user_id, usage_date)` unique key. Self-pull deploys all
+  bots through the repository's legacy-key compatibility path first, then
+  commits the migration only after every consumer is serving; a failed
+  migration keeps the old schema safe for retry. After commit, retain the new
+  schema during rollback — do not restore a pre-#1177 image or down-migrate
+  coexisting buckets.
 
 ## Config (`.env`)
 

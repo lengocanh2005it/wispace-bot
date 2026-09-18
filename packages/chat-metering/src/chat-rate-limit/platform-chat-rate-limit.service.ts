@@ -13,10 +13,12 @@ import type {
 } from './types';
 
 export interface PlatformChatRateLimitOptions {
-  /** Platform key for `(platform, external_user_id)` DB rows. */
+  /** Platform key for the channel-scoped quota rows and anonymous buckets. */
   platform: string;
   /** Database-owned query factory for cross-platform learner aggregation. */
   learnerUsageQuery?: LearnerUsageQueryFactory;
+  /** Legacy mapping-aware query used before the owner-aware indexes commit. */
+  legacyLearnerUsageQuery?: LearnerUsageQueryFactory;
   /**
    * Strict config mode (discord): throw when `CHAT_FREE_FORM_DAILY_LIMIT` /
    * `CHAT_BURST_PER_MINUTE` / `CHAT_USAGE_TIMEZONE` are missing or invalid.
@@ -104,6 +106,7 @@ export class PlatformChatRateLimitService {
       options.platform,
       {},
       options.learnerUsageQuery,
+      options.legacyLearnerUsageQuery,
     );
 
     this.core = new ChatRateLimitCore(

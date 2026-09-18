@@ -26,7 +26,9 @@ const DEFAULT_STUCK_RESERVED_MS = 600_000;
 /**
  * Platform-agnostic quota engine shared across WISPACE bots — burst window +
  * daily hard-cap reserve/refund, both backed by Postgres
- * (`chat_daily_usage` / `chat_idempotency`, keyed by `(platform, external_user_id)`).
+ * (`chat_daily_usage` / `chat_idempotency`, with learner and anonymous owner
+ * snapshots). Anonymous buckets remain channel-scoped; linked usage aggregates
+ * by learner/date.
  *
  * Callers own: enable/disable + whitelist policy, metrics, and deciding
  * *whether* to call these methods at all — this class assumes enforcement

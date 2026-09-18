@@ -46,6 +46,7 @@ describe('ChatRateLimitRepository', () => {
   let idempotencyStore: Map<string, IdempotencyRow>;
   let hooks: jest.Mocked<ChatRateLimitRepositoryHooks>;
   let serializeTransactions: boolean;
+  let schemaMode: 'legacy' | 'owner-aware';
 
   const seedUsage = (row: DailyUsageRow): void => {
     dailyUsageStore.set(
@@ -97,6 +98,16 @@ describe('ChatRateLimitRepository', () => {
           return [];
         }
 
+        if (normalized.includes('FROM pg_indexes')) {
+          return [
+            {
+              legacy_index: schemaMode === 'legacy',
+              linked_index: schemaMode === 'owner-aware',
+              anonymous_index: schemaMode === 'owner-aware',
+            },
+          ];
+        }
+
         if (normalized.includes('COALESCE(SUM(')) {
           const usageDate = params[0] as string;
           const userId = params[1] as number;
@@ -107,6 +118,16 @@ describe('ChatRateLimitRepository', () => {
             )
             .reduce((sum, row) => sum + row.freeFormCount, 0);
           return [{ used: String(used) }];
+        }
+
+        if (normalized.includes('SELECT COALESCE(free_form_count')) {
+          const [, externalUserId, usageDate] = params as [
+            string,
+            string,
+            string,
+          ];
+          const row = readUsage(externalUserId, usageDate, null);
+          return [{ free_form_count: row?.freeFormCount ?? 0 }];
         }
 
         if (
@@ -122,7 +143,14 @@ describe('ChatRateLimitRepository', () => {
             'WHERE user_id IS NULL',
           );
           const key = usageKey(externalUserId, usageDate, userId);
-          const existing = dailyUsageStore.get(key);
+          const existing =
+            schemaMode === 'legacy'
+              ? [...dailyUsageStore.values()].find(
+                  (row) =>
+                    row.externalUserId === externalUserId &&
+                    row.usageDate === usageDate,
+                )
+              : dailyUsageStore.get(key);
 
           if (!existing) {
             dailyUsageStore.set(key, {
@@ -132,6 +160,24 @@ describe('ChatRateLimitRepository', () => {
               freeFormCount: 1,
             });
             return [{ free_form_count: 1 }];
+          }
+
+          if (schemaMode === 'legacy') {
+            const wasLinkedToAnotherUser =
+              existing.userId !== null && existing.userId !== userId;
+            if (
+              targetsAnonymousRow &&
+              typeof dailyLimit === 'number' &&
+              !wasLinkedToAnotherUser &&
+              existing.freeFormCount >= dailyLimit
+            ) {
+              return [];
+            }
+            existing.freeFormCount = wasLinkedToAnotherUser
+              ? 1
+              : existing.freeFormCount + 1;
+            existing.userId = userId;
+            return [{ free_form_count: existing.freeFormCount }];
           }
 
           // The anonymous path keeps its hard cap inside the upsert; the linked
@@ -504,6 +550,7 @@ describe('ChatRateLimitRepository', () => {
     dailyUsageStore = new Map();
     idempotencyStore = new Map();
     serializeTransactions = true;
+    schemaMode = 'owner-aware';
     recordedSql = [];
 
     const manager = createManager();
@@ -552,6 +599,7 @@ describe('ChatRateLimitRepository', () => {
       idempotencyRepo,
       PLATFORM,
       hooks,
+      learnerUsageQuery,
       learnerUsageQuery,
     );
   });
@@ -945,6 +993,22 @@ describe('ChatRateLimitRepository', () => {
     );
   });
 
+  it('keeps the legacy conflict target while the migration has not committed', async () => {
+    schemaMode = 'legacy';
+
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'legacy-linked' }),
+    );
+
+    const insert = recordedSql.find((sql) =>
+      sql.startsWith('INSERT INTO chat_daily_usage'),
+    );
+    expect(insert).toContain(
+      'ON CONFLICT (platform, external_user_id, usage_date)',
+    );
+    expect(insert).not.toContain('WHERE user_id IS NOT NULL');
+  });
+
   it('returns idempotency conflict without incrementing usage', async () => {
     await repository.reserveFreeFormSlotInTransaction(
       reserveInput({ idempotencyKey: 'mid-dup' }),
@@ -1119,6 +1183,16 @@ describe('ChatRateLimitRepository', () => {
 
     expect(idempotencyStore.get('mid-stuck-bulk')?.status).toBe('refunded');
     expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(0);
+    expect(hooks.onReleased).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        externalUserId: 'ext-1',
+        userId: undefined,
+        idempotencyKey: 'mid-stuck-bulk',
+        reason: 'stuck_recover',
+        usedAfter: 0,
+      }),
+    );
   });
 
   it('refunds exactly one logical user counter when external users share a null user_id', async () => {

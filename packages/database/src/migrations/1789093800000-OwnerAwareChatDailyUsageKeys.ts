@@ -13,20 +13,21 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * channel/date/owner, the anonymous row is unique per channel/date, and the two
  * can coexist without either owner being rewritten.
  *
- * Rollout contract: the pre-#1177 conflict target
- * (`ON CONFLICT (platform, external_user_id, usage_date)`) no longer resolves
- * once this migration runs, so images older than #1177 cannot serve traffic on
- * this schema. The release that applies it must roll out the owner-aware bots
- * to every platform before cutting traffic back over, and a rollback must not
- * restore the legacy key while both owners coexist (see `down`).
+ * Rollout contract: every bot is deployed with the legacy-key compatibility
+ * path before this migration drops the old key. The self-pull deploy then runs
+ * this migration only after all three owner-aware images are serving, so a
+ * failed migration leaves the legacy schema and its compatibility path intact.
+ * A rollback must not restore the legacy key while both owners coexist (see
+ * `down`).
  */
 export class OwnerAwareChatDailyUsageKeys1789093800000 implements MigrationInterface {
   name = 'OwnerAwareChatDailyUsageKeys1789093800000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "uq_chat_daily_usage_platform_external_date"`,
-    );
+    const usageDate = currentChatUsageDate();
+
+    // Expand first. Statements run in the migration transaction, so readers
+    // continue to see the legacy key until the new indexes and backfill commit.
     await queryRunner.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS "uq_chat_daily_usage_linked"
       ON "chat_daily_usage" ("platform", "external_user_id", "usage_date", "user_id")
@@ -37,6 +38,9 @@ export class OwnerAwareChatDailyUsageKeys1789093800000 implements MigrationInter
       ON "chat_daily_usage" ("platform", "external_user_id", "usage_date")
       WHERE "user_id" IS NULL
     `);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "uq_chat_daily_usage_platform_external_date"`,
+    );
 
     // Conservative one-time fix-up for the current quota day. Before this
     // migration an anonymous row reachable through an active mapping was
@@ -48,7 +52,8 @@ export class OwnerAwareChatDailyUsageKeys1789093800000 implements MigrationInter
     // The quota day is the configured chat timezone's day; ICT is the documented
     // default (`CHAT_USAGE_TIMEZONE`). A deployment on another timezone only
     // shifts which single day this fix-up over-denies.
-    await queryRunner.query(`
+    await queryRunner.query(
+      `
       INSERT INTO "chat_daily_usage" (
         "platform", "external_user_id", "user_id", "usage_date", "free_form_count"
       )
@@ -63,23 +68,28 @@ export class OwnerAwareChatDailyUsageKeys1789093800000 implements MigrationInter
         SELECT 'messenger' AS platform, external_user_id, user_id
         FROM user_platform_mappings
         WHERE status = 'ACTIVE' AND link_state = 'active'
+          AND external_user_id IS NOT NULL AND user_id IS NOT NULL
         UNION ALL
         SELECT 'discord', external_user_id, user_id
         FROM discord_account_links
         WHERE link_state = 'active'
+          AND external_user_id IS NOT NULL AND user_id IS NOT NULL
         UNION ALL
         SELECT 'zalo', external_user_id, user_id
         FROM zalo_account_links
         WHERE link_state = 'active'
+          AND external_user_id IS NOT NULL AND user_id IS NOT NULL
       ) link
         ON link.platform = usage."platform"
        AND link.external_user_id = usage."external_user_id"
       WHERE usage."user_id" IS NULL
-        AND usage."usage_date" = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+        AND usage."usage_date" = $1::date
       ON CONFLICT ("platform", "external_user_id", "usage_date", "user_id")
         WHERE "user_id" IS NOT NULL
         DO NOTHING
-    `);
+    `,
+      [usageDate],
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -97,4 +107,25 @@ export class OwnerAwareChatDailyUsageKeys1789093800000 implements MigrationInter
       ON "chat_daily_usage" ("platform", "external_user_id", "usage_date")
     `);
   }
+}
+
+const DEFAULT_CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+export function currentChatUsageDate(
+  now = new Date(),
+  timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ||
+    DEFAULT_CHAT_USAGE_TIMEZONE,
+): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
 }

@@ -501,11 +501,17 @@ describe('PrivacyDataService', () => {
       expect(usageDelete.externalUserId).toBe('psid-123');
       expect(usageDelete.userId?._type).toBe('isNull');
 
-      // Other channel-scoped stores keep their plain (platform, externalUserId)
-      // fallback.
+      // Every owner-aware channel-scoped store keeps only its anonymous bucket;
+      // a learner row for the same external id belongs to another owner.
       expect(mockLlmUsageRepo.delete).toHaveBeenCalledWith({
         platform: 'messenger',
         externalUserId: 'psid-123',
+        userId: expect.objectContaining({ _type: 'isNull' }),
+      });
+      expect(mockIdempotencyRepo.delete).toHaveBeenCalledWith({
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+        userId: expect.objectContaining({ _type: 'isNull' }),
       });
     });
 

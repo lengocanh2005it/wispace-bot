@@ -37,6 +37,9 @@ export interface ChatRateLimitSettings {
  * (ADR-0027 / #1177).
  */
 export interface LearnerUsageQueryInput {
+  /** Present during the #1177 legacy-key compatibility rollout. */
+  externalUserId?: string;
+  platform?: string;
   usageDate: string;
   userId: number;
 }

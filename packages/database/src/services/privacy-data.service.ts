@@ -684,8 +684,12 @@ export class PrivacyDataService {
       await deleteByUser(this.registry.scoped.chatDailyUsage, uid, {
         anonymousOnly: true,
       });
-      await deleteByUser(this.registry.scoped.llmUsageEvent, uid);
-      await deleteByUser(this.registry.scoped.chatIdempotency, uid);
+      await deleteByUser(this.registry.scoped.llmUsageEvent, uid, {
+        anonymousOnly: true,
+      });
+      await deleteByUser(this.registry.scoped.chatIdempotency, uid, {
+        anonymousOnly: true,
+      });
       if (uid) {
         // Notification consent state (#596) is keyed by userId only.
         await manager

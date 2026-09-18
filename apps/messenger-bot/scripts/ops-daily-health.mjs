@@ -189,10 +189,21 @@ try {
     ),
     pool.query(
       `
-        SELECT COUNT(DISTINCT (platform, external_user_id))::int AS count
-        FROM chat_daily_usage
-        WHERE usage_date = $1::date
-          AND free_form_count >= $2::int
+        SELECT COUNT(*)::int AS count
+        FROM (
+          SELECT CASE WHEN user_id IS NULL
+            THEN 'anonymous:' || platform || ':' || external_user_id
+            ELSE 'learner:' || user_id::text
+          END AS bucket,
+            SUM(free_form_count) AS used
+          FROM chat_daily_usage
+          WHERE usage_date = $1::date
+          GROUP BY CASE WHEN user_id IS NULL
+            THEN 'anonymous:' || platform || ':' || external_user_id
+            ELSE 'learner:' || user_id::text
+          END
+        ) buckets
+        WHERE used >= $2::int
       `,
       [usageDate, dailyLimit],
     ),
