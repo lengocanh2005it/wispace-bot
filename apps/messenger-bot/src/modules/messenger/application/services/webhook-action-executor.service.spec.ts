@@ -34,7 +34,7 @@ const buildDeps = (
     {} as never,
     {} as never,
     (overrides.reschedule ?? {}) as never,
-    {},
+    {} as never,
   );
   return { service, outbound, mappingService, linkContextService };
 };
@@ -106,7 +106,7 @@ describe('WebhookActionExecutorService.send_text', () => {
       {} as never,
       {} as never,
       {} as never,
-      {},
+      {} as never,
     );
     return { service, outbound };
   };

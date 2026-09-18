@@ -1,7 +1,8 @@
 import { MessengerReportDeliveryService } from './messenger-report-delivery.service';
 import { ProactiveMessenger24hSkippedError } from '../utils/proactive-send.utils';
-import type { RetryableApiError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import type { RetryableApiError } from '@wispace/student-report';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import type { UserMessengerMapping } from '../../domain/entities/messenger.types';
 
 describe('MessengerReportDeliveryService', () => {
   const buildService = (overrides?: {
@@ -74,7 +75,7 @@ describe('MessengerReportDeliveryService', () => {
         topic: 'ielts',
         cadence: 'WEEKLY' as const,
         status: 'ACTIVE' as const,
-      });
+      } as UserMessengerMapping);
 
       expect(result).toBe('Report content');
       expect(studentReportService.generateReport).toHaveBeenCalledWith(
@@ -102,7 +103,7 @@ describe('MessengerReportDeliveryService', () => {
           topic: 'ielts',
           cadence: 'WEEKLY' as const,
           status: 'ACTIVE' as const,
-        }),
+        } as unknown as UserMessengerMapping),
       ).rejects.toThrow('has no PSID');
     });
 
@@ -120,7 +121,7 @@ describe('MessengerReportDeliveryService', () => {
         topic: 'ielts',
         cadence: 'WEEKLY' as const,
         status: 'ACTIVE' as const,
-      });
+      } as UserMessengerMapping);
 
       expect(result).toBe('');
     });
@@ -145,7 +146,7 @@ describe('MessengerReportDeliveryService', () => {
           topic: 'ielts',
           cadence: 'WEEKLY' as const,
           status: 'ACTIVE' as const,
-        }),
+        } as UserMessengerMapping),
       ).rejects.toThrow(StudentReportRetryableError);
     });
   });

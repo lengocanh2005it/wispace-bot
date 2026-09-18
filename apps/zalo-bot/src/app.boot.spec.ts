@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type ObjectLiteral } from 'typeorm';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
@@ -45,7 +45,7 @@ describe('AppModule boot smoke', () => {
       'https://testbackend.example.com/api/bot/reengagement';
     process.env.INTERNAL_API_KEY = 'test-internal-key';
 
-    const stubRepo = {} as Repository<any>;
+    const stubRepo = {} as Repository<ObjectLiteral>;
     const dataSourceMock = new Proxy({} as DataSource, {
       get: (target, prop, receiver) => {
         if (prop === 'getRepository') return () => stubRepo;

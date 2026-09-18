@@ -6,16 +6,19 @@ import {
   MessengerPartialSendError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
 import { LlmProviderCircuitOpenError } from '@wispace/llm-agent';
+import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 
 describe('ReportSendOrchestrationService.claimAndSend', () => {
-  const mapping = {
+  const mapping: UserMessengerMapping = {
     id: 1,
     psid: 'psid-1',
     userId: 10,
     notificationMessagesToken: 'tok-1',
     topic: 'ielts',
-    cadence: 'WEEKLY' as const,
-    status: 'ACTIVE' as const,
+    cadence: 'WEEKLY',
+    status: 'ACTIVE',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   const buildService = (overrides?: {
@@ -87,7 +90,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       buildService();
 
     const result = await service.claimAndSend(
-      { ...mapping, userId: undefined },
+      { ...mapping, userId: undefined } as unknown as UserMessengerMapping,
       {
         reportDate: '2026-07-11',
         skipAlreadySentToday: true,
@@ -236,7 +239,11 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       buildService({
         sendError: new StudentReportRetryableError(
           'psid-1',
-          new Error('timeout'),
+          Object.assign(new Error('timeout'), {
+            statusCode: 504,
+            endpoint: '/api/report',
+            isRetryable: () => true,
+          }),
         ),
       });
 

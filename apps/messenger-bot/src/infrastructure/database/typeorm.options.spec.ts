@@ -10,7 +10,7 @@ describe('getTypeOrmOptions', () => {
       { includeUsers: false },
     );
 
-    expect(options.ssl).toEqual({
+    expect((options as { ssl?: unknown }).ssl).toEqual({
       rejectUnauthorized: true,
       ca: 'trusted-ca',
     });

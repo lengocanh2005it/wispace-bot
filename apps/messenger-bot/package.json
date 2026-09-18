@@ -33,7 +33,7 @@
     "migration:generate": "npm run build && npx --no-install typeorm migration:generate -d dist/infrastructure/database/data-source.js",
     "lint": "oxlint",
     "format:check": "oxfmt --check",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "test": "jest --forceExit --maxWorkers=50%",
     "test:watch": "jest --watch",

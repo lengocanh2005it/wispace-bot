@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type ObjectLiteral } from 'typeorm';
 import { Client } from 'discord.js';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
@@ -49,7 +49,7 @@ describe('AppModule boot smoke', () => {
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
     jest.spyOn(Client.prototype, 'login').mockResolvedValue('fake-token');
 
-    const stubRepo = {} as Repository<any>;
+    const stubRepo = {} as Repository<ObjectLiteral>;
     const dataSourceMock = new Proxy({} as DataSource, {
       get: (target, prop, receiver) => {
         if (prop === 'getRepository') return () => stubRepo;

@@ -23,7 +23,7 @@ describe('ChatQuotaEventRepository', () => {
         usageDate: '2026-08-08',
         userId: 42,
         idempotencyKey: 'idem-1',
-        payload: { used: 5, limit: 15, reason: 'CHAT' },
+        payload: { limit: 15, used_after: 5, idempotency_key: 'idem-1' },
       });
 
       expect(manager.query).toHaveBeenCalledWith(
@@ -31,7 +31,11 @@ describe('ChatQuotaEventRepository', () => {
         [
           'messenger',
           sha256('42'),
-          JSON.stringify({ used: 5, limit: 15, reason: 'CHAT' }),
+          JSON.stringify({
+            limit: 15,
+            used_after: 5,
+            idempotency_key: 'idem-1',
+          }),
           '2026-08-08',
           42,
           'idem-1',
@@ -45,7 +49,7 @@ describe('ChatQuotaEventRepository', () => {
         psid: 'psid-1',
         usageDate: '2026-08-08',
         idempotencyKey: 'idem-1',
-        payload: { used: 1, limit: 15 },
+        payload: { limit: 15, used_after: 1, idempotency_key: 'idem-1' },
       });
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -60,7 +64,7 @@ describe('ChatQuotaEventRepository', () => {
         psid: 'psid-2',
         usageDate: '2026-08-08',
         idempotencyKey: 'idem-2',
-        payload: { used: 1, limit: 15 },
+        payload: { limit: 15, used_after: 1, idempotency_key: 'idem-2' },
       });
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -76,7 +80,8 @@ describe('ChatQuotaEventRepository', () => {
         psid: 'psid-1',
         usageDate: '2026-08-08',
         idempotencyKey: 'idem-r1',
-        payload: { used: 4, limit: 15 },
+        reason: 'send_failed',
+        payload: { reason: 'send_failed', used_after: 4 },
       });
 
       expect(manager.query).toHaveBeenCalledWith(
@@ -84,7 +89,7 @@ describe('ChatQuotaEventRepository', () => {
         [
           'messenger',
           sha256('psid-1'),
-          JSON.stringify({ used: 4, limit: 15 }),
+          JSON.stringify({ reason: 'send_failed', used_after: 4 }),
           '2026-08-08',
           null,
           'idem-r1',

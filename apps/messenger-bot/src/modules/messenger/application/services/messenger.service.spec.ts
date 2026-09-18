@@ -55,7 +55,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     } as unknown as ChatRateLimitConfigService;
     const actionExecutor = {
       executeAction: jest.fn().mockResolvedValue(undefined),
-    } as unknown as WebhookActionExecutorService;
+    };
     const inboundEvents = {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
     } as unknown as WebhookInboundEventsPort;
@@ -66,7 +66,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
       outbound,
       linkContext,
       chatRateLimitConfig,
-      actionExecutor,
+      actionExecutor as unknown as WebhookActionExecutorService,
       inboundEvents,
     );
 

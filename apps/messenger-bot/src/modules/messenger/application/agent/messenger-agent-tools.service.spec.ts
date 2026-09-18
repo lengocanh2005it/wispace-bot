@@ -3,6 +3,7 @@ import {
   exercisePlatformToolExecutorConformance,
   type PlatformAgentReply,
   type PlatformAgentToolContext,
+  type WriteToolBudgetPort,
 } from '@wispace/chat-agent';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -17,16 +18,18 @@ describe('MessengerAgentToolsService', () => {
   const createService = (
     overrides: Partial<Record<string, jest.Mock>> = {},
     budgetDeps?: {
-      writeToolBudget?: unknown;
+      writeToolBudget?: WriteToolBudgetPort;
       writeToolPerMessageCaps?: Record<string, number>;
       writeToolBudgetDeniedInc?: (tool: string, reason: 'per_message') => void;
     },
   ) => {
-    const repository: jest.Mocked<MessengerMappingRepositoryPort> = {
+    const repository = {
       logMessage: jest.fn(),
       findActiveMappingByPsid: overrides.findActiveMappingByPsid ?? jest.fn(),
       upsertPocSubscription: overrides.upsertPocSubscription ?? jest.fn(),
-    } as unknown as jest.Mocked<MessengerMappingRepositoryPort>;
+    } as unknown as jest.Mocked<MessengerMappingRepositoryPort> & {
+      upsertPocSubscription: jest.Mock;
+    };
 
     const studentReportService: jest.Mocked<StudentReportService> = {
       generateReport: overrides.generateReport ?? jest.fn(),
@@ -120,8 +123,9 @@ describe('MessengerAgentToolsService', () => {
       });
       const policyDeniedCalls: Array<[string, string]> = [];
       const intent = createService({
-        policyDeniedInc: (toolName, reason) =>
+        policyDeniedInc: jest.fn((toolName, reason) =>
           policyDeniedCalls.push([toolName, reason]),
+        ),
       });
       const budget = {
         checkDailyAllowed: jest.fn(),

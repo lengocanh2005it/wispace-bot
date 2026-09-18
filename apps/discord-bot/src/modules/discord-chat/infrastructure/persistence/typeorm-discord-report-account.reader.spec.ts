@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Repository } from 'typeorm';
 import { TypeormDiscordReportAccountReader } from './typeorm-discord-report-account.reader';
 

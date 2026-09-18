@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type ObjectLiteral } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from './app.module';
@@ -47,7 +47,7 @@ describe('AppModule boot smoke', () => {
     process.env.STUDY_REMINDER_RETRY_BACKOFF_MINUTES = '2';
     process.env.STUDY_REMINDER_JOB_RETENTION_DAYS = '7';
 
-    const stubRepo = {} as Repository<unknown>;
+    const stubRepo = {} as Repository<ObjectLiteral>;
     const dataSourceMock = new Proxy({} as DataSource, {
       get: (target, prop, receiver) => {
         if (prop === 'getRepository') return () => stubRepo;

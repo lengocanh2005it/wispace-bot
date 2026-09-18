@@ -1,4 +1,7 @@
-import { MessengerWebhookEvent } from '../domain/entities/messenger.types';
+import {
+  MessengerWebhookEvent,
+  NotificationCadence,
+} from '../domain/entities/messenger.types';
 import {
   CONFIRM_RESCHEDULE_POSTBACK,
   CANCEL_RESCHEDULE_POSTBACK,
@@ -25,7 +28,7 @@ function postbackEvent(payload: string): MessengerWebhookEvent {
 function optinEvent(
   ref: string,
   topic?: string,
-  cadence?: string,
+  cadence?: NotificationCadence,
 ): MessengerWebhookEvent {
   return event({
     optin: { ref, topic, frequency: cadence },

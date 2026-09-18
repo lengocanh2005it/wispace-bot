@@ -16,7 +16,7 @@ Measured on **2026-09-17** after normalizing all workspace scripts (Step 1).
 
 | Workspace | Baseline | Current | Status |
 |---|---:|---:|---|
-| `apps/messenger-bot` | 80 | 76 | 🔴 errors |
+| `apps/messenger-bot` | 80 | 0 | ✅ clean & gated |
 | `apps/discord-bot` | 28 | 0 | ✅ clean & gated |
 | `apps/zalo-bot` | 22 | 0 | ✅ clean & gated |
 | `packages/bot-common` | 28 | 0 | ✅ clean & gated |
@@ -40,7 +40,7 @@ Measured on **2026-09-17** after normalizing all workspace scripts (Step 1).
 | `packages/ops-health` | 0 | 0 | ✅ clean & gated |
 | `packages/webhook-inbound` | 0 | 0 | ✅ clean & gated |
 | `packages/date-utils` | 0 | 0 | ✅ clean & gated |
-| **Total** | **242** | **76** | |
+| **Total** | **242** | **0** | ✅ **All 24/24 workspaces clean & gated** |
 
 ---
 
@@ -68,7 +68,11 @@ packages/webhook-inbound, packages/date-utils
 - `apps/messenger-bot` — `study-reminder.failover.integration.spec.ts`: added required `perAttemptTimeoutMs`
 - `packages/database` — `platform-link-state.service.spec.ts`: replaced ES2022 `Array.at(-1)` with index access
 - `packages/database` — `platform-report-claim.repository.spec.ts`: typed queryBuilder harness & learnerQuery args
-- `packages/database` — `privacy-data.service.spec.ts`: typed status as `PrivacyCleanupJobStatus` instead of literal `'pending'`
+- `apps/messenger-bot` — `messenger.types.ts`: added `recipient?: { id?: string }` to `MessengerWebhookEvent` to match Meta webhook payload and test expectations
+- `apps/messenger-bot` — `llm-usage-recorder.service.spec.ts`: provided required 3rd argument `BotMetricsService` to constructor
+- `apps/messenger-bot` — `messenger-mapping.service.spec.ts`: provided required 5th argument `NotificationPreferenceService` to constructor
+- `apps/messenger-bot` — `messenger-report-delivery.service.spec.ts`: imported `RetryableApiError` from `@wispace/student-report` and typed mappings as `UserMessengerMapping`
+- `apps/messenger-bot` — `report-send-orchestration.service.spec.ts`: typed mappings as `UserMessengerMapping` (string `createdAt`/`updatedAt`) and provided valid `RetryableApiError` to `StudentReportRetryableError`
 
 ---
 
@@ -90,6 +94,7 @@ packages/webhook-inbound, packages/date-utils
 | 2026-09-17 | `packages/bot-common` | 28 | 0 | #1232 | Fixed LockedTick withLock mock typing, TestOpsController public constructor, redis-user-display-name RedisClientPort, redis.service ConfigService and sendCommand types; folded into gated typecheck |
 | 2026-09-17 | `apps/zalo-bot` | 22 | 0 | #1232 | Fixed Repository<any> stubRepo in boot spec, em self-reference in account-link, ClarificationStateStore mocks in link completion/reconcile, MockResponse in oauth controller, ZaloOpsController constructor arity; folded into gated typecheck |
 | 2026-09-18 | `apps/discord-bot` | 28 | 0 | #1232 | Fixed Repository<any> in boot spec, markOptOutNoticeSent in account-link, welcomeIfDue mock cast in completion, relinkNotifier/welcomeService in reconcile cron, MockResponse in oauth controller, findLinkStateByExternalUserId in report cron, qb circular typing in report reader, DiscordOpsController arity, mergedEnv/preferences/summary in reengagement cron; folded into gated typecheck |
+| 2026-09-18 | `apps/messenger-bot` | 76 | 0 | #1232 | Fixed recipient in MessengerWebhookEvent, LlmUsageRecorderService/MessengerMappingService constructor arities, RetryableApiError import & shape, mapping types, Mocked<MessengerMappingRepositoryPort>; folded into gated typecheck |
 
 ---
 

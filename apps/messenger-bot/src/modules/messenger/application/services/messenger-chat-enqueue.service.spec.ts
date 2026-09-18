@@ -41,7 +41,9 @@ jest.mock('@wispace/chat-queue-core', () => {
       mockQueueConfigs.push(args[0] as { maxPendingSize?: number });
       mockQueueCallbacks.push(args[2] as never);
       mockQueueFlushCallbacks.push(args[1] as never);
-      return new actual.DebounceChatQueue(...(args as never[]));
+      return new actual.DebounceChatQueue(
+        ...(args as ConstructorParameters<typeof actual.DebounceChatQueue>),
+      );
     }),
   };
 });

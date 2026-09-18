@@ -4,7 +4,6 @@ import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/ap
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
-import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerAgentService } from '../agent/messenger-agent.service';
 import {
   buildChatBurstLimitMessage,
@@ -40,7 +39,7 @@ describe('MessengerChatProcessorService', () => {
   const createService = (
     options: {
       shouldEnforce?: boolean;
-      mappingRepository?: MessengerMappingRepositoryPort;
+      mappingRepository?: unknown;
       withPrivacy?: boolean;
       displayNameCache?: Pick<RedisUserDisplayNameCache, 'del' | 'delStrict'>;
       distributedMode?: boolean;
@@ -59,8 +58,8 @@ describe('MessengerChatProcessorService', () => {
       sendRichFollowUps,
     } as unknown as MessengerOutboundService;
 
-    const reply = jest.fn(() =>
-      Promise.resolve({ text: 'Bot reply', richFollowUps: [] as [] }),
+    const reply = jest.fn((..._args: unknown[]): Promise<unknown> =>
+      Promise.resolve({ text: 'Bot reply', richFollowUps: [] }),
     );
     const markClarificationDeliveryFailedForEvent = jest.fn(() =>
       Promise.resolve(),
@@ -149,7 +148,7 @@ describe('MessengerChatProcessorService', () => {
       ? new PrivacyStateService()
       : undefined;
     const privacyUnlink = jest.fn(() => Promise.resolve({ deleted: true }));
-    const privacyDelete = jest.fn(() => Promise.resolve());
+    const privacyDelete = jest.fn((..._args: unknown[]) => Promise.resolve());
     const privacyExport = jest.fn(() => Promise.resolve({ mapping: null }));
     const privacyService = options.withPrivacy
       ? {
@@ -972,7 +971,7 @@ describe('MessengerChatProcessorService', () => {
       });
 
       clearClarificationState.mockRejectedValueOnce(new Error('redis down'));
-      const cleanupState = privacyDelete.mock.calls[0]?.[2] as {
+      const cleanupState = privacyDelete.mock.calls[0]?.[2] as unknown as {
         clearClarification?: (psid: string) => Promise<void>;
       };
 
@@ -999,7 +998,7 @@ describe('MessengerChatProcessorService', () => {
         idempotencyKey: 'mid-privacy-cache-strict',
       });
 
-      const cleanupState = privacyDelete.mock.calls[0]?.[2] as {
+      const cleanupState = privacyDelete.mock.calls[0]?.[2] as unknown as {
         clearUserCache?: (userId: number) => Promise<void>;
       };
       await cleanupState.clearUserCache!(143);

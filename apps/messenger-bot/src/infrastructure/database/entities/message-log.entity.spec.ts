@@ -12,7 +12,11 @@ describe('MessageLogEntity Privacy Guard (#262)', () => {
 
     expect('messageText' in entity).toBe(false);
     expect('message_text' in entity).toBe(false);
-    expect((entity as Record<string, unknown>).messageText).toBeUndefined();
-    expect((entity as Record<string, unknown>).message_text).toBeUndefined();
+    expect(
+      (entity as unknown as Record<string, unknown>).messageText,
+    ).toBeUndefined();
+    expect(
+      (entity as unknown as Record<string, unknown>).message_text,
+    ).toBeUndefined();
   });
 });

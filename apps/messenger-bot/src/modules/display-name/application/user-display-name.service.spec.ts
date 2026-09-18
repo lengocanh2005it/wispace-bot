@@ -7,12 +7,9 @@ describe('UserDisplayNameService', () => {
     findOne: jest.fn(),
   };
 
-  const mappingReader: Pick<
-    MessengerMappingRepositoryPort,
-    'findActiveMappingByPsid'
-  > = {
+  const mappingReader = {
     findActiveMappingByPsid: jest.fn(),
-  };
+  } as unknown as MessengerMappingRepositoryPort;
 
   const cacheGet = jest.fn();
   const cacheSet = jest.fn();

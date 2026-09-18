@@ -162,6 +162,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSync as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
+      makePrefs() as never,
     );
 
     const result = await service.linkFromContext('psid-1', {
@@ -200,6 +201,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSync as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
+      makePrefs() as never,
     );
 
     const result = await service.linkFromContext('psid-new', {

@@ -426,7 +426,9 @@ describe('MessengerRepository.logMessage (#262)', () => {
       errorMessage: undefined,
       createdAt: '2026-08-20T10:00:00.000Z',
     });
-    expect((result as Record<string, unknown>).messageText).toBeUndefined();
+    expect(
+      (result as unknown as Record<string, unknown>).messageText,
+    ).toBeUndefined();
     expect(
       (create.mock.calls[0][0] as Record<string, unknown>).messageText,
     ).toBeUndefined();
