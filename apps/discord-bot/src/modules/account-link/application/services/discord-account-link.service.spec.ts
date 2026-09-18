@@ -18,7 +18,7 @@ function buildRepositoryPort(): DiscordAccountLinkRepositoryPort {
     findDiscordIdByUserId: jest.fn(),
     claimConsentPrompt: jest.fn().mockResolvedValue(false),
     releaseConsentPrompt: jest.fn().mockResolvedValue(undefined),
-    suppressOptOutNotice: jest.fn().mockResolvedValue(undefined),
+    markOptOutNoticeSent: jest.fn().mockResolvedValue(undefined),
   };
 }
 

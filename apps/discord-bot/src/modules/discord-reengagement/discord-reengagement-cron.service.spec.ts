@@ -66,7 +66,7 @@ function buildService(
   stubs: Stubs,
   env: Record<string, string> = { REENGAGEMENT_ENABLED: 'true' },
 ): DiscordReengagementCronService {
-  const mergedEnv = {
+  const mergedEnv: Record<string, string | undefined> = {
     REENGAGEMENT_ENABLED: 'true',
     REENGAGEMENT_SEND_GAP_MS: '0',
     ...env,
@@ -83,7 +83,7 @@ function buildService(
     } as unknown as SchedulerRegistry,
     stubs.client as unknown as ReengagementApiClient,
     stubs.orchestrator as unknown as DiscordReengagementService,
-    stubs.preferences as unknown as NotificationPreferenceService,
+    stubs.preferences as never,
     stubs.pgLock as unknown as PgAdvisoryLockService,
     stubs.metrics as unknown as BotMetricsService,
   );
@@ -162,7 +162,7 @@ describe('DiscordReengagementCronService.handleDailyBatch', () => {
     expect(stubs.orchestrator.runOnce).toHaveBeenCalledWith(11, {
       daysInactive: 12,
     });
-    expect(summary.skipped).toBe(2);
+    expect(summary!.skipped).toBe(2);
     expect(stubs.metrics.incReengagementSend).toHaveBeenCalledWith(
       'skipped',
       2,
@@ -177,8 +177,8 @@ describe('DiscordReengagementCronService.handleDailyBatch', () => {
 
     const summary = await service.handleDailyBatch();
 
-    expect(summary.fetched).toBe(3);
-    expect(summary.sent).toBe(0);
+    expect(summary!.fetched).toBe(3);
+    expect(summary!.sent).toBe(0);
     expect(stubs.orchestrator.runOnce).not.toHaveBeenCalled();
     expect(stubs.metrics.incReengagementSend).not.toHaveBeenCalledWith(
       'sent',
@@ -253,7 +253,7 @@ describe('DiscordReengagementCronService.handleDailyBatch', () => {
     const summary = await service.handleDailyBatch();
 
     expect(stubs.orchestrator.runOnce).toHaveBeenCalledTimes(2);
-    expect(summary.fetched).toBe(2);
+    expect(summary!.fetched).toBe(2);
     warnSpy.mockRestore();
   });
 
@@ -292,7 +292,7 @@ describe('DiscordReengagementCronService cron registration', () => {
       registry as unknown as SchedulerRegistry,
       stubs.client as unknown as ReengagementApiClient,
       stubs.orchestrator as unknown as DiscordReengagementService,
-      stubs.preferences as unknown as NotificationPreferenceService,
+      stubs.preferences as never,
       stubs.pgLock as unknown as PgAdvisoryLockService,
       stubs.metrics as unknown as BotMetricsService,
     );

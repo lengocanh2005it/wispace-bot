@@ -36,6 +36,7 @@ const createPageMock = (pages: unknown[][]) => {
       .mockImplementation((_cursor, limit) =>
         Promise.resolve(queryBuilder.take(limit).getMany()),
       ),
+    findLinkStateByExternalUserId: jest.fn().mockResolvedValue(null),
     createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     queryBuilder,
   };

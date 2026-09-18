@@ -7,7 +7,7 @@ describe('TypeormDiscordReportAccountReader — report consent gate (#596)', () 
   let reader: TypeormDiscordReportAccountReader;
 
   const buildQb = () => {
-    const qb = {
+    const qb: any = {
       leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -41,7 +41,7 @@ describe('TypeormDiscordReportAccountReader — report consent gate (#596)', () 
   it('passes the keyset cursor when provided', async () => {
     const qbCalls: unknown[][] = [];
     const createQueryBuilder = jest.fn(() => {
-      const qb = {
+      const qb: any = {
         leftJoin: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),

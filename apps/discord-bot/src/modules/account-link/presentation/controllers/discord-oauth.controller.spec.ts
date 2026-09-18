@@ -1,4 +1,26 @@
+import type { Response } from 'express';
 import { DiscordOauthController } from './discord-oauth.controller';
+
+type MockResponse = Response & {
+  json: jest.Mock;
+  setHeader: jest.Mock;
+  cookie: jest.Mock;
+  clearCookie: jest.Mock;
+  redirect: jest.Mock;
+  status: jest.Mock;
+};
+
+function buildRes(): MockResponse {
+  const res: Partial<MockResponse> = {
+    json: jest.fn(),
+    setHeader: jest.fn(),
+    cookie: jest.fn(),
+    clearCookie: jest.fn(),
+    redirect: jest.fn(),
+  };
+  res.status = jest.fn().mockReturnValue(res);
+  return res as MockResponse;
+}
 
 function mockDeps() {
   return {
@@ -30,11 +52,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        json: jest.fn(),
-        setHeader: jest.fn(),
-        cookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       await controller.getOAuthUrl('link-token-abc', res);
 
       expect(deps.stateService.create).toHaveBeenCalledWith('link-token-abc');
@@ -54,11 +72,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        json: jest.fn(),
-        setHeader: jest.fn(),
-        cookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       await controller.getOAuthUrl('token-abc', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
@@ -73,11 +87,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        json: jest.fn(),
-        setHeader: jest.fn(),
-        cookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       await controller.getOAuthUrl('token-abc', res);
 
       expect(res.cookie).toHaveBeenCalledWith(
@@ -99,8 +109,8 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-      await controller.getOAuthUrl(undefined, res as never);
+      const res = buildRes();
+      await controller.getOAuthUrl(undefined, res);
 
       expect(deps.stateService.create).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
@@ -118,8 +128,8 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-      await controller.getOAuthUrl('a'.repeat(513), res as never);
+      const res = buildRes();
+      await controller.getOAuthUrl('a'.repeat(513), res);
 
       expect(deps.stateService.create).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
@@ -139,11 +149,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        setHeader: jest.fn(),
-        redirect: jest.fn(),
-        clearCookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       const req = {
         headers: { cookie: '__Host-discord_oauth_state=state-nonce' },
       };
@@ -173,11 +179,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        setHeader: jest.fn(),
-        redirect: jest.fn(),
-        clearCookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       const req = { headers: {} };
       await controller.callback(
         'auth-code',
@@ -200,11 +202,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        setHeader: jest.fn(),
-        redirect: jest.fn(),
-        clearCookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       const req = {
         headers: { cookie: '__Host-discord_oauth_state=different-state' },
       };
@@ -230,11 +228,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = {
-        setHeader: jest.fn(),
-        redirect: jest.fn(),
-        clearCookie: jest.fn(),
-      } as never;
+      const res = buildRes();
       const req = {
         headers: { cookie: '__Host-discord_oauth_state=bad-state' },
       };

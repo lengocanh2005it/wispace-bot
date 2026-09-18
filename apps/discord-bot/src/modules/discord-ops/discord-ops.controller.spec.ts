@@ -13,6 +13,8 @@ describe('DiscordOpsController ops clarification recovery', () => {
     {} as never,
     {} as never,
     mockClarificationAgent as never,
+    {} as never,
+    {} as never,
   );
 
   beforeEach(() => {

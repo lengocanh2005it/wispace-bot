@@ -49,7 +49,7 @@ describe('AppModule boot smoke', () => {
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
     jest.spyOn(Client.prototype, 'login').mockResolvedValue('fake-token');
 
-    const stubRepo = {} as Repository<unknown>;
+    const stubRepo = {} as Repository<any>;
     const dataSourceMock = new Proxy({} as DataSource, {
       get: (target, prop, receiver) => {
         if (prop === 'getRepository') return () => stubRepo;

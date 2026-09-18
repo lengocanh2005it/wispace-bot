@@ -245,7 +245,7 @@ describe('DiscordReengagementController', () => {
   });
 
   it('rejects a missing or non-positive userId with 400', async () => {
-    await expect(controller.runOnce({})).rejects.toMatchObject({
+    await expect(controller.runOnce({} as never)).rejects.toMatchObject({
       getStatus: expect.any(Function),
     });
     await expect(controller.runOnce({ userId: 0 })).rejects.toMatchObject({

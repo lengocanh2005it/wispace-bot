@@ -222,7 +222,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     } as unknown as DiscordAccountLinkService;
     const relinkNotifier = {
       notify: jest.fn().mockResolvedValue(undefined),
-    } as never;
+    };
     const { verifyRecordService } = buildHarness({
       records: [
         {
@@ -237,7 +237,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
-      relinkNotifier,
+      relinkNotifier as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
@@ -259,7 +259,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     } as unknown as DiscordAccountLinkService;
     const welcomeService = {
       welcomeIfDue: jest.fn().mockResolvedValue(true),
-    } as never;
+    };
     const { verifyRecordService } = buildHarness({
       records: [
         {
@@ -276,7 +276,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildPgLock(884_200_934),
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(true) } as never,
-      welcomeService,
+      welcomeService as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 

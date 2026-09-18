@@ -267,7 +267,7 @@ describe('DiscordLinkCompletionService', () => {
       accountLinkService.sendConsentExplainerIfDue as jest.Mock
     ).mock.invocationCallOrder[0];
     expect(explainerOrder).toBeGreaterThan(
-      welcomeService.welcomeIfDue.mock.invocationCallOrder[0],
+      (welcomeService.welcomeIfDue as jest.Mock).mock.invocationCallOrder[0],
     );
     expect(accountLinkService.sendConsentExplainerIfDue).toHaveBeenCalledWith(
       'discord-user-1',
