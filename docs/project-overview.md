@@ -29,11 +29,12 @@ Discord user ID, and Zalo user ID are delivery-channel identities only. The
 consistency contract is:
 
 - **Chat quota:** one shared daily FREE_FORM LLM quota per `(userId,
-usage_date)` across active links. A user without a link keeps an anonymous
-  `(platform, external_user_id, usage_date)` bucket. The reserve transaction
-  sums current-day legacy channel rows through active mappings, then writes the
-  learner-owned row. The burst limiter remains per channel; the outbound
-  backstop remains learner-wide when `userId` is known.
+  usage_date)` across active links. A user without a link keeps an independent
+  `(platform, external_user_id, usage_date)` anonymous bucket. Anonymous rows
+  are never adopted through active mappings, and unlink/relink never resets or
+  transfers either bucket. The burst limiter remains per channel; the
+  outbound backstop remains learner-wide when `userId` is known. See
+  [ADR-0027](adr/0027-chat-quota-identity-buckets.md).
 - **Study reminders:** one canonical owner platform (existing preference,
   then `zalo > discord > messenger`). Noncanonical sync cancels only pending /
   failed jobs; an owner switch cancels the old pending owner and creates the
@@ -81,7 +82,7 @@ and [privacy scope #461](https://github.com/lengocanh2005it/wispace-bot/issues/4
 ### 1.4. Free-form Chat + Rate Limit (FREE_FORM)
 
 - WISPACE-linked users can **send text messages** → bot replies via LLM agent (`MessengerChatEnqueueService` debounce → `MessengerChatProcessorService` → `MessengerAgentService`).
-- **Daily quota:** linked learners share one ICT-day bucket by WISPACE `userId`; anonymous users remain per `(platform, external_user_id, usage_date)` — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
+- **Daily quota:** linked learners share one ICT-day bucket by WISPACE `userId`; anonymous users remain in an independent `(platform, external_user_id, usage_date)` bucket — `chat_daily_usage`; idempotency `message.mid` snapshots the charged owner in `chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - **Postgres/Redis consistency (#609):** Postgres remains the final quota/burst authority; Redis burst is a fixed-minute advisory cache and divergent present keys are invalidated by the bounded Messenger audit once per minute. Queue Redis buffer JSON is authoritative for queued text; each bot's worker repairs missing/stale indexes and quarantines malformed payloads. Unresolved drift is exported as `<prefix>_redis_consistency_drift{datum}` and alerts after 2 minutes. See [ADR-0007](adr/0007-postgres-redis-consistency.md).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
@@ -297,7 +298,7 @@ wispace-bot/                          # Turborepo root
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `user_platform_mappings`          | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status`                                             |
 | `message_logs`                    | Metadata audit of sent / failed messages (message bodies omitted for privacy, #262)                                                          |
-| `chat_daily_usage`                | FREE_FORM chat quota counter; learner-linked rows aggregate by `user_id`, anonymous rows stay per `(platform, external_user_id, usage_date)` |
+| `chat_daily_usage`                | FREE_FORM chat quota counter; learner-linked rows aggregate by `user_id`, anonymous rows stay per `(platform, external_user_id, usage_date)`, and identity churn never rewrites one owner into the other |
 | `chat_idempotency`                | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`)                                                               |
 | `study_reminder_jobs`             | Reminder queue (`pending` → `sent` / …)                                                                                                      |
 | `scheduled_report_claims`         | Per-platform 08:00 report audit/compatibility claim                                                                                          |

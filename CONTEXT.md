@@ -251,11 +251,33 @@ Chat interaction type subject to rate limiting: user sends free-text → bot rep
 _Avoid_: free chat, open chat
 
 **quota**:
-Daily usage allowance for a user's FREE_FORM interactions. Tracked by `(platform, externalUserId, usageDate)`.
+Daily usage allowance for FREE_FORM interactions. Linked turns consume the
+learner bucket for `(WISPACE userId, usageDate)` across platforms; anonymous
+turns consume the anonymous bucket for `(platform, externalUserId, usageDate)`.
+Identity churn never merges, resets, or transfers either bucket.
 _Avoid_: limit (used for burst limit), allowance
 
+**learner bucket**:
+The daily FREE_FORM usage bucket owned by one WISPACE `userId`. It survives
+unlinking and relinking, and is shared by that learner's linked platforms for
+the same usage date.
+_Avoid_: linked row, account counter
+
+**anonymous bucket**:
+The daily FREE_FORM usage bucket owned by one `(platform, externalUserId)`
+pair when no WISPACE `userId` is attached. It is independent from every
+learner bucket and is not adopted when the channel later links.
+_Avoid_: guest quota, temporary bucket
+
+**quota charge owner**:
+The learner bucket or anonymous bucket selected when a FREE_FORM reservation
+is made. Refund and stuck-reservation recovery use this owner snapshot rather
+than the mapping that happens to be current later.
+_Avoid_: current link owner
+
 **chat_daily_usage** (DB table):
-Daily usage counter table. Entity: `ChatDailyUsageEntity`. One row per user per day with `free_form_count`.
+Daily usage counter table. Entity: `ChatDailyUsageEntity`. Stores counts for
+learner and anonymous buckets without rewriting one bucket into the other.
 _Avoid_: messenger_chat_daily_usage (old name)
 
 **freeFormCount**:
@@ -267,7 +289,7 @@ Atomic operation: (1) check burst limit, (2) insert idempotency row with status 
 _Avoid_: allocate, claim
 
 **refund**:
-Reverses a reservation when the LLM call or Send API fails before the user receives the message. Changes idempotency status to `refunded` and decrements the counter.
+Reverses a reservation when the LLM call or Send API fails before the user receives the message. Changes idempotency status to `refunded` and decrements the counter belonging to the reservation's quota charge owner, even if linking changed afterward.
 _Avoid_: rollback, revert
 
 **markCompleted**:
@@ -283,7 +305,9 @@ Platform-specific message identifier (`message.mid` on Messenger, `message.id` o
 _Avoid_: message ID — use `idempotencyKey` in quota context
 
 **burst**:
-Short-term (per-minute) rate limit to prevent spam. Checked before daily quota. Configured via `CHAT_BURST_PER_MINUTE`.
+Short-term (per-minute) rate limit to prevent spam. Checked before daily quota
+and scoped to the platform/external identity, independently of learner and
+anonymous daily buckets. Configured via `CHAT_BURST_PER_MINUTE`.
 _Avoid_: spike limit, throttle
 
 **ChatQuotaCheckResult**:

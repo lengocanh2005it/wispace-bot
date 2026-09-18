@@ -275,15 +275,17 @@ identities and must not be treated as separate learners when the same
 
 | Feature | Contract |
 | --- | --- |
-| Daily chat LLM quota | One daily FREE_FORM quota per learner (`userId`, ICT usage date) across active links. An unlinked channel uses its own anonymous `(platform, external_user_id)` bucket. Burst protection remains per channel. |
+| Daily chat LLM quota | One daily FREE_FORM quota per learner (`userId`, ICT usage date) across active links. An unlinked channel uses its own independent `(platform, external_user_id)` bucket; anonymous usage is never adopted by a learner, and unlink/relink does not reset or transfer either bucket. Burst protection remains per channel. |
 | Study reminders | One canonical delivery platform using the existing preference/priority (`zalo > discord > messenger`). A platform switch cancels the old pending/failed owner and converges to one new job; a failed send retries that job without same-tick fan-out. |
 | 08:00 scheduled report | One atomic DB claim per `(userId, reportDate, reportType='scheduled')` before generation/delivery. Delivery audit and retry outbox remain channel-scoped, but no scheduled-report fan-out occurs. Links with no `userId` are skipped by the automatic cron. |
 | Privacy | Unlink removes only the requested channel's ownership/work (the learner-level report claim remains intact). An explicit delete is userId-scoped and removes local data for all linked channels. Relinking to a different `userId` does not transfer quota or notification state. |
 
-The bot performs current-day compatibility hydration by summing legacy
-per-channel usage rows through active mappings; WISPACE does not need a data
-backfill. Keep the `userId` in the verify-token response stable and numeric so
-all three bots can enforce the same learner scope. See [issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637) and the related contracts [#512](https://github.com/lengocanh2005it/wispace-bot/issues/512), [#458](https://github.com/lengocanh2005it/wispace-bot/issues/458), [#510](https://github.com/lengocanh2005it/wispace-bot/issues/510), and [#461](https://github.com/lengocanh2005it/wispace-bot/issues/461).
+The bot keeps linked and anonymous usage owners separate; it does not hydrate
+anonymous rows through active mappings. Keep the `userId` in the verify-token
+response stable and numeric so all three bots can enforce the same learner
+scope. A one-time migration may conservatively duplicate an ambiguous
+current-day row to avoid granting quota after historical churn. See [issue
+#637](https://github.com/lengocanh2005it/wispace-bot/issues/637), [#1177](https://github.com/lengocanh2005it/wispace-bot/issues/1177), and the related contracts [#512](https://github.com/lengocanh2005it/wispace-bot/issues/512), [#458](https://github.com/lengocanh2005it/wispace-bot/issues/458), [#510](https://github.com/lengocanh2005it/wispace-bot/issues/510), and [#461](https://github.com/lengocanh2005it/wispace-bot/issues/461).
 
 ---
 
