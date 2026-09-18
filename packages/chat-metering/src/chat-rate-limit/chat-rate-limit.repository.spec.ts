@@ -27,6 +27,19 @@ const PLATFORM = 'messenger';
 
 const updateResult = <T>(rows: T[]): [T[], number] => [rows, rows.length];
 
+/** Every normalized statement the fake driver executed, in order. */
+let recordedSql: string[] = [];
+
+/**
+ * Owner-aware key: a learner row and an anonymous row for the same channel and
+ * date are distinct rows (#1177).
+ */
+const usageKey = (
+  externalUserId: string,
+  usageDate: string,
+  userId?: number | null,
+) => `${externalUserId}:${usageDate}:${userId ?? 'anonymous'}`;
+
 describe('ChatRateLimitRepository', () => {
   let repository: ChatRateLimitRepository;
   let dailyUsageStore: Map<string, DailyUsageRow>;
@@ -34,22 +47,23 @@ describe('ChatRateLimitRepository', () => {
   let hooks: jest.Mocked<ChatRateLimitRepositoryHooks>;
   let serializeTransactions: boolean;
 
-  const usageKey = (externalUserId: string, usageDate: string) =>
-    `${externalUserId}:${usageDate}`;
+  const seedUsage = (row: DailyUsageRow): void => {
+    dailyUsageStore.set(
+      usageKey(row.externalUserId, row.usageDate, row.userId),
+      row,
+    );
+  };
 
-  const learnerUsageQuery = (input: {
-    externalUserId: string;
-    platform: string;
-    usageDate: string;
-    userId: number;
-  }) => ({
+  const readUsage = (
+    externalUserId: string,
+    usageDate: string,
+    userId?: number | null,
+  ): DailyUsageRow | undefined =>
+    dailyUsageStore.get(usageKey(externalUserId, usageDate, userId));
+
+  const learnerUsageQuery = (input: { usageDate: string; userId: number }) => ({
     sql: 'SELECT COALESCE(SUM(free_form_count), 0)::int AS used',
-    params: [
-      input.usageDate,
-      input.userId,
-      input.platform,
-      input.externalUserId,
-    ],
+    params: [input.usageDate, input.userId],
   });
 
   const createManager = (): EntityManager => {
@@ -77,6 +91,7 @@ describe('ChatRateLimitRepository', () => {
     const manager = {
       query: jest.fn((sql: string, params: unknown[]) => {
         const normalized = sql.replace(/\s+/g, ' ').trim();
+        recordedSql.push(normalized);
 
         if (normalized.startsWith('SELECT pg_advisory_xact_lock')) {
           return [];
@@ -85,14 +100,10 @@ describe('ChatRateLimitRepository', () => {
         if (normalized.includes('COALESCE(SUM(')) {
           const usageDate = params[0] as string;
           const userId = params[1] as number;
-          const scopedExternalUserId = params[3] as string | undefined;
+          // Learner bucket only — anonymous rows are never adopted (#1177).
           const used = [...dailyUsageStore.values()]
             .filter(
-              (row) =>
-                row.usageDate === usageDate &&
-                (row.userId === userId ||
-                  (row.userId === null &&
-                    row.externalUserId === scopedExternalUserId)),
+              (row) => row.usageDate === usageDate && row.userId === userId,
             )
             .reduce((sum, row) => sum + row.freeFormCount, 0);
           return [{ used: String(used) }];
@@ -107,12 +118,11 @@ describe('ChatRateLimitRepository', () => {
           const userId = params[2] as number | null;
           const usageDate = params[3] as string;
           const dailyLimit = params[4] as number | undefined;
-          const key = usageKey(externalUserId, usageDate);
+          const targetsAnonymousRow = normalized.includes(
+            'WHERE user_id IS NULL',
+          );
+          const key = usageKey(externalUserId, usageDate, userId);
           const existing = dailyUsageStore.get(key);
-          const hasHardCap =
-            typeof dailyLimit === 'number' &&
-            normalized.includes('free_form_count <');
-          const isAnonymous = normalized.includes('user_id = NULL');
 
           if (!existing) {
             dailyUsageStore.set(key, {
@@ -124,29 +134,17 @@ describe('ChatRateLimitRepository', () => {
             return [{ free_form_count: 1 }];
           }
 
+          // The anonymous path keeps its hard cap inside the upsert; the linked
+          // path relies on the learner/date lock taken before the write.
           if (
-            hasHardCap &&
-            existing.freeFormCount >= dailyLimit &&
-            (!isAnonymous || existing.userId === null)
+            targetsAnonymousRow &&
+            typeof dailyLimit === 'number' &&
+            existing.freeFormCount >= dailyLimit
           ) {
             return [];
           }
 
-          if (normalized.includes('user_id = NULL')) {
-            existing.freeFormCount =
-              existing.userId === null ? existing.freeFormCount + 1 : 1;
-            existing.userId = null;
-          } else if (
-            normalized.includes('CASE') &&
-            existing.userId !== null &&
-            existing.userId !== userId
-          ) {
-            existing.freeFormCount = 1;
-            existing.userId = userId;
-          } else {
-            existing.freeFormCount += 1;
-            existing.userId = userId ?? existing.userId;
-          }
+          existing.freeFormCount += 1;
           return [{ free_form_count: existing.freeFormCount }];
         }
 
@@ -161,13 +159,15 @@ describe('ChatRateLimitRepository', () => {
             string,
             number | undefined,
           ];
+          const targetsAnonymousRow = normalized.includes('user_id IS NULL');
           const existing = dailyUsageStore.get(
-            usageKey(externalUserId, usageDate),
+            usageKey(
+              externalUserId,
+              usageDate,
+              targetsAnonymousRow ? null : ownerUserId,
+            ),
           );
-          if (
-            !existing ||
-            (ownerUserId !== undefined && existing.userId !== ownerUserId)
-          ) {
+          if (!existing) {
             return updateResult([]);
           }
 
@@ -180,23 +180,31 @@ describe('ChatRateLimitRepository', () => {
             'UPDATE chat_daily_usage SET free_form_count = GREATEST(0, free_form_count - v.delta)',
           )
         ) {
+          const anonymousBatch = normalized.includes(
+            'chat_daily_usage.user_id IS NULL',
+          );
+          const stride = anonymousBatch ? 4 : 5;
           let updatedRows = 0;
-          for (let index = 0; index < params.length; index += 4) {
+
+          for (let index = 0; index < params.length; index += stride) {
             const usageDate = params[index + 1] as string;
-            const externalUserId = params[index + 2] as string;
-            const delta = params[index + 3] as number;
+            const userId = anonymousBatch
+              ? null
+              : (params[index + 2] as number);
+            const externalUserId = params[index + (anonymousBatch ? 2 : 3)] as
+              | string
+              | undefined;
+            const delta = params[index + (anonymousBatch ? 3 : 4)] as number;
 
-            for (const row of dailyUsageStore.values()) {
-              if (
-                row.usageDate !== usageDate ||
-                row.externalUserId !== externalUserId
-              ) {
-                continue;
-              }
-
-              row.freeFormCount = Math.max(row.freeFormCount - delta, 0);
-              updatedRows += 1;
+            const row = dailyUsageStore.get(
+              usageKey(externalUserId ?? '', usageDate, userId),
+            );
+            if (!row) {
+              continue;
             }
+
+            row.freeFormCount = Math.max(row.freeFormCount - delta, 0);
+            updatedRows += 1;
           }
 
           return [[], updatedRows] as [unknown[], number];
@@ -323,7 +331,16 @@ describe('ChatRateLimitRepository', () => {
               return updateResult([]);
             }
             row.status = 'refunded';
-            return updateResult([{ idempotency_key: idempotencyKey }]);
+            // The real statement returns the charge-owner snapshot, which the
+            // repository uses to pick the bucket to decrement.
+            return updateResult([
+              {
+                idempotency_key: idempotencyKey,
+                external_user_id: row.externalUserId,
+                usage_date: row.usageDate,
+                user_id: row.userId,
+              },
+            ]);
           }
 
           if (normalized.includes("SET status = 'completed'")) {
@@ -487,6 +504,7 @@ describe('ChatRateLimitRepository', () => {
     dailyUsageStore = new Map();
     idempotencyStore = new Map();
     serializeTransactions = true;
+    recordedSql = [];
 
     const manager = createManager();
     const dailyUsageRepo = {
@@ -498,11 +516,16 @@ describe('ChatRateLimitRepository', () => {
             platform: string;
             externalUserId: string;
             usageDate: string;
+            userId?: { _type?: string };
           };
         }) => {
-          const row = dailyUsageStore.get(
-            usageKey(where.externalUserId, where.usageDate),
-          );
+          if (where.userId?._type !== 'isNull') {
+            throw new Error(
+              'Unexpected findOne filter in test: expected userId IS NULL',
+            );
+          }
+
+          const row = readUsage(where.externalUserId, where.usageDate, null);
           if (!row) {
             return Promise.resolve(null);
           }
@@ -540,13 +563,13 @@ describe('ChatRateLimitRepository', () => {
   });
 
   it("aggregates current-day usage across a learner's linked channels", async () => {
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: 143,
       usageDate: '2026-06-15',
       freeFormCount: 2,
     });
-    dailyUsageStore.set('ext-2:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-2',
       userId: 143,
       usageDate: '2026-06-15',
@@ -617,7 +640,7 @@ describe('ChatRateLimitRepository', () => {
     expect(outcome).toEqual({ status: 'reserved', freeFormCount: 1 });
     expect(idempotencyStore.get('mid-tx')?.status).toBe('reserved');
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(1);
     expect(hooks.onReserved).toHaveBeenCalledWith(
       expect.anything(),
@@ -630,7 +653,7 @@ describe('ChatRateLimitRepository', () => {
     );
   });
 
-  it('starts a fresh anonymous bucket instead of inheriting a learner row', async () => {
+  it('starts a separate anonymous bucket instead of rewriting a learner row', async () => {
     await repository.reserveFreeFormSlotInTransaction(
       reserveInput({ idempotencyKey: 'mid-linked' }),
     );
@@ -640,14 +663,19 @@ describe('ChatRateLimitRepository', () => {
     );
 
     expect(outcome).toEqual({ status: 'reserved', freeFormCount: 1 });
-    expect(dailyUsageStore.get('ext-1:2026-06-15')).toMatchObject({
+    expect(readUsage('ext-1', '2026-06-15', null)).toMatchObject({
       userId: null,
+      freeFormCount: 1,
+    });
+    // The learner row keeps its owner and its count.
+    expect(readUsage('ext-1', '2026-06-15', 143)).toMatchObject({
+      userId: 143,
       freeFormCount: 1,
     });
   });
 
-  it('starts a fresh anonymous bucket even when the former learner row hit its cap', async () => {
-    dailyUsageStore.set('ext-1:2026-06-15', {
+  it('starts a fresh anonymous bucket even when the learner row hit its cap', async () => {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: 143,
       usageDate: '2026-06-15',
@@ -662,10 +690,259 @@ describe('ChatRateLimitRepository', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
-    expect(dailyUsageStore.get('ext-1:2026-06-15')).toMatchObject({
+    expect(readUsage('ext-1', '2026-06-15', null)).toMatchObject({
       userId: null,
       freeFormCount: 1,
     });
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(15);
+  });
+
+  it('denies the next linked turn after unlink -> anonymous -> relink churn', async () => {
+    seedUsage({
+      externalUserId: 'ext-1',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 15,
+    });
+
+    // Unlinked: the anonymous turn charges its own bucket.
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-churn-anon', userId: undefined }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+
+    // Relinked: the learner bucket was never lowered, so the turn stays denied.
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-churn-relink' }),
+      ),
+    ).resolves.toEqual({ status: 'daily_limit_exceeded' });
+
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
+    ).resolves.toBe(15);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(1);
+  });
+
+  it('preserves both buckets across repeated churn in one usage date', async () => {
+    seedUsage({
+      externalUserId: 'ext-1',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 5,
+    });
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await expect(
+        repository.reserveFreeFormSlotInTransaction(
+          reserveInput({
+            idempotencyKey: `mid-churn-anon-${cycle}`,
+            userId: undefined,
+          }),
+        ),
+      ).resolves.toEqual({ status: 'reserved', freeFormCount: cycle + 1 });
+
+      await expect(
+        repository.reserveFreeFormSlotInTransaction(
+          reserveInput({ idempotencyKey: `mid-churn-linked-${cycle}` }),
+        ),
+      ).resolves.toEqual({ status: 'reserved', freeFormCount: 6 + cycle });
+    }
+
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(8);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(3);
+  });
+
+  it('does not adopt anonymous usage into the learner bucket when the channel links', async () => {
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-anon-first', userId: undefined }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-linked-second' }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
+    ).resolves.toBe(1);
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+    ).resolves.toBe(1);
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(1);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(1);
+  });
+
+  it('reuses the learner bucket when the same learner relinks', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-relink-first' }),
+    );
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-relink-second' }),
+    );
+
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(2);
+    expect(dailyUsageStore.size).toBe(1);
+  });
+
+  it('keeps usage with the learner that was charged when the channel relinks to another learner', async () => {
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-user-a' }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-user-b', userId: 299 }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(1);
+    expect(readUsage('ext-1', '2026-06-15', 299)?.freeFormCount).toBe(1);
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
+    ).resolves.toBe(1);
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 299),
+    ).resolves.toBe(1);
+  });
+
+  it('enforces one learner cap across platforms under concurrency', async () => {
+    serializeTransactions = false;
+    seedUsage({
+      externalUserId: 'ext-discord',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 14,
+    });
+
+    const outcomes = await Promise.all([
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-cross-messenger', dailyLimit: 15 }),
+      ),
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({
+          idempotencyKey: 'mid-cross-discord',
+          externalUserId: 'ext-discord',
+          dailyLimit: 15,
+        }),
+      ),
+    ]);
+
+    expect(outcomes.filter((item) => item.status === 'reserved')).toHaveLength(
+      1,
+    );
+    expect(
+      outcomes.filter((item) => item.status === 'daily_limit_exceeded'),
+    ).toHaveLength(1);
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
+    ).resolves.toBe(15);
+  });
+
+  it('refunds the bucket that was charged after the channel links', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-anon-refund', userId: undefined }),
+    );
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-linked-after-refund' }),
+    );
+
+    await expect(
+      repository.refundReservedSlot({
+        idempotencyKey: 'mid-anon-refund',
+        externalUserId: 'ext-1',
+        usageDate: '2026-06-15',
+      }),
+    ).resolves.toBe(true);
+
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(0);
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(1);
+  });
+
+  it('recovers a stuck reservation in its original bucket after the channel links', async () => {
+    idempotencyStore.set('mid-anon-stuck', {
+      idempotencyKey: 'mid-anon-stuck',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'reserved',
+      reservedAt: new Date('2026-06-15T07:00:00+07:00'),
+    });
+    seedUsage({
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+    seedUsage({
+      externalUserId: 'ext-1',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+
+    await expect(
+      repository.recoverAllStuckReserved(new Date('2026-06-15T08:00:00+07:00')),
+    ).resolves.toEqual(['mid-anon-stuck']);
+
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(0);
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(1);
+  });
+
+  it('keeps burst protection channel-scoped across a link transition', async () => {
+    const burstSince = new Date('2026-06-14T08:00:00+07:00');
+
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({
+          idempotencyKey: 'mid-burst-anon',
+          userId: undefined,
+          burstLimit: 1,
+          burstSince,
+        }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({
+          idempotencyKey: 'mid-burst-linked',
+          burstLimit: 1,
+          burstSince,
+        }),
+      ),
+    ).resolves.toEqual({ status: 'burst_limit_exceeded', count: 2 });
+  });
+
+  // Schema-contract guard: the in-memory driver below cannot observe a missing
+  // Postgres conflict target, so the two statements must keep naming the
+  // owner-aware partial indexes from the #1177 migration. Every other guarantee
+  // in this file is asserted through observable bucket outcomes.
+  it('names the owner-aware partial indexes as its conflict targets', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-sql-linked' }),
+    );
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-sql-anon', userId: undefined }),
+    );
+
+    const inserts = recordedSql.filter((sql) =>
+      sql.startsWith('INSERT INTO chat_daily_usage'),
+    );
+
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0]).toContain(
+      'ON CONFLICT (platform, external_user_id, usage_date, user_id) WHERE user_id IS NOT NULL',
+    );
+    expect(inserts[1]).toContain(
+      'ON CONFLICT (platform, external_user_id, usage_date) WHERE user_id IS NULL',
+    );
   });
 
   it('returns idempotency conflict without incrementing usage', async () => {
@@ -679,7 +956,7 @@ describe('ChatRateLimitRepository', () => {
 
     expect(second).toEqual({ status: 'idempotency_conflict' });
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(1);
   });
 
@@ -697,16 +974,45 @@ describe('ChatRateLimitRepository', () => {
     expect(refunded).toBe(true);
     expect(idempotencyStore.get('mid-refund')?.status).toBe('refunded');
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(0);
     expect(hooks.onReleased).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         externalUserId: 'ext-1',
+        userId: 143,
         idempotencyKey: 'mid-refund',
         reason: 'send_failed',
         usedAfter: 0,
       }),
+    );
+  });
+
+  it('refunds a linked reservation into the learner bucket after the channel unlinks', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-linked-refund' }),
+    );
+    // Unlinked afterwards: the anonymous turn opens its own bucket.
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({
+        idempotencyKey: 'mid-anon-after-unlink',
+        userId: undefined,
+      }),
+    );
+
+    await expect(
+      repository.refundReservedSlot({
+        idempotencyKey: 'mid-linked-refund',
+        externalUserId: 'ext-1',
+        usageDate: '2026-06-15',
+      }),
+    ).resolves.toBe(true);
+
+    expect(readUsage('ext-1', '2026-06-15', 143)?.freeFormCount).toBe(0);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(1);
+    expect(hooks.onReleased).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 143, usedAfter: 0 }),
     );
   });
 
@@ -720,7 +1026,7 @@ describe('ChatRateLimitRepository', () => {
     expect(completed).toBe(true);
     expect(idempotencyStore.get('mid-complete')?.status).toBe('completed');
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(1);
   });
 
@@ -800,7 +1106,7 @@ describe('ChatRateLimitRepository', () => {
       status: 'reserved',
       reservedAt: staleAt,
     });
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: null,
       usageDate: '2026-06-15',
@@ -812,7 +1118,7 @@ describe('ChatRateLimitRepository', () => {
     ).resolves.toEqual(['mid-stuck-bulk']);
 
     expect(idempotencyStore.get('mid-stuck-bulk')?.status).toBe('refunded');
-    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(0);
   });
 
   it('refunds exactly one logical user counter when external users share a null user_id', async () => {
@@ -825,13 +1131,13 @@ describe('ChatRateLimitRepository', () => {
       status: 'reserved',
       reservedAt: staleAt,
     });
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: null,
       usageDate: '2026-06-15',
       freeFormCount: 1,
     });
-    dailyUsageStore.set('ext-2:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-2',
       userId: null,
       usageDate: '2026-06-15',
@@ -842,8 +1148,8 @@ describe('ChatRateLimitRepository', () => {
       repository.recoverAllStuckReserved(new Date('2026-06-15T08:00:00+07:00')),
     ).resolves.toEqual(['mid-stuck-external']);
 
-    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
-    expect(dailyUsageStore.get('ext-2:2026-06-15')?.freeFormCount).toBe(1);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(0);
+    expect(readUsage('ext-2', '2026-06-15', null)?.freeFormCount).toBe(1);
   });
 
   it('is idempotent when recovery is rerun (no double decrement)', async () => {
@@ -856,7 +1162,7 @@ describe('ChatRateLimitRepository', () => {
       status: 'reserved',
       reservedAt: staleAt,
     });
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: null,
       usageDate: '2026-06-15',
@@ -874,7 +1180,7 @@ describe('ChatRateLimitRepository', () => {
 
     expect(first).toEqual(['mid-rerun']);
     expect(second).toEqual([]);
-    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(0);
   });
 
   it('reopens stale reserved idempotency and refunds usage', async () => {
@@ -887,7 +1193,7 @@ describe('ChatRateLimitRepository', () => {
       status: 'reserved',
       reservedAt: staleAt,
     });
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: 143,
       usageDate: '2026-06-15',
@@ -902,7 +1208,7 @@ describe('ChatRateLimitRepository', () => {
     expect(outcome).toBe('reopened');
     expect(idempotencyStore.has('mid-stuck')).toBe(false);
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(0);
   });
 
@@ -955,7 +1261,7 @@ describe('ChatRateLimitRepository', () => {
       status: 'delivered',
       reservedAt: new Date('2026-06-15T07:00:00+07:00'),
     });
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: null,
       usageDate: '2026-06-15',
@@ -969,7 +1275,7 @@ describe('ChatRateLimitRepository', () => {
     expect(idempotencyStore.get('mid-stale-delivered')?.status).toBe(
       'completed',
     );
-    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(1);
+    expect(readUsage('ext-1', '2026-06-15', null)?.freeFormCount).toBe(1);
   });
 
   it('reopens refunded idempotency for retry', async () => {
@@ -1001,7 +1307,7 @@ describe('ChatRateLimitRepository', () => {
       status: 'reserved',
       reservedAt: staleAt,
     });
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
       userId: null,
       usageDate: '2026-06-15',
@@ -1021,9 +1327,9 @@ describe('ChatRateLimitRepository', () => {
   });
 
   it('denies reserve at daily hard cap without leaving idempotency row', async () => {
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
-      userId: null,
+      userId: 143,
       usageDate: '2026-06-15',
       freeFormCount: 15,
     });
@@ -1035,7 +1341,7 @@ describe('ChatRateLimitRepository', () => {
     expect(outcome).toEqual({ status: 'daily_limit_exceeded' });
     expect(idempotencyStore.has('mid-cap')).toBe(false);
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(15);
   });
 
@@ -1113,14 +1419,14 @@ describe('ChatRateLimitRepository', () => {
     ).toHaveLength(1);
     expect(idempotencyStore.size).toBe(1);
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(1);
   });
 
   it('allows only one concurrent reserve when at daily limit minus one', async () => {
-    dailyUsageStore.set('ext-1:2026-06-15', {
+    seedUsage({
       externalUserId: 'ext-1',
-      userId: null,
+      userId: 143,
       usageDate: '2026-06-15',
       freeFormCount: 14,
     });
@@ -1142,7 +1448,7 @@ describe('ChatRateLimitRepository', () => {
       outcomes.filter((item) => item.status === 'daily_limit_exceeded'),
     ).toHaveLength(1);
     await expect(
-      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
     ).resolves.toBe(15);
   });
 

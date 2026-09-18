@@ -103,7 +103,8 @@ Meta docs: [Messenger Platform rate limits](https://developers.facebook.com/docs
 
 ## 2. Quota Scope — Separate Buckets
 
-Not merging all interactions into one counter. Proposal:
+Not merging all interactions into one counter. FREE_FORM turns use one of two
+identity-owned daily buckets:
 
 | Bucket             | Example                                   | Counts toward chat quota?                   |
 | ------------------ | ----------------------------------------- | ------------------------------------------- |
@@ -115,6 +116,13 @@ Not merging all interactions into one counter. Proposal:
 **Proposed time window:** calendar day in `Asia/Ho_Chi_Minh` (matching `STUDY_REMINDER_TIMEZONE`), reset at midnight — easy to explain to students.
 
 **Burst (fast anti-spam):** max N messages/min (e.g. `3`) — checked before daily quota.
+
+For a linked learner, the daily bucket is `(userId, usage_date)` across all
+platforms. Without a link, it is `(platform, external_user_id, usage_date)`.
+The buckets never merge or reset when a channel is linked, unlinked, or
+relinked; a refund uses the bucket owner captured at reserve time. Burst stays
+per channel and is independent of the daily bucket. See
+[ADR-0027](../../../docs/adr/0027-chat-quota-identity-buckets.md).
 
 **Suggested env:**
 
@@ -190,20 +198,28 @@ sequenceDiagram
   end
 ```
 
-#### Atomic UPSERT (race protection)
+#### Atomic owner-aware reserve (race protection)
 
-```sql
-INSERT INTO chat_daily_usage (psid, user_id, usage_date, free_form_count)
-VALUES ($1, $2, $3, 1)
-ON CONFLICT (psid, usage_date)
-DO UPDATE SET
-  free_form_count = chat_daily_usage.free_form_count + 1,
-  user_id = COALESCE(EXCLUDED.user_id, chat_daily_usage.user_id),
-  updated_at = now()
-RETURNING free_form_count;
+```text
+linked reserve:    increment/create the row owned by userId
+anonymous reserve: increment/create the NULL-owner row for the channel/date
+
+Both paths are one atomic write under the applicable quota lock. Neither path
+rewrites the other owner; see ADR-0027 for the owner-aware uniqueness and the
+release cutover requirement.
 ```
 
-**Note:** UPSERT ensures the **counter is correct** when multiple requests write concurrently. **H3 ✓** adds `WHERE free_form_count < limit` in the same transaction as idempotency — daily cap doesn't exceed on multi-instance. Postgres is the final authority for the burst check too: Redis/memory counters are only advisory prechecks, so an advisory reject still enters the transaction and an advisory increment is rolled back when Postgres rejects. Redis keeps a fixed epoch-minute bucket while Postgres uses the documented sliding 60-second policy; the boundary difference is an audit approximation, not a policy rewrite. **H7 ✓** persists debounce + history via Redis when `CHAT_QUEUE_SHARED=true`. See [ADR-0007](../../../docs/adr/0007-postgres-redis-consistency.md).
+**Note:** The reserve write must keep learner and anonymous owners in separate
+rows/buckets while remaining atomic under the learner/date lock. **H3 ✓** adds
+`WHERE free_form_count < limit` in the same transaction as idempotency — daily
+cap doesn't exceed on multi-instance. Postgres is the final authority for the
+burst check too: Redis/memory counters are only advisory prechecks, so an
+advisory reject still enters the transaction and an advisory increment is
+rolled back when Postgres rejects. Redis keeps a fixed epoch-minute bucket
+while Postgres uses the documented sliding 60-second policy; the boundary
+difference is an audit approximation, not a policy rewrite. **H7 ✓** persists
+debounce + history via Redis when `CHAT_QUEUE_SHARED=true`. See
+[ADR-0007](../../../docs/adr/0007-postgres-redis-consistency.md).
 
 #### Meta Webhook Idempotency
 
@@ -644,19 +660,29 @@ expose stable device IDs for this use case.
 
 WISPACE `userId` is the canonical learner identity; PSID, Discord ID, and Zalo
 ID are channel identities. For a linked learner, the daily FREE_FORM LLM quota
-is the sum of all current-day `chat_daily_usage` rows owned by that `user_id`
-plus legacy anonymous rows whose active mapping now points to that learner.
-The reserve transaction takes a learner/date advisory lock, checks that
-aggregate, and writes the current channel row with `user_id`; concurrent
-Messenger/Discord/Zalo reservations therefore cannot overshoot the shared cap.
-An unlinked channel remains an independent `(platform, external_user_id,
-usage_date)` bucket. Burst protection stays per channel, while the outbound
-rate-limit backstop uses the learner bucket when `userId` is known.
+is the sum of all current-day `chat_daily_usage` rows owned by that `user_id`.
+Anonymous rows are never included merely because an active mapping points at
+the learner. The reserve transaction takes a learner/date advisory lock,
+checks that aggregate, and writes a linked row without rewriting an anonymous
+row; concurrent Messenger/Discord/Zalo reservations therefore cannot overshoot
+the shared cap. An unlinked channel remains an independent
+`(platform, external_user_id, usage_date)` bucket. Burst protection stays per
+channel, while the outbound rate-limit backstop uses the learner bucket when
+`userId` is known.
 
-The migration adds only the learner/date read index; there is no historical
-backfill. Current-day legacy rows are hydrated by the aggregate query. On a
-relink to a different WISPACE user, the channel row starts a new learner-owned
-counter and no quota state is transferred. See [issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637).
+The owner-aware schema shipped in migration
+`1789093800000-OwnerAwareChatDailyUsageKeys`: it drops the legacy
+`(platform, external_user_id, usage_date)` unique key and adds owner-aware
+partial keys, so a learner row and an anonymous row coexist. The legacy key
+cannot be retained alongside coexistence, so the migration and the owner-aware
+bots must reach every platform in the same release — a pre-#1177 image fails
+its reserve on the new schema. Ambiguous current-day legacy rows are copied to
+both logical buckets to avoid granting quota; runtime never adopts anonymous
+rows. On a relink to a different WISPACE user, no quota state is transferred.
+See
+[issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637), [issue
+#1177](https://github.com/lengocanh2005it/wispace-bot/issues/1177), and
+[ADR-0027](../../../docs/adr/0027-chat-quota-identity-buckets.md).
 
 ### 5.4. Internal API Service (Suggestion)
 

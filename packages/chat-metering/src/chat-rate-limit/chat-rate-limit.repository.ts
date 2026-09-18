@@ -1,4 +1,5 @@
 import type { EntityManager, Repository } from 'typeorm';
+import { IsNull } from 'typeorm';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { ChatDailyUsageEntity } from '../entities/chat-daily-usage.entity';
 import type { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';
@@ -79,13 +80,18 @@ export class ChatRateLimitRepository {
       return this.getLearnerUsageCount(this.dailyUsageRepo.manager, {
         usageDate,
         userId,
-        platform: this.platform,
-        externalUserId,
       });
     }
 
+    // Anonymous bucket: the channel row with no learner owner. A linked row for
+    // the same channel/date may coexist and must not be read here.
     const row = await this.dailyUsageRepo.findOne({
-      where: { platform: this.platform, externalUserId, usageDate },
+      where: {
+        platform: this.platform,
+        externalUserId,
+        usageDate,
+        userId: IsNull(),
+      },
       select: { freeFormCount: true },
     });
 
@@ -186,14 +192,13 @@ export class ChatRateLimitRepository {
 
         let rows: Array<{ free_form_count: number }>;
         if (input.userId !== undefined) {
-          // The user lock makes the aggregate check and the channel-row
-          // increment one learner-scoped critical section. Legacy anonymous
-          // usage on this channel is included once, then adopted by the link.
+          // The user lock makes the aggregate check and the owner-scoped
+          // increment one learner-scoped critical section. The write only ever
+          // touches the learner's own row; an anonymous row for the same
+          // channel/date is neither read nor rewritten (#1177).
           const usedBefore = await this.getLearnerUsageCount(manager, {
             usageDate: input.usageDate,
             userId: input.userId,
-            platform: this.platform,
-            externalUserId: input.externalUserId,
           });
           if (usedBefore >= input.dailyLimit) {
             throw new DailyLimitExceededError();
@@ -203,15 +208,10 @@ export class ChatRateLimitRepository {
             `
               INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
               VALUES ($1, $2, $3, $4::date, 1)
-              ON CONFLICT (platform, external_user_id, usage_date)
+              ON CONFLICT (platform, external_user_id, usage_date, user_id)
+                WHERE user_id IS NOT NULL
               DO UPDATE SET
-                free_form_count = CASE
-                  WHEN chat_daily_usage.user_id IS NOT NULL
-                    AND chat_daily_usage.user_id IS DISTINCT FROM EXCLUDED.user_id
-                  THEN 1
-                  ELSE chat_daily_usage.free_form_count + 1
-                END,
-                user_id = EXCLUDED.user_id,
+                free_form_count = chat_daily_usage.free_form_count + 1,
                 updated_at = now()
               RETURNING free_form_count
             `,
@@ -228,18 +228,11 @@ export class ChatRateLimitRepository {
               INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
               VALUES ($1, $2, $3, $4::date, 1)
               ON CONFLICT (platform, external_user_id, usage_date)
+                WHERE user_id IS NULL
               DO UPDATE SET
-                -- An unlinked channel starts a fresh anonymous bucket instead
-                -- of inheriting a prior learner-owned counter after unlink.
-                free_form_count = CASE
-                  WHEN chat_daily_usage.user_id IS NULL
-                  THEN chat_daily_usage.free_form_count + 1
-                  ELSE 1
-                END,
-                user_id = NULL,
+                free_form_count = chat_daily_usage.free_form_count + 1,
                 updated_at = now()
-              WHERE chat_daily_usage.user_id IS NOT NULL
-                OR chat_daily_usage.free_form_count < $5
+              WHERE chat_daily_usage.free_form_count < $5
               RETURNING free_form_count
             `,
             [
@@ -261,8 +254,6 @@ export class ChatRateLimitRepository {
           freeFormCount = await this.getLearnerUsageCount(manager, {
             usageDate: input.usageDate,
             userId: input.userId,
-            platform: this.platform,
-            externalUserId: input.externalUserId,
           });
         }
         await this.hooks.onReserved?.(manager, {
@@ -332,6 +323,9 @@ export class ChatRateLimitRepository {
       const externalUserId =
         refundedRows[0].external_user_id ?? params.externalUserId;
       const usageDate = refundedRows[0].usage_date ?? params.usageDate;
+      // Release exactly the bucket that was charged at reserve time. A null
+      // charge owner must target the anonymous row explicitly: a learner row
+      // for the same channel/date may coexist and must not be decremented.
       const usageRows = extractQueryRows<{ free_form_count: number }>(
         await manager.query(
           ownerUserId !== undefined
@@ -349,7 +343,8 @@ export class ChatRateLimitRepository {
               SET
                 free_form_count = GREATEST(free_form_count - 1, 0),
                 updated_at = now()
-              WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
+              WHERE platform = $1 AND external_user_id = $2
+                AND usage_date = $3::date AND user_id IS NULL
               RETURNING free_form_count
             `,
           ownerUserId !== undefined
@@ -363,8 +358,6 @@ export class ChatRateLimitRepository {
         usedAfter = await this.getLearnerUsageCount(manager, {
           usageDate,
           userId: ownerUserId,
-          platform: this.platform,
-          externalUserId,
         });
       }
       await this.hooks.onReleased?.(manager, {
@@ -582,7 +575,8 @@ export class ChatRateLimitRepository {
                 SET
                   free_form_count = GREATEST(free_form_count - 1, 0),
                   updated_at = now()
-                WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
+                WHERE platform = $1 AND external_user_id = $2
+                  AND usage_date = $3::date AND user_id IS NULL
                 RETURNING free_form_count
               `,
             ownerUserId !== undefined
@@ -601,8 +595,6 @@ export class ChatRateLimitRepository {
           usedAfter = await this.getLearnerUsageCount(manager, {
             usageDate: row.usage_date,
             userId: ownerUserId,
-            platform: this.platform,
-            externalUserId: row.external_user_id,
           });
         }
         await this.hooks.onReleased?.(manager, {
@@ -745,6 +737,7 @@ export class ChatRateLimitRepository {
               WHERE chat_daily_usage.platform = v.platform
                 AND chat_daily_usage.usage_date = v.usage_date
                 AND chat_daily_usage.external_user_id = v.external_user_id
+                AND chat_daily_usage.user_id IS NULL
             `,
             params,
           );

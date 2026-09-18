@@ -42,7 +42,7 @@ linking, return `rate_limited` without throwing, refund chat reservations, and
 never retry or send a fallback for that outcome. See
 `docs/outbound-rate-limit.md` for the first-triage procedure.
 
-## Cross-platform learner consistency (#637)
+## Cross-platform learner consistency (#637, #1177)
 
 - WISPACE numeric `userId` is the canonical learner identity. A linked learner
   shares the daily FREE_FORM quota across Messenger, Discord, and Zalo; burst
@@ -51,8 +51,16 @@ never retry or send a fallback for that outcome. See
   with a missing `userId` is broken state and must fail closed before quota/LLM.
 - `chat_quota_events.aggregate_id` hashes `userId` when linked and the external
   channel id when anonymous; raw identifiers never enter telemetry.
-- Current-day legacy rows are adopted only while the channel is actively linked;
-  relinking to another learner does not transfer the old learner's quota.
+- Learner and anonymous buckets are stable (ADR-0027): a learner row and an
+  anonymous row for the same channel/date coexist, `chat_daily_usage.user_id` is
+  never rewritten, anonymous usage is never adopted by a learner, and relinking
+  to another learner does not transfer the old learner's quota. Refund, stuck
+  recovery, audit, rebuild and erasure all target the charge owner captured in
+  `chat_idempotency` at reserve time, not the current mapping.
+- The owner-aware schema replaced the legacy
+  `(platform, external_user_id, usage_date)` unique key, so a pre-#1177 image
+  cannot serve traffic on it: the migration and every bot must cut over in the
+  same release.
 
 ## Config (`.env`)
 

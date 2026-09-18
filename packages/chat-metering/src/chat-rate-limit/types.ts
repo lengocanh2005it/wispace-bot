@@ -32,11 +32,11 @@ export interface ChatRateLimitSettings {
 /**
  * Persistence-owned SQL scope for aggregating one learner's daily usage.
  * The framework-agnostic quota core receives this query from the app/database
- * boundary so it never knows platform mapping table names.
+ * boundary so the learner bucket stays owner-scoped: rows owned by the WISPACE
+ * `userId` only, never anonymous rows reached through an active mapping
+ * (ADR-0027 / #1177).
  */
 export interface LearnerUsageQueryInput {
-  externalUserId: string;
-  platform: string;
   usageDate: string;
   userId: number;
 }

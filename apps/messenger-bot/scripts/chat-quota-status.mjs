@@ -150,7 +150,7 @@ try {
       ),
       pool.query(
         `
-          SELECT COUNT(*)::int AS count
+          SELECT COUNT(DISTINCT (platform, external_user_id))::int AS count
           FROM chat_daily_usage
           WHERE usage_date = $1::date
             AND free_form_count >= $2::int
@@ -179,7 +179,7 @@ try {
       pool.query(
         `
           SELECT
-            COUNT(*)::int AS users_with_usage,
+            COUNT(DISTINCT (platform, external_user_id))::int AS users_with_usage,
             COALESCE(SUM(free_form_count), 0)::int AS total_messages
           FROM chat_daily_usage
           WHERE usage_date = $1::date
@@ -231,19 +231,6 @@ try {
   } else {
     const dailyUsageResult = await pool.query(
       `
-      WITH active_links AS (
-        SELECT 'messenger' AS platform, external_user_id, user_id
-        FROM user_platform_mappings
-        WHERE status = 'ACTIVE' AND link_state = 'active'
-        UNION ALL
-        SELECT 'discord', external_user_id, user_id
-        FROM discord_account_links
-        WHERE link_state = 'active'
-        UNION ALL
-        SELECT 'zalo', external_user_id, user_id
-        FROM zalo_account_links
-        WHERE link_state = 'active'
-      )
       SELECT
         usage.id,
         usage.external_user_id AS psid,
@@ -257,20 +244,8 @@ try {
       FROM chat_daily_usage usage
       WHERE ($1::varchar IS NULL OR usage.external_user_id = $1)
         AND usage.usage_date = $3::date
-        AND (
-          $2::int IS NULL
-          OR usage.user_id = $2
-          OR (
-            usage.user_id IS NULL
-            AND EXISTS (
-              SELECT 1 FROM active_links link
-              WHERE link.platform = usage.platform
-                AND link.external_user_id = usage.external_user_id
-                AND link.user_id = $2
-            )
-          )
-        )
-      ORDER BY usage.external_user_id ASC
+        AND ($2::int IS NULL OR usage.user_id = $2)
+      ORDER BY usage.external_user_id ASC, usage.user_id ASC NULLS FIRST
     `,
       [args.psid, args.userId, usageDate],
     );

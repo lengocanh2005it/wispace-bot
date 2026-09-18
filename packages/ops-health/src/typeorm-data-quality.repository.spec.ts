@@ -67,7 +67,7 @@ describe('TypeormDataQualityRepository', () => {
       baselineTotalCount: 70,
     });
     expect(observations[0].samples?.[0]).toMatchObject({
-      table: 'chat_daily_usage',
+      table: 'chat_idempotency',
       key: '12345678901234',
       userId: 42,
       externalUserId: 'external-123456789',
@@ -75,6 +75,34 @@ describe('TypeormDataQualityRepository', () => {
     expect(database.withReadOnly).toHaveBeenCalled();
     expect(
       query.mock.calls.every(([sql]) => /^\s*(SELECT|WITH)\b/i.test(sql)),
+    ).toBe(true);
+  });
+
+  it('excludes chat_daily_usage from the null-spike check (#1177)', async () => {
+    const { database, query } = buildDatabase();
+    const repository = new TypeormDataQualityRepository(database);
+
+    await repository.getNullSpikeObservations(input);
+
+    const nullSpikeSql = query.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes('IS NULL'));
+    expect(nullSpikeSql.length).toBeGreaterThan(0);
+    expect(nullSpikeSql.some((sql) => sql.includes('chat_daily_usage'))).toBe(
+      false,
+    );
+  });
+
+  it('still volume-checks chat_daily_usage', async () => {
+    const { database, query } = buildDatabase();
+    const repository = new TypeormDataQualityRepository(database);
+
+    await repository.getVolumeObservations(input);
+
+    expect(
+      query.mock.calls.some(([sql]) =>
+        String(sql).includes('chat_daily_usage'),
+      ),
     ).toBe(true);
   });
 

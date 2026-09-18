@@ -175,8 +175,10 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   private async countUsersAtDailyLimit(): Promise<number> {
     const today = new Date().toISOString().split('T')[0];
     const limit = this.dailyLimit();
+    // A learner row and an anonymous row may coexist for one channel/date
+    // (#1177), so count channels rather than rows.
     const rows = await this.execQuery<CountRow>(
-      `SELECT COUNT(*)::int AS count FROM chat_daily_usage WHERE platform = $1 AND usage_date = $2::date AND free_form_count >= $3`,
+      `SELECT COUNT(DISTINCT (platform, external_user_id))::int AS count FROM chat_daily_usage WHERE platform = $1 AND usage_date = $2::date AND free_form_count >= $3`,
       [this.platform, today, limit],
     );
     return rows[0]?.count ?? 0;

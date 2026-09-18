@@ -109,14 +109,26 @@ const userScopedRules: DataQualityTableRule[] = [
 
 // Mapping rows may be anonymous before account linking; only tables whose
 // null user_id should resolve after ingestion participate in this check.
-export const NULL_SPIKE_RULES = userScopedRules.filter(
+// `chat_daily_usage` is excluded for the same reason: since #1177 an anonymous
+// bucket row is a stable state that a later link never absorbs, so a null
+// user_id there is not an anomaly to resolve.
+const NULL_SPIKE_EXCLUDED_TABLES = new Set([
+  'user_platform_mappings',
+  'chat_daily_usage',
+]);
+
+const VOLUME_SCOPE_TABLES = userScopedRules.filter(
   (rule) => rule.table !== 'user_platform_mappings',
+);
+
+export const NULL_SPIKE_RULES = VOLUME_SCOPE_TABLES.filter(
+  (rule) => !NULL_SPIKE_EXCLUDED_TABLES.has(rule.table),
 );
 
 export const ORPHAN_RULES = userScopedRules;
 
 export const VOLUME_RULES: DataQualityTableRule[] = [
-  ...NULL_SPIKE_RULES,
+  ...VOLUME_SCOPE_TABLES,
   {
     table: 'message_logs',
     keyColumn: 'id',

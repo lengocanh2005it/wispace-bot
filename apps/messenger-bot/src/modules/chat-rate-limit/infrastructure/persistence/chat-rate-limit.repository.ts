@@ -162,9 +162,11 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     usageDate: string,
     dailyLimit: number,
   ): Promise<number> {
+    // Owner-aware rows (#1177): a channel can hold both a learner row and an
+    // anonymous row for the same date, so count distinct channels.
     const row = await this.dailyUsageRepo
       .createQueryBuilder('usage')
-      .select('COUNT(*)::int', 'count')
+      .select('COUNT(DISTINCT usage.external_user_id)::int', 'count')
       .where('usage.usage_date = :usageDate', { usageDate })
       .andWhere('usage.platform = :platform', { platform: PLATFORM })
       .andWhere('usage.free_form_count >= :dailyLimit', { dailyLimit })

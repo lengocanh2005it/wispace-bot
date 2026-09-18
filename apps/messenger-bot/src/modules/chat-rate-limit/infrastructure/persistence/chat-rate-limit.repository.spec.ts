@@ -33,7 +33,10 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
     >
   >;
 
-  const usageKey = (psid: string, usageDate: string) => `${psid}:${usageDate}`;
+  // Owner-aware key: a learner row and an anonymous row for the same channel
+  // and date are distinct rows (#1177).
+  const usageKey = (psid: string, usageDate: string, userId?: number | null) =>
+    `${psid}:${usageDate}:${userId ?? 'anonymous'}`;
 
   const createManager = (): EntityManager => {
     const manager = {
@@ -46,8 +49,9 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
           return [];
         }
 
-        if (normalized.startsWith('WITH active_links(platform,')) {
+        if (normalized.includes('COALESCE(SUM(')) {
           const [usageDate, userId] = params as [string, number];
+          // Learner bucket only — anonymous rows are never adopted (#1177).
           const used = [...dailyUsageStore.values()]
             .filter(
               (row) => row.usageDate === usageDate && row.userId === userId,
@@ -65,11 +69,11 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
           const userId = params[2] as number | null;
           const usageDate = params[3] as string;
           const dailyLimit = params[4] as number | undefined;
-          const key = usageKey(psid, usageDate);
+          const targetsAnonymousRow = normalized.includes(
+            'WHERE user_id IS NULL',
+          );
+          const key = usageKey(psid, usageDate, userId);
           const existing = dailyUsageStore.get(key);
-          const hasHardCap =
-            typeof dailyLimit === 'number' &&
-            normalized.includes('free_form_count <');
 
           if (!existing) {
             dailyUsageStore.set(key, {
@@ -81,12 +85,17 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
             return [{ free_form_count: 1 }];
           }
 
-          if (hasHardCap && existing.freeFormCount >= dailyLimit) {
+          // Only the anonymous upsert carries the hard cap; the linked path is
+          // capped by the learner/date lock taken before the write.
+          if (
+            targetsAnonymousRow &&
+            typeof dailyLimit === 'number' &&
+            existing.freeFormCount >= dailyLimit
+          ) {
             return [];
           }
 
           existing.freeFormCount += 1;
-          existing.userId = userId ?? existing.userId;
           return [{ free_form_count: existing.freeFormCount }];
         }
 
@@ -95,8 +104,19 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
             'UPDATE chat_daily_usage SET free_form_count = GREATEST(free_form_count - 1, 0)',
           )
         ) {
-          const [, psid, usageDate] = params as [string, string, string];
-          const existing = dailyUsageStore.get(usageKey(psid, usageDate));
+          const [, psid, usageDate, ownerUserId] = params as [
+            string,
+            string,
+            string,
+            number | undefined,
+          ];
+          const existing = dailyUsageStore.get(
+            usageKey(
+              psid,
+              usageDate,
+              normalized.includes('user_id IS NULL') ? null : ownerUserId,
+            ),
+          );
           if (!existing) {
             return [];
           }
@@ -169,10 +189,17 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
             platform: string;
             externalUserId: string;
             usageDate: string;
+            userId?: { _type?: string };
           };
         }) => {
+          if (where.userId?._type !== 'isNull') {
+            throw new Error(
+              'Unexpected findOne filter in test: expected userId IS NULL',
+            );
+          }
+
           const row = dailyUsageStore.get(
-            usageKey(where.externalUserId, where.usageDate),
+            usageKey(where.externalUserId, where.usageDate, null),
           );
           if (!row) {
             return Promise.resolve(null);

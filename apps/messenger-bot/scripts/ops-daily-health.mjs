@@ -189,7 +189,7 @@ try {
     ),
     pool.query(
       `
-        SELECT COUNT(*)::int AS count
+        SELECT COUNT(DISTINCT (platform, external_user_id))::int AS count
         FROM chat_daily_usage
         WHERE usage_date = $1::date
           AND free_form_count >= $2::int

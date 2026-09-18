@@ -471,7 +471,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 | `study_reminder_jobs`                                                     | `delete()` by userId                          | `repo.delete()` |
 | `scheduled_report_claims`                                                 | `delete()` by userId                          | `repo.delete()` |
 | `report_send_jobs`                                                        | `delete()` by userId                          | `repo.delete()` |
-| `chat_daily_usage`                                                        | `delete()` by userId                          | `repo.delete()` |
+| `chat_daily_usage`                                                        | `delete()` by userId; `user_id IS NULL` only when the mapping has no userId (#1177) | `repo.delete()` |
 | `llm_usage_events`                                                        | `delete()` by userId                          | `repo.delete()` |
 | `chat_idempotency`                                                        | `delete()` by userId                          | `repo.delete()` |
 | `user_notification_preferences` (consent state #596)                      | `delete()` by userId                          | `repo.delete()` |

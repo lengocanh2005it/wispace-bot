@@ -103,8 +103,9 @@ async function main() {
   try {
     // aggregate_id is a SHA-256 hex of the learner userId when linked, or the
     // platform id when anonymous (#637/#640). Raw ids are taken from
-    // chat_daily_usage (the quota table) and joined by hashing. Users whose
-    // events are missing
+    // chat_daily_usage (the quota table) and joined by hashing: `du.user_id` is
+    // the row's own immutable owner, never the current account mapping
+    // (ADR-0027 / #1177). Users whose events are missing
     // (quota events disabled that day, or older than the events retention)
     // are SKIPPED — rebuilding from an empty event stream would zero their
     // live counter.
@@ -181,14 +182,18 @@ async function main() {
       const used = replayEvents(eventsResult.rows);
       const capped = Math.min(used, dailyLimit);
 
+      // Owner-scoped: a learner row and an anonymous row may coexist for the
+      // same channel/date, so the rebuild reads and writes the exact bucket the
+      // pair belongs to and never infers the owner from the current mapping.
       const current = await client.query(
         `
           SELECT free_form_count
           FROM chat_daily_usage
           WHERE platform = 'messenger'
             AND external_user_id = $1 AND usage_date = $2::date
+            AND user_id IS NOT DISTINCT FROM $3::int
         `,
-        [pair.external_user_id, pair.usage_date],
+        [pair.external_user_id, pair.usage_date, pair.user_id],
       );
 
       const before = current.rows[0]?.free_form_count ?? 0;
@@ -200,20 +205,37 @@ async function main() {
       );
 
       if (!args.dryRun) {
-        await client.query(
-          `
-            INSERT INTO chat_daily_usage (
-              platform, external_user_id, user_id, usage_date, free_form_count
-            )
-            VALUES ('messenger', $1, $2, $3::date, $4)
-            ON CONFLICT (platform, external_user_id, usage_date)
-            DO UPDATE SET
-              free_form_count = EXCLUDED.free_form_count,
-              user_id = EXCLUDED.user_id,
-              updated_at = now()
+        if (pair.user_id === null || pair.user_id === undefined) {
+          await client.query(
+            `
+              INSERT INTO chat_daily_usage (
+                platform, external_user_id, user_id, usage_date, free_form_count
+              )
+              VALUES ('messenger', $1, NULL, $2::date, $3)
+              ON CONFLICT (platform, external_user_id, usage_date)
+                WHERE user_id IS NULL
+              DO UPDATE SET
+                free_form_count = EXCLUDED.free_form_count,
+                updated_at = now()
           `,
-          [pair.external_user_id, pair.user_id, pair.usage_date, capped],
-        );
+            [pair.external_user_id, pair.usage_date, capped],
+          );
+        } else {
+          await client.query(
+            `
+              INSERT INTO chat_daily_usage (
+                platform, external_user_id, user_id, usage_date, free_form_count
+              )
+              VALUES ('messenger', $1, $2, $3::date, $4)
+              ON CONFLICT (platform, external_user_id, usage_date, user_id)
+                WHERE user_id IS NOT NULL
+              DO UPDATE SET
+                free_form_count = EXCLUDED.free_form_count,
+                updated_at = now()
+          `,
+            [pair.external_user_id, pair.user_id, pair.usage_date, capped],
+          );
+        }
       }
 
       updated += 1;

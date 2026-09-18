@@ -6,6 +6,7 @@ import type {
   ObjectLiteral,
   Repository,
 } from 'typeorm';
+import { IsNull } from 'typeorm';
 import { createHash } from 'crypto';
 import {
   acquireStudyReminderOwnershipLock,
@@ -646,6 +647,7 @@ export class PrivacyDataService {
       const deleteByUser = async (
         target: PrivacyEntityTarget,
         overrideUserId?: number,
+        options: { anonymousOnly?: boolean } = {},
       ) => {
         const repo = manager.getRepository(target);
         if (overrideUserId) {
@@ -654,6 +656,7 @@ export class PrivacyDataService {
           await repo.delete({
             platform: currentPlatform,
             externalUserId,
+            ...(options.anonymousOnly ? { userId: IsNull() } : {}),
           });
         }
       };
@@ -674,7 +677,13 @@ export class PrivacyDataService {
       }
 
       // Group A: user data directly (new tables)
-      await deleteByUser(this.registry.scoped.chatDailyUsage, uid);
+      // Daily usage is owner-scoped (#1177): erasing a learner removes the rows
+      // owned by that WISPACE userId, while an erasure without a userId removes
+      // only the anonymous bucket for the channel — a learner row for the same
+      // channel/date belongs to another learner and must survive.
+      await deleteByUser(this.registry.scoped.chatDailyUsage, uid, {
+        anonymousOnly: true,
+      });
       await deleteByUser(this.registry.scoped.llmUsageEvent, uid);
       await deleteByUser(this.registry.scoped.chatIdempotency, uid);
       if (uid) {

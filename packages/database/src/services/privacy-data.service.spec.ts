@@ -475,6 +475,40 @@ describe('PrivacyDataService', () => {
       });
     });
 
+    it('erases only the anonymous usage bucket when the mapping has no userId (#1177)', async () => {
+      const mockMapping = {
+        id: 1,
+        userId: null,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+      };
+      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      mockMappingRepo.remove.mockResolvedValue(mockMapping);
+      mockDailyUsageRepo.delete.mockResolvedValue({ affected: 1 } as never);
+      mockLlmUsageRepo.delete.mockResolvedValue({ affected: 1 } as never);
+
+      await service.delete('messenger', 'psid-123');
+
+      const usageDelete = mockDailyUsageRepo.delete.mock.calls[0]?.[0] as {
+        platform?: string;
+        externalUserId?: string;
+        userId?: { _type?: string };
+      };
+
+      // A learner row for the same channel/date belongs to another learner and
+      // must survive a channel-scoped erasure.
+      expect(usageDelete.platform).toBe('messenger');
+      expect(usageDelete.externalUserId).toBe('psid-123');
+      expect(usageDelete.userId?._type).toBe('isNull');
+
+      // Other channel-scoped stores keep their plain (platform, externalUserId)
+      // fallback.
+      expect(mockLlmUsageRepo.delete).toHaveBeenCalledWith({
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+      });
+    });
+
     // Regression for #461: the cross-platform fan-out was previously guarded
     // by `if (find)`, so a fake repo without `find` skipped it silently and no
     // test covered the branch. Asserts the outcomes for a DISTINCT external id
