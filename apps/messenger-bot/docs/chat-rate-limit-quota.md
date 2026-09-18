@@ -144,7 +144,7 @@ Each user (`psid`) has **one row per ICT day** with a `free_form_count` column. 
 
 #### Proposed Schema
 
-> **Current schema note:** since migration `1751029200001-GeneralizePlatformIdentifiers`, the tables below are multi-platform: `psid` → `external_user_id` + `platform` (`'messenger' | 'discord' | 'zalo'`), and unique keys include `platform` (`uq_chat_daily_usage_platform_external_date`, composite PK `(platform, idempotency_key)` on `chat_idempotency`). The `psid`-based DDL below is the original proposal, kept for reference.
+> **Current schema note:** since migration `1751029200001-GeneralizePlatformIdentifiers`, the tables below are multi-platform: `psid` → `external_user_id` + `platform` (`'messenger' | 'discord' | 'zalo'`), and unique keys include `platform` (composite PK `(platform, idempotency_key)` on `chat_idempotency`). The `psid`-based DDL below is the original proposal, kept for reference. For `chat_daily_usage` the single `(platform, external_user_id, usage_date)` key has since been **replaced** by the owner-aware partial keys `uq_chat_daily_usage_linked` / `uq_chat_daily_usage_anonymous` (#1177) — see ADR-0027.
 
 ```sql
 CREATE TABLE chat_daily_usage (
