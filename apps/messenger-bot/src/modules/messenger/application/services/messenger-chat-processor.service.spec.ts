@@ -827,7 +827,9 @@ describe('MessengerChatProcessorService', () => {
       );
       expect(reply).toHaveBeenCalled();
       // linkContext was discarded — pipeline should not see userId 99
-      const pipelineInput = reply.mock.calls[0][0];
+      const pipelineInput = reply.mock.calls[0][0] as {
+        linkContext?: unknown;
+      };
       expect(pipelineInput.linkContext).toBeUndefined();
     });
 
