@@ -614,8 +614,8 @@ export class MessengerChatProcessorService {
     if (isConfirmationResponse(mergedText, pendingAction)) {
       // Durable record of the consent before the irreversible action runs.
       await this.logPrivacyInbound(psid, userId, 'PRIVACY_CONFIRM_IN');
-      // ponytail: pending is cleared before execute; in distributed mode a
-      // retry after an execute failure loses the request (out of scope — #461).
+      // ponytail: pending is cleared before execute, so a throw from any of the
+      // cleanup stores consumes the confirmation and replies nothing — #1312.
       this.privacyState!.clearPendingAction(psid, 'messenger');
 
       let resultMessage: string;

@@ -75,7 +75,8 @@ export class ZaloTokenService implements OnModuleInit {
   }
 
   async getValidAccessToken(): Promise<string> {
-    // ponytail: in-process cache — token valid ~1h, single-row table, ~99% hit rate
+    // ponytail: in-process cache — token valid ~1h, single-row table, ~99% hit
+    // rate; per-pod refresh and loss on restart are #1220.
     if (
       this.cachedToken &&
       this.cachedToken.expiresAt - EXPIRY_BUFFER_MS > Date.now()
