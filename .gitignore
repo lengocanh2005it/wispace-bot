@@ -4,6 +4,7 @@ node_modules/
 .claude/settings.local.json
 .workbuddy-ai/
 npm-debug.log*
+debug.log
 dist/
 coverage/
 data/*.json
