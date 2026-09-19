@@ -806,7 +806,7 @@ make_no_owner_image_docker "$dir"
 code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped FAKE_MIGRATION_CHANGED=1)
 [ "$code" -eq 0 ] || fail "script should still exit 0, got $code: $(cat "$dir/run.out")"
 grep -q "schema is not current" "$dir/run.out" || fail "missing the stale-schema reason"
-grep -q "migration barrier not ready" "$dir/run.out" || fail "barrier let dependents through with an unapplied migration"
+grep -q "barrier blocked" "$dir/run.out" || fail "barrier let dependents through with an unapplied migration"
 [ ! -f "$dir/deploy.log" ] || fail "a deploy ran behind a blocked barrier"
 [ "$(cat "$dir/state/messenger-bot.failed")" = "$SHA_B" ] || fail "owner failure marker not written for $SHA_B"
 grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "no alert for an unapplied migration"
