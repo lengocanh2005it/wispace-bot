@@ -1,8 +1,6 @@
 import type { QueryRunner } from 'typeorm';
-import {
-  currentChatUsageDate,
-  OwnerAwareChatDailyUsageKeys1789093800000,
-} from './1789093800000-OwnerAwareChatDailyUsageKeys';
+import { currentChatUsageDate } from '../chat-usage-date';
+import { OwnerAwareChatDailyUsageKeys1789093800000 } from './1789093800000-OwnerAwareChatDailyUsageKeys';
 
 describe('OwnerAwareChatDailyUsageKeys1789093800000', () => {
   it('uses the configured chat timezone for the one-day backfill', () => {

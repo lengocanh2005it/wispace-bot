@@ -1,4 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { currentChatUsageDate } from '../chat-usage-date';
 
 /**
  * #1177 / ADR-0027 — owner-aware daily FREE_FORM usage.
@@ -107,25 +108,4 @@ export class OwnerAwareChatDailyUsageKeys1789093800000 implements MigrationInter
       ON "chat_daily_usage" ("platform", "external_user_id", "usage_date")
     `);
   }
-}
-
-const DEFAULT_CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
-
-export function currentChatUsageDate(
-  now = new Date(),
-  timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ||
-    DEFAULT_CHAT_USAGE_TIMEZONE,
-): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value]),
-  );
-  return `${values.year}-${values.month}-${values.day}`;
 }
