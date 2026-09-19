@@ -306,7 +306,7 @@ code=$(run_script "$dir")
 grep -q "^git fetch" "$dir/git.log" || fail "fetch not called"
 grep -q "^git reset" "$dir/git.log" || fail "reset not called"
 [ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 4 ] || fail "expected 4 deploys (compatibility + migration): $(cat "$dir/deploy.log" 2>/dev/null)"
-order=$(sed -E 's/^FAKE vps-deploy ([^ ]+).*/\1/' "$dir/deploy.log" | tr '\n' ' ')
+order=$(grep '^FAKE vps-deploy' "$dir/deploy.log" | sed -E 's/^FAKE vps-deploy ([^ ]+).*/\1/' | tr '\n' ' ')
 [ "$order" = "messenger-bot discord-bot zalo-bot messenger-bot " ] || fail "migration owner must deploy first and last, got: $order"
 first_migrations=$(grep '^FAKE migrations' "$dir/deploy.log" | tr '\n' ' ')
 [ "$first_migrations" = "FAKE migrations false FAKE migrations false FAKE migrations false FAKE migrations true " ] || fail "unexpected migration rollout flags: $first_migrations"
