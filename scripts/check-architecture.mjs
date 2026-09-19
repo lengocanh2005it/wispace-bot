@@ -31,8 +31,9 @@ export const FRAMEWORK_BOUND_ADAPTERS = [
   'packages/student-report/src/platform-student-report.service.ts',
 ];
 
-// Ratchet baseline for existing application edges. Remove each entry as
-// #429/#430 move the adapter outward; new edges fail immediately.
+// Ratchet baseline for existing application edges. #1088 owns emptying this
+// set — its acceptance criterion is that it is empty — and #432 is the
+// umbrella. New edges fail immediately: add a port, never an entry here.
 const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/wispace-client|WispaceTokenVerifyService',
   'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
