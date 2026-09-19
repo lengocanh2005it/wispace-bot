@@ -1,0 +1,76 @@
+{
+  "plan_file": "docs/refactoring/2026-09-19-structure-audit/refactor-plan.md",
+  "assessment_source": "structure-codebase audit 2026-09-19 (conversation) -> issues #1291, #1126 (comment), F3 doc rule",
+  "created": "2026-09-19",
+  "total_chunks": 4,
+  "current_chunk": 0,
+  "status": "awaiting-signoff",
+  "preflight_passed": false,
+  "verification": {
+    "boundary": "npm run architecture:test && npm run architecture:check",
+    "test": "npm run test",
+    "typecheck": "npm run typecheck",
+    "lint": "npm run format:check && npm run lint",
+    "build": "npm run build (post-flight only; required per-chunk if apps/*/src or packages/*/src is touched)",
+    "detected_at": "2026-09-19"
+  },
+  "chunks": [
+    {
+      "id": 1,
+      "name": "Feature registry refactor inside the checker (behavior-preserving)",
+      "status": "pending",
+      "depends_on": [],
+      "verification": null,
+      "commit_sha": null,
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 2,
+      "name": "Enforce sibling-feature boundaries for every feature pair, all three apps (#1291)",
+      "status": "pending",
+      "depends_on": [1],
+      "verification": null,
+      "commit_sha": null,
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 3,
+      "name": "Root-facade per-package import-count ratchet (#1126 stopgap)",
+      "status": "pending",
+      "depends_on": [2],
+      "verification": null,
+      "commit_sha": null,
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 4,
+      "name": "bot-common promotion rule (docs-only)",
+      "status": "pending",
+      "depends_on": [],
+      "verification": null,
+      "commit_sha": null,
+      "started_at": null,
+      "completed_at": null
+    }
+  ],
+  "measurement_snapshot": {
+    "date": "2026-09-19",
+    "cross_feature_edges_total": 58,
+    "concrete_edges_to_baseline": 40,
+    "port_edges_allowed": 18,
+    "root_facade_counts": {
+      "wispace-client": 75,
+      "llm-agent": 53,
+      "study-reminder-shared": 38,
+      "chat-metering": 36,
+      "scheduler-core": 30,
+      "student-report": 12,
+      "ops-health": 8,
+      "account-link-core": 0
+    },
+    "source": ".temp/scan-cross-feature.mjs + grep measurement (Chunk 3 re-measures fresh)"
+  }
+}
