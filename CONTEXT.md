@@ -522,6 +522,18 @@ _Avoid_: dispatch, tool side effect, platform policy
 String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `'STUDY_REMINDER'`. Used for usage tracking and metrics.
 _Avoid_: use case, purpose
 
+**learner admission key**:
+The identity used for per-learner LLM concurrency: the linked WISPACE `userId`, or the `(platform, externalUserId)` pair for an anonymous turn. It is a snapshot for one execution and is not changed by a later relink.
+_Avoid_: user ID, platform user ID
+
+**per-user in-flight cap**:
+The maximum number of concurrent free-form chat executions admitted for one learner admission key, including executions waiting for capacity or retrying a provider call. It protects interactive fairness and is distinct from the daily chat quota.
+_Avoid_: per-user rate limit, concurrency quota
+
+**user-saturated**:
+The typed admission outcome returned when a learner already has the allowed number of in-flight LLM executions.
+_Avoid_: queue full, global saturated
+
 **LLM provider**:
 An external service and model endpoint that executes prompts for the bots. A provider is identified by its adapter name and may be one link in a failover chain.
 _Avoid_: vendor, backend
