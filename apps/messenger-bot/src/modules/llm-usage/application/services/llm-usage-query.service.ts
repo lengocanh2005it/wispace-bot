@@ -62,6 +62,15 @@ export class LlmUsageQueryService {
       throw new BadRequestException('from must be on or before to');
     }
 
+    // DE-001: bound the scan — rows older than retention are already purged,
+    // so a wider range only burns DB time for empty buckets.
+    const maxRangeDays = this.configService.getRetentionDays();
+    if (this.dateRangeDays(fromDate, toDate) > maxRangeDays) {
+      throw new BadRequestException(
+        `date range must not exceed ${maxRangeDays} days`,
+      );
+    }
+
     const mapping = await this.resolveMapping(psid, userId);
     const rows = await this.usageRepository.aggregateUsage({
       psid,
@@ -128,6 +137,15 @@ export class LlmUsageQueryService {
     }
 
     return trimmed;
+  }
+
+  private dateRangeDays(fromDate: string, toDate: string): number {
+    const [fromY, fromM, fromD] = fromDate.split('-').map(Number);
+    const [toY, toM, toD] = toDate.split('-').map(Number);
+    return Math.round(
+      (Date.UTC(toY, toM - 1, toD) - Date.UTC(fromY, fromM - 1, fromD)) /
+        86_400_000,
+    );
   }
 
   private groupByFeature(

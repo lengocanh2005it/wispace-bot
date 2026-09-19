@@ -35,6 +35,11 @@ For CI schema validation, run the root `npm run database:migration-compatibility
 - Runtime queries use `DB_QUERY_TIMEOUT_MS`; migration CLI uses
   `DB_MIGRATION_QUERY_TIMEOUT_MS` so a long migration is not accidentally
   killed by the app query budget.
+- Lock check on large tables (DE-003): `CREATE INDEX` / `ADD COLUMN ... DEFAULT`
+  / rewrites on `webhook_inbound_events`, `message_logs`, `llm_usage_events`
+  take strong locks — prefer `CREATE INDEX CONCURRENTLY` (raw SQL, outside the
+  migration transaction) or schedule in low-traffic window; never add a
+  table-rewriting default to a hot table without measuring first.
 - Reschedule confirmation rows are security-sensitive: preserve the
   platform/mapping revision, intent/argument hashes, and one-time nonce
   binding; production confirmation must claim by the complete binding. Keep

@@ -27,6 +27,7 @@ describe('LlmUsageQueryService', () => {
           useValue: {
             getTimezone: () => 'Asia/Ho_Chi_Minh',
             todayUsageDate: () => '2026-06-18',
+            getRetentionDays: () => 180,
             estimateCostUsdForModel: () => '0.010000',
             getCostDisclaimer: () => 'test disclaimer',
           },
@@ -54,6 +55,32 @@ describe('LlmUsageQueryService', () => {
   it('requires psid or userId', async () => {
     await expect(service.getUserSummary({})).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+  });
+
+  it('rejects a date range wider than the retention window (DE-001)', async () => {
+    await expect(
+      service.getUserSummary({
+        psid: 'psid-1',
+        from: '2025-01-01',
+        to: '2026-06-18',
+      }),
+    ).rejects.toThrow('date range must not exceed 180 days');
+    expect(aggregateUsage).not.toHaveBeenCalled();
+  });
+
+  it('accepts a date range within the retention window', async () => {
+    findActiveMappingByPsid.mockResolvedValue({ psid: 'psid-1', userId: 42 });
+    aggregateUsage.mockResolvedValue([]);
+
+    await service.getUserSummary({
+      psid: 'psid-1',
+      from: '2026-06-01',
+      to: '2026-06-18',
+    });
+
+    expect(aggregateUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ fromDate: '2026-06-01', toDate: '2026-06-18' }),
     );
   });
 
