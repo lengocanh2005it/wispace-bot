@@ -663,8 +663,12 @@ Replacing credential-shaped substrings with `REDACTED_PLACEHOLDER` (`'[REDACTED]
 _Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection payloads) or with the excerpt-plus-hash storage rule for safety events
 
 **classifier / verdict**:
-Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`, `ABUSE`, and `CRISIS`; `CRISIS` is a measurement/enforcement signal, not the learner-facing posture itself. Fails open — any timeout, error, parse failure or open circuit means the turn proceeds as if the tier were absent.
+Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`, `ABUSE`, and `CRISIS`; `CRISIS` is a measurement/enforcement signal, not the learner-facing posture itself. In shadow mode a non-`SAFE` verdict is recorded without changing the reply; in enforce mode a qualifying verdict can select its fixed safety posture, and `CRISIS` uses the crisis handoff without the normal confidence floor. Classifier unavailability is a separate typed outcome, never a synthetic `CRISIS` verdict: shadow mode continues the normal path with bounded telemetry, while enforce mode uses the deterministic classifier safety fallback before the main LLM.
 _Avoid_: moderation, filter — it decides nothing on its own
+
+**classifier unavailable**:
+The classifier could not produce a usable verdict because of timeout, provider error, invalid output, or an open local circuit. It is not evidence that the learner input is safe or a crisis; the caller applies the mode-specific safety fallback and records only bounded failure metadata.
+_Avoid_: classifier says safe, crisis fallback — neither is implied by an unavailable result
 
 **classifier input ceiling**:
 The maximum number of Unicode code points in the redacted learner text sent to the second-tier classifier. It bounds classifier cost; exceeding it selects a bounded head-and-tail sample instead of silently dropping one side of the message.
@@ -675,8 +679,12 @@ A bounded classifier view that preserves the beginning and end of a learner mess
 _Avoid_: full message, complete scan
 
 **shadow / enforce**:
-The classifier's two modes. In **shadow** a non-SAFE verdict is only recorded as a `CLASSIFIER_FLAGGED` event; in **enforce** it can also short-circuit the turn with a canned reply, subject to a confidence threshold. Enforce is flipped only after reviewing a shadow window.
+The classifier's two modes. In **shadow** a non-SAFE verdict is only recorded as a `CLASSIFIER_FLAGGED` event and classifier unavailability keeps the normal path; in **enforce** a qualifying verdict can short-circuit the turn with a canned reply, `CRISIS` uses the crisis handoff without the normal confidence floor, and classifier unavailability returns the deterministic classifier safety fallback before the main LLM. Enforce is flipped only after reviewing a shadow window.
 _Avoid_: dry run, passive mode
+
+**classifier safety fallback**:
+The deterministic generic processing-error reply used when enforce mode cannot obtain a classifier verdict. It is not a crisis handoff, does not call tools or the main LLM, and is not appended to chat history.
+_Avoid_: crisis fallback, provider fallback — those are different safety boundaries
 
 **non-disclosure**:
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
