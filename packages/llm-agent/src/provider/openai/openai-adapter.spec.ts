@@ -1,4 +1,5 @@
 import { OpenAiAdapter } from './openai-adapter';
+import { LlmAttemptBudget } from '../../execution/attempt-budget';
 
 function makeAdapter(overrides?: { providerName?: string }): OpenAiAdapter {
   return new OpenAiAdapter(
@@ -214,6 +215,31 @@ describe('OpenAiAdapter', () => {
       expect(createMock).toHaveBeenCalledWith(expect.any(Object), {
         signal: controller.signal,
       });
+    });
+
+    it('consumes the shared budget immediately before the provider request', async () => {
+      const adapter = makeAdapter();
+      const createMock = jest
+        .fn()
+        .mockRejectedValue(new Error('provider down'));
+      (
+        adapter as unknown as {
+          client: { chat: { completions: { create: typeof createMock } } };
+        }
+      ).client = { chat: { completions: { create: createMock } } };
+      const budget = new LlmAttemptBudget(1);
+
+      await expect(
+        adapter.generateJson({
+          feature: 'STUDENT_REPORT',
+          systemPrompt: 'prompt',
+          userContent: 'content',
+          attemptBudget: budget,
+        }),
+      ).rejects.toThrow('provider down');
+
+      expect(budget.attemptsUsed).toBe(1);
+      expect(createMock).toHaveBeenCalledTimes(1);
     });
   });
 

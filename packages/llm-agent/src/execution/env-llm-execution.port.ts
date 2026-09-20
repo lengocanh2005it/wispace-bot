@@ -15,6 +15,10 @@ import {
   type AdmissionTicket,
 } from './bounded-admission';
 import { LlmProviderCircuitOpenError } from './circuit-error';
+import {
+  LlmAttemptBudget,
+  normalizeMaxTotalProviderAttempts,
+} from './attempt-budget';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -27,6 +31,8 @@ export interface EnvLlmExecutionConfig {
   globalMaxConcurrent: number;
   /** `LLM_OPENAI_RETRY_MAX_ATTEMPTS` — retry budget. */
   maxAttempts: number;
+  /** Shared actual provider-call budget for one top-level generation. */
+  maxTotalProviderAttempts?: number;
   /** `LLM_OPENAI_RETRY_BACKOFF_MS` — base backoff between attempts. */
   baseBackoffMs: number;
   /** `LLM_OPENAI_RETRY_MAX_DELAY_MS` — ceiling on the pre-jitter backoff. */
@@ -70,6 +76,11 @@ export interface AdmissionMetrics {
   observeQueueDrainLag?(seconds: number): void;
   /** Observe the number of attempts used per tool round. */
   observeRetryAttempts?(
+    attempts: number,
+    labels?: Record<string, string>,
+  ): void;
+  /** One observation per generation, not one per tool round. */
+  observeTotalProviderAttempts?(
     attempts: number,
     labels?: Record<string, string>,
   ): void;
@@ -153,12 +164,26 @@ export function createEnvLlmExecutionPort(
 
   return {
     run: async <T>(
-      fn: (signal?: AbortSignal) => Promise<T>,
-      meta: { feature: string; correlationId?: string; signal?: AbortSignal },
+      fn: (
+        signal?: AbortSignal,
+        attemptBudget?: LlmAttemptBudget,
+      ) => Promise<T>,
+      meta: {
+        feature: string;
+        correlationId?: string;
+        signal?: AbortSignal;
+        attemptBudget?: LlmAttemptBudget;
+      },
     ): Promise<T> => {
       if (!config.enabled) {
-        return fn(undefined);
+        return fn(undefined, undefined);
       }
+      const attemptBudget =
+        meta?.attemptBudget ??
+        new LlmAttemptBudget(
+          normalizeMaxTotalProviderAttempts(config.maxTotalProviderAttempts),
+        );
+      const ownsAttemptBudget = meta?.attemptBudget === undefined;
       assertCircuitAvailable();
 
       // One deadline covers admission, the optional Redis slot, retries, and
@@ -198,6 +223,7 @@ export function createEnvLlmExecutionPort(
       let release: (() => Promise<void>) | undefined;
       const waitBudgetMs = admissionWaitBudgetMs(config, meta?.feature);
       try {
+        let attemptCount = 0;
         if (nativeRedis) {
           // Compose deadline + caller signal BEFORE slot acquisition so
           // cancellation aborts the Redis retry loop and avoids holding
@@ -218,9 +244,11 @@ export function createEnvLlmExecutionPort(
           );
         }
         try {
-          let attemptCount = 1;
           const result = await retryWithBackoff(
-            (attemptSignal) => fn(attemptSignal ?? signal),
+            (attemptSignal) => {
+              attemptCount += 1;
+              return fn(attemptSignal ?? signal, attemptBudget);
+            },
             {
               maxAttempts: config.maxAttempts,
               baseDelayMs: config.baseBackoffMs,
@@ -230,7 +258,6 @@ export function createEnvLlmExecutionPort(
               ),
               isRetryable: (error) => adapter.isRetryableError(error),
               onRetry: (attempt, backoffMs, error) => {
-                attemptCount = attempt + 1;
                 logger.warn(
                   `LLM provider retry feature=${
                     meta?.feature ?? FEATURE
@@ -243,17 +270,36 @@ export function createEnvLlmExecutionPort(
               },
               signal,
               perAttemptTimeoutMs: config.perAttemptTimeoutMs,
+              attemptBudget,
             },
           );
           metrics?.observeRetryAttempts?.(attemptCount, {
             outcome: 'success',
           });
+          if (ownsAttemptBudget) {
+            metrics?.observeTotalProviderAttempts?.(
+              attemptBudget.attemptsUsed,
+              {
+                feature: meta?.feature ?? FEATURE,
+                outcome: 'success',
+              },
+            );
+          }
           recordSuccess();
           return result;
         } catch (error) {
-          metrics?.observeRetryAttempts?.(config.maxAttempts, {
+          metrics?.observeRetryAttempts?.(attemptCount, {
             outcome: 'exhausted',
           });
+          if (ownsAttemptBudget) {
+            metrics?.observeTotalProviderAttempts?.(
+              attemptBudget.attemptsUsed,
+              {
+                feature: meta?.feature ?? FEATURE,
+                outcome: attemptBudget.exhausted ? 'budget_exhausted' : 'error',
+              },
+            );
+          }
           recordFailure(error);
           throw error;
         }

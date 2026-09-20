@@ -329,6 +329,8 @@ const REGISTER_REPORT_MESSAGE =
               toolPolicyDeniedInc: (toolName, reason) =>
                 metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
               degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
+              totalProviderAttemptsInc: (feature, attempts, outcome) =>
+                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),

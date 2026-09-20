@@ -206,6 +206,11 @@ export {
   createEnvLlmExecutionPort,
   buildLlmExecutionConfig,
   LlmProviderCircuitOpenError,
+  LlmAttemptBudget,
+  DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
+  MAX_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
+  normalizeMaxTotalProviderAttempts,
+  readMaxTotalProviderAttempts,
 } from './execution/index';
 export type {
   AdmissionTicket,

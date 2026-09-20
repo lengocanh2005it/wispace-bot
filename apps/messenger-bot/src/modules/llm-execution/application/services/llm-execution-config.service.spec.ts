@@ -114,4 +114,20 @@ describe('LlmExecutionConfigService', () => {
       expect(svc.getFailoverQuickRetryDelayMs()).toBe(150);
     });
   });
+
+  describe('getMaxTotalProviderAttempts', () => {
+    it('defaults to six attempts', () => {
+      const svc = new LlmExecutionConfigService(makeConfigService({}));
+      expect(svc.getMaxTotalProviderAttempts()).toBe(6);
+    });
+
+    it('rejects values outside the fail-closed range', () => {
+      expect(
+        () =>
+          new LlmExecutionConfigService(
+            makeConfigService({ LLM_MAX_TOTAL_PROVIDER_ATTEMPTS: '9' }),
+          ),
+      ).toThrow(/LLM_MAX_TOTAL_PROVIDER_ATTEMPTS/);
+    });
+  });
 });

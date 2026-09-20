@@ -181,6 +181,13 @@ Both automatic dispatch and menu preview use this same service. Without `OPENAI_
 
 **Reminder time is server-derived (#123):** the model never controls the displayed time — `formatReminder` always renders `scheduledTimeLabel` computed from the trusted `session.scheduledAt` (`StudyReminderScheduleService.formatScheduledTimeLabel`). The LLM output contract has **no** `scheduledTime` field (5 keys: greeting, intro, tasks, motivation, signoff); if a model emits one anyway it is ignored (mismatch vs the server label is logged). LLM prose is bound to the label via `buildReminderOutput(prose, scheduledTimeLabel)`.
 
+**Provider-attempt budget (#1247):** reminder generation shares the bounded
+`LLM_MAX_TOTAL_PROVIDER_ATTEMPTS` cap (default `6`, explicit `1..8`) with the
+execution retry and provider failover layers. A failed generation remains
+owned by the durable reminder outbox; a later dispatch is a fresh generation.
+The same contract applies to reports and chat, while the input classifier is
+kept on its dedicated no-retry path. See [LLM fallback policy](../../../docs/llm-fallback-policy.md).
+
 ### 3.5. Quick Testing
 
 | Method                                 | Description                                           |

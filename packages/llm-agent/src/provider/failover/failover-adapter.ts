@@ -8,6 +8,7 @@ import type {
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import { LlmAllProvidersExhaustedError } from './failover.errors';
 import { sleep, isAbortError } from '../../utils/retry.utils';
+import type { LlmAttemptBudget } from '../../execution/attempt-budget';
 
 interface CircuitState {
   healthyAgainAt: number;
@@ -187,7 +188,11 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   }
 
   private async runFailover<
-    Req extends { signal?: AbortSignal; feature?: string },
+    Req extends {
+      signal?: AbortSignal;
+      feature?: string;
+      attemptBudget?: LlmAttemptBudget;
+    },
     Res,
   >(
     call: (c: LlmProviderAdapter, req: Req) => Promise<Res>,
@@ -202,6 +207,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       if (request.signal?.aborted) {
         throw request.signal.reason ?? new Error('Aborted');
       }
+      request.attemptBudget?.throwIfExhausted();
       const req = this.requestForCandidate(request, candidate);
       const maxAttempts = degraded ? 1 : this.maxAttemptsFor(candidate);
 
@@ -209,6 +215,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
         if (request.signal?.aborted) {
           throw request.signal.reason ?? new Error('Aborted');
         }
+        request.attemptBudget?.throwIfExhausted();
         try {
           this.onProviderAttempt?.(candidate.providerName, request.feature);
           const result = await call(candidate, req);
@@ -224,6 +231,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
           return result;
         } catch (err) {
           lastError = err;
+          request.attemptBudget?.recordFailure(err);
           if (request.signal?.aborted || isAbortError(err)) {
             throw err;
           }
@@ -233,7 +241,8 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
             reason === 'quota_exceeded' ||
             reason === 'auth' ||
             reason === 'rate_limit';
-          const isLastAttempt = attempt >= maxAttempts;
+          const isLastAttempt =
+            attempt >= maxAttempts || request.attemptBudget?.exhausted === true;
 
           if (isLongCooldown || isLastAttempt) {
             const state = this.getState(candidate.providerName);
@@ -258,6 +267,9 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
 
           await sleep(this.quickRetryDelayMs, request.signal);
         }
+      }
+      if (request.attemptBudget?.exhausted) {
+        break;
       }
     }
 

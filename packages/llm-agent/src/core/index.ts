@@ -192,6 +192,13 @@ export {
   LlmProviderCircuitOpenError,
   type LlmProviderCircuitState,
 } from '../execution/circuit-error';
+export {
+  LlmAttemptBudget,
+  DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
+  MAX_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
+  normalizeMaxTotalProviderAttempts,
+  readMaxTotalProviderAttempts,
+} from '../execution/attempt-budget';
 
 export { CLASSIFIER_SYSTEM_PROMPT } from '../classifier/classifier-prompt';
 export {

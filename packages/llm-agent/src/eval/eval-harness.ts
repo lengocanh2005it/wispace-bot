@@ -975,7 +975,7 @@ export async function runEvalFixture(
   let injectionEvents = 0;
 
   const llmExecution: LlmExecutionPort = {
-    run: async (fn, meta) => fn(meta.signal),
+    run: async (fn, meta) => fn(meta.signal, meta.attemptBudget),
   };
   const usageRecorder: LlmUsageRecorderPort = {
     recordFromCompletion: () => undefined,

@@ -4,6 +4,8 @@
 // any LLM provider. They contain zero imports from the `openai` npm package.
 // ---------------------------------------------------------------------------
 
+import type { LlmAttemptBudget } from '../execution/attempt-budget';
+
 /** Supported LLM providers (for metadata/routing, not exhaustive). */
 export type LlmProvider =
   | 'openai'
@@ -88,6 +90,7 @@ export interface LlmJsonRequest {
   temperature?: number;
   maxOutputTokens?: number;
   signal?: AbortSignal;
+  attemptBudget?: LlmAttemptBudget;
 }
 
 export interface LlmJsonResponse {
@@ -110,6 +113,7 @@ export interface LlmToolChatRequest {
   temperature?: number;
   maxOutputTokens?: number;
   signal?: AbortSignal;
+  attemptBudget?: LlmAttemptBudget;
 }
 
 export interface LlmToolChatResponse {

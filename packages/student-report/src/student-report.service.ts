@@ -261,7 +261,7 @@ export class StudentReportCore {
     const model = adapter.getDefaultModel();
 
     const response = await this.ports.llmExecution.run(
-      (execSignal) =>
+      (execSignal, attemptBudget) =>
         adapter.generateJson({
           feature: FEATURE,
           model,
@@ -270,6 +270,7 @@ export class StudentReportCore {
           correlationId,
           maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
           signal: execSignal,
+          attemptBudget,
         }),
       { feature: FEATURE, correlationId, signal },
     );

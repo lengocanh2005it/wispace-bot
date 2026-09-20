@@ -151,6 +151,7 @@ function buildService(
     adapter?: LlmProviderAdapter;
     metrics?: AgentMetricsPort;
     platform?: string;
+    llmExecution?: LlmAgentPorts<StubToolContext>['llmExecution'];
   } = {},
   config: LlmAgentConfig = {},
 ) {
@@ -159,14 +160,14 @@ function buildService(
     recordGroundingWarning: jest.fn(),
     recordInjectionEvent: jest.fn(),
   };
-  const llmExecution = {
+  const llmExecution = overrides.llmExecution ?? {
     run: jest
       .fn()
       .mockImplementation(
         (
-          fn: (signal?: AbortSignal) => Promise<unknown>,
-          meta?: { signal?: AbortSignal },
-        ) => fn(meta?.signal),
+          fn: (signal?: AbortSignal, budget?: unknown) => Promise<unknown>,
+          meta?: { signal?: AbortSignal; attemptBudget?: unknown },
+        ) => fn(meta?.signal, meta?.attemptBudget),
       ),
   };
   const toolExecutor = {
@@ -174,7 +175,7 @@ function buildService(
   };
 
   const ports: LlmAgentPorts<StubToolContext> = {
-    llmExecution,
+    llmExecution: llmExecution as { run: jest.Mock },
     usageRecorder,
     safetyEvents,
     toolExecutor,
@@ -190,7 +191,7 @@ function buildService(
     service,
     usageRecorder,
     safetyEvents,
-    llmExecution,
+    llmExecution: llmExecution as { run: jest.Mock },
     toolExecutor,
     ports,
   };
@@ -252,6 +253,64 @@ describe('LlmAgentService', () => {
         correlationId: 'mid-abc',
       });
     });
+  });
+
+  it('shares one provider-attempt budget across multiple tool rounds', async () => {
+    const calls = { total: 0 };
+    const adapter: LlmProviderAdapter = {
+      providerName: 'openai',
+      isConfigured: () => true,
+      getDefaultModel: () => 'gpt-5.4',
+      generateJson: jest.fn(),
+      chatWithTools: jest
+        .fn()
+        .mockImplementation(
+          async (request: { attemptBudget?: { consume(): void } }) => {
+            request.attemptBudget?.consume();
+            calls.total += 1;
+            return makeToolCallResponse(
+              calls.total % 2 === 0
+                ? 'get_upcoming_study_sessions'
+                : 'list_study_calendar_entries',
+              `{"limit":${calls.total}}`,
+            );
+          },
+        ),
+      isRetryableError: () => false,
+      isRateLimitError: () => false,
+      normalizeError: () => ({
+        provider: 'openai',
+        retryable: false,
+        reason: 'unknown',
+      }),
+    };
+    const metrics = {
+      ...NOOP_METRICS_PORT,
+      totalProviderAttemptsInc: jest.fn(),
+    };
+    const { service } = buildService(
+      {
+        adapter,
+        execute: jest.fn().mockResolvedValue({ entries: [] }),
+        metrics,
+      },
+      {
+        maxLlmRetries: 0,
+        maxToolRounds: 8,
+        maxToolRunsPerNamePerTurn: 8,
+        maxTotalProviderAttempts: 6,
+      },
+    );
+
+    await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toThrow(
+      /attempt budget exhausted/,
+    );
+    expect(calls.total).toBe(6);
+    expect(metrics.totalProviderAttemptsInc).toHaveBeenCalledWith(
+      'FREE_FORM_CHAT',
+      6,
+      'budget_exhausted',
+    );
   });
 
   it('records provider and model returned by the completion metadata', async () => {

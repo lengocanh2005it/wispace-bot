@@ -147,4 +147,60 @@ describe('429-storm load test (#514)', () => {
       outcome: 'success',
     });
   });
+
+  it('caps actual provider calls across the execution retry loop', async () => {
+    const calls = { total: 0 };
+    const totalAttempts = jest.fn();
+    const adapter = {
+      ...buildStormAdapter(calls, 999),
+      chatWithTools: jest
+        .fn()
+        .mockImplementation(
+          async (request: { attemptBudget?: { consume(): void } }) => {
+            request.attemptBudget?.consume();
+            calls.total += 1;
+            throw new Error('429 Too Many Requests');
+          },
+        ),
+    } as unknown as LlmProviderAdapter;
+    const port = createEnvLlmExecutionPort(
+      {
+        enabled: true,
+        maxConcurrent: 1,
+        globalMaxConcurrent: 1,
+        maxAttempts: 8,
+        maxTotalProviderAttempts: 6,
+        baseBackoffMs: 1,
+        retryMaxDelayMs: 1,
+        requestTimeoutMs: 5_000,
+        perAttemptTimeoutMs: 2_000,
+        globalConcurrencyEnabled: false,
+        maxQueueDepth: 1,
+        chatAdmissionWaitMs: 100,
+        backgroundAdmissionWaitMs: 100,
+      },
+      adapter,
+      noopLogger,
+      {
+        incrementCounter: jest.fn(),
+        observeWaitSeconds: jest.fn(),
+        observeRetryAttempts: jest.fn(),
+        observeTotalProviderAttempts: totalAttempts,
+      },
+    );
+
+    await expect(
+      port.run(
+        (_signal, attemptBudget) =>
+          adapter.chatWithTools({ attemptBudget } as never),
+        { feature: 'FREE_FORM_CHAT' },
+      ),
+    ).rejects.toThrow(/429/);
+
+    expect(calls.total).toBe(6);
+    expect(totalAttempts).toHaveBeenCalledWith(6, {
+      feature: 'FREE_FORM_CHAT',
+      outcome: 'budget_exhausted',
+    });
+  });
 });

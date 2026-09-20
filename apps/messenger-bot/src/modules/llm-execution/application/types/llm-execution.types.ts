@@ -1,3 +1,5 @@
+import type { LlmAttemptBudget } from '@wispace/llm-agent';
+
 export type LlmExecutionFeature =
   | 'FREE_FORM_CHAT'
   | 'STUDENT_REPORT'
@@ -9,4 +11,6 @@ export interface LlmExecutionContext {
   correlationId?: string;
   /** Optional caller signal — aborts the LLM call (and stops retries) immediately. */
   signal?: AbortSignal;
+  /** Shared actual provider-call budget for one top-level generation. */
+  attemptBudget?: LlmAttemptBudget;
 }

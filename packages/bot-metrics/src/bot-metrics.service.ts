@@ -122,6 +122,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmAdmissionDrainLag: Gauge;
   private llmConcurrencyEvents: Counter;
   private llmProviderAttempts: Counter;
+  private llmTotalProviderAttempts: Counter;
   private llmProviderOutcomes: Counter;
   private llmProviderNeverSucceeded: Counter;
   private llmProviderCircuitEvents: Counter;
@@ -303,6 +304,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_provider_attempts_total`,
       help: 'LLM provider attempts made by the failover adapter',
       labelNames: ['provider', 'feature'],
+      registers: [this.registry],
+    });
+
+    this.llmTotalProviderAttempts = new Counter({
+      name: `${this.prefix}_llm_total_provider_attempts_total`,
+      help: 'Total actual provider attempts consumed by one LLM generation',
+      labelNames: ['feature', 'outcome'],
       registers: [this.registry],
     });
 
@@ -910,6 +918,18 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmProviderAttempts.inc({ provider, feature });
   }
 
+  incLlmTotalProviderAttempts(
+    feature: string,
+    attempts: number,
+    outcome: 'success' | 'error' | 'budget_exhausted',
+  ): void {
+    if (attempts <= 0) return;
+    this.llmTotalProviderAttempts.inc(
+      { feature, outcome },
+      Math.floor(attempts),
+    );
+  }
+
   incLlmProviderOutcome(
     provider: string,
     outcome: 'success' | 'failure',
@@ -961,6 +981,10 @@ export class BotMetricsService implements OnModuleDestroy {
     observeWaitSeconds(seconds: number): void;
     observeQueueDepth(depth: number): void;
     observeQueueDrainLag(seconds: number): void;
+    observeTotalProviderAttempts(
+      attempts: number,
+      labels?: Record<string, string>,
+    ): void;
   } {
     return {
       incrementCounter: (name, labels) => {
@@ -974,6 +998,13 @@ export class BotMetricsService implements OnModuleDestroy {
       observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
       observeQueueDepth: (depth) => this.setLlmAdmissionQueueDepth(depth),
       observeQueueDrainLag: (seconds) => this.setLlmAdmissionDrainLag(seconds),
+      observeTotalProviderAttempts: (attempts, labels) =>
+        this.incLlmTotalProviderAttempts(
+          labels?.feature ?? 'unknown',
+          attempts,
+          (labels?.outcome as 'success' | 'error' | 'budget_exhausted') ??
+            'error',
+        ),
     };
   }
 

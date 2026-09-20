@@ -1,4 +1,8 @@
 import type { LlmAgentConfig } from '../types';
+import {
+  DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
+  normalizeMaxTotalProviderAttempts,
+} from '../execution/attempt-budget';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 6;
 const DEFAULT_MAX_TOOL_CALLS_PER_ROUND = 4;
@@ -53,6 +57,7 @@ export class AgentLimits {
   readonly staleObservationRounds: number;
   readonly maxContextChars: number;
   readonly maxLlmRetries: number;
+  readonly maxTotalProviderAttempts: number;
   readonly retryBaseDelayMs: number;
   readonly maxOutputTokens: number;
   readonly toolExecutionTimeoutMs: number;
@@ -87,6 +92,10 @@ export class AgentLimits {
     this.maxLlmRetries = nonNegative(
       config.maxLlmRetries,
       DEFAULT_MAX_LLM_RETRIES,
+    );
+    this.maxTotalProviderAttempts = normalizeMaxTotalProviderAttempts(
+      config.maxTotalProviderAttempts ??
+        DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
     );
     this.retryBaseDelayMs = positive(
       config.retryBaseDelayMs,

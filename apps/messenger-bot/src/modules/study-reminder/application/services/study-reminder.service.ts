@@ -215,7 +215,7 @@ export class StudyReminderService {
     let response;
     try {
       response = await this.llmExecution.run(
-        (execSignal) =>
+        (execSignal, attemptBudget) =>
           this.adapter.generateJson({
             feature: 'STUDY_REMINDER',
             model,
@@ -224,6 +224,7 @@ export class StudyReminderService {
             correlationId,
             maxOutputTokens: REMINDER_MAX_OUTPUT_TOKENS,
             signal: execSignal,
+            attemptBudget,
           }),
         {
           feature: 'STUDY_REMINDER',

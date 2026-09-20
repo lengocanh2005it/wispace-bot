@@ -62,6 +62,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   async generateJson(request: LlmJsonRequest): Promise<LlmJsonResponse> {
     const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
+    request.attemptBudget?.consume();
 
     const response = await client.chat.completions.create(
       {
@@ -106,6 +107,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   ): Promise<LlmToolChatResponse> {
     const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
+    request.attemptBudget?.consume();
 
     const response = await client.chat.completions.create(
       {

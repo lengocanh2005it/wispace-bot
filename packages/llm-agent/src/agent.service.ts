@@ -52,6 +52,7 @@ import { AgentLimits } from './internal/agent-limits';
 import { ContextManager } from './internal/context-manager';
 import { SafetyPipeline } from './internal/safety-pipeline';
 import { ToolRoundExecutor } from './internal/tool-round-executor';
+import { LlmAttemptBudget } from './execution/attempt-budget';
 import {
   buildToolSummary,
   type ToolSummaryObservation,
@@ -188,16 +189,41 @@ export class LlmAgentService<TToolContext> {
   ): Promise<LlmAgentReply> {
     const controller = new AbortController();
     linkAbortSignal(input.signal, controller);
-    return withTimeout(
-      this.ports.metrics?.timeAgentLoop
-        ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
-            this.runRounds(input, toolContext, controller.signal),
-          )
-        : this.runRounds(input, toolContext, controller.signal),
-      this.limits.globalAgentTimeoutMs,
-      'Agent loop',
-      () => controller.abort(),
+    const attemptBudget = new LlmAttemptBudget(
+      this.limits.maxTotalProviderAttempts,
     );
+    try {
+      const result = await withTimeout(
+        this.ports.metrics?.timeAgentLoop
+          ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
+              this.runRounds(
+                input,
+                toolContext,
+                controller.signal,
+                attemptBudget,
+              ),
+            )
+          : this.runRounds(
+              input,
+              toolContext,
+              controller.signal,
+              attemptBudget,
+            ),
+        this.limits.globalAgentTimeoutMs,
+        'Agent loop',
+        () => controller.abort(),
+      );
+      this.observeAttemptBudget(attemptBudget, 'success');
+      return result;
+    } catch (error) {
+      this.observeAttemptBudget(
+        attemptBudget,
+        attemptBudget.exhausted && !isAbortError(error)
+          ? 'budget_exhausted'
+          : 'error',
+      );
+      throw error;
+    }
   }
 
   /** Single agent loop: LLM call → tool round or final text → exhaustion. */
@@ -205,6 +231,7 @@ export class LlmAgentService<TToolContext> {
     input: LlmAgentInput,
     toolContext: TToolContext,
     signal?: AbortSignal,
+    attemptBudget?: LlmAttemptBudget,
   ): Promise<LlmAgentReply> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
@@ -275,9 +302,9 @@ export class LlmAgentService<TToolContext> {
       try {
         response = await metrics.timeLlmCall(FEATURE, model, round, () =>
           this.ports.llmExecution.run(
-            (execSignal) =>
+            (execSignal, executionBudget) =>
               this.withRetry(
-                () =>
+                (retryBudget) =>
                   adapter.chatWithTools({
                     feature: FEATURE,
                     model,
@@ -287,15 +314,18 @@ export class LlmAgentService<TToolContext> {
                     correlationId: input.correlationId,
                     maxOutputTokens: this.limits.maxOutputTokens,
                     signal: execSignal,
+                    attemptBudget: retryBudget,
                   }),
                 round,
                 logger,
                 execSignal,
+                executionBudget,
               ),
             {
               feature: FEATURE,
               correlationId: input.correlationId,
               signal,
+              attemptBudget,
             },
           ),
         );
@@ -635,16 +665,18 @@ export class LlmAgentService<TToolContext> {
   }
 
   private async withRetry<T>(
-    fn: () => Promise<T>,
+    fn: (attemptBudget?: LlmAttemptBudget) => Promise<T>,
     round: number,
     logger: { warn: (msg: string) => void },
     signal?: AbortSignal,
+    attemptBudget?: LlmAttemptBudget,
   ): Promise<T> {
     const maxRetries = this.limits.maxLlmRetries;
     if (maxRetries === 0) {
       // Retries disabled — single attempt, throw the raw error so the outer
       // llmExecution layer (retryWithBackoff) can classify it itself.
-      return fn();
+      attemptBudget?.throwIfExhausted();
+      return fn(attemptBudget);
     }
     const baseDelay = this.limits.retryBaseDelayMs;
     let lastErr: unknown;
@@ -653,16 +685,21 @@ export class LlmAgentService<TToolContext> {
       if (signal?.aborted) {
         throw signal.reason ?? lastErr ?? new Error('Aborted');
       }
+      attemptBudget?.throwIfExhausted();
       try {
-        return await fn();
+        return await fn(attemptBudget);
       } catch (err) {
         lastErr = err;
+        attemptBudget?.recordFailure(err);
         if (
           signal?.aborted ||
           isAbortError(err) ||
           !this.ports.adapter.isRetryableError(err) ||
           attempt === maxRetries
         ) {
+          break;
+        }
+        if (attemptBudget?.exhausted) {
           break;
         }
         // Shared equal-jitter policy (packages/bot-common) applied after the
@@ -681,7 +718,26 @@ export class LlmAgentService<TToolContext> {
     if (signal?.aborted || isAbortError(lastErr)) {
       throw lastErr ?? signal?.reason ?? new Error('Aborted');
     }
+    if (attemptBudget?.exhausted) {
+      throw lastErr;
+    }
     throw new LlmRetryExhaustedError(maxRetries + 1, lastErr);
+  }
+
+  private observeAttemptBudget(
+    budget: LlmAttemptBudget,
+    outcome: 'success' | 'error' | 'budget_exhausted',
+  ): void {
+    if (budget.attemptsUsed <= 0) return;
+    try {
+      (this.ports.metrics ?? NOOP_METRICS_PORT).totalProviderAttemptsInc?.(
+        FEATURE,
+        budget.attemptsUsed,
+        outcome,
+      );
+    } catch {
+      // Telemetry must never affect the generation result.
+    }
   }
 
   private recordDegraded(

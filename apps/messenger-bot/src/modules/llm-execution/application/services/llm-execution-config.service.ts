@@ -4,10 +4,15 @@ import {
   readEnvBoolean,
   readEnvPositiveInt,
 } from '@messenger/shared/config/env-helpers';
+import { readMaxTotalProviderAttempts } from '@wispace/llm-agent/core';
 
 @Injectable()
 export class LlmExecutionConfigService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) {
+    // Validate the new bounded generation cap during module construction so
+    // an invalid explicit value fails closed at startup, not on first traffic.
+    this.getMaxTotalProviderAttempts();
+  }
 
   isEnabled(): boolean {
     return readEnvBoolean(this.configService, 'LLM_EXECUTION_ENABLED', true);
@@ -58,6 +63,12 @@ export class LlmExecutionConfigService {
       this.configService,
       'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
       1,
+    );
+  }
+
+  getMaxTotalProviderAttempts(): number {
+    return readMaxTotalProviderAttempts(
+      this.configService.get<string>('LLM_MAX_TOTAL_PROVIDER_ATTEMPTS'),
     );
   }
 

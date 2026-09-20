@@ -70,7 +70,11 @@ export class PlatformStudentReportService {
     private readonly llmAdmissionMetrics?: AdmissionMetrics,
     @Optional()
     private readonly degradedMode?: (event: LlmDegradedModeEvent) => void,
-  ) {}
+  ) {
+    // Fail closed during module construction when the explicit shared budget
+    // is invalid; report core creation is otherwise lazy.
+    buildLlmExecutionConfig();
+  }
 
   generateReport(
     externalUserId: string,

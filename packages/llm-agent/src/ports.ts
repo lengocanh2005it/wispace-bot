@@ -1,3 +1,5 @@
+import type { LlmAttemptBudget } from './execution/attempt-budget';
+
 export interface LlmExecutionPort {
   /**
    * Runs an LLM call through the configured execution-control path (limiter,
@@ -7,8 +9,13 @@ export interface LlmExecutionPort {
    * wrapper promise. `meta.signal` is the caller's cancellation signal.
    */
   run<T>(
-    fn: (signal?: AbortSignal) => Promise<T>,
-    meta: { feature: string; correlationId?: string; signal?: AbortSignal },
+    fn: (signal?: AbortSignal, attemptBudget?: LlmAttemptBudget) => Promise<T>,
+    meta: {
+      feature: string;
+      correlationId?: string;
+      signal?: AbortSignal;
+      attemptBudget?: LlmAttemptBudget;
+    },
   ): Promise<T>;
 }
 
@@ -136,6 +143,12 @@ export interface AgentMetricsPort {
   injectionBlockedInc?(source: LlmInjectionSource): void;
   /** #649: an LLM input-classifier verdict. `label` and `mode` are bounded labels. */
   classifierVerdictInc?(label: string, mode: 'shadow' | 'enforce'): void;
+  /** One bounded observation per top-level generation. */
+  totalProviderAttemptsInc?(
+    feature: string,
+    attempts: number,
+    outcome: 'success' | 'error' | 'budget_exhausted',
+  ): void;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -158,6 +171,7 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   degradedModeInc: () => undefined,
   injectionBlockedInc: () => undefined,
   classifierVerdictInc: () => undefined,
+  totalProviderAttemptsInc: () => undefined,
 };
 import type { LlmUsage } from './provider/types';
 import type { ToolObservationOutcome } from './utils/tool-observation';

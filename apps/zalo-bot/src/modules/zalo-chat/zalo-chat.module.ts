@@ -373,6 +373,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               toolPolicyDeniedInc: (toolName, reason) =>
                 metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
               degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
+              totalProviderAttemptsInc: (feature, attempts, outcome) =>
+                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),

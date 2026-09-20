@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import CircuitBreaker from 'opossum';
 import {
   admissionWaitBudgetMs,
@@ -8,6 +9,7 @@ import {
   BoundedAdmissionQueue,
   LlmOverloadError,
   LlmProviderCircuitOpenError,
+  LlmAttemptBudget,
   type AdmissionTicket,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
@@ -72,8 +74,13 @@ export class LlmExecutionService {
     }
 
     this.breaker = new CircuitBreaker(
-      (fn: () => Promise<unknown>, context?: LlmExecutionContext) =>
-        this.runWithRetry(fn, context),
+      (
+        fn: (
+          signal?: AbortSignal,
+          attemptBudget?: LlmAttemptBudget,
+        ) => Promise<unknown>,
+        context?: LlmExecutionContext,
+      ) => this.runWithRetry(fn, context),
       {
         // The request signal is the single timeout budget. A second Opossum
         // timeout would make retries outlive the caller's deadline.
@@ -102,12 +109,17 @@ export class LlmExecutionService {
    * request should pass through here.
    */
   async run<T>(
-    fn: (signal?: AbortSignal) => Promise<T>,
+    fn: (signal?: AbortSignal, attemptBudget?: LlmAttemptBudget) => Promise<T>,
     context?: LlmExecutionContext,
   ): Promise<T> {
     if (!this.config.isEnabled()) {
-      return fn(undefined);
+      return fn(undefined, undefined);
     }
+
+    const attemptBudget =
+      context?.attemptBudget ??
+      new LlmAttemptBudget(this.config.getMaxTotalProviderAttempts());
+    const ownsAttemptBudget = context?.attemptBudget === undefined;
 
     // Create the one deadline before admission so queueing, Redis acquisition,
     // provider retries, and the provider call share the same remaining budget.
@@ -123,6 +135,7 @@ export class LlmExecutionService {
         ? { correlationId: context.correlationId }
         : {}),
       signal,
+      attemptBudget,
     };
 
     const startedAtMs = Date.now();
@@ -169,7 +182,31 @@ export class LlmExecutionService {
       }
 
       try {
-        return (await this.breaker.fire(fn, executionContext)) as Promise<T>;
+        try {
+          const result = (await this.breaker.fire(
+            fn,
+            executionContext,
+          )) as Promise<T>;
+          if (ownsAttemptBudget) {
+            this.metrics.incLlmTotalProviderAttempts?.(
+              executionContext.feature,
+              attemptBudget.attemptsUsed,
+              'success',
+            );
+          }
+          return result;
+        } catch (error) {
+          if (ownsAttemptBudget) {
+            this.metrics.incLlmTotalProviderAttempts?.(
+              executionContext.feature,
+              attemptBudget.attemptsUsed,
+              attemptBudget.exhausted && !isAbortError(error)
+                ? 'budget_exhausted'
+                : 'error',
+            );
+          }
+          throw error;
+        }
       } catch (error) {
         if (isOpossumOpenError(error)) {
           throw new LlmProviderCircuitOpenError('open');
@@ -189,7 +226,7 @@ export class LlmExecutionService {
   }
 
   private async runWithRetry<T>(
-    fn: (signal?: AbortSignal) => Promise<T>,
+    fn: (signal?: AbortSignal, attemptBudget?: LlmAttemptBudget) => Promise<T>,
     context?: LlmExecutionContext,
   ): Promise<T> {
     const maxAttempts = this.config.getRetryMaxAttempts();
@@ -198,12 +235,13 @@ export class LlmExecutionService {
     const feature = context?.feature ?? 'unknown';
     const correlation = context?.correlationId ?? 'n/a';
     const signal = context?.signal;
+    const attemptBudget = context?.attemptBudget;
 
     // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
     return retryWithBackoff(
       (attemptSignal) =>
         this.metrics.timeLlmExecution(feature, () =>
-          fn(attemptSignal ?? signal),
+          fn(attemptSignal ?? signal, attemptBudget),
         ),
       {
         maxAttempts,
@@ -218,6 +256,7 @@ export class LlmExecutionService {
           ),
         signal,
         perAttemptTimeoutMs: this.config.getPerAttemptTimeoutMs(),
+        attemptBudget,
       },
     );
   }

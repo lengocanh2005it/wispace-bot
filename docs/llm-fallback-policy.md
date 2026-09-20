@@ -33,6 +33,11 @@ loop around that action.
   must be known and configured; unknown names and incomplete entries fail
   startup. A single configured provider emits a startup warning because no
   redundancy is available.
+- `LLM_MAX_TOTAL_PROVIDER_ATTEMPTS` (default `6`, explicit range `1..8`) is
+  the shared actual-provider-call allowance for one chat generation or one
+  report/reminder generation. It spans tool rounds, local retries, and
+  failover; admission/circuit/cooldown skips do not consume it. Queue replay
+  starts a fresh generation. Invalid values fail startup.
 - Active providers also require non-empty `LLM_ALLOWED_BASE_URLS` (exact host
   names) and `LLM_ALLOWED_MODELS` (exact `provider:model` pairs). Explicit and
   vendor-default endpoints are validated before the SDK is created; a bad
@@ -59,6 +64,7 @@ user text, prompts, tool results, tokens, or raw provider bodies in metrics or
 logs. The low-cardinality signals are:
 
 - `<prefix>_llm_provider_attempts_total`,
+  `<prefix>_llm_total_provider_attempts_total{feature,outcome}`,
   `<prefix>_llm_provider_circuit_events_total`, and
   `<prefix>_llm_providers_exhausted_total` for provider routing;
 - `<prefix>_llm_admission_rejected_total`,

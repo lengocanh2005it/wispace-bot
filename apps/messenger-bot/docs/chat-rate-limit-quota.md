@@ -54,6 +54,14 @@ startup warning; unknown or keyless providers fail closed. Monitor
 `<prefix>_llm_concurrency_events_total{outcome}` during saturation or provider
 outages.
 
+The shared generation budget (#1247) caps actual provider calls at
+`LLM_MAX_TOTAL_PROVIDER_ATTEMPTS` (default `6`, explicit `1..8`) across chat
+tool rounds, retries, and failover. Reports and reminders use the same cap;
+classifier calls and a later durable queue replay have separate lifecycles.
+Track `<prefix>_llm_total_provider_attempts_total{feature,outcome}` alongside
+the provider-attempt counter. `LLM_EXECUTION_ENABLED=false` remains the
+documented passthrough and bypasses this control.
+
 The `message_logs` table already exists — used for sent/received message audit (`message_type`, `external_user_id`, `user_id`, `created_at`).
 
 ### 1.4. Outbound learner-message backstop (#622)

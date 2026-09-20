@@ -17,6 +17,7 @@ describe('buildLlmExecutionConfig', () => {
     delete process.env.LLM_REQUEST_TIMEOUT_MS;
     delete process.env.LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS;
     delete process.env.LLM_GLOBAL_CONCURRENCY_ENABLED;
+    delete process.env.LLM_MAX_TOTAL_PROVIDER_ATTEMPTS;
   });
 
   afterAll(() => {
@@ -39,6 +40,7 @@ describe('buildLlmExecutionConfig', () => {
       requestTimeoutMs: LLM_EXECUTION_DEFAULTS.requestTimeoutMs,
       perAttemptTimeoutMs: LLM_EXECUTION_DEFAULTS.perAttemptTimeoutMs,
       globalConcurrencyEnabled: LLM_EXECUTION_DEFAULTS.globalConcurrencyEnabled,
+      maxTotalProviderAttempts: LLM_EXECUTION_DEFAULTS.maxTotalProviderAttempts,
     });
   });
 
@@ -62,6 +64,22 @@ describe('buildLlmExecutionConfig', () => {
     expect(config.requestTimeoutMs).toBe(60000);
     expect(config.globalConcurrencyEnabled).toBe(true);
   });
+
+  it('accepts a bounded shared provider-attempt budget', () => {
+    const config = buildLlmExecutionConfig({
+      LLM_MAX_TOTAL_PROVIDER_ATTEMPTS: '8',
+    });
+    expect(config.maxTotalProviderAttempts).toBe(8);
+  });
+
+  it.each(['0', '9', '1.5', 'not-a-number'])(
+    'fails closed for invalid shared provider-attempt budget %s',
+    (value) => {
+      expect(() =>
+        buildLlmExecutionConfig({ LLM_MAX_TOTAL_PROVIDER_ATTEMPTS: value }),
+      ).toThrow(/LLM_MAX_TOTAL_PROVIDER_ATTEMPTS/);
+    },
+  );
 
   it('falls back to defaults for invalid values', () => {
     process.env.LLM_MAX_CONCURRENT = 'not-a-number';

@@ -122,6 +122,9 @@ export class PlatformAgentService {
         redisClient,
       });
     }
+    // Validate bounded LLM execution configuration during startup even though
+    // the agent itself is built lazily on the first normal chat request.
+    buildLlmExecutionConfig();
   }
 
   async reply(input: PlatformAgentInput): Promise<PlatformAgentReply> {
@@ -892,6 +895,8 @@ export class PlatformAgentService {
           this.configService.get<string>('OPENAI_MAX_OUTPUT_TOKENS'),
         ),
         maxLlmRetries: this.options.maxLlmRetries,
+        maxTotalProviderAttempts:
+          buildLlmExecutionConfig().maxTotalProviderAttempts,
         toolExecutionTimeoutMs: this.options.toolExecutionTimeoutMs,
       },
       {

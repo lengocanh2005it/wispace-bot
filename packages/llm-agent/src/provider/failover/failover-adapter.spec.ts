@@ -11,6 +11,7 @@ import {
   type FailoverCircuitEvent,
 } from './failover-adapter';
 import { LlmAllProvidersExhaustedError } from './failover.errors';
+import { LlmAttemptBudget } from '../../execution/attempt-budget';
 
 type CandidateOverrides = {
   name: string;
@@ -125,6 +126,46 @@ describe('FailoverLlmProviderAdapter', () => {
   });
 
   describe('generateJson — failover', () => {
+    it('stops failover and retry attempts at the shared generation budget', async () => {
+      const calls = { total: 0 };
+      const makeFailingCandidate = (name: string) =>
+        makeCandidate({
+          name,
+          generateJson: jest
+            .fn()
+            .mockImplementation(async (request: LlmJsonRequest) => {
+              request.attemptBudget?.consume();
+              calls.total += 1;
+              throw serverError();
+            }),
+          normalizeError: () => serverError(),
+        });
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeFailingCandidate('a'),
+          makeFailingCandidate('b'),
+          makeFailingCandidate('c'),
+        ],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        0,
+        undefined,
+        undefined,
+        undefined,
+        4,
+      );
+
+      await expect(
+        adapter.generateJson({
+          ...makeJsonRequest(),
+          attemptBudget: new LlmAttemptBudget(6),
+        }),
+      ).rejects.toBeInstanceOf(LlmAllProvidersExhaustedError);
+      expect(calls.total).toBe(6);
+    });
+
     it('candidate 1 fails → candidate 2 succeeds → returns candidate 2 result', async () => {
       const result: LlmJsonResponse = {
         content: '{"ok":true}',

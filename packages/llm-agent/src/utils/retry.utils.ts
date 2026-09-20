@@ -3,6 +3,7 @@ import {
   jitteredDelayMs,
   sleep,
 } from '@wispace/bot-common/utils';
+import type { LlmAttemptBudget } from '../execution/attempt-budget';
 
 export { isAbortError, sleep } from '@wispace/bot-common/utils';
 
@@ -23,6 +24,8 @@ export interface RetryBackoffOptions {
    *  an AbortSignal.timeout composed with the global signal, so a single slow
    *  provider cannot consume the entire retry budget. */
   perAttemptTimeoutMs?: number;
+  /** Shared budget for actual provider calls across nested retry layers. */
+  attemptBudget?: LlmAttemptBudget;
 }
 
 /**
@@ -55,6 +58,7 @@ export async function retryWithBackoff<T>(
     if (options.signal?.aborted) {
       throw options.signal.reason ?? new Error('Aborted');
     }
+    options.attemptBudget?.throwIfExhausted();
 
     // Compose per-attempt timeout with global signal so a single slow
     // provider call is capped and does not consume the full retry budget.
@@ -70,12 +74,16 @@ export async function retryWithBackoff<T>(
       return await fn(attemptSignal);
     } catch (error) {
       lastError = error;
+      options.attemptBudget?.recordFailure(error);
       if (
         options.signal?.aborted ||
         isAbortError(error) ||
         !options.isRetryable(error) ||
         attempt >= options.maxAttempts
       ) {
+        throw error;
+      }
+      if (options.attemptBudget?.exhausted) {
         throw error;
       }
       const nominalMs = options.backoff

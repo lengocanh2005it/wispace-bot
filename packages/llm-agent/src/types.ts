@@ -27,6 +27,8 @@ export interface LlmAgentConfig {
   maxContextChars?: number;
   /** Max LLM call retries on retryable errors. Default: 3. */
   maxLlmRetries?: number;
+  /** Max actual provider calls shared by one top-level generation. Default: 6. */
+  maxTotalProviderAttempts?: number;
   /** Base delay for retry backoff in ms. Default: 100. */
   retryBaseDelayMs?: number;
   /** Cap on completion tokens per LLM call, to bound cost on runaway output. Default: 1024. */

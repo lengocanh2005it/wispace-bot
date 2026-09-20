@@ -344,6 +344,8 @@ import {
                 metrics.incLlmInjectionBlocked(source, 'messenger'),
               classifierVerdictInc: (label, mode) =>
                 metrics.incClassifierVerdict(label, mode, 'messenger'),
+              totalProviderAttemptsInc: (feature, attempts, outcome) =>
+                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),

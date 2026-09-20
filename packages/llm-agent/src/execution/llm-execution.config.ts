@@ -7,8 +7,14 @@
  * Env vars: LLM_EXECUTION_ENABLED, LLM_MAX_CONCURRENT,
  * LLM_GLOBAL_MAX_CONCURRENT, LLM_OPENAI_RETRY_MAX_ATTEMPTS,
  * LLM_OPENAI_RETRY_BACKOFF_MS, LLM_OPENAI_RETRY_MAX_DELAY_MS,
- * LLM_REQUEST_TIMEOUT_MS, LLM_GLOBAL_CONCURRENCY_ENABLED
+ * LLM_REQUEST_TIMEOUT_MS, LLM_GLOBAL_CONCURRENCY_ENABLED,
+ * LLM_MAX_TOTAL_PROVIDER_ATTEMPTS
  */
+
+import {
+  DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
+  readMaxTotalProviderAttempts,
+} from './attempt-budget';
 
 export const LLM_EXECUTION_DEFAULTS = {
   enabled: true,
@@ -17,23 +23,14 @@ export const LLM_EXECUTION_DEFAULTS = {
   chatAdmissionWaitMs: 8_000,
   backgroundAdmissionWaitMs: 1_500,
   globalMaxConcurrent: 10,
-  /**
-   * Attempt budget per tool round (#514). Total HTTP calls =
-   * retryMaxAttempts × failoverMaxAttempts × N_providers.
-   * With retryMaxAttempts=1, failover=2/provider, N=3: 1×2×3 = 6 ≤ 8.
-   * Bots set maxLlmRetries=0 so agent-level withRetry short-circuits.
-   *
-   * Migration: previously default was 3 (total ~18 calls). Changing to 1
-   * reduces inner-retry budget — bots now rely entirely on failover for
-   * per-provider recovery. Override via LLM_OPENAI_RETRY_MAX_ATTEMPTS
-   * if more aggressive retry is needed per provider.
-   */
+  /** Per-provider retry attempts; the separate shared generation cap is below. */
   retryMaxAttempts: 1,
   retryBackoffMs: 2_000,
   retryMaxDelayMs: 10_000,
   requestTimeoutMs: 30_000,
   perAttemptTimeoutMs: 10_000,
   globalConcurrencyEnabled: false,
+  maxTotalProviderAttempts: DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
 } as const;
 
 function readBoolean(
@@ -73,6 +70,7 @@ export function buildLlmExecutionConfig(
   requestTimeoutMs: number;
   perAttemptTimeoutMs: number;
   globalConcurrencyEnabled: boolean;
+  maxTotalProviderAttempts: number;
 } {
   const get = (key: string) => env?.[key] ?? process.env[key];
 
@@ -124,6 +122,9 @@ export function buildLlmExecutionConfig(
     globalConcurrencyEnabled: readBoolean(
       get('LLM_GLOBAL_CONCURRENCY_ENABLED'),
       LLM_EXECUTION_DEFAULTS.globalConcurrencyEnabled,
+    ),
+    maxTotalProviderAttempts: readMaxTotalProviderAttempts(
+      get('LLM_MAX_TOTAL_PROVIDER_ATTEMPTS'),
     ),
   };
 }

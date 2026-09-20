@@ -438,6 +438,22 @@ _Avoid_: ref check, token result
 Framework-agnostic function-calling orchestration loop (in `packages/llm-agent`). Manages tool rounds, history, grounding checks, prompt injection detection. Provider-neutral — it talks to an `LlmProviderAdapter`, never to a vendor SDK (ADR-0006).
 _Avoid_: chat service, AI service, "the OpenAI loop"
 
+**agent run**:
+One execution of the free-form agent for a learner interaction. It may contain multiple tool rounds and is one kind of LLM generation; a later queue flush replay is a new agent run.
+_Avoid_: provider call, chat turn — a chat turn can have more than one agent run when its flush is replayed
+
+**LLM generation**:
+One top-level operation that asks an LLM to produce one feature result. A chat generation is an agent run; a report or reminder generation may have no tool rounds.
+_Avoid_: provider attempt, chat turn
+
+**shared provider-attempt budget**:
+The maximum number of actual provider calls allowed during one LLM generation, consumed across agent retry, execution retry, and provider failover. It counts the initial call, does not count admission/cooldown skips, and does not carry across queue flush replays.
+_Avoid_: retry count, quota, admission cap
+
+**budget exhaustion**:
+The condition in which an LLM generation has no remaining provider-call allowance. It stops the next retry or failover call while preserving the existing terminal cause, and is distinct from an abort, deadline, or provider exhaustion outcome.
+_Avoid_: timeout, provider exhaustion, quota
+
 **context budget**:
 The one input-token ceiling for a provider request, covering the current learner turn, system prompt parts, tool schemas, conversation history, and loop-generated messages.
 _Avoid_: output budget, quota
