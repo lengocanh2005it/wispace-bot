@@ -41,6 +41,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
+  capMergedChatUserTextParts,
   capMergedChatUserText,
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
@@ -432,6 +433,12 @@ export class MessengerChatProcessorService {
 
   private async processChatBatchInner(input: ChatBatchInput): Promise<boolean> {
     const { psid, mergedText, idempotencyKey } = input;
+    const userTextParts = input.userTextParts
+      ? capMergedChatUserTextParts(
+          input.userTextParts,
+          this.getMergedTextMaxChars(),
+        )
+      : undefined;
     let { userId, linkContext } = input;
     let pendingAction: PrivacyIntent = null;
     let expectedMapping: PrivacyExpectedMapping | undefined;
@@ -578,7 +585,7 @@ export class MessengerChatProcessorService {
         externalUserId: psid,
         userId,
         texts: [mergedText],
-        ...(input.userTextParts ? { userTextParts: input.userTextParts } : {}),
+        ...(userTextParts ? { userTextParts } : {}),
         idempotencyKey,
         reservedUsageDate,
         context: linkContext ? { linkContext } : undefined,

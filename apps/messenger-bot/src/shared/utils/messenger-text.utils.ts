@@ -123,6 +123,41 @@ export function mergeChatUserTexts(texts: string[]): string {
 const MERGED_TEXT_TRUNCATION_SUFFIX =
   '\n\n… (mình chỉ xử lý phần đầu tin nhắn của bạn nhé)';
 
+/** Keeps raw parts aligned with the visible prefix when the numbered merge is capped. */
+export function capMergedChatUserTextParts(
+  texts: readonly string[],
+  maxChars: number,
+): string[] {
+  const parts = texts.map((text) => text.trim()).filter(Boolean);
+  const merged = mergeChatUserTexts(parts);
+  if (!merged || merged.length <= maxChars) {
+    return parts;
+  }
+
+  const suffix =
+    maxChars > MERGED_TEXT_TRUNCATION_SUFFIX.length
+      ? MERGED_TEXT_TRUNCATION_SUFFIX
+      : '…';
+  let remaining = Math.max(maxChars - suffix.length, 1);
+  const bounded: string[] = [];
+
+  for (const [index, part] of parts.entries()) {
+    const prefixLength = `${index + 1}. `.length;
+    const separatorLength = index > 0 ? 1 : 0;
+    const available = remaining - prefixLength - separatorLength;
+    if (available <= 0) break;
+
+    const clipped = part.slice(0, available);
+    if (clipped) {
+      bounded.push(clipped);
+    }
+    remaining -= prefixLength + separatorLength + clipped.length;
+    if (clipped.length < part.length) break;
+  }
+
+  return bounded;
+}
+
 /** H5: limit token abuse from debounce-merged burst messages. */
 export function capMergedChatUserText(text: string, maxChars: number): string {
   const trimmed = text.trim();

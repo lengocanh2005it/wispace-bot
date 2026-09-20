@@ -831,12 +831,6 @@ export class LlmAgentService<TToolContext> {
       };
     }
 
-    const jointScanView = buildJointScanView(
-      input.userText,
-      input.userTextParts,
-      input.history,
-      input.userText.length,
-    );
     const jointInjectionCheck = detectPromptInjectionAcrossTurns(
       input.userText,
       input.userTextParts,
@@ -844,6 +838,12 @@ export class LlmAgentService<TToolContext> {
       input.userText.length,
     );
     if (jointInjectionCheck.isInjection) {
+      const jointScanView = buildJointScanView(
+        input.userText,
+        input.userTextParts,
+        input.history,
+        input.userText.length,
+      );
       logger.warn(
         `Multi-turn prompt injection blocked externalUserId=${maskExternalId(
           input.externalUserId,
