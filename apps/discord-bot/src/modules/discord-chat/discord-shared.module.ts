@@ -44,6 +44,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
               ),
             onProviderAttempt: (provider, feature) =>
               metrics.incLlmProviderAttempt(provider, feature),
+            onProviderOutcome: (provider, outcome) =>
+              metrics.incLlmProviderOutcome(provider, outcome),
+            onProviderNeverSucceeded: (provider) =>
+              metrics.incLlmProviderNeverSucceeded(provider),
             onProvidersExhausted: (providers, feature) =>
               metrics.incLlmProvidersExhausted(providers.length, feature),
           },

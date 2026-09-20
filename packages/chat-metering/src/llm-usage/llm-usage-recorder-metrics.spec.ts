@@ -96,4 +96,24 @@ describe('LlmUsageRecorderCore failure rows (#549)', () => {
 
     expect(incMissingTokens).toHaveBeenCalledWith('FREE_FORM_CHAT');
   });
+
+  it('passes the selected provider to the pricing resolver', () => {
+    const estimate = jest.fn().mockReturnValue('0.010000');
+    const core = new LlmUsageRecorderCore(
+      { write: () => undefined },
+      estimate,
+      () => '2026-09-03',
+    );
+
+    core.recordFromCompletion({
+      ...base,
+      provider: 'openrouter',
+      response: {
+        id: 'r',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      },
+    });
+
+    expect(estimate).toHaveBeenCalledWith('gpt-5.4', 10, 5, 0, 'openrouter');
+  });
 });

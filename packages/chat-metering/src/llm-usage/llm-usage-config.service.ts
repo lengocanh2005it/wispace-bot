@@ -5,6 +5,9 @@ import {
   buildInputCostEnvKey,
   buildOutputCostEnvKey,
   buildCachedInputCostEnvKey,
+  buildProviderInputCostEnvKey,
+  buildProviderOutputCostEnvKey,
+  buildProviderCachedInputCostEnvKey,
   estimateCostUsd,
 } from './cost.utils';
 
@@ -37,16 +40,34 @@ export class LlmUsageConfigService {
     promptTokens: number,
     completionTokens: number,
     cachedTokens = 0,
+    provider?: string,
   ): string | null {
-    const inputRaw = this.configService.get<string>(
-      buildInputCostEnvKey(model),
-    );
-    const outputRaw = this.configService.get<string>(
-      buildOutputCostEnvKey(model),
-    );
-    const cachedInputRaw = this.configService.get<string>(
-      buildCachedInputCostEnvKey(model),
-    );
+    const providerPricing = this.hasFailoverChain();
+    const normalizedProvider = provider?.trim();
+    const inputKey = providerPricing
+      ? normalizedProvider
+        ? buildProviderInputCostEnvKey(normalizedProvider, model)
+        : undefined
+      : buildInputCostEnvKey(model);
+    const outputKey = providerPricing
+      ? normalizedProvider
+        ? buildProviderOutputCostEnvKey(normalizedProvider, model)
+        : undefined
+      : buildOutputCostEnvKey(model);
+    const cachedInputKey = providerPricing
+      ? normalizedProvider
+        ? buildProviderCachedInputCostEnvKey(normalizedProvider, model)
+        : undefined
+      : buildCachedInputCostEnvKey(model);
+    const inputRaw = inputKey
+      ? this.configService.get<string>(inputKey)
+      : undefined;
+    const outputRaw = outputKey
+      ? this.configService.get<string>(outputKey)
+      : undefined;
+    const cachedInputRaw = cachedInputKey
+      ? this.configService.get<string>(cachedInputKey)
+      : undefined;
 
     const inputUsdPer1M = inputRaw ? Number(inputRaw) : null;
     const outputUsdPer1M = outputRaw ? Number(outputRaw) : null;
@@ -59,6 +80,15 @@ export class LlmUsageConfigService {
       Number.isFinite(outputUsdPer1M) ? outputUsdPer1M : null,
       cachedTokens,
       Number.isFinite(cachedInputUsdPer1M) ? cachedInputUsdPer1M : null,
+    );
+  }
+
+  private hasFailoverChain(): boolean {
+    return (
+      (this.configService.get<string>('LLM_PROVIDER_FAILOVER_ORDER') ?? '')
+        .split(',')
+        .map((provider) => provider.trim())
+        .filter(Boolean).length > 1
     );
   }
 }

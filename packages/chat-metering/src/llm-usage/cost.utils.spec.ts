@@ -1,6 +1,7 @@
 import {
   addCostUsdStrings,
   buildInputCostEnvKey,
+  buildProviderInputCostEnvKey,
   estimateCostUsd,
   normalizeModelForEnvKey,
 } from './cost.utils';
@@ -11,6 +12,9 @@ describe('llm-usage cost.utils', () => {
     expect(buildInputCostEnvKey('gpt-5.4')).toBe(
       'LLM_COST_USD_PER_1M_INPUT_TOKENS_GPT_5_4',
     );
+    expect(
+      buildProviderInputCostEnvKey('openrouter', 'openai/gpt-4o-mini'),
+    ).toBe('LLM_COST_USD_PER_1M_INPUT_TOKENS_OPENROUTER_OPENAI_GPT_4O_MINI');
   });
 
   it('estimates USD from per-1M rates', () => {

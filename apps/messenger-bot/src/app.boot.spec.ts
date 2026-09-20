@@ -19,7 +19,7 @@ describe('AppModule boot smoke', () => {
   });
 
   it('boots without DI errors', async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_API_KEY = 'sk-test-key';
     process.env.OPENAI_MODEL = 'test-model';
     process.env.LLM_ALLOWED_BASE_URLS = 'api.openai.com';
     process.env.LLM_ALLOWED_MODELS = 'openai:test-model';
@@ -118,7 +118,7 @@ describe('AppModule boot smoke', () => {
       delete process.env.INTERNAL_API_KEY;
       process.env.DB_HOST = 'localhost';
       process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
-      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
       process.env.OPENAI_MODEL = 'test-model';
       process.env.LLM_ALLOWED_BASE_URLS = 'api.openai.com';
       process.env.LLM_ALLOWED_MODELS = 'openai:test-model';

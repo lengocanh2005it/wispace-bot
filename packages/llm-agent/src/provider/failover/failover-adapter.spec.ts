@@ -6,7 +6,10 @@ import type {
   LlmProviderError,
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
-import { FailoverLlmProviderAdapter } from './failover-adapter';
+import {
+  FailoverLlmProviderAdapter,
+  type FailoverCircuitEvent,
+} from './failover-adapter';
 import { LlmAllProvidersExhaustedError } from './failover.errors';
 
 type CandidateOverrides = {
@@ -1035,6 +1038,138 @@ describe('FailoverLlmProviderAdapter', () => {
       );
 
       expect(generateJsonB).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('provider health telemetry and quarantine', () => {
+    it('counts a completion without usage as a successful provider outcome', async () => {
+      const outcomes: Array<[string, string]> = [];
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson: () =>
+              Promise.resolve({
+                content: 'ok',
+                metadata: { provider: 'a', model: 'model-a' },
+              }),
+          }),
+        ],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (provider, outcome) => outcomes.push([provider, outcome]),
+      );
+
+      await adapter.generateJson(makeJsonRequest());
+
+      expect(outcomes).toEqual([['a', 'success']]);
+    });
+
+    it('quarantines after three auth failures and never calls the provider again', async () => {
+      const generateJson = jest.fn().mockRejectedValue(new Error('auth'));
+      const events: FailoverCircuitEvent[] = [];
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson,
+            normalizeError: () => authError(),
+          }),
+        ],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        undefined,
+        (event) => events.push(event),
+        undefined,
+        undefined,
+        1,
+      );
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+          LlmAllProvidersExhaustedError,
+        );
+      }
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+
+      expect(generateJson).toHaveBeenCalledTimes(3);
+      expect(events).toContainEqual({
+        provider: 'a',
+        action: 'quarantine',
+        reason: 'auth',
+      });
+      expect(events).toContainEqual({
+        provider: 'a',
+        action: 'skip',
+        reason: 'auth_quarantine',
+      });
+    });
+
+    it('emits never-served once per long-cooldown streak and resets after success', async () => {
+      const outcomes: string[] = [];
+      const neverSucceeded: string[] = [];
+      let calls = 0;
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson: () => {
+              calls += 1;
+              if (calls === 4) {
+                return Promise.resolve({
+                  content: 'recovered',
+                  metadata: { provider: 'a', model: 'model-a' },
+                });
+              }
+              throw new Error('quota');
+            },
+            normalizeError: () => quotaError(),
+          }),
+        ],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        1,
+        (provider, outcome) => outcomes.push(`${provider}:${outcome}`),
+        (provider) => neverSucceeded.push(provider),
+      );
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+          LlmAllProvidersExhaustedError,
+        );
+      }
+      expect(neverSucceeded).toEqual(['a']);
+
+      await expect(adapter.generateJson(makeJsonRequest())).resolves.toEqual(
+        expect.objectContaining({ content: 'recovered' }),
+      );
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+          LlmAllProvidersExhaustedError,
+        );
+      }
+      expect(neverSucceeded).toEqual(['a', 'a']);
+      expect(
+        outcomes.filter((outcome) => outcome.endsWith(':success')),
+      ).toHaveLength(1);
     });
   });
 });

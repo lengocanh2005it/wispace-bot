@@ -41,7 +41,7 @@ describe('Discord chat module — LLM provider factory', () => {
           get: (key: string) =>
             ({
               NODE_ENV: 'production',
-              OPENAI_API_KEY: 'key',
+              OPENAI_API_KEY: 'sk-test',
               OPENAI_MODEL: 'gpt-5.4',
               LLM_ALLOWED_BASE_URLS: '',
               LLM_ALLOWED_MODELS: 'openai:gpt-5.4',
@@ -70,12 +70,12 @@ describe('Discord chat module — LLM provider factory', () => {
       const entries: LlmProviderEntryConfig[] = [
         {
           provider: 'openai',
-          getApiKey: () => 'key-a',
+          getApiKey: () => 'sk-test-a',
           getModel: () => 'gpt-5.4',
         },
         {
           provider: 'openai-compatible',
-          getApiKey: () => 'key-b',
+          getApiKey: () => 'compat-test-b',
           getModel: () => 'openai/gpt-4o-mini',
           getBaseUrl: () => 'https://llm.example.test/v1',
         },
@@ -96,7 +96,7 @@ describe('Discord chat module — LLM provider factory', () => {
       const entries: LlmProviderEntryConfig[] = [
         {
           provider: 'openai',
-          getApiKey: () => 'key-a',
+          getApiKey: () => 'sk-test-a',
           getModel: () => 'gpt-5.4',
         },
       ];

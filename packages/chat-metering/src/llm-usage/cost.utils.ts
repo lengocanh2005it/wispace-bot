@@ -3,6 +3,10 @@ export function normalizeModelForEnvKey(model: string): string {
   return model.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
 }
 
+export function normalizeProviderForEnvKey(provider: string): string {
+  return provider.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+}
+
 export function buildInputCostEnvKey(model: string): string {
   return `LLM_COST_USD_PER_1M_INPUT_TOKENS_${normalizeModelForEnvKey(model)}`;
 }
@@ -13,6 +17,27 @@ export function buildOutputCostEnvKey(model: string): string {
 
 export function buildCachedInputCostEnvKey(model: string): string {
   return `LLM_COST_USD_PER_1M_CACHED_INPUT_TOKENS_${normalizeModelForEnvKey(model)}`;
+}
+
+export function buildProviderInputCostEnvKey(
+  provider: string,
+  model: string,
+): string {
+  return `LLM_COST_USD_PER_1M_INPUT_TOKENS_${normalizeProviderForEnvKey(provider)}_${normalizeModelForEnvKey(model)}`;
+}
+
+export function buildProviderOutputCostEnvKey(
+  provider: string,
+  model: string,
+): string {
+  return `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_${normalizeProviderForEnvKey(provider)}_${normalizeModelForEnvKey(model)}`;
+}
+
+export function buildProviderCachedInputCostEnvKey(
+  provider: string,
+  model: string,
+): string {
+  return `LLM_COST_USD_PER_1M_CACHED_INPUT_TOKENS_${normalizeProviderForEnvKey(provider)}_${normalizeModelForEnvKey(model)}`;
 }
 
 /** OpenAI's typical cached-input discount when no per-model price is configured. */

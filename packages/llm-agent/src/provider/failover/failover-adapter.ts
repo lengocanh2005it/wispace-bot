@@ -11,6 +11,11 @@ import { sleep, isAbortError } from '../../utils/retry.utils';
 
 interface CircuitState {
   healthyAgainAt: number;
+  opened: boolean;
+  consecutiveLongCooldowns: number;
+  consecutiveAuthFailures: number;
+  neverServedAlerted: boolean;
+  quarantined: boolean;
 }
 
 const COOLDOWN_LONG_MS = 600_000;
@@ -19,9 +24,11 @@ const QUICK_RETRY_DELAY_MS = 150;
 
 export interface FailoverCircuitEvent {
   provider: string;
-  action: 'open' | 'close' | 'skip';
+  action: 'open' | 'close' | 'skip' | 'quarantine';
   reason?: string;
 }
+
+export type FailoverProviderOutcome = 'success' | 'failure';
 
 function isProviderErrorShape(error: unknown): error is LlmProviderError {
   if (typeof error !== 'object' || error === null) return false;
@@ -42,7 +49,10 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
 
   constructor(
     private readonly candidates: LlmProviderAdapter[],
-    private readonly logger?: { warn: (msg: string) => void },
+    private readonly logger?: {
+      warn: (msg: string) => void;
+      error?: (msg: string) => void;
+    },
     private readonly clock: () => number = Date.now,
     cooldownLongMs?: number,
     cooldownShortMs?: number,
@@ -57,6 +67,15 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       feature?: string,
     ) => void,
     configuredMaxAttempts?: number,
+    private readonly onProviderOutcome?: (
+      provider: string,
+      outcome: FailoverProviderOutcome,
+      feature?: string,
+    ) => void,
+    private readonly onProviderNeverSucceeded?: (
+      provider: string,
+      feature?: string,
+    ) => void,
   ) {
     this.cooldownLongMs = cooldownLongMs ?? COOLDOWN_LONG_MS;
     this.cooldownShortMs = cooldownShortMs ?? COOLDOWN_SHORT_MS;
@@ -121,11 +140,26 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     degraded: boolean;
   } {
     const now = this.clock();
-    const healthy = this.candidates.filter(
-      (c) => (this.circuit.get(c.providerName)?.healthyAgainAt ?? 0) <= now,
-    );
+    const healthy = this.candidates.filter((c) => {
+      const state = this.circuit.get(c.providerName);
+      return !state?.quarantined && (state?.healthyAgainAt ?? 0) <= now;
+    });
     if (healthy.length === 0) {
-      return { ordered: this.candidates, suppressed: [], degraded: true };
+      const eligible = this.candidates.filter(
+        (candidate) => !this.circuit.get(candidate.providerName)?.quarantined,
+      );
+      if (eligible.length === 0) {
+        return {
+          ordered: [],
+          suppressed: this.candidates,
+          degraded: false,
+        };
+      }
+      return {
+        ordered: eligible,
+        suppressed: this.candidates.filter((c) => !eligible.includes(c)),
+        degraded: true,
+      };
     }
     const healthySet = new Set(healthy);
     return {
@@ -142,10 +176,11 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
    */
   private emitSkips(suppressed: LlmProviderAdapter[]): void {
     for (const candidate of suppressed) {
+      const state = this.circuit.get(candidate.providerName);
       this.onCircuitEvent?.({
         provider: candidate.providerName,
         action: 'skip',
-        reason: 'cooldown',
+        reason: state?.quarantined ? 'auth_quarantine' : 'cooldown',
       });
     }
   }
@@ -176,13 +211,15 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
         try {
           this.onProviderAttempt?.(candidate.providerName, request.feature);
           const result = await call(candidate, req);
-          if (this.circuit.has(candidate.providerName)) {
+          const wasOpen =
+            this.circuit.get(candidate.providerName)?.opened ?? false;
+          this.recordSuccess(candidate.providerName, request.feature);
+          if (wasOpen) {
             this.onCircuitEvent?.({
               provider: candidate.providerName,
               action: 'close',
             });
           }
-          this.circuit.delete(candidate.providerName);
           return result;
         } catch (err) {
           lastError = err;
@@ -190,6 +227,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
             throw err;
           }
           const { reason } = candidate.normalizeError(err);
+          this.recordFailure(candidate.providerName, reason, request.feature);
           const isLongCooldown =
             reason === 'quota_exceeded' ||
             reason === 'auth' ||
@@ -197,16 +235,18 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
           const isLastAttempt = attempt >= maxAttempts;
 
           if (isLongCooldown || isLastAttempt) {
-            this.circuit.set(candidate.providerName, {
-              healthyAgainAt:
+            const state = this.getState(candidate.providerName);
+            if (!state.quarantined) {
+              state.opened = true;
+              state.healthyAgainAt =
                 this.clock() +
-                (isLongCooldown ? this.cooldownLongMs : this.cooldownShortMs),
-            });
-            this.onCircuitEvent?.({
-              provider: candidate.providerName,
-              action: 'open',
-              reason,
-            });
+                (isLongCooldown ? this.cooldownLongMs : this.cooldownShortMs);
+              this.onCircuitEvent?.({
+                provider: candidate.providerName,
+                action: 'open',
+                reason,
+              });
+            }
             this.logger?.warn(
               `LLM_FAILOVER provider=${candidate.providerName} reason=${reason} attempt=${attempt} — moving to next candidate`,
             );
@@ -218,9 +258,84 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       }
     }
 
-    const providers = ordered.map((c) => c.providerName);
+    const providers =
+      ordered.length > 0
+        ? ordered.map((c) => c.providerName)
+        : this.candidates.map((c) => c.providerName);
     this.onProvidersExhausted?.(providers, request.feature);
     throw new LlmAllProvidersExhaustedError(providers, lastError);
+  }
+
+  private getState(provider: string): CircuitState {
+    const current = this.circuit.get(provider);
+    if (current) return current;
+    const created: CircuitState = {
+      healthyAgainAt: 0,
+      opened: false,
+      consecutiveLongCooldowns: 0,
+      consecutiveAuthFailures: 0,
+      neverServedAlerted: false,
+      quarantined: false,
+    };
+    this.circuit.set(provider, created);
+    return created;
+  }
+
+  private recordSuccess(provider: string, feature?: string): void {
+    const state = this.getState(provider);
+    this.onProviderOutcome?.(provider, 'success', feature);
+    state.healthyAgainAt = 0;
+    state.opened = false;
+    state.consecutiveLongCooldowns = 0;
+    state.consecutiveAuthFailures = 0;
+    state.neverServedAlerted = false;
+  }
+
+  private recordFailure(
+    provider: string,
+    reason: string,
+    feature?: string,
+  ): void {
+    const state = this.getState(provider);
+    this.onProviderOutcome?.(provider, 'failure', feature);
+
+    const isLongCooldown =
+      reason === 'quota_exceeded' ||
+      reason === 'auth' ||
+      reason === 'rate_limit';
+    if (isLongCooldown) {
+      state.consecutiveLongCooldowns += 1;
+      if (state.consecutiveLongCooldowns >= 3 && !state.neverServedAlerted) {
+        state.neverServedAlerted = true;
+        const message =
+          `LLM_PROVIDER_NEVER_SERVED provider=${provider} ` +
+          `long_cooldown_streak=${state.consecutiveLongCooldowns}`;
+        if (this.logger?.error) {
+          this.logger.error(message);
+        } else {
+          this.logger?.warn(message);
+        }
+        this.onProviderNeverSucceeded?.(provider, feature);
+      }
+    } else {
+      state.consecutiveLongCooldowns = 0;
+      state.neverServedAlerted = false;
+    }
+
+    if (reason === 'auth') {
+      state.consecutiveAuthFailures += 1;
+      if (state.consecutiveAuthFailures >= 3 && !state.quarantined) {
+        state.quarantined = true;
+        state.healthyAgainAt = Number.POSITIVE_INFINITY;
+        this.onCircuitEvent?.({
+          provider,
+          action: 'quarantine',
+          reason: 'auth',
+        });
+      }
+    } else {
+      state.consecutiveAuthFailures = 0;
+    }
   }
 
   private maxAttemptsFor(_candidate: LlmProviderAdapter): number {

@@ -62,6 +62,7 @@ export class LlmUsageRecorderService {
             input.promptTokens,
             input.completionTokens,
             input.cachedTokens,
+            input.provider,
           );
 
     this.repository
@@ -113,12 +114,13 @@ export class LlmUsageRecorderService {
 
       this.core = new LlmUsageRecorderCore(
         writer,
-        (model, promptTokens, completionTokens, cachedTokens) =>
+        (model, promptTokens, completionTokens, cachedTokens, provider) =>
           this.configService.estimateCostUsdForModel(
             model,
             promptTokens,
             completionTokens,
             cachedTokens,
+            provider,
           ),
         () => this.configService.todayUsageDate(),
         { warn: (m) => this.logger.warn(m) },

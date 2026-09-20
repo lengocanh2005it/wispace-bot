@@ -47,7 +47,9 @@ same model name has different prices at different providers.
 - Attribute usage and cost to the actual provider/model returned by the
   completion. Provider+model pricing is preferred; model-only pricing remains
   only as a compatibility path when the process has a single provider. A
-  fallback completion never uses the primary provider's price.
+  fallback completion never uses the primary provider's price. The provider
+  keys use `LLM_COST_USD_PER_1M_<DIRECTION>_TOKENS_<PROVIDER>_<MODEL>` with
+  the same normalization used by the existing model-only keys.
 - A never-served alert resets when the provider succeeds and may fire again on
   a later threshold crossing. The metric is an event counter; the alert rule
   resolves through its Prometheus increase window, with no separate resolve

@@ -3,6 +3,7 @@ import { OpenAiAdapter } from './openai/openai-adapter';
 import {
   FailoverLlmProviderAdapter,
   type FailoverCircuitEvent,
+  type FailoverProviderOutcome,
 } from './failover/failover-adapter';
 import {
   validateLlmProviderConfiguration,
@@ -19,6 +20,33 @@ export interface LlmProviderEntryConfig {
   getBaseUrl?: () => string | undefined;
   modelEnvKey?: string;
   baseUrlEnvKey?: string;
+}
+
+function validateProviderApiKey(
+  provider: string,
+  apiKey: string | undefined,
+  apiKeyEnvKey: string,
+): void {
+  const value = apiKey?.trim();
+  if (!value) {
+    throw new Error(
+      `LLM provider ${provider} is listed in failover order but missing API key (${apiKeyEnvKey})`,
+    );
+  }
+
+  if (
+    provider === 'openai' &&
+    (!value.startsWith('sk-') || value.startsWith('sk-or-'))
+  ) {
+    throw new Error(
+      `LLM provider ${provider} has an invalid API key format (${apiKeyEnvKey}); expected an OpenAI sk- key`,
+    );
+  }
+  if (provider === 'openrouter' && !value.startsWith('sk-or-v1-')) {
+    throw new Error(
+      `LLM provider ${provider} has an invalid API key format (${apiKeyEnvKey}); expected an OpenRouter sk-or-v1- key`,
+    );
+  }
 }
 
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
@@ -168,6 +196,12 @@ export interface FailoverConfig {
   onProviderAttempt?: (provider: string, feature?: string) => void;
   onProvidersExhausted?: (providers: string[], feature?: string) => void;
   maxAttempts?: number;
+  onProviderOutcome?: (
+    provider: string,
+    outcome: FailoverProviderOutcome,
+    feature?: string,
+  ) => void;
+  onProviderNeverSucceeded?: (provider: string, feature?: string) => void;
 }
 
 /**
@@ -180,7 +214,7 @@ export interface FailoverConfig {
 export function createFailoverLlmProviderAdapter(
   entries: LlmProviderEntryConfig[],
   order: string[],
-  logger?: { warn: (msg: string) => void },
+  logger?: { warn: (msg: string) => void; error?: (msg: string) => void },
   failoverConfig?: FailoverConfig,
   policy?: LlmProviderPolicy,
 ): LlmProviderAdapter {
@@ -193,11 +227,11 @@ export function createFailoverLlmProviderAdapter(
       );
     }
     assertSupportedLlmProvider(entry.provider);
-    if (!entry.getApiKey()?.trim()) {
-      throw new Error(
-        `LLM provider ${name} is listed in failover order but missing API key (${entry.apiKeyEnvKey ?? 'API key'})`,
-      );
-    }
+    validateProviderApiKey(
+      name,
+      entry.getApiKey(),
+      entry.apiKeyEnvKey ?? 'API key',
+    );
     const adapter = createLlmProviderAdapter({ ...entry, policy });
     return adapter;
   });
@@ -214,7 +248,9 @@ export function createFailoverLlmProviderAdapter(
     failoverConfig?.maxAttempts !== undefined ||
     failoverConfig?.onCircuitEvent ||
     failoverConfig?.onProviderAttempt ||
-    failoverConfig?.onProvidersExhausted,
+    failoverConfig?.onProvidersExhausted ||
+    failoverConfig?.onProviderOutcome ||
+    failoverConfig?.onProviderNeverSucceeded,
   );
   if (orderedAdapters.length === 1 && !needsFailoverWrapper) {
     return orderedAdapters[0];
@@ -230,5 +266,7 @@ export function createFailoverLlmProviderAdapter(
     failoverConfig?.onProviderAttempt,
     failoverConfig?.onProvidersExhausted,
     failoverConfig?.maxAttempts,
+    failoverConfig?.onProviderOutcome,
+    failoverConfig?.onProviderNeverSucceeded,
   );
 }

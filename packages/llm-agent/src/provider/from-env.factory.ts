@@ -20,6 +20,8 @@ type LlmProviderAdapterFromEnvOptions = Pick<
   | 'onCircuitEvent'
   | 'onProviderAttempt'
   | 'onProvidersExhausted'
+  | 'onProviderOutcome'
+  | 'onProviderNeverSucceeded'
   | 'maxAttempts'
 > & { defaultProviderOrder?: string[]; policy?: LlmProviderPolicy };
 
@@ -91,7 +93,7 @@ export function createLlmProviderAdapterFromEnv(
   return createFailoverLlmProviderAdapter(
     entries,
     providerOrder,
-    { warn: (m) => console.warn(m) },
+    { warn: (m) => console.warn(m), error: (m) => console.error(m) },
     {
       cooldownLongMs,
       cooldownShortMs,
@@ -99,6 +101,8 @@ export function createLlmProviderAdapterFromEnv(
       onCircuitEvent: options?.onCircuitEvent,
       onProviderAttempt: options?.onProviderAttempt,
       onProvidersExhausted: options?.onProvidersExhausted,
+      onProviderOutcome: options?.onProviderOutcome,
+      onProviderNeverSucceeded: options?.onProviderNeverSucceeded,
       maxAttempts: options?.maxAttempts ?? maxAttempts,
     },
     providerPolicy,

@@ -100,15 +100,61 @@ describe('createLlmProviderAdapter', () => {
 describe('createFailoverLlmProviderAdapter', () => {
   const entryA: LlmProviderEntryConfig = {
     provider: 'openai',
-    getApiKey: () => 'key-a',
+    getApiKey: () => 'sk-test-a',
     getModel: () => 'model-a',
   };
   const entryB: LlmProviderEntryConfig = {
     provider: 'openai-compatible',
-    getApiKey: () => 'key-b',
+    getApiKey: () => 'compat-test-b',
     getModel: () => 'model-b',
     getBaseUrl: () => 'https://llm.example.test/v1',
   };
+
+  it('rejects provider-mismatched credentials without exposing the value', () => {
+    const create = () =>
+      createFailoverLlmProviderAdapter(
+        [
+          {
+            provider: 'openai',
+            getApiKey: () => 'sk-or-v1-wrong-secret',
+            apiKeyEnvKey: 'OPENAI_API_KEY',
+            getModel: () => 'model-a',
+          },
+        ],
+        ['openai'],
+        undefined,
+        undefined,
+        TEST_POLICY,
+      );
+    expect(create).toThrow(/invalid API key format.*OPENAI_API_KEY/i);
+    try {
+      create();
+    } catch (error) {
+      expect(String(error)).not.toContain('sk-or-v1-wrong-secret');
+    }
+  });
+
+  it('requires the OpenRouter key prefix', () => {
+    expect(() =>
+      createFailoverLlmProviderAdapter(
+        [
+          {
+            provider: 'openrouter',
+            getApiKey: () => 'sk-openai-key',
+            apiKeyEnvKey: 'OPENROUTER_API_KEY',
+            getModel: () => 'model',
+          },
+        ],
+        ['openrouter'],
+        undefined,
+        undefined,
+        {
+          ...TEST_POLICY,
+          allowedModels: ['openrouter:model'],
+        },
+      ),
+    ).toThrow(/OPENROUTER_API_KEY.*sk-or-v1-/i);
+  });
 
   it('returns single adapter directly when only 1 provider configured', () => {
     const result = createFailoverLlmProviderAdapter(

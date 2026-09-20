@@ -242,6 +242,19 @@ groups:
           description: 'Provider {{ $labels.provider }} entered cooldown on {{ $labels.job }}; verify failover capacity and upstream error rates.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmprovidercircuitopen'
 
+      - alert: LlmProviderNeverSucceeded
+        expr: |
+          sum by (job, provider) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_provider_never_succeeded_total"}[15m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM provider has never served a completion'
+          description: 'Provider {{ $labels.provider }} crossed the never-served threshold on {{ $labels.job }}; verify the credential and preserve failover capacity.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmproviderneversucceeded'
+
       - alert: LlmProvidersExhausted
         expr: |
           sum by (job, feature) (

@@ -20,7 +20,7 @@ function env(
 describe('createLlmProviderAdapterFromEnv', () => {
   it('returns openai adapter when no failover order env is set', () => {
     const adapter = createLlmProviderAdapterFromEnv(
-      env({ OPENAI_API_KEY: 'key', OPENAI_MODEL: 'gpt-5.4' }),
+      env({ OPENAI_API_KEY: 'sk-test', OPENAI_MODEL: 'gpt-5.4' }),
     );
     expect(adapter).toBeInstanceOf(FailoverLlmProviderAdapter);
   });
@@ -29,9 +29,9 @@ describe('createLlmProviderAdapterFromEnv', () => {
     const adapter = createLlmProviderAdapterFromEnv(
       env({
         LLM_PROVIDER_FAILOVER_ORDER: 'openai, openrouter',
-        OPENAI_API_KEY: 'key',
+        OPENAI_API_KEY: 'sk-test',
         OPENAI_MODEL: 'gpt-5.4',
-        OPENROUTER_API_KEY: 'key',
+        OPENROUTER_API_KEY: 'sk-or-v1-test',
         OPENROUTER_MODEL: 'openai/gpt-4o-mini',
       }),
     );
@@ -40,7 +40,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
 
   it('uses defaultProviderOrder when order env is empty', () => {
     const adapter = createLlmProviderAdapterFromEnv(
-      env({ OPENAI_API_KEY: 'key', OPENAI_MODEL: 'gpt-5.4' }),
+      env({ OPENAI_API_KEY: 'sk-test', OPENAI_MODEL: 'gpt-5.4' }),
       { defaultProviderOrder: ['openai'] },
     );
     expect(adapter).toBeInstanceOf(FailoverLlmProviderAdapter);
@@ -49,7 +49,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
   it('passes the configured retry budget to the adapter', () => {
     const adapter = createLlmProviderAdapterFromEnv(
       env({
-        OPENAI_API_KEY: 'key',
+        OPENAI_API_KEY: 'sk-test',
         OPENAI_MODEL: 'gpt-5.4',
         LLM_OPENAI_RETRY_MAX_ATTEMPTS: '4',
       }),
@@ -63,7 +63,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
       createLlmProviderAdapterFromEnv(
         env({
           LLM_PROVIDER_FAILOVER_ORDER: 'openai,openrouter',
-          OPENAI_API_KEY: 'key',
+          OPENAI_API_KEY: 'sk-test',
           OPENAI_MODEL: 'gpt-5.4',
         }),
       ),
@@ -75,7 +75,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
       createLlmProviderAdapterFromEnv(
         env({
           LLM_PROVIDER_FAILOVER_ORDER: 'openai,typo',
-          OPENAI_API_KEY: 'key',
+          OPENAI_API_KEY: 'sk-test',
           OPENAI_MODEL: 'gpt-5.4',
         }),
       ),
@@ -84,7 +84,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
 
   it('requires an explicit model instead of applying a provider default', () => {
     expect(() =>
-      createLlmProviderAdapterFromEnv(env({ OPENAI_API_KEY: 'key' })),
+      createLlmProviderAdapterFromEnv(env({ OPENAI_API_KEY: 'sk-test' })),
     ).toThrow(/openai.*model.*explicitly configured|empty/i);
   });
 
@@ -92,7 +92,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
     expect(() =>
       createLlmProviderAdapterFromEnv(
         env({
-          OPENAI_API_KEY: 'key',
+          OPENAI_API_KEY: 'sk-test',
           OPENAI_MODEL: 'gpt-5.4',
           LLM_ALLOWED_BASE_URLS: '',
         }),
@@ -102,7 +102,10 @@ describe('createLlmProviderAdapterFromEnv', () => {
 
   it('keeps disabled execution on the unconfigured fallback without new allowlists', () => {
     const adapter = createLlmProviderAdapterFromEnv(
-      env({ LLM_EXECUTION_ENABLED: 'false', OPENAI_API_KEY: 'key' }),
+      env({
+        LLM_EXECUTION_ENABLED: 'false',
+        OPENAI_API_KEY: 'not-a-provider-key',
+      }),
     );
     expect(adapter.isConfigured()).toBe(false);
     expect(adapter.getDefaultModel()).toBe('gpt-5.4');
@@ -115,7 +118,8 @@ describe('createLlmProviderAdapterFromEnv', () => {
       allowedModels: ['openai:explicit-model'],
     };
     const adapter = createLlmProviderAdapterFromEnv(
-      (key) => ({ OPENAI_API_KEY: 'key', OPENAI_MODEL: 'explicit-model' })[key],
+      (key) =>
+        ({ OPENAI_API_KEY: 'sk-test', OPENAI_MODEL: 'explicit-model' })[key],
       policy,
     );
     expect(adapter).toBeInstanceOf(FailoverLlmProviderAdapter);

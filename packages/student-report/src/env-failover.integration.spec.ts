@@ -44,9 +44,9 @@ describe('env provider failover → execution port → student report', () => {
   it('moves from a failed primary to the configured secondary and preserves actual metadata', async () => {
     const env: Record<string, string> = {
       LLM_PROVIDER_FAILOVER_ORDER: 'openai,openrouter',
-      OPENAI_API_KEY: 'primary-key',
+      OPENAI_API_KEY: 'sk-primary-test',
       OPENAI_MODEL: 'gpt-primary',
-      OPENROUTER_API_KEY: 'secondary-key',
+      OPENROUTER_API_KEY: 'sk-or-v1-secondary-test',
       OPENROUTER_MODEL: 'openrouter/secondary',
       LLM_ALLOWED_BASE_URLS: 'api.openai.com,openrouter.ai',
       LLM_ALLOWED_MODELS: 'openai:gpt-primary,openrouter:openrouter/secondary',

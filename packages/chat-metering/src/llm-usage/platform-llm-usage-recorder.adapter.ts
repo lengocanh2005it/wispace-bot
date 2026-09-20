@@ -29,6 +29,7 @@ export interface PlatformLlmUsageConfig {
     promptTokens: number,
     completionTokens: number,
     cachedTokens?: number,
+    provider?: string,
   ): string | null;
   todayUsageDate(): string;
 }
@@ -96,12 +97,13 @@ export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {
 
       this.core = new LlmUsageRecorderCore(
         writer,
-        (model, promptTokens, completionTokens, cachedTokens) =>
+        (model, promptTokens, completionTokens, cachedTokens, provider) =>
           this.config.estimateCostUsdForModel(
             model,
             promptTokens,
             completionTokens,
             cachedTokens,
+            provider,
           ),
         () => this.config.todayUsageDate(),
         { warn: (m) => this.logger.warn(m) },

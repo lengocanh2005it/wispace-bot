@@ -29,7 +29,7 @@ describe('Zalo outbound port wiring', () => {
           get: (key: string) =>
             ({
               NODE_ENV: 'production',
-              OPENAI_API_KEY: 'key',
+              OPENAI_API_KEY: 'sk-test',
               OPENAI_MODEL: 'gpt-5.4',
               LLM_ALLOWED_BASE_URLS: '',
               LLM_ALLOWED_MODELS: 'openai:gpt-5.4',

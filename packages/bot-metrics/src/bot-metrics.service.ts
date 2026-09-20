@@ -122,6 +122,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmAdmissionDrainLag: Gauge;
   private llmConcurrencyEvents: Counter;
   private llmProviderAttempts: Counter;
+  private llmProviderOutcomes: Counter;
+  private llmProviderNeverSucceeded: Counter;
   private llmProviderCircuitEvents: Counter;
   private llmProvidersExhausted: Counter;
   private llmDegradedMode: Counter;
@@ -301,6 +303,20 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_provider_attempts_total`,
       help: 'LLM provider attempts made by the failover adapter',
       labelNames: ['provider', 'feature'],
+      registers: [this.registry],
+    });
+
+    this.llmProviderOutcomes = new Counter({
+      name: `${this.prefix}_llm_provider_outcomes_total`,
+      help: 'LLM provider call outcomes observed by the failover adapter',
+      labelNames: ['provider', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.llmProviderNeverSucceeded = new Counter({
+      name: `${this.prefix}_llm_provider_never_succeeded_total`,
+      help: 'Configured LLM providers that crossed the never-served threshold',
+      labelNames: ['provider'],
       registers: [this.registry],
     });
 
@@ -892,6 +908,17 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incLlmProviderAttempt(provider: string, feature = 'unknown'): void {
     this.llmProviderAttempts.inc({ provider, feature });
+  }
+
+  incLlmProviderOutcome(
+    provider: string,
+    outcome: 'success' | 'failure',
+  ): void {
+    this.llmProviderOutcomes.inc({ provider, outcome });
+  }
+
+  incLlmProviderNeverSucceeded(provider: string): void {
+    this.llmProviderNeverSucceeded.inc({ provider });
   }
 
   incLlmProviderCircuitEvent(

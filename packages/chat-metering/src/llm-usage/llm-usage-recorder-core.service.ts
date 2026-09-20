@@ -71,6 +71,7 @@ export class LlmUsageRecorderCore {
       promptTokens: number,
       completionTokens: number,
       cachedTokens?: number,
+      provider?: string,
     ) => string | null,
     private readonly todayUsageDate: () => string,
     private readonly logger: LlmUsageRecorderLogger = NOOP_LOGGER,
@@ -96,6 +97,7 @@ export class LlmUsageRecorderCore {
       promptTokens,
       completionTokens,
       cachedTokens,
+      input.provider,
     );
 
     if (

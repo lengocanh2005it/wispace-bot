@@ -4,6 +4,9 @@ import {
   buildInputCostEnvKey,
   buildOutputCostEnvKey,
   buildCachedInputCostEnvKey,
+  buildProviderInputCostEnvKey,
+  buildProviderOutputCostEnvKey,
+  buildProviderCachedInputCostEnvKey,
   estimateCostUsd,
   todayUsageDate,
 } from '@wispace/chat-metering';
@@ -54,14 +57,32 @@ export class LlmUsageConfigService {
     promptTokens: number,
     completionTokens: number,
     cachedTokens = 0,
+    provider?: string,
   ): string | null {
+    const providerPricing = this.hasFailoverChain();
+    const normalizedProvider = provider?.trim();
+    const inputKey = providerPricing
+      ? normalizedProvider
+        ? buildProviderInputCostEnvKey(normalizedProvider, model)
+        : undefined
+      : buildInputCostEnvKey(model);
+    const outputKey = providerPricing
+      ? normalizedProvider
+        ? buildProviderOutputCostEnvKey(normalizedProvider, model)
+        : undefined
+      : buildOutputCostEnvKey(model);
+    const cachedInputKey = providerPricing
+      ? normalizedProvider
+        ? buildProviderCachedInputCostEnvKey(normalizedProvider, model)
+        : undefined
+      : buildCachedInputCostEnvKey(model);
     return estimateCostUsd(
       promptTokens,
       completionTokens,
-      this.getModelInputUsdPer1M(model),
-      this.getModelOutputUsdPer1M(model),
+      this.readPositiveNumber(inputKey),
+      this.readPositiveNumber(outputKey),
       cachedTokens,
-      this.getModelCachedInputUsdPer1M(model),
+      this.readPositiveNumber(cachedInputKey),
     );
   }
 
@@ -69,11 +90,21 @@ export class LlmUsageConfigService {
     return 'Estimated from env LLM_COST_USD_PER_1M_* pricing; not an OpenAI invoice.';
   }
 
-  private readPositiveNumber(envKey: string): number | null {
+  private readPositiveNumber(envKey?: string): number | null {
+    if (!envKey) return null;
     const raw = this.configService.get<string>(envKey)?.trim();
     if (!raw) return null;
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) return null;
     return value;
+  }
+
+  private hasFailoverChain(): boolean {
+    return (
+      (this.configService.get<string>('LLM_PROVIDER_FAILOVER_ORDER') ?? '')
+        .split(',')
+        .map((provider) => provider.trim())
+        .filter(Boolean).length > 1
+    );
   }
 }

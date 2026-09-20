@@ -180,6 +180,8 @@ tests:
     input_series:
       - series: 'messenger_llm_provider_circuit_events_total{job="messenger_bot",provider="openai",action="open",reason="quota"}'
         values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_provider_never_succeeded_total{job="messenger_bot",provider="openai"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1'
       - series: 'messenger_llm_providers_exhausted_total{job="messenger_bot",provider_count="2",feature="FREE_FORM_CHAT"}'
         values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
       - series: 'messenger_llm_degraded_mode_total{job="messenger_bot",platform="messenger",feature="FREE_FORM_CHAT",failure_class="provider_exhausted",action="fallback"}'
@@ -217,6 +219,18 @@ tests:
               summary: messenger_bot LLM provider circuit opened
               description: Provider openai entered cooldown on messenger_bot; verify failover capacity and upstream error rates.
               runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmprovidercircuitopen
+      - eval_time: 20m
+        alertname: LlmProviderNeverSucceeded
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmProviderNeverSucceeded
+              job: messenger_bot
+              provider: openai
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot LLM provider has never served a completion
+              description: Provider openai crossed the never-served threshold on messenger_bot; verify the credential and preserve failover capacity.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmproviderneversucceeded
       - eval_time: 20m
         alertname: LlmProvidersExhausted
         exp_alerts:
