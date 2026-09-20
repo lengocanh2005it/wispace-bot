@@ -15,7 +15,11 @@ export type LlmProvider =
   | 'local';
 
 /** Feature keys for usage tracking — canonical source. */
-export type LlmFeature = 'FREE_FORM_CHAT' | 'STUDENT_REPORT' | 'STUDY_REMINDER';
+export type LlmFeature =
+  | 'FREE_FORM_CHAT'
+  | 'LLM_INPUT_CLASSIFIER'
+  | 'STUDENT_REPORT'
+  | 'STUDY_REMINDER';
 
 // ---------------------------------------------------------------------------
 // Tool definitions (provider-agnostic, plain JSON Schema)

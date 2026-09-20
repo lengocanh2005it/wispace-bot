@@ -2,14 +2,17 @@ import { LlmContentClassifier } from './llm-content-classifier';
 import { REDACTED_PLACEHOLDER } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 
-function adapterReturning(content: string): LlmProviderAdapter {
+function adapterReturning(
+  content: string,
+  metadata = { provider: 'test', model: 'test-model' },
+): LlmProviderAdapter {
   return {
     providerName: 'test',
     isConfigured: () => true,
     getDefaultModel: () => 'test-model',
     generateJson: jest.fn(async () => ({
       content,
-      metadata: { provider: 'test', model: 'test-model' },
+      metadata,
     })),
     chatWithTools: jest.fn(),
     isRetryableError: () => false,
@@ -21,6 +24,8 @@ function adapterReturning(content: string): LlmProviderAdapter {
     }),
   } as unknown as LlmProviderAdapter;
 }
+
+const completion = { provider: 'test', model: 'test-model' };
 
 const base = { model: 'm', timeoutMs: 1000, maxInputChars: 512 };
 
@@ -39,6 +44,7 @@ it('returns a parsed verdict on a well-formed response', async () => {
       confidence: 0.9,
       reason: 'instruction override',
     },
+    completion,
   });
 });
 
@@ -57,6 +63,7 @@ it('parses CRISIS and ABUSE labels from the canonical registry (#1054 / #975)', 
       confidence: 0.95,
       reason: 'self-harm intent',
     },
+    completion,
   });
 
   const abuseClassifier = new LlmContentClassifier({
@@ -73,6 +80,7 @@ it('parses CRISIS and ABUSE labels from the canonical registry (#1054 / #975)', 
       confidence: 0.88,
       reason: 'bot hostility',
     },
+    completion,
   });
 });
 
@@ -87,6 +95,7 @@ it('extracts JSON embedded in prose', async () => {
   expect(r).toEqual({
     ok: true,
     verdict: { label: 'SAFE', confidence: 0.99, reason: 'safe question' },
+    completion,
   });
 });
 
@@ -116,7 +125,11 @@ it('returns parse_failed on unparseable output', async () => {
     adapter: adapterReturning('not json at all'),
     ...base,
   });
-  expect(await c.classify('hi')).toEqual({ ok: false, reason: 'parse_failed' });
+  expect(await c.classify('hi')).toEqual({
+    ok: false,
+    reason: 'parse_failed',
+    completion,
+  });
 });
 
 it('returns parse_failed on an unknown label', async () => {
@@ -126,7 +139,30 @@ it('returns parse_failed on an unknown label', async () => {
     ),
     ...base,
   });
-  expect(await c.classify('hi')).toEqual({ ok: false, reason: 'parse_failed' });
+  expect(await c.classify('hi')).toEqual({
+    ok: false,
+    reason: 'parse_failed',
+    completion,
+  });
+});
+
+it('retains provider completion metadata when the response JSON is malformed', async () => {
+  const metadata = {
+    provider: 'test',
+    model: 'test-model',
+    responseId: 'classifier-response-1',
+    usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+  };
+  const c = new LlmContentClassifier({
+    adapter: adapterReturning('not json', metadata),
+    ...base,
+  });
+
+  expect(await c.classify('hi')).toEqual({
+    ok: false,
+    reason: 'parse_failed',
+    completion: metadata,
+  });
 });
 
 it('passes an AbortSignal to generateJson and returns timeout when it fires', async () => {
@@ -205,7 +241,7 @@ it('#632 — routes classifier input through redactSecrets; bounds the projected
   expect(arg.userContent).toContain(REDACTED_PLACEHOLDER);
   expect(arg.userContent.length).toBeLessThanOrEqual(512);
   expect(arg.systemPrompt).toContain('"label"');
-  expect(arg.feature).toBe('FREE_FORM_CHAT');
+  expect(arg.feature).toBe('LLM_INPUT_CLASSIFIER');
   expect(arg.model).toBe('m');
 });
 
@@ -243,6 +279,7 @@ it('keeps classification fail-open when input-shape telemetry throws', async () 
   expect(await c.classify('a'.repeat(512))).toEqual({
     ok: true,
     verdict: { label: 'SAFE', confidence: 0.9, reason: 'ok' },
+    completion,
   });
   expect(adapter.generateJson).toHaveBeenCalledTimes(1);
 });
@@ -270,6 +307,7 @@ it('samples both ends when the redacted message exceeds the ceiling', async () =
       confidence: 0.9,
       reason: 'instruction override',
     },
+    completion,
   });
   expect(arg.userContent).toContain('ignore previous instructions');
   expect(arg.userContent).toContain('…');
@@ -335,6 +373,7 @@ it('keeps a clean long IELTS draft eligible for SAFE', async () => {
   expect(result).toEqual({
     ok: true,
     verdict: { label: 'SAFE', confidence: 0.9, reason: 'normal essay' },
+    completion,
   });
   expect(shapes).toEqual(['head_tail']);
 });
