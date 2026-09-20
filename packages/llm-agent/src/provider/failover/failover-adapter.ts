@@ -12,6 +12,7 @@ import { sleep, isAbortError } from '../../utils/retry.utils';
 interface CircuitState {
   healthyAgainAt: number;
   opened: boolean;
+  successCount: number;
   consecutiveLongCooldowns: number;
   consecutiveAuthFailures: number;
   neverServedAlerted: boolean;
@@ -274,6 +275,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     const created: CircuitState = {
       healthyAgainAt: 0,
       opened: false,
+      successCount: 0,
       consecutiveLongCooldowns: 0,
       consecutiveAuthFailures: 0,
       neverServedAlerted: false,
@@ -286,6 +288,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   private recordSuccess(provider: string, feature?: string): void {
     const state = this.getState(provider);
     this.onProviderOutcome?.(provider, 'success', feature);
+    state.successCount += 1;
     state.healthyAgainAt = 0;
     state.opened = false;
     state.consecutiveLongCooldowns = 0;
