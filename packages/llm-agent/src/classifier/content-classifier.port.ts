@@ -1,3 +1,5 @@
+import type { LlmProviderMetadata } from '../provider/types';
+
 /**
  * #649 — second-tier input classifier behind the regex guardrails. Runs on
  * a single fresh user message (no history), returns a structured verdict.
@@ -50,12 +52,20 @@ export type ClassifyFailureReason =
   | 'skipped_circuit_open';
 
 /**
- * Discriminated result. `ok: false` means the classifier produced nothing
- * usable — the caller MUST fail open (proceed as if the tier were absent).
+ * Discriminated result. `completion` is preserved whenever the provider
+ * returned response metadata, including malformed JSON responses.
  */
 export type ClassifyResult =
-  | { ok: true; verdict: ClassifierVerdict }
-  | { ok: false; reason: ClassifyFailureReason };
+  | {
+      ok: true;
+      verdict: ClassifierVerdict;
+      completion?: LlmProviderMetadata;
+    }
+  | {
+      ok: false;
+      reason: ClassifyFailureReason;
+      completion?: LlmProviderMetadata;
+    };
 
 export interface ContentClassifierPort {
   /**

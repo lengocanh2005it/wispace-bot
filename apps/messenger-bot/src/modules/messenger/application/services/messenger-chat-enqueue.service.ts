@@ -175,6 +175,7 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
       await this.processor.process({
         psid: batch.externalUserId,
         mergedText,
+        ...(batch.texts.length > 1 ? { userTextParts: batch.texts } : {}),
         userId: batch.context?.userId,
         linkContext: batch.context?.linkContext,
         idempotencyKey: batch.idempotencyKey,

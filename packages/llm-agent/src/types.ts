@@ -53,6 +53,8 @@ export interface LlmAgentInput {
   /** WISPACE userId if the external account is linked; undefined otherwise. */
   userId?: number;
   userText: string;
+  /** Ordered raw learner messages from the current debounced turn. */
+  userTextParts?: readonly string[];
   /** Fully-built system prompt (base persona + per-user linkage note) — composed by the caller. */
   systemPrompt: string;
   /** Optional named parts; when present they are the source of truth for context trimming. */
@@ -66,6 +68,8 @@ export interface LlmAgentInput {
 
 export interface LlmAgentReply {
   text: string;
+  /** Canned safety replies do not become long-term history. */
+  skipHistory?: boolean;
   /** True when the agent exhausted maxToolRounds without reaching a final reply. */
   exhausted?: boolean;
   /**

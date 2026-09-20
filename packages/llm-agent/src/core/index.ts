@@ -98,6 +98,7 @@ export {
 } from '../messages';
 export {
   detectPromptInjection,
+  detectPromptInjectionAcrossTurns,
   detectDisclosureProbe,
   sanitizeToolResultContent,
   sanitizeUntrustedTextForLlm,

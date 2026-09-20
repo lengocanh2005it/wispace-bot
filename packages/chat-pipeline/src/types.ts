@@ -48,6 +48,8 @@ export interface AgentInput {
   externalUserId: string;
   userId?: number;
   userText: string;
+  /** Ordered raw learner messages from the current debounced turn. */
+  userTextParts?: readonly string[];
   history: readonly ChatHistoryMessage[];
   correlationId?: string;
   /** Platform-specific context (e.g. Discord server channel flag). */
@@ -141,6 +143,8 @@ export interface ChatPipelineInput {
   externalUserId: string;
   userId?: number;
   texts: string[];
+  /** Optional raw current messages when `texts` is already presentation-formatted. */
+  userTextParts?: readonly string[];
   idempotencyKey?: string;
   reservedUsageDate?: string;
   context?: Record<string, unknown>;

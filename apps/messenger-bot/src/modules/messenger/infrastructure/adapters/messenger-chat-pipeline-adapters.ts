@@ -105,6 +105,9 @@ export function createMessengerChatPipelineAdapters(
         psid: input.externalUserId,
         userId: input.userId,
         userText: input.userText,
+        ...(input.userTextParts
+          ? { userTextParts: [...input.userTextParts] }
+          : {}),
         history: [...input.history],
         correlationId: input.correlationId,
         linkContext,

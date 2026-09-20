@@ -30,7 +30,8 @@ export interface LlmContentClassifierDeps {
  * full/head-tail projection, own `AbortSignal.timeout` deadline (which aborts
  * the in-flight request, not just the wrapper promise), no retry, no shared
  * concurrency budget, and a local circuit breaker. Never throws — every
- * provider failure returns `{ ok: false, reason }` and the caller fails open.
+ * provider failure returns a bounded typed reason; provider completion
+ * metadata is retained when it exists for usage accounting.
  *
  * Circuit breaker: `CIRCUIT_FAILURE_THRESHOLD` consecutive failures open it
  * for `CIRCUIT_OPEN_MS`; the first call afterwards is a single half-open
@@ -63,10 +64,10 @@ export class LlmContentClassifier implements ContentClassifierPort {
     }
     const signal = AbortSignal.timeout(this.deps.timeoutMs);
 
-    let content: string;
+    let response: Awaited<ReturnType<LlmProviderAdapter['generateJson']>>;
     try {
-      const res = await this.deps.adapter.generateJson({
-        feature: 'FREE_FORM_CHAT',
+      response = await this.deps.adapter.generateJson({
+        feature: 'LLM_INPUT_CLASSIFIER',
         model: this.deps.model,
         systemPrompt: CLASSIFIER_SYSTEM_PROMPT,
         userContent: projected.text,
@@ -74,20 +75,19 @@ export class LlmContentClassifier implements ContentClassifierPort {
         correlationId,
         signal,
       });
-      content = res.content;
     } catch {
       return this.settle(signal.aborted ? 'timeout' : 'error');
     }
 
-    const verdict = this.parse(content);
+    const verdict = this.parse(response.content);
     if (!verdict) {
-      return this.settle('parse_failed');
+      return this.settle('parse_failed', response.metadata);
     }
 
     this.consecutiveFailures = 0;
     this.openUntil = 0;
     this.halfOpenInFlight = false;
-    return { ok: true, verdict };
+    return { ok: true, verdict, completion: response.metadata };
   }
 
   /** Circuit gate. Returns false while open (or a probe is already in flight). */
@@ -103,7 +103,12 @@ export class LlmContentClassifier implements ContentClassifierPort {
     return true;
   }
 
-  private settle(reason: ClassifyFailureReason): ClassifyResult {
+  private settle(
+    reason: ClassifyFailureReason,
+    completion?: Awaited<
+      ReturnType<LlmProviderAdapter['generateJson']>
+    >['metadata'],
+  ): ClassifyResult {
     if (this.halfOpenInFlight) {
       // The half-open probe failed — re-open immediately, no need to
       // re-accumulate `CIRCUIT_FAILURE_THRESHOLD` failures.
@@ -112,7 +117,7 @@ export class LlmContentClassifier implements ContentClassifierPort {
       this.deps.logger?.warn(
         `LlmContentClassifier half-open probe failed (${reason}); circuit re-opened for ${CIRCUIT_OPEN_MS}ms`,
       );
-      return { ok: false, reason };
+      return { ok: false, reason, ...(completion ? { completion } : {}) };
     }
     this.consecutiveFailures += 1;
     if (this.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
@@ -122,7 +127,7 @@ export class LlmContentClassifier implements ContentClassifierPort {
         `LlmContentClassifier circuit opened for ${CIRCUIT_OPEN_MS}ms`,
       );
     }
-    return { ok: false, reason };
+    return { ok: false, reason, ...(completion ? { completion } : {}) };
   }
 
   private parse(

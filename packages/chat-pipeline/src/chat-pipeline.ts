@@ -12,6 +12,30 @@ import type {
 
 const DEFAULT_MERGED_TEXT_MAX_CHARS = 4000;
 
+function capUserTextParts(
+  parts: readonly string[],
+  maxChars: number,
+): readonly string[] {
+  const joined = parts.join('\n');
+  if (joined.length <= maxChars) {
+    return parts;
+  }
+
+  const bounded: string[] = [];
+  let remaining = maxChars;
+  for (const [index, part] of parts.entries()) {
+    const separatorLength = index > 0 ? 1 : 0;
+    const available = remaining - separatorLength;
+    if (available < 0) break;
+
+    const clipped = part.slice(0, available);
+    bounded.push(clipped);
+    remaining -= separatorLength + clipped.length;
+    if (clipped.length < part.length) break;
+  }
+  return bounded;
+}
+
 /**
  * Framework-agnostic chat flush pipeline.
  *
@@ -43,6 +67,10 @@ export class ChatPipeline {
    */
   async flush(input: ChatPipelineInput): Promise<boolean> {
     const mergedText = input.texts.join('\n').slice(0, this.mergedTextMaxChars);
+    const userTextParts = capUserTextParts(
+      input.userTextParts ?? input.texts,
+      mergedText.length,
+    );
 
     const ctx: PipelineContext = {
       externalUserId: input.externalUserId,
@@ -91,6 +119,7 @@ export class ChatPipeline {
         externalUserId: input.externalUserId,
         userId: input.userId,
         userText: mergedText,
+        userTextParts,
         history,
         correlationId: input.idempotencyKey,
         context: input.context,

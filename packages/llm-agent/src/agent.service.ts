@@ -6,7 +6,9 @@ import {
   type AgentToolName,
 } from './agent.tools';
 import {
+  buildJointScanView,
   detectPromptInjection,
+  detectPromptInjectionAcrossTurns,
   detectDisclosureProbe,
 } from './utils/prompt-injection.utils';
 import {
@@ -825,6 +827,37 @@ export class LlmAgentService<TToolContext> {
             injectionCheck.reason === 'extraction'
               ? buildNonDisclosureReply()
               : buildPromptInjectionBlockedMessage(),
+        },
+      };
+    }
+
+    const jointInjectionCheck = detectPromptInjectionAcrossTurns(
+      input.userText,
+      input.userTextParts,
+      input.history,
+      input.userText.length,
+    );
+    if (jointInjectionCheck.isInjection) {
+      const jointScanView = buildJointScanView(
+        input.userText,
+        input.userTextParts,
+        input.history,
+        input.userText.length,
+      );
+      logger.warn(
+        `Multi-turn prompt injection blocked externalUserId=${maskExternalId(
+          input.externalUserId,
+        )} reason=${jointInjectionCheck.reason}`,
+      );
+      this.recordInjection(input, 'user_input', 'multi_turn', jointScanView);
+      return {
+        blocked: true,
+        reply: {
+          text:
+            jointInjectionCheck.reason === 'extraction'
+              ? buildNonDisclosureReply()
+              : buildPromptInjectionBlockedMessage(),
+          skipHistory: true,
         },
       };
     }

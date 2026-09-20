@@ -17,6 +17,8 @@ export interface MessengerAgentInput {
   psid: string;
   userId?: number;
   userText: string;
+  /** Ordered raw learner messages from the current debounced turn. */
+  userTextParts?: readonly string[];
   linkContext?: MessengerLinkContext;
   history?: ChatHistoryMessage[];
   /** message.mid — LLM usage correlation id */

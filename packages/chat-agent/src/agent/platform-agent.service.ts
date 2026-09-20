@@ -12,6 +12,7 @@ import {
   type LlmExecutionPort,
   type LlmProviderAdapter,
   type LlmAgentPromptParts,
+  type ClassifyResult,
   loadSystemPromptFile,
   IntentDetector,
   isAmbiguousMessage,
@@ -24,6 +25,7 @@ import {
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
   buildPromptInjectionBlockedMessage,
+  CHAT_FAILURE_FALLBACK_MESSAGE,
   buildHostilityDeflectionMessage,
   buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
@@ -180,6 +182,13 @@ export class PlatformAgentService {
       return clarification.reply;
     }
     const effectiveInput = clarification.input ?? input;
+    const classifierBlock = clarification.choiceConsumed
+      ? null
+      : await this.runInputClassifier(effectiveInput);
+    if (classifierBlock) {
+      return classifierBlock;
+    }
+
     const identity = await this.resolveCurrentIdentity(effectiveInput);
     const identityChanged = identity
       ? this.rememberIdentityVersion(
@@ -255,13 +264,6 @@ export class PlatformAgentService {
       };
     }
 
-    const classifierBlock = clarification.choiceConsumed
-      ? null
-      : await this.runInputClassifier(resolvedInput);
-    if (classifierBlock) {
-      return classifierBlock;
-    }
-
     let history = identity ? effectiveInput.history : [];
     if (identity && (identityChanged || effectiveInput.history === undefined)) {
       try {
@@ -288,6 +290,7 @@ export class PlatformAgentService {
           externalUserId: resolvedInput.externalUserId,
           userId: resolvedInput.userId,
           userText: resolvedInput.userText,
+          userTextParts: resolvedInput.userTextParts,
           systemPrompt: prompt.systemPrompt,
           systemPromptParts: prompt.systemPromptParts,
           history: history as Parameters<
@@ -311,7 +314,8 @@ export class PlatformAgentService {
 
     if (
       this.options.appendHistory !== false &&
-      resolvedInput.history === undefined
+      resolvedInput.history === undefined &&
+      result.skipHistory !== true
     ) {
       try {
         await this.historyService.appendTurn(
@@ -335,6 +339,7 @@ export class PlatformAgentService {
       richFollowUps: toolContext.richFollowUps ?? [],
       exhausted: result.exhausted,
       toolSummary: result.toolSummary,
+      skipHistory: result.skipHistory,
     };
   }
 
@@ -478,6 +483,7 @@ export class PlatformAgentService {
             input: {
               ...input,
               userText: this.buildChoicePrompt(failedChoice),
+              userTextParts: undefined,
             },
             choiceConsumed: true,
           };
@@ -536,6 +542,7 @@ export class PlatformAgentService {
           input: {
             ...input,
             userText: this.buildChoicePrompt(choice),
+            userTextParts: undefined,
           },
           choiceConsumed: true,
         };
@@ -981,30 +988,34 @@ export class PlatformAgentService {
         input.correlationId,
       );
       if (!result.ok) {
-        this.options.metrics?.classifierVerdictInc?.(result.reason, mode);
-        return null;
+        return this.handleClassifierUnavailable(input, mode, result);
       }
+      this.recordClassifierUsage(input, result);
       const { label, confidence, reason } = result.verdict;
-      this.options.metrics?.classifierVerdictInc?.(label, mode);
+      this.recordClassifierVerdictMetric(label, mode);
       if (label === 'SAFE') return null;
 
-      this.safetyEventService.recordClassifierVerdict({
-        externalUserId: input.externalUserId,
-        userId: input.userId,
-        correlationId: input.correlationId,
-        label,
-        mode,
-        confidence,
-        reason,
-        textPreview: input.userText,
-      });
+      try {
+        this.safetyEventService.recordClassifierVerdict({
+          externalUserId: input.externalUserId,
+          userId: input.userId,
+          correlationId: input.correlationId,
+          label,
+          mode,
+          confidence,
+          reason,
+          textPreview: input.userText,
+        });
+      } catch {
+        // Safety telemetry is best effort; it must not change the verdict path.
+      }
 
-      if (mode === 'shadow' || confidence < this.classifierMinConfidence)
-        return null;
+      if (mode === 'shadow') return null;
 
       if (label === 'CRISIS') {
         return this.shortCircuitReply(buildCrisisSupportHandoffMessage());
       }
+      if (confidence < this.classifierMinConfidence) return null;
       if (label === 'ABUSE') {
         return this.shortCircuitReply(buildHostilityDeflectionMessage());
       }
@@ -1021,7 +1032,60 @@ export class PlatformAgentService {
       this.logger.warn(
         `Input classifier failed externalUserId=${maskExternalId(input.externalUserId)}`,
       );
-      return null;
+      return this.handleClassifierUnavailable(input, mode, {
+        ok: false,
+        reason: 'error',
+      });
+    }
+  }
+
+  private handleClassifierUnavailable(
+    input: PlatformAgentInput,
+    mode: 'shadow' | 'enforce',
+    result: Extract<ClassifyResult, { ok: false }>,
+  ): PlatformAgentReply | null {
+    this.recordClassifierVerdictMetric(result.reason, mode);
+    this.recordClassifierUsage(input, result);
+    if (mode !== 'enforce') return null;
+    this.recordDegraded(input, 'classifier_unavailable', 'block_response');
+    return this.shortCircuitReply(CHAT_FAILURE_FALLBACK_MESSAGE);
+  }
+
+  private recordClassifierVerdictMetric(
+    label: string,
+    mode: 'shadow' | 'enforce',
+  ): void {
+    try {
+      this.options.metrics?.classifierVerdictInc?.(label, mode);
+    } catch {
+      // Metrics are best effort and must not change the classifier policy.
+    }
+  }
+
+  private recordClassifierUsage(
+    input: PlatformAgentInput,
+    result: ClassifyResult,
+  ): void {
+    if (!result.ok && result.reason === 'skipped_circuit_open') return;
+    const completion = result.completion;
+    try {
+      this.usageRecorder.recordFromCompletion({
+        feature: 'LLM_INPUT_CLASSIFIER',
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        provider: completion?.provider,
+        model: completion?.model ?? 'unknown',
+        response: {
+          id: completion?.responseId ?? '',
+          usage: completion?.usage ?? null,
+        },
+        correlationId: input.correlationId,
+        toolRound: 0,
+        status: result.ok ? 'ok' : 'error',
+        ...(result.ok ? {} : { errorMessage: result.reason }),
+      });
+    } catch {
+      // Usage telemetry is best effort and must never change chat behavior.
     }
   }
 

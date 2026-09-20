@@ -206,6 +206,8 @@ export interface EvalFixture {
   /** Optional suffix appended to the system prompt (e.g. linkage note). */
   systemPromptSuffix?: string;
   userText: string;
+  /** Ordered raw learner messages for the current debounced turn. */
+  userTextParts?: string[];
   /** Must be a fake `eval-...` id — repo log-redaction policy applies. */
   externalUserId: string;
   userId?: number;
@@ -375,6 +377,18 @@ export function parseFixture(
   }
   if (typeof raw.userText !== 'string' || raw.userText.trim().length === 0) {
     errors.push('userText is required');
+  }
+  if (raw.userTextParts !== undefined) {
+    if (
+      !Array.isArray(raw.userTextParts) ||
+      raw.userTextParts.some(
+        (part) => typeof part !== 'string' || part.trim().length === 0,
+      )
+    ) {
+      errors.push(
+        'userTextParts must be an array of non-empty strings when provided',
+      );
+    }
   }
   const externalUserId = raw.externalUserId;
   if (typeof externalUserId !== 'string' || !/^eval-/.test(externalUserId)) {
@@ -599,6 +613,9 @@ export function parseFixture(
           ? raw.systemPromptSuffix
           : undefined,
       userText: String(raw.userText),
+      userTextParts: Array.isArray(raw.userTextParts)
+        ? (raw.userTextParts as string[])
+        : undefined,
       externalUserId: String(externalUserId),
       userId: typeof raw.userId === 'number' ? raw.userId : undefined,
       history: Array.isArray(raw.history)
@@ -997,6 +1014,7 @@ export async function runEvalFixture(
         externalUserId: fixture.externalUserId,
         userId: fixture.userId,
         userText: fixture.userText,
+        userTextParts: fixture.userTextParts,
         systemPrompt,
         systemPromptParts,
         history: fixture.history,

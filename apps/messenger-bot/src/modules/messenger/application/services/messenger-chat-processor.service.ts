@@ -41,6 +41,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
+  capMergedChatUserTextParts,
   capMergedChatUserText,
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
@@ -62,6 +63,8 @@ import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich
 export interface ChatBatchInput {
   psid: string;
   mergedText: string;
+  /** Raw current messages when `mergedText` uses Messenger numbering. */
+  userTextParts?: readonly string[];
   userId?: number;
   linkContext?: MessengerLinkContext;
   idempotencyKey?: string;
@@ -318,6 +321,7 @@ export class MessengerChatProcessorService {
       const delivered = await this.processChatBatch({
         psid,
         mergedText,
+        ...(snapshot.texts.length > 1 ? { userTextParts: snapshot.texts } : {}),
         userId: freshUserId,
         linkContext: snapshot.linkContext,
         idempotencyKey: snapshot.lastIdempotencyKey,
@@ -429,6 +433,12 @@ export class MessengerChatProcessorService {
 
   private async processChatBatchInner(input: ChatBatchInput): Promise<boolean> {
     const { psid, mergedText, idempotencyKey } = input;
+    const userTextParts = input.userTextParts
+      ? capMergedChatUserTextParts(
+          input.userTextParts,
+          this.getMergedTextMaxChars(),
+        )
+      : undefined;
     let { userId, linkContext } = input;
     let pendingAction: PrivacyIntent = null;
     let expectedMapping: PrivacyExpectedMapping | undefined;
@@ -575,6 +585,7 @@ export class MessengerChatProcessorService {
         externalUserId: psid,
         userId,
         texts: [mergedText],
+        ...(userTextParts ? { userTextParts } : {}),
         idempotencyKey,
         reservedUsageDate,
         context: linkContext ? { linkContext } : undefined,

@@ -83,6 +83,7 @@ export type LlmDegradedFailureClass =
   | 'upstream_unavailable'
   | 'no_score_data'
   | 'history_unavailable'
+  | 'classifier_unavailable'
   | 'queue_failure'
   | 'outbound_failure'
   | 'unknown';

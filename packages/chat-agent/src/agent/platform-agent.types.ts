@@ -89,6 +89,8 @@ export interface PlatformAgentInput {
   /** Mapping revision captured with the inbound event, if available. */
   mappingVersion?: string;
   userText: string;
+  /** Ordered raw learner messages from the current debounced turn. */
+  userTextParts?: readonly string[];
   /** Platform message id — LLM usage correlation id. */
   correlationId?: string;
   isServerChannel?: boolean;
@@ -185,10 +187,10 @@ export interface PlatformAgentOptions {
    */
   appendHistory?: boolean;
   /**
-   * #649 — optional second-tier input classifier. Present only on bots that
-   * wire it (Messenger during the shadow window). Gated at runtime by
+   * #649/#1256 — optional second-tier input classifier. Present only on bots
+   * that wire it (currently Messenger). Gated at runtime by
    * `LLM_INPUT_CLASSIFIER_ENABLED`; enforcement by `LLM_INPUT_CLASSIFIER_ENFORCE`.
-   * Verdict telemetry goes through `metrics.classifierVerdictInc` (#649).
+   * Verdict/failure telemetry goes through the platform adapters.
    */
   contentClassifier?: ContentClassifierPort;
 }

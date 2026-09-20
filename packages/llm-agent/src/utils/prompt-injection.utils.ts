@@ -1,4 +1,5 @@
 import { redactSecrets } from './secret-redaction.utils';
+import type { ChatHistoryMessage } from '@wispace/chat-history';
 
 export interface InjectionCheckResult {
   isInjection: boolean;
@@ -525,6 +526,92 @@ function scanPatterns(text: string): InjectionCheckResult {
   }
 
   return { isInjection: false };
+}
+
+const MAX_JOINT_SCAN_CHARS = 4000;
+const MAX_JOINT_HISTORY_ENTRY_CHARS = 8000;
+
+export function buildJointScanView(
+  currentUserText: string,
+  currentUserTextParts?: readonly string[],
+  history?: readonly ChatHistoryMessage[],
+  /** Keep raw parts within the bounded model-facing current view. */
+  currentTextMaxChars = MAX_JOINT_SCAN_CHARS,
+): string {
+  const parts = (
+    currentUserTextParts && currentUserTextParts.length > 0
+      ? currentUserTextParts
+      : [currentUserText]
+  )
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const currentBudget = Math.max(
+    0,
+    Math.min(MAX_JOINT_SCAN_CHARS, currentTextMaxChars),
+  );
+  const current = parts.join('\n').slice(0, currentBudget);
+  const historyTexts = (history ?? [])
+    .filter((entry) => entry.role === 'user')
+    .map(
+      (entry) =>
+        sanitizeUntrustedTextForLlm(entry.content, {
+          maxChars: MAX_JOINT_HISTORY_ENTRY_CHARS,
+        }).text,
+    )
+    .filter(Boolean);
+
+  const historyBudget = Math.max(
+    MAX_JOINT_SCAN_CHARS - current.length - (current ? 1 : 0),
+    0,
+  );
+  if (historyBudget === 0) {
+    return current;
+  }
+
+  let selectedHistory = '';
+  for (let index = historyTexts.length - 1; index >= 0; index--) {
+    const candidate = historyTexts[index];
+    const next = selectedHistory
+      ? `${candidate}\n${selectedHistory}`
+      : candidate;
+    if (next.length <= historyBudget) {
+      selectedHistory = next;
+      continue;
+    }
+
+    const remaining = historyBudget - selectedHistory.length - 1;
+    if (remaining > 0) {
+      selectedHistory = selectedHistory
+        ? `${candidate.slice(-remaining)}\n${selectedHistory}`
+        : candidate.slice(-historyBudget);
+    }
+    break;
+  }
+
+  return selectedHistory && current
+    ? `${selectedHistory}\n${current}`
+    : selectedHistory || current;
+}
+
+/**
+ * Scans the bounded current-turn/history view for payloads split across
+ * message or history boundaries. Per-message length and single-turn guards
+ * remain owned by `detectPromptInjection`.
+ */
+export function detectPromptInjectionAcrossTurns(
+  currentUserText: string,
+  currentUserTextParts?: readonly string[],
+  history?: readonly ChatHistoryMessage[],
+  currentTextMaxChars = MAX_JOINT_SCAN_CHARS,
+): InjectionCheckResult {
+  const view = buildJointScanView(
+    currentUserText,
+    currentUserTextParts,
+    history,
+    currentTextMaxChars,
+  );
+  const result = scanPatterns(view);
+  return result.isInjection ? result : { isInjection: false };
 }
 
 /** Check user-supplied input — applies length limit + pattern scan. */

@@ -340,6 +340,14 @@ _Avoid_: process, drain
 Merged message batch for one user: `{ externalUserId, texts[], context?, idempotencyKey? }`.
 _Avoid_: message batch — always use `ChatQueueBatch`
 
+**chat turn**:
+One free-form learner interaction that produces one agent response; a flushed `ChatQueueBatch` is one turn even when it contains several messages.
+_Avoid_: message, batch
+
+**userTextParts**:
+The ordered raw learner messages in the current `ChatQueueBatch`, kept separate from the model-facing merged text for safety decisions.
+_Avoid_: merged text, history entry
+
 **DebounceChatQueue**:
 Framework-agnostic per-user debounce/merge state machine (in `packages/chat-queue-core`). Owns buffering, coalescing, eviction. Memory-only.
 _Avoid_: chat queue — class name is `DebounceChatQueue`
@@ -554,6 +562,26 @@ _Avoid_: enabled provider, available provider
 A configured provider that may receive a request after an earlier provider in the failover order fails. An invalid candidate prevents the provider chain from starting.
 _Avoid_: fallback provider, backup vendor
 
+**provider outcome**:
+The result of one actual call to a configured LLM provider: `success` when it returns a completion and `failure` when that call is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller aborts and deadlines are not provider outcomes, and a cooldown skip is not an outcome because no provider call occurred.
+_Avoid_: request outcome, circuit state
+
+**long cooldown**:
+Temporary suppression applied after a provider reports `quota_exceeded`, `auth`, or `rate_limit`. It has a timer and may be probed again; it is not a provider quarantine.
+_Avoid_: quarantine, permanent disable
+
+**provider quarantine**:
+Process-lifetime exclusion of a configured provider after repeated consecutive authentication failures. A quarantined provider is removed from rotation until the process restarts; it is distinct from a timed long cooldown.
+_Avoid_: cooldown, disabled provider
+
+**never-served provider**:
+A configured provider with no successful completion since the current process started. Repeated long-cooldown outcomes make this state alertable; it does not claim that the provider is permanently misconfigured.
+_Avoid_: unhealthy provider, dead provider
+
+**provider/model cost attribution**:
+The cost estimate attached to the provider and model that actually returned a completion. A primary provider's price must not be reused for a completion served by a different provider; model-only pricing is a compatibility convention only when no failover ambiguity exists.
+_Avoid_: primary-model cost, estimated vendor cost
+
 **model allowlist**:
 The exact set of approved provider/model pairs that configured providers may run. Every configured provider must name a listed pair; there is no implicit model fallback.
 _Avoid_: approved models, model whitelist
@@ -585,6 +613,14 @@ _Avoid_: hallucination check
 **sanitizeUntrustedTextForLlm**:
 Utility function that strips/escapes potentially dangerous content from user or Wispace data before inserting it into prompts or tool results.
 _Avoid_: escape, encode — use "sanitize"
+
+**canonical scan view**:
+Bounded safety text formed from the current `userTextParts` and the newest sanitized user-authored history entries; it is not the prompt sent to the model.
+_Avoid_: full history, merged prompt
+
+**joint-scan**:
+Supplemental prompt-injection scan across boundaries between current `userTextParts` and recent user-authored history. It reuses the existing pattern set and does not replace the single-turn scan.
+_Avoid_: conversation-wide scan, multi-turn classifier
 
 *_system prompt / *.system.txt*_:
 Instructions sent as the `system` message. Files live in each app's `src/shared/prompts/` and are copied to `dist/` at build time.
@@ -647,8 +683,12 @@ Replacing credential-shaped substrings with `REDACTED_PLACEHOLDER` (`'[REDACTED]
 _Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection payloads) or with the excerpt-plus-hash storage rule for safety events
 
 **classifier / verdict**:
-Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`, `ABUSE`, and `CRISIS`; `CRISIS` is a measurement/enforcement signal, not the learner-facing posture itself. Fails open — any timeout, error, parse failure or open circuit means the turn proceeds as if the tier were absent.
+Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`, `ABUSE`, and `CRISIS`; `CRISIS` is a measurement/enforcement signal, not the learner-facing posture itself. In shadow mode a non-`SAFE` verdict is recorded without changing the reply; in enforce mode a qualifying verdict can select its fixed safety posture, and `CRISIS` uses the crisis handoff without the normal confidence floor. Classifier unavailability is a separate typed outcome, never a synthetic `CRISIS` verdict: shadow mode continues the normal path with bounded telemetry, while enforce mode uses the deterministic classifier safety fallback before the main LLM.
 _Avoid_: moderation, filter — it decides nothing on its own
+
+**classifier unavailable**:
+The classifier could not produce a usable verdict because of timeout, provider error, invalid output, or an open local circuit. It is not evidence that the learner input is safe or a crisis; the caller applies the mode-specific safety fallback and records only bounded failure metadata.
+_Avoid_: classifier says safe, crisis fallback — neither is implied by an unavailable result
 
 **classifier input ceiling**:
 The maximum number of Unicode code points in the redacted learner text sent to the second-tier classifier. It bounds classifier cost; exceeding it selects a bounded head-and-tail sample instead of silently dropping one side of the message.
@@ -659,8 +699,12 @@ A bounded classifier view that preserves the beginning and end of a learner mess
 _Avoid_: full message, complete scan
 
 **shadow / enforce**:
-The classifier's two modes. In **shadow** a non-SAFE verdict is only recorded as a `CLASSIFIER_FLAGGED` event; in **enforce** it can also short-circuit the turn with a canned reply, subject to a confidence threshold. Enforce is flipped only after reviewing a shadow window.
+The classifier's two modes. In **shadow** a non-SAFE verdict is only recorded as a `CLASSIFIER_FLAGGED` event and classifier unavailability keeps the normal path; in **enforce** a qualifying verdict can short-circuit the turn with a canned reply, `CRISIS` uses the crisis handoff without the normal confidence floor, and classifier unavailability returns the deterministic classifier safety fallback before the main LLM. Enforce is flipped only after reviewing a shadow window.
 _Avoid_: dry run, passive mode
+
+**classifier safety fallback**:
+The deterministic generic processing-error reply used when enforce mode cannot obtain a classifier verdict. It is not a crisis handoff, does not call tools or the main LLM, and is not appended to chat history.
+_Avoid_: crisis fallback, provider fallback — those are different safety boundaries
 
 **non-disclosure**:
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
