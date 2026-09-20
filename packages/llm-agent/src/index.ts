@@ -135,6 +135,7 @@ export {
   buildWriteToolDailyBudgetMessage,
   buildWriteToolPerMessageBudgetMessage,
   detectPromptInjection,
+  detectPromptInjectionAcrossTurns,
   detectDisclosureProbe,
   sanitizeToolResultContent,
   sanitizeUntrustedTextForLlm,

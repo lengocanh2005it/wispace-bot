@@ -23,6 +23,7 @@ describe('createChatPipelineAdapters', () => {
     await adapters.agent.reply({
       externalUserId: 'discord-user-1',
       userText: 'next question',
+      userTextParts: ['next', 'question'],
       history,
       correlationId: 'message-1',
     });
@@ -31,6 +32,7 @@ describe('createChatPipelineAdapters', () => {
       externalUserId: 'discord-user-1',
       userId: undefined,
       userText: 'next question',
+      userTextParts: ['next', 'question'],
       correlationId: 'message-1',
       history,
     });

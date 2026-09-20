@@ -89,6 +89,8 @@ export interface PlatformAgentInput {
   /** Mapping revision captured with the inbound event, if available. */
   mappingVersion?: string;
   userText: string;
+  /** Ordered raw learner messages from the current debounced turn. */
+  userTextParts?: readonly string[];
   /** Platform message id — LLM usage correlation id. */
   correlationId?: string;
   isServerChannel?: boolean;

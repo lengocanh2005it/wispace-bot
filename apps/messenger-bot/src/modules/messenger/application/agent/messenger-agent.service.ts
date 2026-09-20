@@ -26,6 +26,9 @@ export class MessengerAgentService {
       externalUserId: input.psid,
       userId: input.userId,
       userText: input.userText,
+      ...(input.userTextParts
+        ? { userTextParts: [...input.userTextParts] }
+        : {}),
       correlationId: input.correlationId,
       history: input.history,
       linkContext: input.linkContext,

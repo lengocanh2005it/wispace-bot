@@ -62,6 +62,8 @@ import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich
 export interface ChatBatchInput {
   psid: string;
   mergedText: string;
+  /** Raw current messages when `mergedText` uses Messenger numbering. */
+  userTextParts?: readonly string[];
   userId?: number;
   linkContext?: MessengerLinkContext;
   idempotencyKey?: string;
@@ -318,6 +320,7 @@ export class MessengerChatProcessorService {
       const delivered = await this.processChatBatch({
         psid,
         mergedText,
+        ...(snapshot.texts.length > 1 ? { userTextParts: snapshot.texts } : {}),
         userId: freshUserId,
         linkContext: snapshot.linkContext,
         idempotencyKey: snapshot.lastIdempotencyKey,
@@ -575,6 +578,7 @@ export class MessengerChatProcessorService {
         externalUserId: psid,
         userId,
         texts: [mergedText],
+        ...(input.userTextParts ? { userTextParts: input.userTextParts } : {}),
         idempotencyKey,
         reservedUsageDate,
         context: linkContext ? { linkContext } : undefined,

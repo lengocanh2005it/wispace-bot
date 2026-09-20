@@ -288,6 +288,7 @@ export class PlatformAgentService {
           externalUserId: resolvedInput.externalUserId,
           userId: resolvedInput.userId,
           userText: resolvedInput.userText,
+          userTextParts: resolvedInput.userTextParts,
           systemPrompt: prompt.systemPrompt,
           systemPromptParts: prompt.systemPromptParts,
           history: history as Parameters<
@@ -311,7 +312,8 @@ export class PlatformAgentService {
 
     if (
       this.options.appendHistory !== false &&
-      resolvedInput.history === undefined
+      resolvedInput.history === undefined &&
+      result.skipHistory !== true
     ) {
       try {
         await this.historyService.appendTurn(
@@ -335,6 +337,7 @@ export class PlatformAgentService {
       richFollowUps: toolContext.richFollowUps ?? [],
       exhausted: result.exhausted,
       toolSummary: result.toolSummary,
+      skipHistory: result.skipHistory,
     };
   }
 
@@ -478,6 +481,7 @@ export class PlatformAgentService {
             input: {
               ...input,
               userText: this.buildChoicePrompt(failedChoice),
+              userTextParts: undefined,
             },
             choiceConsumed: true,
           };
@@ -536,6 +540,7 @@ export class PlatformAgentService {
           input: {
             ...input,
             userText: this.buildChoicePrompt(choice),
+            userTextParts: undefined,
           },
           choiceConsumed: true,
         };

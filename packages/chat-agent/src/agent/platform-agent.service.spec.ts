@@ -963,6 +963,33 @@ describe('PlatformAgentService', () => {
     );
   });
 
+  it('forwards raw parts and skips agent-owned history for safety blocks', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    mockLlmReply.mockResolvedValue({
+      text: 'blocked',
+      skipHistory: true,
+    });
+    const service = buildService(historyService);
+
+    const result = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'tiến độ học tuần này',
+      userTextParts: ['xem giúp mình', 'tiến độ học tuần này'],
+    });
+
+    expect(result.skipHistory).toBe(true);
+    expect(mockLlmReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userTextParts: ['xem giúp mình', 'tiến độ học tuần này'],
+      }),
+      expect.anything(),
+    );
+    expect(historyService.appendTurn).not.toHaveBeenCalled();
+  });
+
   it('reloads history when the authoritative mapping generation changes', async () => {
     const historyService = {
       getHistory: jest

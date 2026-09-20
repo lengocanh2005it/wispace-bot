@@ -340,6 +340,14 @@ _Avoid_: process, drain
 Merged message batch for one user: `{ externalUserId, texts[], context?, idempotencyKey? }`.
 _Avoid_: message batch — always use `ChatQueueBatch`
 
+**chat turn**:
+One free-form learner interaction that produces one agent response; a flushed `ChatQueueBatch` is one turn even when it contains several messages.
+_Avoid_: message, batch
+
+**userTextParts**:
+The ordered raw learner messages in the current `ChatQueueBatch`, kept separate from the model-facing merged text for safety decisions.
+_Avoid_: merged text, history entry
+
 **DebounceChatQueue**:
 Framework-agnostic per-user debounce/merge state machine (in `packages/chat-queue-core`). Owns buffering, coalescing, eviction. Memory-only.
 _Avoid_: chat queue — class name is `DebounceChatQueue`
@@ -585,6 +593,14 @@ _Avoid_: hallucination check
 **sanitizeUntrustedTextForLlm**:
 Utility function that strips/escapes potentially dangerous content from user or Wispace data before inserting it into prompts or tool results.
 _Avoid_: escape, encode — use "sanitize"
+
+**canonical scan view**:
+Bounded safety text formed from the current `userTextParts` and the newest sanitized user-authored history entries; it is not the prompt sent to the model.
+_Avoid_: full history, merged prompt
+
+**joint-scan**:
+Supplemental prompt-injection scan across boundaries between current `userTextParts` and recent user-authored history. It reuses the existing pattern set and does not replace the single-turn scan.
+_Avoid_: conversation-wide scan, multi-turn classifier
 
 *_system prompt / *.system.txt*_:
 Instructions sent as the `system` message. Files live in each app's `src/shared/prompts/` and are copied to `dist/` at build time.
