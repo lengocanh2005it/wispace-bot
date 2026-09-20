@@ -226,9 +226,9 @@ export function createFailoverLlmProviderAdapter(
         `LLM provider ${name} is listed in failover order but has no configuration`,
       );
     }
-    assertSupportedLlmProvider(entry.provider);
+    const provider = assertSupportedLlmProvider(entry.provider);
     validateProviderApiKey(
-      name,
+      provider,
       entry.getApiKey(),
       entry.apiKeyEnvKey ?? 'API key',
     );
