@@ -575,7 +575,7 @@ Process-lifetime exclusion of a configured provider after repeated consecutive a
 _Avoid_: cooldown, disabled provider
 
 **never-served provider**:
-A configured provider with no successful completion since the current process started. Repeated long-cooldown outcomes make this state alertable; it does not claim that the provider is permanently misconfigured.
+A configured provider with no successful completion in the current provider-health window. A successful completion resets the window, and repeated long-cooldown outcomes make it alertable; it does not claim that the provider is permanently misconfigured.
 _Avoid_: unhealthy provider, dead provider
 
 **provider/model cost attribution**:

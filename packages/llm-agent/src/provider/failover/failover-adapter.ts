@@ -236,6 +236,8 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
 
           if (isLongCooldown || isLastAttempt) {
             const state = this.getState(candidate.providerName);
+            // Quarantine has no timed reopen point, so keep `open` reserved
+            // for the existing timed-circuit meaning.
             if (!state.quarantined) {
               state.opened = true;
               state.healthyAgainAt =
@@ -305,6 +307,8 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       reason === 'rate_limit';
     if (isLongCooldown) {
       state.consecutiveLongCooldowns += 1;
+      // This is a resettable health window: a later regression after success
+      // must be observable again without claiming process-global history.
       if (state.consecutiveLongCooldowns >= 3 && !state.neverServedAlerted) {
         state.neverServedAlerted = true;
         const message =

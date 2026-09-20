@@ -17,6 +17,10 @@ export type {
 export type { LlmProviderAdapter } from './llm-provider.adapter';
 export { OpenAiAdapter } from './openai/openai-adapter';
 export { FailoverLlmProviderAdapter } from './failover/failover-adapter';
+export type {
+  FailoverCircuitEvent,
+  FailoverProviderOutcome,
+} from './failover/failover-adapter';
 export { LlmAllProvidersExhaustedError } from './failover/failover.errors';
 export {
   createLlmProviderAdapter,

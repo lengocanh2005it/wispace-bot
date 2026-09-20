@@ -68,6 +68,8 @@ export type {
   LlmProviderError,
   LlmProviderEntryConfig,
   FailoverConfig,
+  FailoverCircuitEvent,
+  FailoverProviderOutcome,
   LlmProviderPolicy,
   LlmProviderValidationInput,
 } from './provider/index';

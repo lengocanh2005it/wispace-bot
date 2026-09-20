@@ -1116,6 +1116,59 @@ describe('FailoverLlmProviderAdapter', () => {
       });
     });
 
+    it('does not degraded-probe when every provider is quarantined', async () => {
+      const callsA = jest.fn().mockRejectedValue(new Error('auth'));
+      const callsB = jest.fn().mockRejectedValue(new Error('auth'));
+      const events: FailoverCircuitEvent[] = [];
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson: callsA,
+            normalizeError: () => authError(),
+          }),
+          makeCandidate({
+            name: 'b',
+            generateJson: callsB,
+            normalizeError: () => authError(),
+          }),
+        ],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        undefined,
+        (event) => events.push(event),
+        undefined,
+        undefined,
+        1,
+      );
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+          LlmAllProvidersExhaustedError,
+        );
+      }
+      const callsBeforeQuarantineProbe = [
+        callsA.mock.calls.length,
+        callsB.mock.calls.length,
+      ];
+
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+
+      expect([callsA.mock.calls.length, callsB.mock.calls.length]).toEqual(
+        callsBeforeQuarantineProbe,
+      );
+      expect(events.filter((event) => event.action === 'skip')).toEqual(
+        expect.arrayContaining([
+          { provider: 'a', action: 'skip', reason: 'auth_quarantine' },
+          { provider: 'b', action: 'skip', reason: 'auth_quarantine' },
+        ]),
+      );
+    });
+
     it('emits never-served once per long-cooldown streak and resets after success', async () => {
       const outcomes: string[] = [];
       const neverSucceeded: string[] = [];
