@@ -562,6 +562,26 @@ _Avoid_: enabled provider, available provider
 A configured provider that may receive a request after an earlier provider in the failover order fails. An invalid candidate prevents the provider chain from starting.
 _Avoid_: fallback provider, backup vendor
 
+**provider outcome**:
+The result of one actual call to a configured LLM provider: `success` when it returns a completion and `failure` when that call is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller aborts and deadlines are not provider outcomes, and a cooldown skip is not an outcome because no provider call occurred.
+_Avoid_: request outcome, circuit state
+
+**long cooldown**:
+Temporary suppression applied after a provider reports `quota_exceeded`, `auth`, or `rate_limit`. It has a timer and may be probed again; it is not a provider quarantine.
+_Avoid_: quarantine, permanent disable
+
+**provider quarantine**:
+Process-lifetime exclusion of a configured provider after repeated consecutive authentication failures. A quarantined provider is removed from rotation until the process restarts; it is distinct from a timed long cooldown.
+_Avoid_: cooldown, disabled provider
+
+**never-served provider**:
+A configured provider with no successful completion since the current process started. Repeated long-cooldown outcomes make this state alertable; it does not claim that the provider is permanently misconfigured.
+_Avoid_: unhealthy provider, dead provider
+
+**provider/model cost attribution**:
+The cost estimate attached to the provider and model that actually returned a completion. A primary provider's price must not be reused for a completion served by a different provider; model-only pricing is a compatibility convention only when no failover ambiguity exists.
+_Avoid_: primary-model cost, estimated vendor cost
+
 **model allowlist**:
 The exact set of approved provider/model pairs that configured providers may run. Every configured provider must name a listed pair; there is no implicit model fallback.
 _Avoid_: approved models, model whitelist
