@@ -20,6 +20,8 @@
     "skipLibCheck": true,
     "types": ["node", "jest"],
     "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
