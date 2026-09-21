@@ -166,6 +166,14 @@ describe('OpenAiAdapter', () => {
       expect(result.reason).toBe('bad_request');
       expect(result.retryable).toBe(false);
     });
+
+    it('keeps platform API errors outside provider request classification', () => {
+      const adapter = makeAdapter();
+      const error = makeError(400, 'Messenger rejected the request');
+      error.name = 'MessengerApiError';
+
+      expect(adapter.normalizeError(error).reason).toBe('unknown');
+    });
   });
 
   describe('normalizeError — unknown', () => {

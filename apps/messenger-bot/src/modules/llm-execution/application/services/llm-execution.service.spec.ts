@@ -2,13 +2,22 @@ import type { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import { LlmExecutionService } from './llm-execution.service';
 
+const noopAdmissionMetrics = {
+  incrementCounter: jest.fn(),
+  observeWaitSeconds: jest.fn(),
+  observeQueueDepth: jest.fn(),
+  observeQueueDrainLag: jest.fn(),
+  observeExecutionCircuitFailure: jest.fn(),
+  observeTotalProviderAttempts: jest.fn(),
+};
+
 const noopMetrics = {
   timeLlmExecution: <T>(_feature: string, fn: () => Promise<T>) => fn(),
   incLlmAdmissionRejected: jest.fn(),
   observeLlmAdmissionWait: jest.fn(),
   setLlmAdmissionQueueDepth: jest.fn(),
   setLlmAdmissionDrainLag: jest.fn(),
-  incLlmExecutionCircuitFailure: jest.fn(),
+  llmAdmission: noopAdmissionMetrics,
 } as unknown as BotMetricsService;
 
 const mockAdapter = {
@@ -265,10 +274,13 @@ describe('LlmExecutionService', () => {
   });
 
   it('keeps Opossum closed for repeated bad_request failures and records each terminal execution', async () => {
-    const incFailure = jest.fn();
+    const observeFailure = jest.fn();
     const metrics = {
       ...noopMetrics,
-      incLlmExecutionCircuitFailure: incFailure,
+      llmAdmission: {
+        ...noopAdmissionMetrics,
+        observeExecutionCircuitFailure: observeFailure,
+      },
     } as unknown as BotMetricsService;
     const config = createConfig({
       enabled: true,
@@ -290,8 +302,8 @@ describe('LlmExecutionService', () => {
     }
 
     expect(providerCall).toHaveBeenCalledTimes(4);
-    expect(incFailure).toHaveBeenCalledTimes(4);
-    expect(incFailure).toHaveBeenCalledWith('bad_request');
+    expect(observeFailure).toHaveBeenCalledTimes(4);
+    expect(observeFailure).toHaveBeenCalledWith('bad_request');
   });
 
   it.each([
@@ -423,10 +435,13 @@ describe('LlmExecutionService', () => {
         requestTimeoutMs: 30_000,
         perAttemptTimeoutMs: 0,
       });
-      const incFailure = jest.fn();
+      const observeFailure = jest.fn();
       const metrics = {
         ...noopMetrics,
-        incLlmExecutionCircuitFailure: incFailure,
+        llmAdmission: {
+          ...noopAdmissionMetrics,
+          observeExecutionCircuitFailure: observeFailure,
+        },
       } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
       const retryableFailure = Object.assign(new Error('rate limit'), {
@@ -450,8 +465,8 @@ describe('LlmExecutionService', () => {
         state: 'open',
       });
       expect(providerCall).toHaveBeenCalledTimes(9);
-      expect(incFailure).toHaveBeenCalledTimes(3);
-      expect(incFailure).toHaveBeenCalledWith('unknown');
+      expect(observeFailure).toHaveBeenCalledTimes(3);
+      expect(observeFailure).toHaveBeenCalledWith('unknown');
     } finally {
       jest.useRealTimers();
     }

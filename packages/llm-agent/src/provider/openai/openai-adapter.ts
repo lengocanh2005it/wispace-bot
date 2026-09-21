@@ -236,6 +236,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   }
 
   private isBadRequestError(error: unknown): boolean {
+    if (isPlatformApiError(error)) return false;
     const status = this.getErrorStatus(error);
     return status === 400 || status === 422;
   }

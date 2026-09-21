@@ -292,7 +292,7 @@ export class LlmExecutionService {
         const classification = failureTracker.classify(error, this.adapter);
         context.failureClassification = classification;
         if (classification.kind === 'provider') {
-          this.metrics.incLlmExecutionCircuitFailure?.(
+          this.metrics.llmAdmission?.observeExecutionCircuitFailure?.(
             classification.errorClass,
           );
         }
