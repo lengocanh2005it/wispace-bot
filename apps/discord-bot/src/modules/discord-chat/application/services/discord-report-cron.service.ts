@@ -18,7 +18,7 @@ import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
-} from '@wispace/llm-agent/adapters';
+} from '@wispace/llm-agent/core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
   DISCORD_REPORT_ACCOUNT_READER,

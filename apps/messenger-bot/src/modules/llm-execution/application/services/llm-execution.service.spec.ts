@@ -1,4 +1,6 @@
 import type { BotMetricsService } from '@wispace/bot-metrics';
+import { LlmOverloadError } from '@wispace/llm-agent/core';
+import type { LlmGlobalConcurrencyPort } from '../ports/llm-global-concurrency.port';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import { LlmExecutionService } from './llm-execution.service';
 
@@ -32,6 +34,24 @@ const mockAdapter = {
     return false;
   },
 } as never;
+
+function createGlobalConcurrencyPort(
+  nativeRedis: { eval: jest.Mock },
+  outcome: 'aborted' | 'saturated',
+): LlmGlobalConcurrencyPort {
+  return {
+    acquire: jest.fn((_limit, _logger, options) => {
+      if (outcome === 'aborted') {
+        if (options?.signal?.aborted) {
+          return Promise.reject(options.signal.reason);
+        }
+        return Promise.reject(new Error('expected aborted signal'));
+      }
+      nativeRedis.eval();
+      return Promise.reject(new LlmOverloadError('global_saturated'));
+    }),
+  };
+}
 
 function createConfig(overrides: {
   enabled?: boolean;
@@ -130,9 +150,12 @@ describe('LlmExecutionService', () => {
   it('composes the caller signal into Redis-global acquisition (#389)', async () => {
     const config = createConfig({ globalConcurrencyEnabled: true });
     const nativeRedis = { eval: jest.fn().mockResolvedValue(1) };
-    const service = new LlmExecutionService(config, noopMetrics, mockAdapter, {
-      getNativeClient: () => nativeRedis,
-    } as never);
+    const service = new LlmExecutionService(
+      config,
+      noopMetrics,
+      mockAdapter,
+      createGlobalConcurrencyPort(nativeRedis, 'aborted'),
+    );
     const controller = new AbortController();
     controller.abort(new Error('caller gone'));
 
@@ -148,9 +171,12 @@ describe('LlmExecutionService', () => {
   it('sheds background work within its bounded budget even under global saturation (#389)', async () => {
     const config = createConfig({ globalConcurrencyEnabled: true });
     const nativeRedis = { eval: jest.fn().mockResolvedValue(0) }; // saturated
-    const service = new LlmExecutionService(config, noopMetrics, mockAdapter, {
-      getNativeClient: () => nativeRedis,
-    } as never);
+    const service = new LlmExecutionService(
+      config,
+      noopMetrics,
+      mockAdapter,
+      createGlobalConcurrencyPort(nativeRedis, 'saturated'),
+    );
     const startedAt = Date.now();
 
     await expect(

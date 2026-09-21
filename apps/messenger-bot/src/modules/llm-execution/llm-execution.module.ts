@@ -8,9 +8,16 @@ import {
   createFailoverProviderEntries,
   assertSupportedLlmProvider,
   OpenAiAdapter,
+  acquireRedisSlot,
 } from '@wispace/llm-agent/adapters';
 import type { LlmProviderAdapter } from '@wispace/llm-agent/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import type Redis from 'ioredis';
+import {
+  LLM_GLOBAL_CONCURRENCY_PORT,
+  type LlmGlobalConcurrencyPort,
+} from './application/ports/llm-global-concurrency.port';
 
 /**
  * Provides LLM execution infrastructure: concurrency control, retry, timeout,
@@ -20,6 +27,31 @@ import { BotMetricsService } from '@wispace/bot-metrics';
   providers: [
     LlmExecutionConfigService,
     LlmExecutionService,
+    {
+      provide: LLM_GLOBAL_CONCURRENCY_PORT,
+      useFactory: (
+        config: LlmExecutionConfigService,
+        redisClient?: RedisClientPort | null,
+      ): LlmGlobalConcurrencyPort | null => {
+        if (!config.isGlobalConcurrencyEnabled()) return null;
+        const redis = redisClient?.getNativeClient();
+        if (!redis) return null;
+        return {
+          acquire: (limit, logger, options) =>
+            acquireRedisSlot(
+              redis as Redis,
+              'llm:concurrency:global',
+              limit,
+              logger,
+              options,
+            ),
+        };
+      },
+      inject: [
+        LlmExecutionConfigService,
+        { token: REDIS_CLIENT, optional: true },
+      ],
+    },
     {
       provide: 'LLM_PROVIDER_ADAPTER',
       useFactory: (

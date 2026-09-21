@@ -186,6 +186,23 @@ export {
   INTERACTIVE_LLM_FEATURES,
   admissionWaitBudgetMs,
 } from '../execution/bounded-admission';
+export { buildLlmExecutionConfig } from '../execution/llm-execution.config';
+export type { LlmExecutionConfigReader } from '../execution/llm-execution.config';
+export {
+  calculateBackgroundAdmissionCapacity,
+  resolveBackgroundProducerConcurrency,
+} from '../execution/background-admission-capacity';
+export type {
+  BackgroundAdmissionCapacityConfig,
+  BackgroundProducerConcurrencyOptions,
+} from '../execution/background-admission-capacity';
+export { createLlmExecutionFailureTracker } from '../execution/failure-attribution';
+export type {
+  LlmExecutionFailureClass,
+  LlmExecutionFailureClassification,
+  LlmExecutionFailureKind,
+  LlmExecutionFailureTracker,
+} from '../execution/failure-attribution';
 export type {
   AdmissionTicket,
   LlmOverloadReason,

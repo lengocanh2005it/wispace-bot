@@ -13,18 +13,17 @@ import {
   LlmAttemptBudget,
   type AdmissionTicket,
   type LlmProviderAdapter,
-} from '@wispace/llm-agent/core';
-import {
-  acquireRedisSlot,
   createLlmExecutionFailureTracker,
   type LlmExecutionFailureClassification,
   type LlmExecutionFailureTracker,
-} from '@wispace/llm-agent/adapters';
+} from '@wispace/llm-agent/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
-import type Redis from 'ioredis';
+import {
+  LLM_GLOBAL_CONCURRENCY_PORT,
+  type LlmGlobalConcurrencyPort,
+} from '../ports/llm-global-concurrency.port';
 
 export type {
   LlmExecutionFeature,
@@ -48,7 +47,6 @@ type BreakerExecutionContext = LlmExecutionContext & {
 export class LlmExecutionService {
   private readonly logger = new Logger(LlmExecutionService.name);
   private readonly queue: BoundedAdmissionQueue;
-  private readonly globalRedis: Redis | null;
   private readonly budgets: {
     chatAdmissionWaitMs: number;
     backgroundAdmissionWaitMs: number;
@@ -61,8 +59,8 @@ export class LlmExecutionService {
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
     @Optional()
-    @Inject(REDIS_CLIENT)
-    redisClient?: RedisClientPort | null,
+    @Inject(LLM_GLOBAL_CONCURRENCY_PORT)
+    private readonly globalConcurrencyPort?: LlmGlobalConcurrencyPort | null,
   ) {
     this.queue = new BoundedAdmissionQueue(
       this.config.getMaxConcurrent(),
@@ -75,10 +73,10 @@ export class LlmExecutionService {
 
     // Fail closed at startup when the aggregate budget is enabled without its
     // Redis dependency — never silently bypass the shared limit (#389).
-    this.globalRedis = this.config.isGlobalConcurrencyEnabled()
-      ? (redisClient?.getNativeClient() ?? null)
-      : null;
-    if (this.config.isGlobalConcurrencyEnabled() && !this.globalRedis) {
+    if (
+      this.config.isGlobalConcurrencyEnabled() &&
+      !this.globalConcurrencyPort
+    ) {
       throw new Error(
         'LLM_GLOBAL_CONCURRENCY_ENABLED=true requires a configured Redis client — refusing to start with the aggregate limit silently bypassed (#389)',
       );
@@ -200,12 +198,10 @@ export class LlmExecutionService {
 
     let releaseGlobal: (() => Promise<void>) | undefined;
     try {
-      if (this.globalRedis) {
+      if (this.globalConcurrencyPort) {
         // Cancellation aborts the Redis retry loop and avoids holding a local
         // admission slot while spinning (#364 parity on Messenger).
-        releaseGlobal = await acquireRedisSlot(
-          this.globalRedis,
-          'llm:concurrency:global',
+        releaseGlobal = await this.globalConcurrencyPort.acquire(
           this.config.getGlobalMaxConcurrent(),
           { warn: (message) => this.logger.warn(message) },
           {
