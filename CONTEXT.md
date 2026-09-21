@@ -582,6 +582,14 @@ _Avoid_: fallback provider, backup vendor
 The result of one actual call to a configured LLM provider: `success` when it returns a completion and `failure` when that call is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller cancellation and an execution deadline that expires before a provider call are not provider outcomes; a provider-side attempt timeout is a provider failure for the execution circuit even though it arrives as an abort. A cooldown skip is not an outcome because no provider call occurred.
 _Avoid_: request outcome, circuit state
 
+**deterministic request rejection**:
+A provider refusal caused by the learner's request or payload, represented by normalized reason `bad_request`. It is observable as a failed provider call but is not evidence that the shared provider is unhealthy.
+_Avoid_: provider outage, upstream failure
+
+**upstream-health signal**:
+A provider-side result that can indicate a shared dependency problem and may count toward the execution circuit; it includes network, timeout, server, rate-limit, quota, auth, and otherwise unknown provider failures. A deterministic request rejection and caller cancellation are not upstream-health signals.
+_Avoid_: per-learner error, request rejection
+
 **caller cancellation**:
 Cancellation initiated by the caller's own signal. It ends the current LLM generation immediately, is never retried, and is excluded from execution-circuit failure counts.
 _Avoid_: provider timeout, execution deadline

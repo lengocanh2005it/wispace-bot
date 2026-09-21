@@ -9,6 +9,7 @@ loop around that action.
 | Fault                                  | Chat                                                                                                                                                                                             | Report / reminder                                                                                                                                                                       | Owner and bound                                          |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | Caller cancellation                    | Abort the provider/tool call; send the fixed chat fallback. Do not append the failed assistant turn.                                                                                             | Abort the current generation; keep the job retryable in its outbox when delivery is still known not to have happened.                                                                   | Caller signal; no retry and no execution-circuit failure. |
+| Deterministic request rejection       | Return the existing bounded request/fallback response; do not retry or open the shared execution circuit.                                                                                     | Keep the generation on its existing terminal/retry policy; do not treat the learner's payload as provider health.                                                                        | Normalized `bad_request`; observable as a low-cardinality failure class. |
 | Provider-side attempt timeout          | Let the execution boundary consult the provider classifier and retry budget; after exhaustion, use the fixed chat fallback without appending the failed turn.                                   | Use the bounded provider attempt/failover policy; if generation still fails, keep the durable job retryable when delivery is known not to have happened.                                | Per-attempt cap; one terminal execution-circuit failure after the top-level execution fails. |
 | Global execution deadline              | Abort and use the fixed chat fallback; do not start another provider attempt.                                                                                                                   | Abort the generation; preserve the existing durable outbox retry policy.                                                                                                               | Covers admission, Redis, backoff, and provider work; counts the execution circuit only when a provider call was in flight. |
 | Rate limit                             | Bounded same-operation retry, then approved-provider failover; if all fail, fixed fallback.                                                                                                      | Bounded provider attempt/failover; generation or delivery is recorded for the durable job retry.                                                                                        | Execution port/provider adapter; no caller retry on top. |
@@ -34,7 +35,10 @@ loop around that action.
 - The shared execution circuit counts one terminal execution-circuit failure per
   top-level execution, not one per retry attempt. Only a provider-call failure
   or a global deadline expiring while a provider call is in flight counts;
-  admission, Redis, backoff-only expiry, and caller cancellation do not.
+  deterministic request rejection, admission, Redis, backoff-only expiry, and
+  caller cancellation do not. If failover exhausts multiple candidates, any
+  upstream-health signal makes the generation count; all-deterministic
+  rejections do not.
 - Per-provider failover health keeps its existing abort guard. A provider-side
   attempt timeout is handled by the shared execution boundary and does not add a
   second failover retry or cooldown policy.
@@ -43,6 +47,11 @@ loop around that action.
   must be known and configured; unknown names and incomplete entries fail
   startup. A single configured provider emits a startup warning because no
   redundancy is available.
+- Provider adapters normalize request-validation statuses `400` and `422` to
+  `bad_request` after quota, auth, and rate-limit precedence. Other provider
+  classifications remain upstream-health signals by default; an exhausted
+  failover chain carries all normalized reasons so one health signal is enough
+  to count the terminal execution.
 - `LLM_MAX_TOTAL_PROVIDER_ATTEMPTS` (default `6`, explicit range `1..8`) is
   the shared actual-provider-call allowance for one chat generation or one
   report/reminder generation. It spans tool rounds, local retries, and
@@ -77,6 +86,9 @@ logs. The low-cardinality signals are:
   `<prefix>_llm_total_provider_attempts_total{feature,outcome}`,
   `<prefix>_llm_provider_circuit_events_total`, and
   `<prefix>_llm_providers_exhausted_total` for provider routing;
+- `<prefix>_llm_execution_circuit_failures_total{error_class}` for terminal
+  provider classifications at the shared execution boundary, including
+  deterministic request rejections that are excluded from breaker accounting;
 - `<prefix>_llm_admission_rejected_total`,
   `<prefix>_llm_admission_queue_depth`, and
   `<prefix>_llm_admission_drain_lag_seconds` for bounded load shedding;
