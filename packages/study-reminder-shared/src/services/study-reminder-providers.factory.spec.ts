@@ -1,4 +1,5 @@
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { createStudyReminderProviders } from './study-reminder-providers.factory';
 import { MESSAGE_SENDER } from '../ports/message-sender.port';
 import { MAPPING_READER } from '../ports/mapping-reader.port';
@@ -84,6 +85,7 @@ describe('createStudyReminderProviders', () => {
         MESSAGE_SENDER,
         StudyReminderScheduleService,
         MAPPING_READER,
+        ConfigService,
       ],
     });
     expect(p[6]).toMatchObject({

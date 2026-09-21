@@ -174,6 +174,8 @@ export class DiscordReportRetryDispatchService {
           reportDate,
           skipAlreadySentToday: true,
           examDateForOutbox: job.examDate,
+          attempt: 'retry',
+          ...(job.retryCause ? { retryCause: job.retryCause } : {}),
         });
 
         if (result.sent > 0) {
@@ -212,6 +214,7 @@ export class DiscordReportRetryDispatchService {
               ? undefined
               : addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
             terminal,
+            retryCause: result.retryCause,
           });
           if (terminal) {
             failed += 1;

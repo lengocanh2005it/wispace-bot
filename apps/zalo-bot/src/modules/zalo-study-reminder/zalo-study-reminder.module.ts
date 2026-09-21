@@ -23,6 +23,10 @@ import {
 } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
+import {
+  buildLlmExecutionConfig,
+  calculateBackgroundAdmissionCapacity,
+} from '@wispace/llm-agent';
 
 @Module({
   imports: [
@@ -47,6 +51,10 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
     },
     ...createStudyReminderProviders({
       platform: 'zalo',
+      backgroundProducerConcurrencyFactory: (readConfig) =>
+        calculateBackgroundAdmissionCapacity(
+          buildLlmExecutionConfig(readConfig),
+        ),
       mappingTable: 'zalo_account_links',
       mappingEntity: ZaloAccountLinkEntity,
       outboundService: ZaloOutboundService,

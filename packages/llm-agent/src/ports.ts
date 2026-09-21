@@ -1,5 +1,8 @@
 import type { LlmAttemptBudget } from './execution/attempt-budget';
 
+export type LlmExecutionAttempt = 'initial' | 'retry';
+export type LlmExecutionRetryCause = 'capacity_overload';
+
 export interface LlmExecutionPort {
   /**
    * Runs an LLM call through the configured execution-control path (limiter,
@@ -15,6 +18,8 @@ export interface LlmExecutionPort {
       correlationId?: string;
       signal?: AbortSignal;
       attemptBudget?: LlmAttemptBudget;
+      attempt?: LlmExecutionAttempt;
+      retryCause?: LlmExecutionRetryCause;
     },
   ): Promise<T>;
 }

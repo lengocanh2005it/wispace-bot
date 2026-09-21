@@ -1,7 +1,11 @@
 import { errorMessage } from '@wispace/bot-common/masking';
 import type Redis from 'ioredis';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
-import type { LlmExecutionPort } from '../ports';
+import type {
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
+  LlmExecutionPort,
+} from '../ports';
 import {
   cappedExponentialBackoff,
   retryWithBackoff,
@@ -10,6 +14,7 @@ import { acquireRedisSlot, type SlotLogger } from './redis-slot-limiter';
 import {
   BoundedAdmissionQueue,
   LlmOverloadError,
+  INTERACTIVE_LLM_FEATURES,
   admissionWaitBudgetMs,
   type AdmissionTicket,
 } from './bounded-admission';
@@ -89,6 +94,12 @@ export interface AdmissionMetrics {
     attempts: number,
     labels?: Record<string, string>,
   ): void;
+  observeBackgroundAdmission?(
+    feature: string,
+    attempt: LlmExecutionAttempt,
+    outcome: 'admitted' | 'capacity_overload',
+  ): void;
+  observeOverloadRegeneration?(feature: string): void;
 }
 
 /**
@@ -186,6 +197,8 @@ export function createEnvLlmExecutionPort(
         correlationId?: string;
         signal?: AbortSignal;
         attemptBudget?: LlmAttemptBudget;
+        attempt?: LlmExecutionAttempt;
+        retryCause?: LlmExecutionRetryCause;
       },
     ): Promise<T> => {
       if (!config.enabled) {
@@ -215,6 +228,19 @@ export function createEnvLlmExecutionPort(
       // slots are only held during actual LLM execution, not while waiting
       // in the bounded admission queue.
       const startedAtMs = Date.now();
+      const attempt = meta?.attempt ?? 'initial';
+      const isBackground = !INTERACTIVE_LLM_FEATURES.has(meta?.feature ?? '');
+      let backgroundAdmissionRecorded = false;
+      const recordCapacityOverload = (): void => {
+        if (isBackground && !backgroundAdmissionRecorded) {
+          metrics?.observeBackgroundAdmission?.(
+            meta?.feature ?? 'unknown',
+            attempt,
+            'capacity_overload',
+          );
+          backgroundAdmissionRecorded = true;
+        }
+      };
       let ticket: AdmissionTicket;
       try {
         const admission = queue.acquire({
@@ -231,6 +257,9 @@ export function createEnvLlmExecutionPort(
           metrics?.incrementCounter('llm_admission_rejected_total', {
             reason: error.reason,
           });
+          if (error.reason !== 'redis_unavailable') {
+            recordCapacityOverload();
+          }
         }
         observeQueueState();
         throw error;
@@ -260,6 +289,17 @@ export function createEnvLlmExecutionPort(
               waitBudgetMs,
             },
           );
+        }
+        if (isBackground && !backgroundAdmissionRecorded) {
+          metrics?.observeBackgroundAdmission?.(
+            meta?.feature ?? 'unknown',
+            attempt,
+            'admitted',
+          );
+          backgroundAdmissionRecorded = true;
+          if (attempt === 'retry' && meta?.retryCause === 'capacity_overload') {
+            metrics?.observeOverloadRegeneration?.(meta?.feature ?? 'unknown');
+          }
         }
         try {
           const result = await retryWithBackoff(
@@ -324,6 +364,14 @@ export function createEnvLlmExecutionPort(
           recordFailure(failureTracker.classify(error, adapter));
           throw error;
         }
+      } catch (error) {
+        if (
+          error instanceof LlmOverloadError &&
+          error.reason !== 'redis_unavailable'
+        ) {
+          recordCapacityOverload();
+        }
+        throw error;
       } finally {
         halfOpenInFlight = false;
         await release?.();

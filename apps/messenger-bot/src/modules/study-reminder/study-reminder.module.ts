@@ -45,7 +45,11 @@ import {
   CanonicalPlatformService,
   WebActivityService,
 } from '@wispace/database';
-import type { LlmUsageRecorderPort } from '@wispace/llm-agent';
+import {
+  buildLlmExecutionConfig,
+  calculateBackgroundAdmissionCapacity,
+  type LlmUsageRecorderPort,
+} from '@wispace/llm-agent';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { StudyCalendarCommandService } from './infrastructure/adapters/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
@@ -83,7 +87,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'failed',
   'processing',
 ];
-
 @Module({
   imports: [
     CommonModule,
@@ -106,6 +109,10 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     // provider for a token wins).
     ...createStudyReminderProviders({
       platform: 'messenger',
+      backgroundProducerConcurrencyFactory: (readConfig) =>
+        calculateBackgroundAdmissionCapacity(
+          buildLlmExecutionConfig(readConfig),
+        ),
       outboundService: MessengerOutboundService,
       canonicalPlatformService: CanonicalPlatformService,
       mappingReader: {
@@ -370,6 +377,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         reminderService: StudyReminderService,
         mappingReader: MappingReaderPort,
         webActivity: WebActivityService,
+        configService: ConfigService,
       ) =>
         new StudyReminderDispatchService(
           jobRepository,
@@ -378,6 +386,9 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
           'messenger',
           hooks,
           {
+            concurrencyLimit: calculateBackgroundAdmissionCapacity(
+              buildLlmExecutionConfig((key) => configService.get<string>(key)),
+            ),
             getMappingState: async (externalUserId) => {
               if (mappingReader.getMappingState) {
                 return mappingReader.getMappingState(
@@ -420,6 +431,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         StudyReminderService,
         MAPPING_READER,
         WebActivityService,
+        ConfigService,
       ],
     },
 

@@ -1,4 +1,5 @@
 import type { Provider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
@@ -47,6 +48,12 @@ type OutboundSenderCtor = new (...args: never[]) => unknown;
 
 export interface CreateStudyReminderProvidersOptions {
   platform: Platform;
+  /** Derived by the application composition root from local LLM capacity. */
+  backgroundProducerConcurrency?: number;
+  /** Runtime config reader keeps .env loading order out of module evaluation. */
+  backgroundProducerConcurrencyFactory?: (
+    readConfig: (key: string) => string | undefined,
+  ) => number;
   /** Required when `mappingReader` is not provided (discord/zalo). */
   mappingTable?: string;
   /** Required when `mappingReader` is not provided (discord/zalo). */
@@ -251,6 +258,7 @@ export function createStudyReminderProviders(
         messageSender: MessageSenderPort,
         scheduleService: StudyReminderScheduleService,
         mappingReader: MappingReaderPort,
+        configService: ConfigService,
         dormancyGate?: { filterDormant(ids: number[]): Promise<number[]> },
         suppressionMetric?: {
           incScheduledSendSuppressed(
@@ -290,6 +298,11 @@ export function createStudyReminderProviders(
               }
             : undefined,
           {
+            concurrencyLimit: options.backgroundProducerConcurrencyFactory
+              ? options.backgroundProducerConcurrencyFactory((key) =>
+                  configService.get<string>(key),
+                )
+              : options.backgroundProducerConcurrency,
             getMappingState: async (externalUserId) => {
               if (mappingReader.getMappingState) {
                 return mappingReader.getMappingState(
@@ -320,6 +333,7 @@ export function createStudyReminderProviders(
         MESSAGE_SENDER,
         StudyReminderScheduleService,
         MAPPING_READER,
+        ConfigService,
         ...(options.dormancyGate
           ? [{ token: options.dormancyGate, optional: true }]
           : []),

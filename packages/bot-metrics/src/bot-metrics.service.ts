@@ -120,6 +120,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmAdmissionWait: Histogram;
   private llmAdmissionQueueDepth: Gauge;
   private llmAdmissionDrainLag: Gauge;
+  private llmBackgroundAdmission: Counter;
+  private llmOverloadRegenerations: Counter;
+  private reportWaveCompletionLag: Histogram;
   private llmConcurrencyEvents: Counter;
   private llmProviderAttempts: Counter;
   private llmTotalProviderAttempts: Counter;
@@ -291,6 +294,28 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionDrainLag = new Gauge({
       name: `${this.prefix}_llm_admission_drain_lag_seconds`,
       help: 'Age of the oldest queued LLM admission waiter',
+      registers: [this.registry],
+    });
+
+    this.llmBackgroundAdmission = new Counter({
+      name: `${this.prefix}_llm_background_admission_total`,
+      help: 'Background LLM admission outcomes by attempt and bounded reason (#1363)',
+      labelNames: ['platform', 'feature', 'attempt', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.llmOverloadRegenerations = new Counter({
+      name: `${this.prefix}_llm_overload_regenerations_total`,
+      help: 'Background LLM generations re-run after capacity overload (#1363)',
+      labelNames: ['platform', 'feature'],
+      registers: [this.registry],
+    });
+
+    this.reportWaveCompletionLag = new Histogram({
+      name: `${this.prefix}_report_wave_completion_lag_seconds`,
+      help: 'Elapsed seconds from scheduled report-wave start to completion (#1363)',
+      labelNames: ['platform'],
+      buckets: [1, 5, 10, 30, 60, 120, 300, 600, 1_800, 3_600],
       registers: [this.registry],
     });
 
@@ -917,6 +942,33 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionDrainLag.set(Math.max(0, seconds));
   }
 
+  observeLlmBackgroundAdmission(
+    feature: string,
+    attempt: 'initial' | 'retry',
+    outcome: 'admitted' | 'capacity_overload',
+  ): void {
+    this.llmBackgroundAdmission.inc({
+      platform: this.prefix,
+      feature,
+      attempt,
+      outcome,
+    });
+  }
+
+  incLlmOverloadRegeneration(feature: string): void {
+    this.llmOverloadRegenerations.inc({
+      platform: this.prefix,
+      feature,
+    });
+  }
+
+  observeReportWaveCompletionLag(seconds: number): void {
+    this.reportWaveCompletionLag.observe(
+      { platform: this.prefix },
+      Math.max(0, seconds),
+    );
+  }
+
   /** Redis-global slot lifecycle outcome with bounded labels. */
   incLlmConcurrencyEvent(outcome: LlmConcurrencyOutcome): void {
     this.llmConcurrencyEvents.inc({ outcome });
@@ -993,6 +1045,12 @@ export class BotMetricsService implements OnModuleDestroy {
     observeWaitSeconds(seconds: number): void;
     observeQueueDepth(depth: number): void;
     observeQueueDrainLag(seconds: number): void;
+    observeBackgroundAdmission(
+      feature: string,
+      attempt: 'initial' | 'retry',
+      outcome: 'admitted' | 'capacity_overload',
+    ): void;
+    observeOverloadRegeneration(feature: string): void;
     observeExecutionCircuitFailure(errorClass: string): void;
     observeTotalProviderAttempts(
       attempts: number,
@@ -1011,6 +1069,10 @@ export class BotMetricsService implements OnModuleDestroy {
       observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
       observeQueueDepth: (depth) => this.setLlmAdmissionQueueDepth(depth),
       observeQueueDrainLag: (seconds) => this.setLlmAdmissionDrainLag(seconds),
+      observeBackgroundAdmission: (feature, attempt, outcome) =>
+        this.observeLlmBackgroundAdmission(feature, attempt, outcome),
+      observeOverloadRegeneration: (feature) =>
+        this.incLlmOverloadRegeneration(feature),
       observeExecutionCircuitFailure: (errorClass) =>
         this.incLlmExecutionCircuitFailure(errorClass),
       observeTotalProviderAttempts: (attempts, labels) =>

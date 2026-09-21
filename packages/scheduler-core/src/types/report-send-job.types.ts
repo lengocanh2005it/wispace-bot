@@ -5,6 +5,8 @@ import type {
 
 export type { ReportSendJobStatus };
 
+export type ReportRetryCause = 'capacity_overload';
+
 export interface ReportSendJob {
   id: number;
   platform: string;
@@ -17,6 +19,7 @@ export interface ReportSendJob {
   maxRetries: number;
   nextRetryAt?: Date;
   lastError?: string;
+  retryCause?: ReportRetryCause;
   sentAt?: Date;
   /** Lease owner token — set at claim, required for mark-sent/mark-failed. */
   leaseToken?: string;
@@ -35,6 +38,7 @@ export interface ReportSendJobCreateParams {
   maxRetries: number;
   nextRetryAt: Date;
   errorMessage: string;
+  retryCause?: ReportRetryCause;
 }
 
 export interface ReportSendJobUpdateParams {
@@ -45,6 +49,7 @@ export interface ReportSendJobUpdateParams {
   retryCount: number;
   nextRetryAt?: Date;
   terminal: boolean;
+  retryCause?: ReportRetryCause;
 }
 
 export interface ScheduledReportClaim {
@@ -109,5 +114,6 @@ export interface ClaimAndSendResult {
   windowClosed: number;
   claimSkipped: number;
   retryQueued: number;
+  retryCause?: ReportRetryCause;
   failures: Array<{ externalUserId: string; error: string }>;
 }

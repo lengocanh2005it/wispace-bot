@@ -16,6 +16,7 @@ import { REPORT_SEND_JOB_REPOSITORY } from '../ports/report-send-job.repository.
 import type {
   ClaimAndSendResult,
   ReportMapping,
+  ReportRetryCause,
 } from '../types/report-send-job.types';
 import { ReportSendScheduleService } from './report-send-schedule.service';
 
@@ -43,6 +44,7 @@ const ZERO: ClaimAndSendResult = {
 export interface ClassifiedError {
   kind: 'retryable' | 'window_closed' | 'skipped' | 'failure';
   message: string;
+  retryCause?: ReportRetryCause;
 }
 
 /**
@@ -207,8 +209,14 @@ export class ReportOrchestrationService {
             maxRetries: settings.maxRetries,
             nextRetryAt,
             errorMessage: `Generation failed: ${classified.message}`,
+            retryCause: classified.retryCause,
           });
-          return { ...ZERO, deferred: 1, retryQueued: 1 };
+          return {
+            ...ZERO,
+            deferred: 1,
+            retryQueued: 1,
+            retryCause: classified.retryCause,
+          };
         }
         if (classified.kind === 'window_closed') {
           return { ...ZERO, windowClosed: 1 };
@@ -350,8 +358,14 @@ export class ReportOrchestrationService {
           maxRetries: settings.maxRetries,
           nextRetryAt,
           errorMessage: classified.message,
+          retryCause: classified.retryCause,
         });
-        return { ...ZERO, deferred: 1, retryQueued: 1 };
+        return {
+          ...ZERO,
+          deferred: 1,
+          retryQueued: 1,
+          retryCause: classified.retryCause,
+        };
       }
 
       if (classified.kind === 'window_closed') {

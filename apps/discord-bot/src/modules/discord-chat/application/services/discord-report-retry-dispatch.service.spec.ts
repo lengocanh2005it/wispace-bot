@@ -135,6 +135,7 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-20',
+        attempt: 'retry',
       },
     );
     expect(jobRepository.markSent).toHaveBeenCalledWith(1, 'lease-1');

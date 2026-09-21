@@ -1,4 +1,8 @@
-import type { LlmAttemptBudget } from '@wispace/llm-agent';
+import type {
+  LlmAttemptBudget,
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
+} from '@wispace/llm-agent';
 
 export type LlmExecutionFeature =
   | 'FREE_FORM_CHAT'
@@ -13,4 +17,6 @@ export interface LlmExecutionContext {
   signal?: AbortSignal;
   /** Shared actual provider-call budget for one top-level generation. */
   attemptBudget?: LlmAttemptBudget;
+  attempt?: LlmExecutionAttempt;
+  retryCause?: LlmExecutionRetryCause;
 }

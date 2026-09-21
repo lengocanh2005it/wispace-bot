@@ -30,14 +30,18 @@ import {
   ZERO,
 } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
-import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
 import type { Platform } from '@wispace/contracts';
+import {
+  buildLlmExecutionConfig,
+  resolveBackgroundProducerConcurrency,
+} from '@wispace/llm-agent';
 
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ReportCronService {
   private readonly logger = new Logger(ReportCronService.name);
+  private readonly concurrency: number;
 
   constructor(
     @Inject(MESSENGER_REPOSITORY)
@@ -57,6 +61,15 @@ export class ReportCronService {
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
   ) {
+    const executionConfig = buildLlmExecutionConfig((key) =>
+      this.configService.get<string>(key),
+    );
+    this.concurrency = resolveBackgroundProducerConcurrency(executionConfig, {
+      enabled: executionConfig.enabled,
+      producerName: 'messenger report',
+      configuredConcurrency: this.readConfiguredConcurrency(),
+      onWarning: (message) => this.logger.warn(message),
+    });
     this.metrics?.registerCron?.(
       'weekly-cleanup-duplicate-mappings',
       7 * 24 * 60 * 60 * 1000,
@@ -97,8 +110,12 @@ export class ReportCronService {
       return;
     }
 
+    const waveStartedAt = Date.now();
     try {
       await this.sendScheduledReports();
+      this.metrics?.observeReportWaveCompletionLag?.(
+        (Date.now() - waveStartedAt) / 1000,
+      );
       this.metrics?.recordCronSuccess?.('exam-reminder-report');
     } finally {
       await this.reportCronLockService.releaseDailyLock();
@@ -132,7 +149,7 @@ export class ReportCronService {
     }
 
     const PAGE_SIZE = 500;
-    const concurrency = this.readConcurrency();
+    const concurrency = this.concurrency;
     let totalMappings = 0;
     let sent = 0;
     let skipped = 0;
@@ -311,7 +328,14 @@ export class ReportCronService {
     });
   }
 
-  private readConcurrency(): number {
-    return readEnvPositiveInt(this.configService, 'REPORT_SEND_CONCURRENCY', 5);
+  private readConfiguredConcurrency(): number | undefined {
+    const raw = this.configService
+      .get<string>('REPORT_SEND_CONCURRENCY')
+      ?.trim();
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : undefined;
   }
 }

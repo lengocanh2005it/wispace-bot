@@ -171,6 +171,8 @@ export type {
   LlmDegradedFailureClass,
   LlmDegradedModeEvent,
   LlmExecutionPort,
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
   LlmRoundOutcome,
   LlmSafetyEventPort,
   LlmUsageRecorderPort,

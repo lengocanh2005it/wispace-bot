@@ -20,6 +20,7 @@ import {
 } from '@wispace/llm-agent/core';
 import {
   StudentReportCore,
+  type StudentReportGenerationOptions,
   type StudentReportPorts,
 } from './student-report.service';
 import { StudentReportNoScoreDataError } from './errors';
@@ -78,7 +79,7 @@ export class PlatformStudentReportService {
 
   generateReport(
     externalUserId: string,
-    options?: { signal?: AbortSignal },
+    options?: Omit<StudentReportGenerationOptions, 'correlationId'>,
   ): Promise<string> {
     if (!this.core) {
       this.core = this.buildCore();
@@ -92,6 +93,8 @@ export class PlatformStudentReportService {
     return this.core.generateReport(externalUserId, {
       correlationId,
       ...(options?.signal ? { signal: options.signal } : {}),
+      ...(options?.attempt ? { attempt: options.attempt } : {}),
+      ...(options?.retryCause ? { retryCause: options.retryCause } : {}),
     });
   }
 

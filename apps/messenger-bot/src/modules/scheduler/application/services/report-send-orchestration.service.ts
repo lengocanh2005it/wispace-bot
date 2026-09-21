@@ -23,6 +23,11 @@ import {
   isMessengerAmbiguousDeliveryError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
 import { isStudentReportRetryableError } from '@wispace/student-report';
+import {
+  LlmOverloadError,
+  type LlmExecutionAttempt,
+  type LlmExecutionRetryCause,
+} from '@wispace/llm-agent';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 
 export const ZERO: ClaimAndSendResult = {
@@ -79,6 +84,8 @@ export class ReportSendOrchestrationService {
       reportDate: string;
       skipAlreadySentToday: boolean;
       examDateForOutbox?: string;
+      attempt?: LlmExecutionAttempt;
+      retryCause?: LlmExecutionRetryCause;
     },
   ): Promise<ClaimAndSendResult> {
     const result = await this.claimAndSendInner(mapping, opts);
@@ -101,6 +108,8 @@ export class ReportSendOrchestrationService {
       reportDate: string;
       skipAlreadySentToday: boolean;
       examDateForOutbox?: string;
+      attempt?: LlmExecutionAttempt;
+      retryCause?: LlmExecutionRetryCause;
     },
   ): Promise<ClaimAndSendResult> {
     const { reportDate, skipAlreadySentToday, examDateForOutbox } = opts;
@@ -190,9 +199,18 @@ export class ReportSendOrchestrationService {
 
     try {
       const deliveryKey = `messenger-report:${mapping.psid}:${reportDate}`;
-
-      const result =
-        await this.messengerReportDeliveryService.sendReportForMapping(mapping);
+      const deliveryOptions = {
+        ...(opts.attempt ? { attempt: opts.attempt } : {}),
+        ...(opts.retryCause ? { retryCause: opts.retryCause } : {}),
+      };
+      const result = Object.keys(deliveryOptions).length
+        ? await this.messengerReportDeliveryService.sendReportForMapping(
+            mapping,
+            deliveryOptions,
+          )
+        : await this.messengerReportDeliveryService.sendReportForMapping(
+            mapping,
+          );
 
       if (result && result !== 'rate_limited') {
         if (claimedForSend) {
@@ -313,6 +331,11 @@ export class ReportSendOrchestrationService {
         isStudentReportRetryableError(error) ||
         isMessengerApiRetryable(error)
       ) {
+        const retryCause =
+          error instanceof LlmOverloadError &&
+          error.reason !== 'redis_unavailable'
+            ? ('capacity_overload' as const)
+            : undefined;
         let retryQueued = 0;
         if (examDateForOutbox) {
           const settings = this.reportSendScheduleService.getOutboxSettings();
@@ -329,6 +352,7 @@ export class ReportSendOrchestrationService {
               maxRetries: settings.maxRetries,
               nextRetryAt,
               errorMessage: errorMessage(error, mapping.psid),
+              retryCause,
             },
           );
           if (job.nextRetryAt) retryQueued = 1;
@@ -338,7 +362,7 @@ export class ReportSendOrchestrationService {
             mapping.psid,
           )} (retryable, R3/R5)`,
         );
-        return { ...ZERO, deferred: 1, retryQueued };
+        return { ...ZERO, deferred: 1, retryQueued, retryCause };
       }
 
       if (error instanceof ProactiveMessenger24hSkippedError) {

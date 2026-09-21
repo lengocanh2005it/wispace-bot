@@ -47,6 +47,8 @@ export interface StudyReminderDispatchResult {
 }
 
 export interface StudyReminderDispatchServiceOptions {
+  /** Producer-side cap derived from the local LLM admission capacity (#1363). */
+  concurrencyLimit?: number;
   /** Re-check ownership after claiming and immediately before any send. */
   getMappingState?: (
     externalUserId: string,
@@ -162,7 +164,7 @@ export class StudyReminderDispatchService {
     let failed = 0;
     const failures: StudyReminderDispatchFailure[] = [];
 
-    const CONCURRENCY_LIMIT = 3;
+    const concurrencyLimit = this.options?.concurrencyLimit ?? 3;
     const processJob = async (job: StudyReminderJob) => {
       const claimedJob = await this.jobRepository.claimJob(
         this.platform,
@@ -645,9 +647,9 @@ export class StudyReminderDispatchService {
       }
     };
 
-    // Process jobs with bounded concurrency (batches of CONCURRENCY_LIMIT)
-    for (let i = 0; i < dueJobs.length; i += CONCURRENCY_LIMIT) {
-      const batch = dueJobs.slice(i, i + CONCURRENCY_LIMIT);
+    // Process jobs with bounded producer concurrency (#1363).
+    for (let i = 0; i < dueJobs.length; i += concurrencyLimit) {
+      const batch = dueJobs.slice(i, i + concurrencyLimit);
       await Promise.allSettled(batch.map((job) => processJob(job)));
     }
 

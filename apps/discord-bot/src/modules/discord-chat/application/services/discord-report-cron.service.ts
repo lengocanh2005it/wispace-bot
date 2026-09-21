@@ -15,6 +15,10 @@ import {
 } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import {
+  buildLlmExecutionConfig,
+  resolveBackgroundProducerConcurrency,
+} from '@wispace/llm-agent';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
   DISCORD_REPORT_ACCOUNT_READER,
@@ -27,7 +31,6 @@ import type {
 import type { Platform } from '@wispace/contracts';
 
 const PLATFORM = 'discord' as const;
-const DEFAULT_SEND_CONCURRENCY = 3;
 const PAGE_SIZE = 200;
 const MAX_REPORTED_FAILURES = 50;
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -45,6 +48,7 @@ const ZERO: ClaimAndSendResult = {
 @Injectable()
 export class DiscordReportCronService {
   private readonly logger = new Logger(DiscordReportCronService.name);
+  private readonly concurrency: number;
 
   constructor(
     private readonly configService: ConfigService,
@@ -64,6 +68,15 @@ export class DiscordReportCronService {
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
   ) {
+    const executionConfig = buildLlmExecutionConfig((key) =>
+      this.configService.get<string>(key),
+    );
+    this.concurrency = resolveBackgroundProducerConcurrency(executionConfig, {
+      enabled: executionConfig.enabled,
+      producerName: 'discord report',
+      configuredConcurrency: this.readConfiguredConcurrency(),
+      onWarning: (message) => this.logger.warn(message),
+    });
     this.metrics?.registerCron?.(
       'discord-exam-reminder-report',
       REPORT_CRON_EXPECTED_INTERVAL_MS,
@@ -82,8 +95,12 @@ export class DiscordReportCronService {
     const acquired = await this.reportCronLockService.tryAcquireDailyLock();
     if (!acquired) return;
 
+    const waveStartedAt = Date.now();
     try {
       await this.sendScheduledReports();
+      this.metrics?.observeReportWaveCompletionLag?.(
+        (Date.now() - waveStartedAt) / 1000,
+      );
       this.metrics?.recordCronSuccess?.('discord-exam-reminder-report');
     } finally {
       await this.reportCronLockService.releaseDailyLock();
@@ -94,10 +111,7 @@ export class DiscordReportCronService {
     opts: { forceSend?: boolean; externalUserId?: string } = {},
   ) {
     const reportDate = todayReportDate();
-    const concurrency = Number(
-      this.configService.get<string>('DISCORD_REPORT_SEND_CONCURRENCY') ??
-        DEFAULT_SEND_CONCURRENCY,
-    );
+    const concurrency = this.concurrency;
 
     let total = 0;
     let sent = 0;
@@ -296,5 +310,16 @@ export class DiscordReportCronService {
         error: 'additional failures omitted (see logs)',
       });
     }
+  }
+
+  private readConfiguredConcurrency(): number | undefined {
+    const raw = this.configService
+      .get<string>('DISCORD_REPORT_SEND_CONCURRENCY')
+      ?.trim();
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : undefined;
   }
 }

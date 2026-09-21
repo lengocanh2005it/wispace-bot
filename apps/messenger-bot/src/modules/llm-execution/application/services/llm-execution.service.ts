@@ -4,6 +4,7 @@ import { isAbortError } from '@wispace/bot-common/utils';
 import CircuitBreaker from 'opossum';
 import {
   admissionWaitBudgetMs,
+  INTERACTIVE_LLM_FEATURES,
   cappedExponentialBackoff,
   retryWithBackoff,
   BoundedAdmissionQueue,
@@ -158,6 +159,21 @@ export class LlmExecutionService {
     };
 
     const startedAtMs = Date.now();
+    const attempt = context?.attempt ?? 'initial';
+    const isBackground = !INTERACTIVE_LLM_FEATURES.has(
+      executionContext.feature,
+    );
+    let backgroundAdmissionRecorded = false;
+    const recordCapacityOverload = (): void => {
+      if (isBackground && !backgroundAdmissionRecorded) {
+        this.metrics.observeLlmBackgroundAdmission?.(
+          executionContext.feature,
+          attempt,
+          'capacity_overload',
+        );
+        backgroundAdmissionRecorded = true;
+      }
+    };
     let ticket: AdmissionTicket;
     try {
       const admission = this.queue.acquire({
@@ -172,6 +188,9 @@ export class LlmExecutionService {
     } catch (error) {
       if (error instanceof LlmOverloadError) {
         this.metrics.incLlmAdmissionRejected(error.reason);
+        if (error.reason !== 'redis_unavailable') {
+          recordCapacityOverload();
+        }
       }
       this.observeQueueState();
       throw error;
@@ -198,6 +217,21 @@ export class LlmExecutionService {
             ),
           },
         );
+      }
+
+      if (isBackground && !backgroundAdmissionRecorded) {
+        this.metrics.observeLlmBackgroundAdmission?.(
+          executionContext.feature,
+          attempt,
+          'admitted',
+        );
+        backgroundAdmissionRecorded = true;
+        if (
+          attempt === 'retry' &&
+          context?.retryCause === 'capacity_overload'
+        ) {
+          this.metrics.incLlmOverloadRegeneration?.(executionContext.feature);
+        }
       }
 
       try {
@@ -232,6 +266,14 @@ export class LlmExecutionService {
         }
         throw error;
       }
+    } catch (error) {
+      if (
+        error instanceof LlmOverloadError &&
+        error.reason !== 'redis_unavailable'
+      ) {
+        recordCapacityOverload();
+      }
+      throw error;
     } finally {
       await releaseGlobal?.();
       ticket.release();

@@ -45,6 +45,7 @@ export class PlatformReportSendJobRepository implements ReportSendJobRepositoryP
       existing.retryCount = nextRetryCount;
       existing.maxRetries = params.maxRetries;
       existing.lastError = truncatePersistedError(params.errorMessage);
+      existing.retryCause = params.retryCause ?? null;
       existing.nextRetryAt = terminal ? null : params.nextRetryAt;
       existing.status = 'failed';
       if (params.userId != null) {
@@ -66,6 +67,7 @@ export class PlatformReportSendJobRepository implements ReportSendJobRepositoryP
       maxRetries: params.maxRetries,
       nextRetryAt: terminal ? null : params.nextRetryAt,
       lastError: truncatePersistedError(params.errorMessage),
+      retryCause: params.retryCause ?? null,
     });
 
     const saved = await this.jobRepo.save(created);
@@ -117,6 +119,7 @@ export class PlatformReportSendJobRepository implements ReportSendJobRepositoryP
         sentAt: new Date(),
         nextRetryAt: null,
         lastError: null,
+        retryCause: null,
       })
       .where('id = :id', { id: jobId })
       .andWhere('platform = :platform', { platform: this.platform })
@@ -138,6 +141,7 @@ export class PlatformReportSendJobRepository implements ReportSendJobRepositoryP
         status: 'failed',
         retryCount: params.retryCount,
         lastError: truncatePersistedError(params.errorMessage),
+        retryCause: params.retryCause ?? null,
         nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
       })
       .where('id = :id', { id: params.jobId })
@@ -172,6 +176,7 @@ export class PlatformReportSendJobRepository implements ReportSendJobRepositoryP
         sentAt: new Date(),
         nextRetryAt: null,
         lastError: null,
+        retryCause: null,
       },
     );
   }
@@ -223,6 +228,9 @@ export class PlatformReportSendJobRepository implements ReportSendJobRepositoryP
         | undefined,
       lastError: (row.lastError ?? row.last_error ?? undefined) as
         | string
+        | undefined,
+      retryCause: (row.retryCause ?? row.retry_cause ?? undefined) as
+        | 'capacity_overload'
         | undefined,
       sentAt: (row.sentAt ?? row.sent_at ?? undefined) as Date | undefined,
       leaseToken: (row.leaseToken ?? row.lease_token ?? undefined) as

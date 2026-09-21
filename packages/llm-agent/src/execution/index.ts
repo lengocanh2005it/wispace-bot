@@ -13,6 +13,7 @@ export type {
   EnvLlmExecutionConfig,
 } from './env-llm-execution.port';
 export { buildLlmExecutionConfig } from './llm-execution.config';
+export type { LlmExecutionConfigReader } from './llm-execution.config';
 export {
   DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
   MAX_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
@@ -21,6 +22,14 @@ export {
   readMaxTotalProviderAttempts,
 } from './attempt-budget';
 export { acquireRedisSlot } from './redis-slot-limiter';
+export {
+  calculateBackgroundAdmissionCapacity,
+  resolveBackgroundProducerConcurrency,
+} from './background-admission-capacity';
+export type {
+  BackgroundAdmissionCapacityConfig,
+  BackgroundProducerConcurrencyOptions,
+} from './background-admission-capacity';
 export {
   LlmProviderCircuitOpenError,
   type LlmProviderCircuitState,

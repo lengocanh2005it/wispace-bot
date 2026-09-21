@@ -11,7 +11,11 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
     status: 'ACTIVE' as const,
   };
 
-  const buildService = () => {
+  const buildService = (
+    configService: { get: jest.Mock } = {
+      get: jest.fn().mockReturnValue(undefined),
+    },
+  ) => {
     const messengerRepository = {
       cleanupActiveDuplicateMappings: jest.fn().mockResolvedValue(0),
       findActiveSubscribedMappingsPage: jest
@@ -50,7 +54,7 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
       reportScheduleService as never,
       {} as never,
       {} as never,
-      { get: jest.fn().mockReturnValue(undefined) } as never,
+      configService as never,
       reportSendOrchestrationService as never,
     );
 
@@ -60,6 +64,18 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
       reportSendOrchestrationService,
     };
   };
+
+  it('fails startup when explicit report concurrency exceeds admission capacity', () => {
+    expect(() =>
+      buildService({
+        get: jest.fn((key: string) =>
+          key === 'REPORT_SEND_CONCURRENCY' ? '4' : undefined,
+        ),
+      }),
+    ).toThrow(
+      'messenger report concurrency 4 exceeds background admission capacity 3',
+    );
+  });
 
   it('delegates to orchestration service for claim and send', async () => {
     const { service, reportSendOrchestrationService } = buildService();

@@ -5,7 +5,11 @@ import {
   StudentReportCore,
   type StudentReportPorts,
 } from '@wispace/student-report';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import type {
+  LlmProviderAdapter,
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
+} from '@wispace/llm-agent';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { todayUsageDate } from '@wispace/chat-metering';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
@@ -49,7 +53,13 @@ export class StudentReportService {
     private readonly metrics?: BotMetricsService,
   ) {}
 
-  generateReport(psid: string): Promise<string> {
+  generateReport(
+    psid: string,
+    options?: {
+      attempt?: LlmExecutionAttempt;
+      retryCause?: LlmExecutionRetryCause;
+    },
+  ): Promise<string> {
     if (!this.core) {
       this.core = this.buildCore();
     }
@@ -62,14 +72,20 @@ export class StudentReportService {
       return Promise.resolve(cached.text);
     }
 
-    return this.core.generateReport(psid, { correlationId }).then((text) => {
-      this.reportCache.set(correlationId, {
-        date: todayUsageDate(resolveAppTimezone(this.configService)),
-        text,
+    return this.core
+      .generateReport(psid, {
+        correlationId,
+        ...(options?.attempt ? { attempt: options.attempt } : {}),
+        ...(options?.retryCause ? { retryCause: options.retryCause } : {}),
+      })
+      .then((text) => {
+        this.reportCache.set(correlationId, {
+          date: todayUsageDate(resolveAppTimezone(this.configService)),
+          text,
+        });
+        this.evictStaleReports();
+        return text;
       });
-      this.evictStaleReports();
-      return text;
-    });
   }
 
   /** Cached AI report for today, or null — used by chat tools to avoid LLM calls. */

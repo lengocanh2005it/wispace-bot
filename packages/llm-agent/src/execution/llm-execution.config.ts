@@ -33,6 +33,8 @@ export const LLM_EXECUTION_DEFAULTS = {
   maxTotalProviderAttempts: DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
 } as const;
 
+export type LlmExecutionConfigReader = (key: string) => string | undefined;
+
 function readBoolean(
   value: string | undefined,
   defaultValue: boolean,
@@ -56,7 +58,7 @@ function readPositiveInt(
  * Falls back to documented defaults when env vars are missing or invalid.
  */
 export function buildLlmExecutionConfig(
-  env?: Record<string, string | undefined>,
+  env?: Record<string, string | undefined> | LlmExecutionConfigReader,
 ): {
   enabled: boolean;
   maxConcurrent: number;
@@ -72,7 +74,8 @@ export function buildLlmExecutionConfig(
   globalConcurrencyEnabled: boolean;
   maxTotalProviderAttempts: number;
 } {
-  const get = (key: string) => env?.[key] ?? process.env[key];
+  const get: LlmExecutionConfigReader =
+    typeof env === 'function' ? env : (key) => env?.[key] ?? process.env[key];
 
   return {
     enabled: readBoolean(

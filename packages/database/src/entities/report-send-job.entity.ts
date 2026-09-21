@@ -50,6 +50,9 @@ export class ReportSendJobEntity {
   @Column({ name: 'last_error', type: 'text', nullable: true })
   lastError!: string | null;
 
+  @Column({ name: 'retry_cause', type: 'varchar', length: 32, nullable: true })
+  retryCause!: 'capacity_overload' | null;
+
   @Column({ name: 'sent_at', type: 'timestamptz', nullable: true })
   sentAt!: Date | null;
 

@@ -24,6 +24,10 @@ import {
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
+import type {
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
+} from '@wispace/llm-agent';
 
 @Injectable()
 export class MessengerReportDeliveryService {
@@ -40,6 +44,10 @@ export class MessengerReportDeliveryService {
 
   async sendReportForMapping(
     mapping: UserMessengerMapping,
+    options?: {
+      attempt?: LlmExecutionAttempt;
+      retryCause?: LlmExecutionRetryCause;
+    },
   ): Promise<string | 'rate_limited'> {
     if (!mapping.psid) {
       throw new InternalServerErrorException(
@@ -51,6 +59,7 @@ export class MessengerReportDeliveryService {
       mapping.psid,
       mapping.userId,
       'SCHEDULED_LEARNING_REPORT',
+      options,
     );
   }
 
@@ -123,9 +132,16 @@ export class MessengerReportDeliveryService {
     psid: string,
     userId: number | undefined,
     messageType: string,
+    options?: {
+      attempt?: LlmExecutionAttempt;
+      retryCause?: LlmExecutionRetryCause;
+    },
   ): Promise<string | 'rate_limited'> {
     try {
-      const report = await this.studentReportService.generateReport(psid);
+      const report = await this.studentReportService.generateReport(
+        psid,
+        options,
+      );
       const result = await this.sendReportBubbles({
         psid,
         userId,

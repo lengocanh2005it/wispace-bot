@@ -420,6 +420,32 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(out).toContain('test_llm_admission_drain_lag_seconds 1.25');
   });
 
+  it('records report-wave admission and regeneration diagnostics (#1363)', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'messenger',
+      collectDefaults: false,
+    });
+
+    svc.observeLlmBackgroundAdmission(
+      'STUDENT_REPORT',
+      'initial',
+      'capacity_overload',
+    );
+    svc.incLlmOverloadRegeneration('STUDENT_REPORT');
+    svc.observeReportWaveCompletionLag(12.5);
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      'messenger_llm_background_admission_total{platform="messenger",feature="STUDENT_REPORT",attempt="initial",outcome="capacity_overload"} 1',
+    );
+    expect(out).toContain(
+      'messenger_llm_overload_regenerations_total{platform="messenger",feature="STUDENT_REPORT"} 1',
+    );
+    expect(out).toContain(
+      'messenger_report_wave_completion_lag_seconds_count{platform="messenger"} 1',
+    );
+  });
+
   it('records degraded responses with platform and bounded failure/action labels', async () => {
     const svc = new BotMetricsService({
       prefix: 'test',

@@ -11,6 +11,8 @@ import type {
   LlmDegradedModeEvent,
   LlmProviderAdapter,
   LlmUsageRecorderPort,
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
 import {
   errorMessage,
@@ -67,6 +69,13 @@ export interface StudentReportPorts {
   };
 }
 
+export interface StudentReportGenerationOptions {
+  correlationId?: string;
+  signal?: AbortSignal;
+  attempt?: LlmExecutionAttempt;
+  retryCause?: LlmExecutionRetryCause;
+}
+
 function isRetryableApiError(error: unknown): error is RetryableApiError {
   return (
     error instanceof Error &&
@@ -91,7 +100,7 @@ export class StudentReportCore {
 
   async generateReport(
     externalUserId: string,
-    options?: { correlationId?: string; signal?: AbortSignal },
+    options?: StudentReportGenerationOptions,
   ): Promise<string> {
     const correlationId = options?.correlationId ?? externalUserId;
 
@@ -104,6 +113,8 @@ export class StudentReportCore {
           input,
           correlationId,
           options?.signal,
+          options?.attempt,
+          options?.retryCause,
         ).then(formatReport),
       options?.signal,
     );
@@ -242,6 +253,8 @@ export class StudentReportCore {
     input: StudentCapacityInput,
     correlationId: string,
     signal?: AbortSignal,
+    attempt?: LlmExecutionAttempt,
+    retryCause?: LlmExecutionRetryCause,
   ): Promise<StudentCapacityReport> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const adapter = this.config.adapter;
@@ -272,7 +285,13 @@ export class StudentReportCore {
           signal: execSignal,
           attemptBudget,
         }),
-      { feature: FEATURE, correlationId, signal },
+      {
+        feature: FEATURE,
+        correlationId,
+        signal,
+        ...(attempt ? { attempt } : {}),
+        ...(retryCause ? { retryCause } : {}),
+      },
     );
 
     this.ports.usageRecorder.recordFromCompletion({

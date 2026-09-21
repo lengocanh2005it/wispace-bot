@@ -6,6 +6,7 @@ import {
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { Cron } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -31,8 +32,12 @@ import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/za
 import { ZaloSendError } from '../../application/services/zalo-outbound.service';
 import { WispaceApiError } from '@wispace/wispace-client';
 import type { Platform } from '@wispace/contracts';
+import {
+  buildLlmExecutionConfig,
+  resolveBackgroundProducerConcurrency,
+  LlmOverloadError,
+} from '@wispace/llm-agent';
 
-const CONCURRENCY = 3;
 const PAGE_SIZE = 200;
 const MAX_REPORTED_ERRORS = 50;
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -40,6 +45,7 @@ const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 @Injectable()
 export class ZaloReportCronService {
   private readonly logger = new Logger(ZaloReportCronService.name);
+  private readonly concurrency: number;
 
   constructor(
     @InjectRepository(ZaloAccountLinkEntity)
@@ -60,7 +66,18 @@ export class ZaloReportCronService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
+    @Optional() private readonly configService?: ConfigService,
   ) {
+    const executionConfig = buildLlmExecutionConfig(
+      this.configService
+        ? (key) => this.configService?.get<string>(key)
+        : undefined,
+    );
+    this.concurrency = resolveBackgroundProducerConcurrency(executionConfig, {
+      enabled: executionConfig.enabled,
+      producerName: 'zalo report',
+      onWarning: (message) => this.logger.warn(message),
+    });
     this.metrics?.registerCron?.(
       'zalo-report-cron',
       REPORT_CRON_EXPECTED_INTERVAL_MS,
@@ -82,8 +99,12 @@ export class ZaloReportCronService {
     const acquired = await this.reportCronLockService.tryAcquireDailyLock();
     if (!acquired) return;
 
+    const waveStartedAt = Date.now();
     try {
       await this.sendReportsBatch(opts);
+      this.metrics?.observeReportWaveCompletionLag?.(
+        (Date.now() - waveStartedAt) / 1000,
+      );
       this.metrics?.recordCronSuccess?.('zalo-report-cron');
     } finally {
       await this.reportCronLockService.releaseDailyLock();
@@ -140,7 +161,7 @@ export class ZaloReportCronService {
           ])
         : undefined;
 
-      const results = await runBatched(page, CONCURRENCY, (link) =>
+      const results = await runBatched(page, this.concurrency, (link) =>
         this.sendReportForUser(
           link,
           reportDate,
@@ -338,6 +359,10 @@ function classifyZaloError(
     return {
       kind: 'retryable',
       message: 'Report generation temporarily unavailable',
+      ...(error instanceof LlmOverloadError &&
+      error.reason !== 'redis_unavailable'
+        ? { retryCause: 'capacity_overload' as const }
+        : {}),
     };
   }
 

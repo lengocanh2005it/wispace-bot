@@ -206,6 +206,10 @@ export class ReportSendRetryDispatchService {
             reportDate,
             skipAlreadySentToday: true,
             examDateForOutbox: examDate,
+            attempt: 'retry',
+            ...(claimedJob.retryCause
+              ? { retryCause: claimedJob.retryCause }
+              : {}),
           });
 
         if (orchestrationResult.sent > 0) {
@@ -246,6 +250,7 @@ export class ReportSendRetryDispatchService {
             retryCount: nextRetryCount,
             nextRetryAt: terminal ? undefined : nextRetryAt,
             terminal,
+            retryCause: orchestrationResult.retryCause,
           });
 
           if (terminal) {
