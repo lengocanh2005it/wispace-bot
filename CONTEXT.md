@@ -446,6 +446,34 @@ _Avoid_: provider call, chat turn — a chat turn can have more than one agent r
 One top-level operation that asks an LLM to produce one feature result. A chat generation is an agent run; a report or reminder generation may have no tool rounds.
 _Avoid_: provider attempt, chat turn
 
+**08:00 report wave**:
+The set of scheduled-report jobs selected by one platform's 08:00 ICT report tick. Retry-dispatch jobs are later attempts, not part of the original wave.
+_Avoid_: report cron (which can also mean retry dispatch), report fan-out
+
+**background producer concurrency**:
+The maximum number of report or study-reminder generations a producer starts at once before they contend for LLM admission. It is a producer-side cap, distinct from the admission queue's provider-execution limit.
+_Avoid_: admission concurrency, provider concurrency
+
+**background admission capacity**:
+The number of background generations that can be admitted within the background wait budget, combining immediately available execution slots with only the queue depth that can drain before that budget expires. It is distinct from the configured maximum queue depth.
+_Avoid_: queue capacity, background throughput
+
+**capacity overload**:
+A pre-provider admission rejection caused by queue or slot capacity (`queue_full`, `wait_timeout`, or `global_saturated`). `redis_unavailable` is an infrastructure failure, not capacity overload.
+_Avoid_: provider overload, execution failure
+
+**overload-induced regeneration**:
+A new LLM generation for the same logical report or reminder after its previous generation ended with capacity overload and was persisted for retry. Provider retries inside one generation and retries caused by other failure classes are not overload-induced regeneration.
+_Avoid_: provider retry, queue replay
+
+**report retry cause**:
+A bounded, durable classification attached to a report retry job, such as `capacity_overload`, that explains why the job was requeued. It is authoritative for retry attribution; `last_error` remains human-readable context and is not the classification contract.
+_Avoid_: error message, retry status
+
+**wave completion deadline**:
+An operational target for when an 08:00 report wave should finish, separate from the rolling report-delivery SLO. The current target is 09:00 ICT; missing it is a latency signal even when the eventual delivery is successful.
+_Avoid_: report SLO, retry deadline
+
 **shared provider-attempt budget**:
 The maximum number of actual provider calls allowed during one LLM generation, consumed across agent retry, execution retry, and provider failover. It counts the initial call, does not count admission/cooldown skips, and does not carry across queue flush replays.
 _Avoid_: retry count, quota, admission cap

@@ -70,6 +70,36 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 | EventLoopLagP99High          | warning  | Inspect synchronous CPU work, event-loop lag p99, GC, and queue depth.                                                                                                                                                                                                                                |
 | WispaceLatencyHigh           | warning  | Check WISPACE p95 by service/operation, retry volume, and upstream availability.                                                                                                                                                                                                                      |
 
+### Scheduled report-wave capacity (#1363)
+
+This is an operational diagnostic, not a new page. The background producer
+must not exceed the local capacity contract:
+
+```text
+min(slots + maxQueueDepth,
+    slots + floor(backgroundWaitMs * slots / requestTimeoutMs))
+```
+
+With the documented defaults (`3` slots, `50` queue entries, `1500ms`
+background wait, `30000ms` request deadline), the safe producer concurrency is
+`3`. An explicit producer value above that capacity is a startup failure, not a
+silent clamp. `global_saturated` is a fleet-capacity signal only when Redis
+global concurrency is enabled; local validation must not claim cross-pod
+fairness.
+
+When the #1363 instrumentation is deployed, investigate these bounded series:
+
+- `<prefix>_llm_background_admission_total{platform,feature,attempt,outcome}`
+- `<prefix>_llm_overload_regenerations_total{platform,feature}`
+- `<prefix>_report_wave_completion_lag_seconds{platform}`
+
+Use `increase(...[1d])` for daily views rather than adding a `day` label. A
+`capacity_overload` occurs before the provider call and does not itself consume
+LLM tokens; the durable report retry's typed `retry_cause` identifies the later
+generation. The 08:00 wave's operational completion target is 09:00 ICT,
+separate from the rolling 99% report-delivery SLO. Mixed interactive/background
+fairness remains #580; do not raise the global limit as a first response.
+
 Every rule carries a `runbook_url` back to this document. Severity labels are
 deliberately `warning` or `critical` so the Alertmanager routing work can map
 them to independent channels without changing the recording rules.
@@ -249,6 +279,7 @@ an actionable parent signal above.
 | `llm_provider_attempts_total`, `llm_tool_calls_total`, `llm_tool_duration_seconds`, `llm_observation_outcome_total`, `llm_tool_policy_denied_total`, `llm_classifier_verdict_total`, `clarification_outcomes_total` | Volume, policy, and model-loop diagnostics have no universal incident threshold.                                                                                        |
 | `llm_provider_outcomes_total`                                                                                                                                                                                       | Per-call provider success/failure diagnostics; never-served and exhaustion alerts are the actionable capacity signals.                                                  |
 | `llm_concurrency_events_total`                                                                                                                                                                                      | Slot lifecycle is diagnosed through admission rejection/queue depth.                                                                                                    |
+| `llm_background_admission_total`, `llm_overload_regenerations_total`, `report_wave_completion_lag_seconds`                                                                                                           | #1363 diagnostics; collect a baseline before creating a page threshold.                                                                                                |
 | `chat_quota_denied_total`, `write_tool_budget_denied_total`, `outbound_rate_limit_decisions_total`                                                                                                                  | Expected user/policy decisions; alerting would page on demand rather than failure.                                                                                      |
 | `web_activity_webhook_received_total`, `scheduled_send_suppressed_total`                                                                                                                                            | Expected traffic/suppression signals, not failures.                                                                                                                     |
 | `dm_delivery_failures_total`, `welcome_attempts_total`, `outbound_action_neutralized_total`                                                                                                                         | Low-volume per-platform/user outcomes; correlate with broader availability before paging.                                                                               |
