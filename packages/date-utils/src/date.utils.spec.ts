@@ -139,20 +139,16 @@ describe('date.utils', () => {
 
     // Pacific/Auckland 2026: Spring forward September 27 2:00am → 3:00am
     it('Pacific/Auckland spring-forward: edge case far ahead of UTC', () => {
-      // Note: noon UTC on Sep 27 = midnight Sep 28 NZDT (next day).
-      // tomorrowInTimezone uses noon UTC probe, which may overshoot for
-      // extreme timezones. This test documents the known limitation.
       // 2026-09-26T11:00Z = 2026-09-26 23:00 NZST (same day, before midnight)
       expect(
         todayInTimezone('Pacific/Auckland', new Date('2026-09-26T11:00:00Z')),
       ).toBe('2026-09-26');
-      // tomorrowInTimezone returns Sep 28 (noon UTC probe overshoots by 1 day)
       expect(
         tomorrowInTimezone(
           'Pacific/Auckland',
           new Date('2026-09-26T11:00:00Z'),
         ),
-      ).toBe('2026-09-28');
+      ).toBe('2026-09-27');
     });
   });
 });
