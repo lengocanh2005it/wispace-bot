@@ -28,6 +28,11 @@ import { dirname, resolve } from 'node:path';
  *   CONFLICT DO NOTHING yields zero rows), a distinct key still inserts.
  * - Lua: burst over-limit + concurrent exact-limit-wins + key-reset, slot
  *   over-limit + stale-release no-op + lease expiry.
+ * - chat queue (#1355): buffered work and the due index survive a process
+ *   restart, rehydrate restores the persisted flush deadline, a mid-flush crash
+ *   replays exactly once through the stuck index, abandoned batches are
+ *   retained rather than rescheduled, one malformed buffer is quarantined
+ *   without stalling the scan, and concurrent backfill stays single-flight.
  * - privacy delete: a mid-transaction failure (fault trigger) rolls back
  *   every earlier write — zero partial effects.
  *
@@ -71,6 +76,10 @@ const {
 } = require('@wispace/chat-metering');
 const { LlmOverloadError } = require('@wispace/llm-agent');
 const { acquireRedisSlot } = require('@wispace/llm-agent/execution');
+const {
+  RedisChatQueueStore,
+  ChatRuntimeConfig,
+} = require('@wispace/chat-agent');
 const messengerDatabase = require(
   resolve(
     rootDir,
@@ -513,6 +522,275 @@ async function luaSuite() {
   await releaseF();
   console.log('  ok: expired lease frees the slot');
   await delKeys(redis, 'smoke:llm:slots*');
+}
+
+/**
+ * Shared chat-queue durability on real Redis (#1355 AC4).
+ *
+ * The Jest specs for this store assert call shapes against a mocked client, so
+ * none of them can prove the two things the queue exists for: that a learner's
+ * buffered messages outlive the process that accepted them, and that the
+ * index-only rehydrate backfill rebuilds scheduling from the persisted state
+ * instead of guessing. Both are Lua/multi-exec behaviour, so they are pinned
+ * here against a real server.
+ */
+const QUEUE_PLATFORM = 'discord';
+const QUEUE_KEY_PREFIX = `chat:queue:${QUEUE_PLATFORM}:`;
+const QUEUE_BUFFER = `${QUEUE_KEY_PREFIX}buffer:`;
+const QUEUE_ACTIVE = `${QUEUE_KEY_PREFIX}active-users`;
+const QUEUE_FLUSH = `${QUEUE_KEY_PREFIX}flush`;
+const QUEUE_STUCK = `${QUEUE_KEY_PREFIX}stuck`;
+const QUEUE_REHYDRATE_LOCK = `${QUEUE_KEY_PREFIX}rehydrate-lock`;
+const QUEUE_STUCK_MS = 300_000;
+
+function queueStore() {
+  return new RedisChatQueueStore(
+    redisClientPort(redis),
+    { get: () => undefined },
+    { platform: QUEUE_PLATFORM },
+    new ChatRuntimeConfig({ CHAT_DEBOUNCE_MS: '0' }),
+  );
+}
+
+async function queueState(externalUserId) {
+  const raw = await redis.get(`${QUEUE_BUFFER}${externalUserId}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+/** Persist a buffer as if an older pod wrote it, and index it as active. */
+async function seedQueueState(externalUserId, state) {
+  await redis.set(
+    `${QUEUE_BUFFER}${externalUserId}`,
+    JSON.stringify({ updatedAt: Date.now(), ...state }),
+  );
+  await redis.sadd(QUEUE_ACTIVE, externalUserId);
+}
+
+/** The exact state a pre-ZSET pod, or a lost index, leaves behind. */
+async function dropQueueIndexes() {
+  await redis.del(QUEUE_FLUSH, QUEUE_STUCK);
+}
+
+async function chatQueueSuite() {
+  console.log(
+    'chat queue: restart durability + rehydrate backfill on real Redis',
+  );
+
+  // 1. Buffered work written by one process is claimed by the next one.
+  const writer = queueStore();
+  for (const text of ['one', 'two']) {
+    await writer.appendChatBuffer({
+      externalUserId: 'smoke-queue-a',
+      userText: text,
+      debounceMs: 0,
+    });
+  }
+  await writer.appendChatBuffer({
+    externalUserId: 'smoke-queue-b',
+    userText: 'solo',
+    debounceMs: 0,
+  });
+
+  const restarted = queueStore();
+  assert.deepEqual(
+    (await restarted.listReadyExternalUserIds(10)).sort(),
+    ['smoke-queue-a', 'smoke-queue-b'],
+    'a restarted process must see the work the previous one accepted',
+  );
+
+  const claimA = await restarted.claimReadyBuffer(
+    'smoke-queue-a',
+    0,
+    QUEUE_STUCK_MS,
+  );
+  assert.deepEqual(claimA.texts, ['one', 'two'], 'arrival order must survive');
+  assert.equal(
+    await restarted.claimReadyBuffer('smoke-queue-a', 0, QUEUE_STUCK_MS),
+    null,
+    'a batch still in flight under another claim must not be re-claimable',
+  );
+  await restarted.completeChatBuffer({
+    externalUserId: 'smoke-queue-a',
+    debounceMs: 0,
+    leaseToken: claimA.leaseToken,
+  });
+  const claimB = await restarted.claimReadyBuffer(
+    'smoke-queue-b',
+    0,
+    QUEUE_STUCK_MS,
+  );
+  assert.deepEqual(claimB.texts, ['solo']);
+  await restarted.completeChatBuffer({
+    externalUserId: 'smoke-queue-b',
+    debounceMs: 0,
+    leaseToken: claimB.leaseToken,
+  });
+  assert.deepEqual(
+    await restarted.listReadyExternalUserIds(10),
+    [],
+    'completed buffers must leave the due index',
+  );
+  console.log('  ok: buffered work survives restart, in arrival order, once');
+
+  // 2. Backfill rebuilds the index from the persisted deadline, not from now.
+  const beforeLoss = queueStore();
+  await beforeLoss.appendChatBuffer({
+    externalUserId: 'smoke-queue-c',
+    userText: 'legacy',
+    debounceMs: 0,
+  });
+  const storedDeadline = await redis.zscore(QUEUE_FLUSH, 'smoke-queue-c');
+  assert.ok(storedDeadline !== null, 'append must index the member as due');
+  await dropQueueIndexes();
+
+  const afterBackfill = queueStore();
+  assert.deepEqual(
+    await afterBackfill.listReadyExternalUserIds(10),
+    ['smoke-queue-c'],
+    'rehydrate must restore a member the index lost',
+  );
+  assert.equal(
+    await redis.zscore(QUEUE_FLUSH, 'smoke-queue-c'),
+    storedDeadline,
+    'restored score must come from the stored flushAfterAt',
+  );
+  const claimC = await afterBackfill.claimReadyBuffer(
+    'smoke-queue-c',
+    0,
+    QUEUE_STUCK_MS,
+  );
+  assert.deepEqual(
+    claimC.texts,
+    ['legacy'],
+    'a backfilled member must be deliverable, not merely indexed',
+  );
+  await afterBackfill.completeChatBuffer({
+    externalUserId: 'smoke-queue-c',
+    debounceMs: 0,
+    leaseToken: claimC.leaseToken,
+  });
+  console.log('  ok: rehydrate restores the persisted flush deadline');
+
+  // 3. A worker that died mid-flush is replayed, never double-sent.
+  const doomed = queueStore();
+  await doomed.appendChatBuffer({
+    externalUserId: 'smoke-queue-d',
+    userText: 'in-flight',
+    debounceMs: 0,
+  });
+  const claimedDoomed = await doomed.claimReadyBuffer(
+    'smoke-queue-d',
+    0,
+    QUEUE_STUCK_MS,
+  );
+  assert.ok(claimedDoomed.leaseToken);
+  await dropQueueIndexes();
+
+  const survivor = queueStore();
+  assert.deepEqual(
+    await survivor.listReadyExternalUserIds(10),
+    [],
+    'a claimed batch must not be re-delivered while its worker may be alive',
+  );
+  const crashedState = await queueState('smoke-queue-d');
+  assert.equal(
+    await redis.zscore(QUEUE_STUCK, 'smoke-queue-d'),
+    String(crashedState.processingStartedAt + QUEUE_STUCK_MS),
+    'backfill must route an in-flight batch to the stuck index, not the flush index',
+  );
+
+  const replayed = await survivor.claimReadyBuffer('smoke-queue-d', 0, 0);
+  assert.deepEqual(
+    replayed.texts,
+    ['in-flight'],
+    'the claimed batch must be replayed from durable state',
+  );
+  assert.equal(replayed.retryCount, 1, 'replay must consume one recovery try');
+  assert.deepEqual(
+    (await queueState('smoke-queue-d')).processingTexts,
+    ['in-flight'],
+    'replay must stay durable until completion',
+  );
+  console.log('  ok: mid-flush crash replays once via the stuck index');
+
+  // 4. An abandoned batch is retained for an operator, not rescheduled.
+  await seedQueueState('smoke-queue-e', {
+    texts: ['kept'],
+    pendingTexts: [],
+    processingTexts: [],
+    idempotencyKeys: [],
+    processing: false,
+    abandoned: true,
+    retryCount: 4,
+    flushAfterAt: null,
+  });
+  await dropQueueIndexes();
+  const abandonStore = queueStore();
+  assert.deepEqual(await abandonStore.listReadyExternalUserIds(10), []);
+  assert.equal(
+    await redis.exists(`${QUEUE_BUFFER}smoke-queue-e`),
+    1,
+    'abandoned text must be retained for recovery, not discarded',
+  );
+  assert.equal(await redis.zscore(QUEUE_STUCK, 'smoke-queue-e'), null);
+  console.log('  ok: abandoned batches are retained, never auto-rescheduled');
+
+  // 5. One poison buffer cannot stall every other learner backfill.
+  await redis.set(`${QUEUE_BUFFER}smoke-queue-bad`, 'not-json-at-all');
+  await redis.sadd(QUEUE_ACTIVE, 'smoke-queue-bad');
+  await seedQueueState('smoke-queue-good', {
+    texts: ['ok'],
+    flushAfterAt: Date.now() - 1_000,
+  });
+  await dropQueueIndexes();
+  const scanner = queueStore();
+  assert.deepEqual(
+    await scanner.listReadyExternalUserIds(10),
+    ['smoke-queue-good'],
+    'a malformed member must not stop the scan before a valid one',
+  );
+  assert.equal(
+    await redis.sismember(QUEUE_ACTIVE, 'smoke-queue-bad'),
+    0,
+    'the poison member must leave the active set',
+  );
+  assert.ok(
+    (await redis.keys(`chat:queue:quarantine:${QUEUE_PLATFORM}:*`)).length > 0,
+    'the poison payload must be quarantined for inspection, not deleted',
+  );
+  console.log('  ok: malformed buffer is quarantined and the scan continues');
+
+  // 6. Concurrent backfill is single-flight and idempotent.
+  await dropQueueIndexes();
+  await seedQueueState('smoke-queue-f1', {
+    texts: ['f1'],
+    flushAfterAt: Date.now() - 1_000,
+  });
+  await seedQueueState('smoke-queue-f2', {
+    texts: ['f2'],
+    flushAfterAt: Date.now() - 1_000,
+  });
+  await Promise.all([
+    queueStore().listReadyExternalUserIds(10),
+    queueStore().listReadyExternalUserIds(10),
+    queueStore().listReadyExternalUserIds(10),
+  ]);
+  const restored = await redis.zrange(QUEUE_FLUSH, 0, -1);
+  const bothQueued = restored.filter((id) => id.startsWith('smoke-queue-f'));
+  assert.deepEqual(
+    [...new Set(bothQueued)].sort(),
+    ['smoke-queue-f1', 'smoke-queue-f2'],
+    'racing backfills must restore each member exactly once',
+  );
+  assert.equal(
+    await redis.exists(QUEUE_REHYDRATE_LOCK),
+    0,
+    'the rehydrate lock must not outlive the scan',
+  );
+  console.log('  ok: concurrent rehydrate is single-flight and idempotent');
+
+  await delKeys(redis, `${QUEUE_BUFFER}smoke-queue-*`);
+  await delKeys(redis, `chat:queue:quarantine:${QUEUE_PLATFORM}:*`);
 }
 
 async function privacyRollbackSuite() {
@@ -1132,6 +1410,31 @@ async function cleanup() {
   if (redis) {
     await delKeys(redis, 'burst:*smoke-burst*');
     await delKeys(redis, 'smoke:llm:slots*');
+    await delKeys(redis, 'chat:queue:discord:buffer:smoke-queue-*');
+    await delKeys(redis, 'chat:queue:quarantine:discord:*');
+    await redis
+      .srem(
+        'chat:queue:discord:active-users',
+        ...[
+          'smoke-queue-a',
+          'smoke-queue-b',
+          'smoke-queue-c',
+          'smoke-queue-d',
+          'smoke-queue-e',
+          'smoke-queue-f1',
+          'smoke-queue-f2',
+          'smoke-queue-bad',
+          'smoke-queue-good',
+        ],
+      )
+      .catch(() => {});
+    await redis
+      .del(
+        'chat:queue:discord:flush',
+        'chat:queue:discord:stuck',
+        'chat:queue:discord:rehydrate-lock',
+      )
+      .catch(() => {});
   }
 }
 
@@ -1164,6 +1467,7 @@ try {
   await inboxSuite();
   await quotaSuite();
   await luaSuite();
+  await chatQueueSuite();
   await reportClaimSuite();
   await reminderJobSuite();
   await rescheduleConfirmationSuite();
