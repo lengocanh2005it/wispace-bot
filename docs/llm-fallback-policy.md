@@ -8,7 +8,9 @@ loop around that action.
 
 | Fault                                  | Chat                                                                                                                                                                                             | Report / reminder                                                                                                                                                                       | Owner and bound                                          |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Request timeout or cancellation        | Abort the provider/tool call; send the fixed chat fallback. Do not append the failed assistant turn.                                                                                             | Abort the current generation; keep the job retryable in its outbox when delivery is still known not to have happened.                                                                   | One caller deadline; provider retry stops on abort.      |
+| Caller cancellation                    | Abort the provider/tool call; send the fixed chat fallback. Do not append the failed assistant turn.                                                                                             | Abort the current generation; keep the job retryable in its outbox when delivery is still known not to have happened.                                                                   | Caller signal; no retry and no execution-circuit failure. |
+| Provider-side attempt timeout          | Let the execution boundary consult the provider classifier and retry budget; after exhaustion, use the fixed chat fallback without appending the failed turn.                                   | Use the bounded provider attempt/failover policy; if generation still fails, keep the durable job retryable when delivery is known not to have happened.                                | Per-attempt cap; one terminal execution-circuit failure after the top-level execution fails. |
+| Global execution deadline              | Abort and use the fixed chat fallback; do not start another provider attempt.                                                                                                                   | Abort the generation; preserve the existing durable outbox retry policy.                                                                                                               | Covers admission, Redis, backoff, and provider work; counts the execution circuit only when a provider call was in flight. |
 | Rate limit                             | Bounded same-operation retry, then approved-provider failover; if all fail, fixed fallback.                                                                                                      | Bounded provider attempt/failover; generation or delivery is recorded for the durable job retry.                                                                                        | Execution port/provider adapter; no caller retry on top. |
 | Auth or configuration error            | Fail closed; no retry or tool execution; fixed fallback at runtime.                                                                                                                              | Configuration fails startup; a runtime auth failure is terminal for the attempt and requires operator correction.                                                                       | Provider factory/circuit; no automatic replay.           |
 | Provider exhaustion                    | Fixed Vietnamese service-unavailable response; no stale context, history append, or user-visible partial model content.                                                                          | Keep generation retryable in `report_send_jobs` / `study_reminder_jobs`; do not send an ungrounded report/reminder.                                                                     | Report/reminder outbox and bounded retry count.          |
@@ -24,10 +26,18 @@ loop around that action.
 
 - `LLM_MAX_CONCURRENT`, `LLM_MAX_QUEUE_DEPTH`, and the interactive/background
   admission wait budgets bound work before a provider call.
-- One `AbortSignal` and one `LLM_REQUEST_TIMEOUT_MS` cover admission, the
-  optional Redis-global slot, provider attempts, failover, and backoff. The
-  shared execution circuit opens after repeated provider failures and resets
-  after its cooldown.
+- The caller signal and one `LLM_REQUEST_TIMEOUT_MS` execution deadline cover
+  admission, the optional Redis-global slot, provider attempts, failover, and
+  backoff. A separate per-attempt timeout can expire without cancelling the
+  global execution budget, so the provider classifier may decide whether the
+  next execution attempt is allowed.
+- The shared execution circuit counts one terminal execution-circuit failure per
+  top-level execution, not one per retry attempt. Only a provider-call failure
+  or a global deadline expiring while a provider call is in flight counts;
+  admission, Redis, backoff-only expiry, and caller cancellation do not.
+- Per-provider failover health keeps its existing abort guard. A provider-side
+  attempt timeout is handled by the shared execution boundary and does not add a
+  second failover retry or cooldown policy.
 - Provider retry and failover are bounded by `LLM_OPENAI_RETRY_MAX_ATTEMPTS`
   and the approved order in `LLM_PROVIDER_FAILOVER_ORDER`. A listed provider
   must be known and configured; unknown names and incomplete entries fail

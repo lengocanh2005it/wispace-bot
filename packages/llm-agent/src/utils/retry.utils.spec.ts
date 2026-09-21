@@ -198,6 +198,98 @@ describe('retry.utils', () => {
       expect(fn).toHaveBeenCalledTimes(1);
     });
 
+    it('retries a per-attempt TimeoutError when the classifier allows it', async () => {
+      jest.useFakeTimers();
+      const timeoutControllers: AbortController[] = [];
+      const timeoutSpy = jest
+        .spyOn(AbortSignal, 'timeout')
+        .mockImplementation(() => {
+          const controller = new AbortController();
+          timeoutControllers.push(controller);
+          return controller.signal;
+        });
+      let calls = 0;
+      const timeoutError = new DOMException('Timed out', 'TimeoutError');
+      const fn = jest.fn((signal?: AbortSignal) => {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<never>((_, reject) => {
+            signal?.addEventListener('abort', () => reject(timeoutError), {
+              once: true,
+            });
+            timeoutControllers.at(-1)?.abort(timeoutError);
+          });
+        }
+        return Promise.resolve('ok');
+      });
+      const isRetryable = jest.fn().mockReturnValue(true);
+
+      try {
+        const promise = retryWithBackoff(fn, {
+          maxAttempts: 2,
+          baseDelayMs: 0,
+          isRetryable,
+          perAttemptTimeoutMs: 20,
+          rng: () => 1,
+        });
+
+        await jest.runAllTimersAsync();
+        await expect(promise).resolves.toBe('ok');
+        expect(fn).toHaveBeenCalledTimes(2);
+        expect(isRetryable).toHaveBeenCalledWith(timeoutError);
+      } finally {
+        timeoutSpy.mockRestore();
+        jest.useRealTimers();
+      }
+    });
+
+    it('retries a wrapped attempt timeout based on signal state', async () => {
+      jest.useFakeTimers();
+      const timeoutControllers: AbortController[] = [];
+      const timeoutSpy = jest
+        .spyOn(AbortSignal, 'timeout')
+        .mockImplementation(() => {
+          const controller = new AbortController();
+          timeoutControllers.push(controller);
+          return controller.signal;
+        });
+      let calls = 0;
+      const wrappedTimeout = Object.assign(new Error('wrapped timeout'), {
+        name: 'AbortError',
+      });
+      const fn = jest.fn((signal?: AbortSignal) => {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<never>((_, reject) => {
+            signal?.addEventListener('abort', () => reject(wrappedTimeout), {
+              once: true,
+            });
+            timeoutControllers.at(-1)?.abort(wrappedTimeout);
+          });
+        }
+        return Promise.resolve('ok');
+      });
+      const isRetryable = jest.fn().mockReturnValue(true);
+
+      try {
+        const promise = retryWithBackoff(fn, {
+          maxAttempts: 2,
+          baseDelayMs: 0,
+          isRetryable,
+          perAttemptTimeoutMs: 20,
+          rng: () => 1,
+        });
+
+        await jest.runAllTimersAsync();
+        await expect(promise).resolves.toBe('ok');
+        expect(fn).toHaveBeenCalledTimes(2);
+        expect(isRetryable).toHaveBeenCalledWith(wrappedTimeout);
+      } finally {
+        timeoutSpy.mockRestore();
+        jest.useRealTimers();
+      }
+    });
+
     it('per-attempt timeout: fn receives an AbortSignal when perAttemptTimeoutMs is set', async () => {
       const fn = jest.fn().mockResolvedValue('ok');
 

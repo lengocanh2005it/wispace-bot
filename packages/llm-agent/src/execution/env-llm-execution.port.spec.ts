@@ -468,6 +468,346 @@ describe('createEnvLlmExecutionPort', () => {
     expect(calls).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps provider attribution when the deadline aborts after the call fails', async () => {
+    const timeoutControllers: AbortController[] = [];
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        timeoutControllers.push(controller);
+        return controller.signal;
+      });
+    try {
+      const adapter = makeAdapter();
+      adapter.isRetryableError = () => {
+        timeoutControllers.at(-1)?.abort(new Error('deadline'));
+        return false;
+      };
+      const provider = jest.fn().mockRejectedValue(new Error('provider down'));
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 1,
+          perAttemptTimeoutMs: 0,
+        },
+        adapter,
+        noopLogger,
+      );
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          port.run(provider, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toThrow('provider down');
+      }
+
+      await expect(
+        port.run(provider, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(provider).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it('opens the execution circuit after repeated provider-side timeouts', async () => {
+    const timeoutControllers: AbortController[] = [];
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        timeoutControllers.push(controller);
+        return controller.signal;
+      });
+    try {
+      const adapter = makeAdapter();
+      const timedOutProvider = jest.fn(
+        (signal?: AbortSignal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(signal.reason ?? new Error('provider timeout')),
+              { once: true },
+            );
+            timeoutControllers
+              .at(-1)
+              ?.abort(
+                new DOMException('The operation timed out.', 'TimeoutError'),
+              );
+          }),
+      );
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 1,
+          requestTimeoutMs: 100,
+          perAttemptTimeoutMs: 5,
+        },
+        adapter,
+        noopLogger,
+      );
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          port.run(timedOutProvider, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toMatchObject({ name: 'TimeoutError' });
+      }
+
+      await expect(
+        port.run(timedOutProvider, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(timedOutProvider).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it('counts one circuit failure per execution, not per retry attempt', async () => {
+    jest.useFakeTimers();
+    try {
+      const adapter = makeAdapter();
+      adapter.isRetryableError = () => true;
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 3,
+          baseBackoffMs: 0,
+          perAttemptTimeoutMs: 0,
+        },
+        adapter,
+        noopLogger,
+      );
+      const retryableFailure = Object.assign(new Error('rate limit'), {
+        status: 429,
+      });
+      const provider = jest.fn().mockRejectedValue(retryableFailure);
+
+      for (let execution = 0; execution < 3; execution += 1) {
+        const result = port.run(provider, { feature: 'FREE_FORM_CHAT' });
+        const rejection = expect(result).rejects.toThrow('rate limit');
+        await jest.advanceTimersByTimeAsync(1);
+        await rejection;
+      }
+
+      await expect(
+        port.run(provider, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(provider).toHaveBeenCalledTimes(9);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not open the execution circuit for caller cancellation', async () => {
+    const port = createEnvLlmExecutionPort(
+      { ...DEFAULT_CONFIG, maxAttempts: 1, requestTimeoutMs: 100 },
+      makeAdapter(),
+      noopLogger,
+    );
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const cancelledProvider = jest.fn((signal?: AbortSignal) => {
+        controller.abort(new Error('caller gone'));
+        return Promise.reject(signal?.reason ?? new Error('caller gone'));
+      });
+
+      await expect(
+        port.run(cancelledProvider, {
+          feature: 'FREE_FORM_CHAT',
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('caller gone');
+    }
+
+    const providerFailure = jest
+      .fn()
+      .mockRejectedValue(new Error('provider down'));
+    await expect(
+      port.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toThrow('provider down');
+    expect(providerFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a global deadline that expires during a provider call', async () => {
+    const timeoutControllers: AbortController[] = [];
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        timeoutControllers.push(controller);
+        return controller.signal;
+      });
+    try {
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 1,
+          perAttemptTimeoutMs: 0,
+        },
+        makeAdapter(),
+        noopLogger,
+      );
+      const timedOutProvider = jest.fn(
+        (signal?: AbortSignal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(signal.reason ?? new Error('deadline')),
+              { once: true },
+            );
+            timeoutControllers
+              .at(-1)
+              ?.abort(
+                new DOMException('The operation timed out.', 'TimeoutError'),
+              );
+          }),
+      );
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          port.run(timedOutProvider, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toMatchObject({ name: 'TimeoutError' });
+      }
+
+      await expect(
+        port.run(timedOutProvider, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(timedOutProvider).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it('does not count a global deadline that expires before provider execution', async () => {
+    let firstDeadline = true;
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        if (firstDeadline) {
+          firstDeadline = false;
+          controller.abort(
+            new DOMException('The operation timed out.', 'TimeoutError'),
+          );
+        }
+        return controller.signal;
+      });
+    try {
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 1,
+          perAttemptTimeoutMs: 0,
+        },
+        makeAdapter(),
+        noopLogger,
+      );
+      const skippedProvider = jest.fn().mockResolvedValue('never');
+      await expect(
+        port.run(skippedProvider, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toThrow();
+      expect(skippedProvider).not.toHaveBeenCalled();
+
+      const providerFailure = jest
+        .fn()
+        .mockRejectedValue(new Error('provider down'));
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          port.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toThrow('provider down');
+      }
+      await expect(
+        port.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(providerFailure).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it('does not count a global deadline that expires during retry backoff', async () => {
+    const timeoutControllers: AbortController[] = [];
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        timeoutControllers.push(controller);
+        return controller.signal;
+      });
+    try {
+      const adapter = makeAdapter();
+      (
+        adapter as unknown as { isRetryableError: (error: unknown) => boolean }
+      ).isRetryableError = (error) => {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          (error as { status?: unknown }).status === 429
+        ) {
+          timeoutControllers
+            .at(-1)
+            ?.abort(
+              new DOMException('The operation timed out.', 'TimeoutError'),
+            );
+          return true;
+        }
+        return false;
+      };
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 2,
+          baseBackoffMs: 100,
+          perAttemptTimeoutMs: 0,
+        },
+        adapter,
+        noopLogger,
+      );
+      const retryableFailure = Object.assign(new Error('rate limit'), {
+        status: 429,
+      });
+
+      await expect(
+        port.run(() => Promise.reject(retryableFailure), {
+          feature: 'FREE_FORM_CHAT',
+        }),
+      ).rejects.toThrow();
+
+      const providerFailure = jest
+        .fn()
+        .mockRejectedValue(new Error('provider down'));
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          port.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toThrow('provider down');
+      }
+      await expect(
+        port.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(providerFailure).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
   describe('provider failover integration', () => {
     const env: Record<string, string> = {
       LLM_PROVIDER_FAILOVER_ORDER: 'openai,openrouter',

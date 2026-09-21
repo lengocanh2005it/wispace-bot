@@ -25,3 +25,8 @@ export {
   LlmProviderCircuitOpenError,
   type LlmProviderCircuitState,
 } from './circuit-error';
+export {
+  createLlmExecutionFailureTracker,
+  type LlmExecutionFailureKind,
+  type LlmExecutionFailureTracker,
+} from './failure-attribution';

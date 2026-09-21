@@ -33,6 +33,7 @@ function createConfig(overrides: {
   retryMaxAttempts?: number;
   retryBackoffMs?: number;
   requestTimeoutMs?: number;
+  perAttemptTimeoutMs?: number;
 }): LlmExecutionConfigService {
   const values: Record<string, string> = {};
   if (overrides.enabled !== undefined) {
@@ -65,6 +66,11 @@ function createConfig(overrides: {
   }
   if (overrides.requestTimeoutMs !== undefined) {
     values.LLM_REQUEST_TIMEOUT_MS = String(overrides.requestTimeoutMs);
+  }
+  if (overrides.perAttemptTimeoutMs !== undefined) {
+    values.LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS = String(
+      overrides.perAttemptTimeoutMs,
+    );
   }
 
   return new LlmExecutionConfigService({
@@ -255,6 +261,177 @@ describe('LlmExecutionService', () => {
       state: 'open',
     });
     expect(providerCall).toHaveBeenCalledTimes(3);
+  });
+
+  it('opens Opossum after repeated provider-side attempt timeouts', async () => {
+    const timeoutControllers: AbortController[] = [];
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        timeoutControllers.push(controller);
+        return controller.signal;
+      });
+    try {
+      const config = createConfig({
+        enabled: true,
+        retryMaxAttempts: 1,
+        requestTimeoutMs: 100,
+        perAttemptTimeoutMs: 5,
+      });
+      const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+      const providerCall = jest.fn(
+        (signal?: AbortSignal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(signal.reason ?? new Error('provider timeout')),
+              { once: true },
+            );
+            timeoutControllers
+              .at(-1)
+              ?.abort(
+                new DOMException('The operation timed out.', 'TimeoutError'),
+              );
+          }),
+      );
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          service.run(providerCall, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toMatchObject({ name: 'TimeoutError' });
+      }
+
+      await expect(
+        service.run(providerCall, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(providerCall).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it('excludes caller cancellation from Opossum failure accounting', async () => {
+    const config = createConfig({
+      enabled: true,
+      retryMaxAttempts: 1,
+      requestTimeoutMs: 100,
+    });
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const cancelledProvider = jest.fn(() => {
+        controller.abort(new Error('caller gone'));
+        return Promise.reject(new Error('caller gone'));
+      });
+      await expect(
+        service.run(cancelledProvider, {
+          feature: 'FREE_FORM_CHAT',
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('caller gone');
+    }
+
+    const providerFailure = jest
+      .fn()
+      .mockRejectedValue(new Error('provider down'));
+    await expect(
+      service.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toThrow('provider down');
+    expect(providerFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts one Opossum failure per execution, not per retry attempt', async () => {
+    jest.useFakeTimers();
+    try {
+      const config = createConfig({
+        enabled: true,
+        retryMaxAttempts: 3,
+        retryBackoffMs: 1,
+        requestTimeoutMs: 30_000,
+        perAttemptTimeoutMs: 0,
+      });
+      const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+      const retryableFailure = Object.assign(new Error('rate limit'), {
+        status: 429,
+      });
+      const providerCall = jest.fn().mockRejectedValue(retryableFailure);
+
+      for (let execution = 0; execution < 3; execution += 1) {
+        const result = service.run(providerCall, {
+          feature: 'FREE_FORM_CHAT',
+        });
+        const rejection = expect(result).rejects.toThrow('rate limit');
+        await jest.advanceTimersByTimeAsync(10);
+        await rejection;
+      }
+
+      await expect(
+        service.run(providerCall, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(providerCall).toHaveBeenCalledTimes(9);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('counts an in-flight global deadline in Opossum', async () => {
+    const timeoutControllers: AbortController[] = [];
+    const timeoutSpy = jest
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => {
+        const controller = new AbortController();
+        timeoutControllers.push(controller);
+        return controller.signal;
+      });
+    try {
+      const config = createConfig({
+        enabled: true,
+        retryMaxAttempts: 1,
+        requestTimeoutMs: 100,
+        perAttemptTimeoutMs: 0,
+      });
+      jest.spyOn(config, 'getPerAttemptTimeoutMs').mockReturnValue(0);
+      const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+      const timedOutProvider = jest.fn(
+        (signal?: AbortSignal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(signal.reason ?? new Error('deadline')),
+              { once: true },
+            );
+            timeoutControllers
+              .at(-1)
+              ?.abort(
+                new DOMException('The operation timed out.', 'TimeoutError'),
+              );
+          }),
+      );
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          service.run(timedOutProvider, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toMatchObject({ name: 'TimeoutError' });
+      }
+
+      await expect(
+        service.run(timedOutProvider, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(timedOutProvider).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 
   describe('metrics — timeLlmExecution', () => {

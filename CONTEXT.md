@@ -579,8 +579,24 @@ A configured provider that may receive a request after an earlier provider in th
 _Avoid_: fallback provider, backup vendor
 
 **provider outcome**:
-The result of one actual call to a configured LLM provider: `success` when it returns a completion and `failure` when that call is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller aborts and deadlines are not provider outcomes, and a cooldown skip is not an outcome because no provider call occurred.
+The result of one actual call to a configured LLM provider: `success` when it returns a completion and `failure` when that call is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller cancellation and an execution deadline that expires before a provider call are not provider outcomes; a provider-side attempt timeout is a provider failure for the execution circuit even though it arrives as an abort. A cooldown skip is not an outcome because no provider call occurred.
 _Avoid_: request outcome, circuit state
+
+**caller cancellation**:
+Cancellation initiated by the caller's own signal. It ends the current LLM generation immediately, is never retried, and is excluded from execution-circuit failure counts.
+_Avoid_: provider timeout, execution deadline
+
+**provider-side attempt timeout**:
+Expiry of the bounded timeout for one provider attempt while the caller and global execution deadline are still active. It indicates a slow provider, may be retried when the provider classifier allows it, and contributes to an execution-circuit failure when the top-level execution ultimately fails.
+_Avoid_: caller cancellation, global execution deadline
+
+**global execution deadline**:
+The single time budget for one LLM execution, covering admission, the optional shared slot, retries, backoff, and provider calls. Once it expires no new provider attempt starts; its failure is attributed to the provider only when a provider attempt was in flight.
+_Avoid_: per-attempt timeout, caller cancellation
+
+**execution-circuit failure**:
+One terminally failed top-level LLM execution attributed to a provider call or to a global deadline expiring while a provider call was in flight. It increments the shared execution circuit once per execution, not once per retry attempt, and excludes admission, Redis, and caller-cancellation failures.
+_Avoid_: retry attempt, provider circuit failure
 
 **long cooldown**:
 Temporary suppression applied after a provider reports `quota_exceeded`, `auth`, or `rate_limit`. It has a timer and may be probed again; it is not a provider quarantine.

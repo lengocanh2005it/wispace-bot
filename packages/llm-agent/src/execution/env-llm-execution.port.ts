@@ -1,5 +1,4 @@
 import { errorMessage } from '@wispace/bot-common/masking';
-import { isAbortError } from '@wispace/bot-common/utils';
 import type Redis from 'ioredis';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import type { LlmExecutionPort } from '../ports';
@@ -19,6 +18,10 @@ import {
   LlmAttemptBudget,
   normalizeMaxTotalProviderAttempts,
 } from './attempt-budget';
+import {
+  createLlmExecutionFailureTracker,
+  type LlmExecutionFailureKind,
+} from './failure-attribution';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -143,8 +146,8 @@ export function createEnvLlmExecutionPort(
     halfOpenInFlight = false;
   };
 
-  const recordFailure = (error: unknown): void => {
-    if (isAbortError(error)) {
+  const recordFailure = (kind: LlmExecutionFailureKind): void => {
+    if (kind !== 'provider') {
       halfOpenInFlight = false;
       return;
     }
@@ -192,6 +195,11 @@ export function createEnvLlmExecutionPort(
       const signal = meta?.signal
         ? AbortSignal.any([meta.signal, deadlineSignal])
         : deadlineSignal;
+      const failureTracker = createLlmExecutionFailureTracker({
+        callerSignal: meta?.signal,
+        deadlineSignal,
+        attemptBudget,
+      });
 
       // Acquire global Redis slot INSIDE the local limiter callback (#153) —
       // slots are only held during actual LLM execution, not while waiting
@@ -247,7 +255,9 @@ export function createEnvLlmExecutionPort(
           const result = await retryWithBackoff(
             (attemptSignal) => {
               attemptCount += 1;
-              return fn(attemptSignal ?? signal, attemptBudget);
+              return failureTracker.run(() =>
+                fn(attemptSignal ?? signal, attemptBudget),
+              );
             },
             {
               maxAttempts: config.maxAttempts,
@@ -258,6 +268,7 @@ export function createEnvLlmExecutionPort(
               ),
               isRetryable: (error) => adapter.isRetryableError(error),
               onRetry: (attempt, backoffMs, error) => {
+                failureTracker.resetForRetry();
                 logger.warn(
                   `LLM provider retry feature=${
                     meta?.feature ?? FEATURE
@@ -300,7 +311,7 @@ export function createEnvLlmExecutionPort(
               },
             );
           }
-          recordFailure(error);
+          recordFailure(failureTracker.classify());
           throw error;
         }
       } finally {

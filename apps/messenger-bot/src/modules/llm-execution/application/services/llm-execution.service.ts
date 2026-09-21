@@ -13,7 +13,12 @@ import {
   type AdmissionTicket,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
-import { acquireRedisSlot } from '@wispace/llm-agent/execution';
+import {
+  acquireRedisSlot,
+  createLlmExecutionFailureTracker,
+  type LlmExecutionFailureKind,
+  type LlmExecutionFailureTracker,
+} from '@wispace/llm-agent/execution';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
@@ -32,6 +37,11 @@ function isOpossumOpenError(error: unknown): boolean {
     (error as { code?: unknown }).code === 'EOPENBREAKER'
   );
 }
+
+type BreakerExecutionContext = LlmExecutionContext & {
+  failureKind?: LlmExecutionFailureKind;
+  failureTracker?: LlmExecutionFailureTracker;
+};
 
 @Injectable()
 export class LlmExecutionService {
@@ -79,7 +89,7 @@ export class LlmExecutionService {
           signal?: AbortSignal,
           attemptBudget?: LlmAttemptBudget,
         ) => Promise<unknown>,
-        context?: LlmExecutionContext,
+        context?: BreakerExecutionContext,
       ) => this.runWithRetry(fn, context),
       {
         // The request signal is the single timeout budget. A second Opossum
@@ -88,6 +98,10 @@ export class LlmExecutionService {
         errorThresholdPercentage: 50,
         resetTimeout: 60_000,
         volumeThreshold: 3,
+        errorFilter: (_error: unknown, ...args: unknown[]) => {
+          const context = args[1] as BreakerExecutionContext | undefined;
+          return context?.failureKind !== 'provider';
+        },
       },
     );
 
@@ -129,13 +143,18 @@ export class LlmExecutionService {
     const signal = context?.signal
       ? AbortSignal.any([context.signal, deadlineSignal])
       : deadlineSignal;
-    const executionContext: LlmExecutionContext = {
+    const executionContext: BreakerExecutionContext = {
       feature: context?.feature ?? 'unknown',
       ...(context?.correlationId
         ? { correlationId: context.correlationId }
         : {}),
       signal,
       attemptBudget,
+      failureTracker: createLlmExecutionFailureTracker({
+        callerSignal: context?.signal,
+        deadlineSignal,
+        attemptBudget,
+      }),
     };
 
     const startedAtMs = Date.now();
@@ -227,7 +246,7 @@ export class LlmExecutionService {
 
   private async runWithRetry<T>(
     fn: (signal?: AbortSignal, attemptBudget?: LlmAttemptBudget) => Promise<T>,
-    context?: LlmExecutionContext,
+    context?: BreakerExecutionContext,
   ): Promise<T> {
     const maxAttempts = this.config.getRetryMaxAttempts();
     const baseBackoffMs = this.config.getRetryBackoffMs();
@@ -236,28 +255,43 @@ export class LlmExecutionService {
     const correlation = context?.correlationId ?? 'n/a';
     const signal = context?.signal;
     const attemptBudget = context?.attemptBudget;
+    const failureTracker = context?.failureTracker;
 
     // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
-    return retryWithBackoff(
-      (attemptSignal) =>
-        this.metrics.timeLlmExecution(feature, () =>
-          fn(attemptSignal ?? signal, attemptBudget),
-        ),
-      {
-        maxAttempts,
-        baseDelayMs: baseBackoffMs,
-        backoff: cappedExponentialBackoff(baseBackoffMs, maxDelayMs),
-        isRetryable: (error) => this.adapter.isRetryableError(error),
-        onRetry: (attempt, backoffMs, error) =>
-          this.logger.warn(
-            `LLM provider retry feature=${feature} correlation=${correlation} attempt=${attempt}/${maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
-              error,
-            )}`,
-          ),
-        signal,
-        perAttemptTimeoutMs: this.config.getPerAttemptTimeoutMs(),
-        attemptBudget,
-      },
-    );
+    try {
+      return await retryWithBackoff(
+        (attemptSignal) => {
+          const providerCall = () =>
+            this.metrics.timeLlmExecution(feature, () =>
+              fn(attemptSignal ?? signal, attemptBudget),
+            );
+          return failureTracker
+            ? failureTracker.run(providerCall)
+            : providerCall();
+        },
+        {
+          maxAttempts,
+          baseDelayMs: baseBackoffMs,
+          backoff: cappedExponentialBackoff(baseBackoffMs, maxDelayMs),
+          isRetryable: (error) => this.adapter.isRetryableError(error),
+          onRetry: (attempt, backoffMs, error) => {
+            failureTracker?.resetForRetry();
+            this.logger.warn(
+              `LLM provider retry feature=${feature} correlation=${correlation} attempt=${attempt}/${maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
+                error,
+              )}`,
+            );
+          },
+          signal,
+          perAttemptTimeoutMs: this.config.getPerAttemptTimeoutMs(),
+          attemptBudget,
+        },
+      );
+    } catch (error) {
+      if (failureTracker) {
+        context.failureKind = failureTracker.classify();
+      }
+      throw error;
+    }
   }
 }

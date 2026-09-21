@@ -75,9 +75,11 @@ export async function retryWithBackoff<T>(
     } catch (error) {
       lastError = error;
       options.attemptBudget?.recordFailure(error);
+      const perAttemptTimedOut =
+        attemptSignal?.aborted === true && !options.signal?.aborted;
       if (
         options.signal?.aborted ||
-        isAbortError(error) ||
+        (isAbortError(error) && !perAttemptTimedOut) ||
         !options.isRetryable(error) ||
         attempt >= options.maxAttempts
       ) {

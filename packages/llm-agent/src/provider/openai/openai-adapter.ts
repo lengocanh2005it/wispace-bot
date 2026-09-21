@@ -63,39 +63,42 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
     request.attemptBudget?.consume();
+    try {
+      const response = await client.chat.completions.create(
+        {
+          model,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: request.systemPrompt },
+            { role: 'user', content: request.userContent },
+          ],
+          ...(request.temperature !== undefined && {
+            temperature: request.temperature,
+          }),
+          ...(request.maxOutputTokens !== undefined && {
+            max_completion_tokens: request.maxOutputTokens,
+          }),
+        },
+        request.signal ? { signal: request.signal } : undefined,
+      );
 
-    const response = await client.chat.completions.create(
-      {
-        model,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: request.systemPrompt },
-          { role: 'user', content: request.userContent },
-        ],
-        ...(request.temperature !== undefined && {
-          temperature: request.temperature,
-        }),
-        ...(request.maxOutputTokens !== undefined && {
-          max_completion_tokens: request.maxOutputTokens,
-        }),
-      },
-      request.signal ? { signal: request.signal } : undefined,
-    );
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('LLM provider returned empty content');
+      }
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('LLM provider returned empty content');
+      return {
+        content,
+        metadata: {
+          provider: this.providerName,
+          model,
+          responseId: response.id,
+          usage: fromOpenAiUsage(response.usage),
+        },
+      };
+    } finally {
+      request.attemptBudget?.completeProviderAttempt();
     }
-
-    return {
-      content,
-      metadata: {
-        provider: this.providerName,
-        model,
-        responseId: response.id,
-        usage: fromOpenAiUsage(response.usage),
-      },
-    };
   }
 
   // -----------------------------------------------------------------------
@@ -108,24 +111,27 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     const model = this.resolveModel(request.model);
     const client = this.getClientOrThrow();
     request.attemptBudget?.consume();
+    try {
+      const response = await client.chat.completions.create(
+        {
+          model,
+          messages: toOpenAiMessages(request.messages),
+          tools: toOpenAiTools(request.tools),
+          tool_choice: request.toolChoice ?? 'auto',
+          ...(request.temperature !== undefined && {
+            temperature: request.temperature,
+          }),
+          ...(request.maxOutputTokens !== undefined && {
+            max_completion_tokens: request.maxOutputTokens,
+          }),
+        },
+        request.signal ? { signal: request.signal } : undefined,
+      );
 
-    const response = await client.chat.completions.create(
-      {
-        model,
-        messages: toOpenAiMessages(request.messages),
-        tools: toOpenAiTools(request.tools),
-        tool_choice: request.toolChoice ?? 'auto',
-        ...(request.temperature !== undefined && {
-          temperature: request.temperature,
-        }),
-        ...(request.maxOutputTokens !== undefined && {
-          max_completion_tokens: request.maxOutputTokens,
-        }),
-      },
-      request.signal ? { signal: request.signal } : undefined,
-    );
-
-    return fromOpenAiCompletion(response, this.providerName, model);
+      return fromOpenAiCompletion(response, this.providerName, model);
+    } finally {
+      request.attemptBudget?.completeProviderAttempt();
+    }
   }
 
   // -----------------------------------------------------------------------
