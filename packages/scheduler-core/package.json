@@ -34,7 +34,8 @@
     "format": "oxfmt",
     "test": "jest --maxWorkers=50%",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "typecheck:tests": "tsc -p tsconfig.json --noEmit"
+    "typecheck:tests": "tsc -p tsconfig.json --noEmit",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@nestjs/cli": "^12.0.0",
