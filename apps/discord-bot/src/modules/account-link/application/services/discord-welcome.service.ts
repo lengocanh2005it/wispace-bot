@@ -46,7 +46,6 @@ export class DiscordWelcomeService {
   ): Promise<WelcomeDeliveryOutcome> {
     return this.sendIfDue(
       discordUserId,
-      displayName,
       'linked',
       buildDiscordLinkWelcomeMessage(displayName),
       userId,
@@ -64,7 +63,6 @@ export class DiscordWelcomeService {
   ): Promise<WelcomeDeliveryOutcome> {
     return this.sendIfDue(
       discordUserId,
-      displayName,
       'organic',
       buildGreetingMessage(displayName),
     );
@@ -72,7 +70,6 @@ export class DiscordWelcomeService {
 
   private async sendIfDue(
     discordUserId: string,
-    displayName: string | undefined,
     source: WelcomeSource,
     message: string,
     userId?: number,

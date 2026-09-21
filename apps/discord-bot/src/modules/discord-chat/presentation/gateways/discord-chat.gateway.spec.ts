@@ -1,11 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mocks */
 import type { ConfigService } from '@nestjs/config';
-import type {
-  PlatformAgentService,
-  PlatformChatHistoryService,
-  PlatformChatQueueService,
-} from '@wispace/chat-agent';
-import type { PlatformChatRateLimitService } from '@wispace/chat-metering';
+import type { PlatformChatQueueService } from '@wispace/chat-agent';
 import type { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import type { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import type { DiscordMenuService } from '../../application/services/discord-menu.service';
@@ -78,13 +73,10 @@ function buildGateway(overrides: {
 
   const gateway = new DiscordChatGateway(
     buildConfigService(),
-    {} as PlatformAgentService,
     outboundService,
-    {} as PlatformChatRateLimitService,
     accountLinkService,
     {} as RescheduleConfirmationService<string>,
     menuService,
-    {} as PlatformChatHistoryService,
     chatQueueService,
     {
       handleIfConsentCommand: jest.fn().mockResolvedValue(false),

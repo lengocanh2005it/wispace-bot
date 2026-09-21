@@ -45,7 +45,7 @@ class SendReportsBody {
 export class ZaloOpsController extends PlatformOpsController {
   constructor(
     private readonly studyReminderSyncService: StudyReminderSyncService,
-    private readonly reportCronService: ZaloReportCronService,
+    reportCronService: ZaloReportCronService,
     private readonly calendarService: WispaceCalendarService,
     privacyService: PrivacyDataService,
     clarificationAgent: PlatformAgentService,

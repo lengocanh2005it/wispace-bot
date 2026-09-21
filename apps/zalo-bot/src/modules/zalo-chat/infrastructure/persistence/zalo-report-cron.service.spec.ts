@@ -94,7 +94,6 @@ function buildService(overrides: {
     orchestration as never,
     { generateReport: jest.fn() } as never,
     reportScheduleService,
-    { get: jest.fn() } as never,
     {
       shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
     } as never,
@@ -229,7 +228,6 @@ describe('ZaloReportCronService', () => {
       { claimAndSend: jest.fn() } as unknown as never,
       { generateReport: jest.fn() } as unknown as never,
       {} as unknown as never,
-      { get: jest.fn() } as unknown as never,
       {
         shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
       } as never,
@@ -274,7 +272,6 @@ describe('ZaloReportCronService', () => {
       { claimAndSend: jest.fn() } as unknown as never,
       { generateReport: jest.fn() } as unknown as never,
       {} as unknown as never,
-      { get: jest.fn() } as unknown as never,
       {
         shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
       } as never,
@@ -317,7 +314,6 @@ describe('ZaloReportCronService', () => {
     const orchestration = { claimAndSend: jest.fn() };
     const reportService = { generateReport: jest.fn() };
     const reportScheduleService = { getExamReminderWindow: jest.fn() };
-    const configService = { get: jest.fn() };
 
     const service = new ZaloReportCronService(
       linkRepo as unknown as never,
@@ -325,7 +321,6 @@ describe('ZaloReportCronService', () => {
       orchestration as unknown as never,
       reportService as unknown as never,
       reportScheduleService as unknown as never,
-      configService as unknown as never,
       {
         shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
       } as never,
@@ -418,7 +413,6 @@ describe('ZaloReportCronService', () => {
         .fn()
         .mockReturnValue({ minDays: 1, maxDays: 30 }),
     };
-    const configService = { get: jest.fn() };
     const webActivityService = {
       partitionDormant: jest
         .fn()
@@ -434,7 +428,6 @@ describe('ZaloReportCronService', () => {
       orchestration as unknown as never,
       reportService as unknown as never,
       reportScheduleService as unknown as never,
-      configService as unknown as never,
       {
         shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
       } as never,
@@ -519,7 +512,6 @@ describe('ZaloReportCronService', () => {
         .fn()
         .mockReturnValue({ minDays: 1, maxDays: 30 }),
     };
-    const configService = { get: jest.fn() };
     const webActivityService = { partitionDormant: jest.fn() };
     const metrics = {
       incScheduledSendSuppressed: jest.fn(),
@@ -531,7 +523,6 @@ describe('ZaloReportCronService', () => {
       orchestration as unknown as never,
       reportService as unknown as never,
       reportScheduleService as unknown as never,
-      configService as unknown as never,
       {
         shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
       } as never,

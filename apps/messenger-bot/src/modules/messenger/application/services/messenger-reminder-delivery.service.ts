@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { getNoUpcomingStudySessionMessage } from '../messages/messenger-reminder.messages';
 import {
   STUDY_REMINDER_OPERATIONS_PORT,
@@ -9,8 +9,6 @@ import { MessengerOutboundService } from './messenger-outbound.service';
 
 @Injectable()
 export class MessengerReminderDeliveryService {
-  private readonly logger = new Logger(MessengerReminderDeliveryService.name);
-
   constructor(
     private readonly outbound: MessengerOutboundService,
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)

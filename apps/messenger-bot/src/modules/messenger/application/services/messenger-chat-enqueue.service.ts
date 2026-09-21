@@ -43,7 +43,7 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
   private readonly droppedNotified = new Set<string>();
 
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly outbound: MessengerOutboundService,
     private readonly processor: MessengerChatProcessorService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,

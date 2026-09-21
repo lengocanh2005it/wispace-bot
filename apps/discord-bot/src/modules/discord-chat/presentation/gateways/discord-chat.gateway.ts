@@ -19,11 +19,7 @@ import {
 } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
 import type { ButtonContext, ContextOf } from 'necord';
-import {
-  PlatformAgentService,
-  PlatformChatHistoryService,
-  PlatformChatQueueService,
-} from '@wispace/chat-agent';
+import { PlatformChatQueueService } from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordConsentService } from '../../application/services/discord-consent.service';
 import {
@@ -42,7 +38,6 @@ import { readPendingOrganicSkipMs } from '@discord/shared/config/discord-link.co
 import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
-import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
 import { WispaceApiError } from '@wispace/wispace-client';
@@ -69,13 +64,10 @@ export class DiscordChatGateway {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly agentService: PlatformAgentService,
     private readonly outboundService: DiscordOutboundService,
-    private readonly rateLimitService: PlatformChatRateLimitService,
     private readonly accountLinkService: DiscordAccountLinkService,
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
     private readonly menuService: DiscordMenuService,
-    private readonly chatHistoryService: PlatformChatHistoryService,
     private readonly chatQueueService: PlatformChatQueueService,
     private readonly consentService: DiscordConsentService,
     @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)

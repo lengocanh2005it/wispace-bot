@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,8 +21,6 @@ const CLEANUP_CRON = '0 30 3 * * *';
  */
 @Injectable()
 export class ChatIdempotencyCleanupCronService {
-  private readonly logger = new Logger(ChatIdempotencyCleanupCronService.name);
-
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(ChatIdempotencyEntity)

@@ -1,9 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import {
-  errorMessage,
-  maskExternalId,
-  maskExternalIdInText,
-} from '@wispace/bot-common/masking';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   type PlatformAgentReply,
   type PlatformAgentToolContext,
@@ -24,7 +20,6 @@ import {
   type GetUpcomingStudySessionsArgs,
   type ListStudyCalendarEntriesArgs,
   type RescheduleStudySessionArgs,
-  sanitizeUntrustedTextForLlm,
   readPastDays,
   readPositiveInteger,
   readPositiveLimit,
@@ -217,14 +212,6 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     // shared result helper after the common identity and budget prologue.
     if (toolName === 'precreate_next_exercise') return undefined;
     return defaultExplicitIntent(toolName, userText);
-  }
-
-  private safeErrorMessage(error: unknown, externalUserId: string): string {
-    const sanitized = sanitizeUntrustedTextForLlm(errorMessage(error), {
-      maxChars: 500,
-      unsafePlaceholder: 'Tool execution failed',
-    }).text;
-    return maskExternalIdInText(sanitized, externalUserId);
   }
 
   private async getUserGoals(ctx: PlatformAgentToolContext): Promise<unknown> {

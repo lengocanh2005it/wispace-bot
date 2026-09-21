@@ -102,7 +102,7 @@ export class MessengerChatProcessorService {
     private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly sharedConfig: MessengerChatSharedConfigService,
     private readonly historyService: PlatformChatHistoryService,
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
     private readonly privacyState?: PrivacyStateService,

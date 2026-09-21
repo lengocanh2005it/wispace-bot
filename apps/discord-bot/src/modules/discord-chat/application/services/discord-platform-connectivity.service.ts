@@ -20,7 +20,7 @@ export class DiscordPlatformConnectivityService
 
   constructor(
     private readonly client: Client,
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly state: PlatformConnectivityState,
   ) {
     const configured = Number(

@@ -4,7 +4,6 @@ import {
   WebActivityService,
 } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -50,7 +49,6 @@ export class ZaloReportCronService {
     private readonly orchestration: ReportOrchestrationService,
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
-    private readonly configService: ConfigService,
     private readonly reportCronLeaderService: ReportCronLeaderService,
     private readonly reportCronLockService: ReportCronLockService,
     @Optional()

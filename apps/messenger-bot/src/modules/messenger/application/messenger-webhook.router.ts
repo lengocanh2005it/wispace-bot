@@ -238,7 +238,7 @@ export function routeWebhookEvent(
   // --- Unsupported message (sticker/attachment, no text) ---
   if (event.message && !event.message.is_echo) {
     if (isUnsupportedUserMessage(event.message)) {
-      return withRefActions(routeUnsupportedMessage(psid, event.message, ctx));
+      return withRefActions(routeUnsupportedMessage(psid, ctx));
     }
   }
 
@@ -350,7 +350,6 @@ function routeTextMessage(
 
 function routeUnsupportedMessage(
   psid: string,
-  message: NonNullable<MessengerWebhookEvent['message']>,
   ctx: RouterContext,
 ): WebhookAction[] {
   return [
