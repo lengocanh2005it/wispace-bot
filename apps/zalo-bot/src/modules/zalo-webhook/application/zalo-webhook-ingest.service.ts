@@ -8,6 +8,23 @@ import {
 } from '@wispace/webhook-inbound';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
 
+function canonicalizeEventPayload(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalizeEventPayload).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalizeEventPayload(record[key])}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
+}
+
 /** Stable per-delivery event id for the durable inbox. */
 export function buildZaloEventId(event: ZaloWebhookEvent): string {
   if (event.message?.msg_id) {
@@ -20,7 +37,7 @@ export function buildZaloEventId(event: ZaloWebhookEvent): string {
   // ponytail: deterministic content hash — same payload always produces the
   // same key, even across redeliveries with no msg_id or timestamp.
   const fingerprint = createHash('sha256')
-    .update(JSON.stringify(event))
+    .update(canonicalizeEventPayload(event))
     .digest('hex');
   return `${event.event_name}:${userId}:${fingerprint}`;
 }

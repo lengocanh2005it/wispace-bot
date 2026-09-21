@@ -46,6 +46,29 @@ const VALID_EVENT_SHAPE = fc.record({
   ),
 });
 
+const ZALO_FINGERPRINT_EVENT = fc.record({
+  app_id: fc.string({ minLength: 1, maxLength: 20 }),
+  event_name: fc.constant('user_send_text' as const),
+  timestamp: fc.constant(undefined),
+  sender: fc.record({ id: fc.string({ minLength: 1, maxLength: 20 }) }),
+  message: fc.record({
+    text: fc.string({ maxLength: 100 }),
+    msg_id: fc.constant(undefined),
+  }),
+});
+
+function reorderObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reorderObjectKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .reverse()
+        .map(([key, entry]) => [key, reorderObjectKeys(entry)]),
+    );
+  }
+  return value;
+}
+
 describe('ZaloWebhookEventDto property (#621 fuzz)', () => {
   it('any JSON yields a well-formed validation result — never an unhandled throw', async () => {
     await fc.assert(
@@ -129,6 +152,16 @@ describe('ZaloWebhookEventDto property (#621 fuzz)', () => {
           expect(buildZaloEventId(structuredClone(event))).toBe(first);
         },
       ),
+    );
+  });
+
+  it('uses semantic content rather than object insertion order for fingerprints', () => {
+    fc.assert(
+      fc.property(ZALO_FINGERPRINT_EVENT, (event) => {
+        expect(buildZaloEventId(reorderObjectKeys(event) as never)).toBe(
+          buildZaloEventId(event as never),
+        );
+      }),
     );
   });
 });
