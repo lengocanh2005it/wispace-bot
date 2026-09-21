@@ -20,7 +20,7 @@ import {
 } from './attempt-budget';
 import {
   createLlmExecutionFailureTracker,
-  type LlmExecutionFailureKind,
+  type LlmExecutionFailureClassification,
 } from './failure-attribution';
 
 const FEATURE = 'FREE_FORM_CHAT';
@@ -82,6 +82,8 @@ export interface AdmissionMetrics {
     attempts: number,
     labels?: Record<string, string>,
   ): void;
+  /** Observe one terminal provider classification at the execution boundary. */
+  observeExecutionCircuitFailure?(errorClass: string): void;
   /** One observation per generation, not one per tool round. */
   observeTotalProviderAttempts?(
     attempts: number,
@@ -146,8 +148,16 @@ export function createEnvLlmExecutionPort(
     halfOpenInFlight = false;
   };
 
-  const recordFailure = (kind: LlmExecutionFailureKind): void => {
-    if (kind !== 'provider') {
+  const recordFailure = (
+    classification: LlmExecutionFailureClassification,
+  ): void => {
+    if (classification.kind !== 'provider') {
+      halfOpenInFlight = false;
+      return;
+    }
+
+    metrics?.observeExecutionCircuitFailure?.(classification.errorClass);
+    if (!classification.countsForCircuit) {
       halfOpenInFlight = false;
       return;
     }
@@ -311,7 +321,7 @@ export function createEnvLlmExecutionPort(
               },
             );
           }
-          recordFailure(failureTracker.classify());
+          recordFailure(failureTracker.classify(error, adapter));
           throw error;
         }
       } finally {

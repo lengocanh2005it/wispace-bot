@@ -202,6 +202,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     const { ordered, suppressed, degraded } = this.pickOrdered();
     this.emitSkips(suppressed);
     let lastError: unknown;
+    const failureReasons: LlmProviderError['reason'][] = [];
 
     for (const candidate of ordered) {
       if (request.signal?.aborted) {
@@ -236,6 +237,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
             throw err;
           }
           const { reason } = candidate.normalizeError(err);
+          failureReasons.push(reason);
           this.recordFailure(candidate.providerName, reason, request.feature);
           const isLongCooldown =
             reason === 'quota_exceeded' ||
@@ -278,7 +280,11 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
         ? ordered.map((c) => c.providerName)
         : this.candidates.map((c) => c.providerName);
     this.onProvidersExhausted?.(providers, request.feature);
-    throw new LlmAllProvidersExhaustedError(providers, lastError);
+    throw new LlmAllProvidersExhaustedError(
+      providers,
+      lastError,
+      failureReasons,
+    );
   }
 
   private getState(provider: string): CircuitState {

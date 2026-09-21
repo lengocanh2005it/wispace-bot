@@ -180,6 +180,14 @@ export class OpenAiAdapter implements LlmProviderAdapter {
         status: this.getErrorStatus(error),
       };
     }
+    if (this.isBadRequestError(error)) {
+      return {
+        provider: this.providerName,
+        retryable: false,
+        reason: 'bad_request',
+        status: this.getErrorStatus(error),
+      };
+    }
     return {
       provider: this.providerName,
       retryable: false,
@@ -225,6 +233,11 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     if (typeof error !== 'object' || error === null) return false;
     const e = error as Record<string, unknown>;
     return e['status'] === 401 || e['status'] === 403;
+  }
+
+  private isBadRequestError(error: unknown): boolean {
+    const status = this.getErrorStatus(error);
+    return status === 400 || status === 422;
   }
 
   private isQuotaExhaustedError(error: unknown): boolean {

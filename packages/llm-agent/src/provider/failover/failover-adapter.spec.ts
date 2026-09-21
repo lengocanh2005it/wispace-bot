@@ -87,6 +87,15 @@ function serverError(): LlmProviderError {
   };
 }
 
+function badRequestError(): LlmProviderError {
+  return {
+    provider: 'test',
+    retryable: false,
+    reason: 'bad_request',
+    status: 400,
+  };
+}
+
 function authError(): LlmProviderError {
   return { provider: 'test', retryable: false, reason: 'auth', status: 401 };
 }
@@ -710,6 +719,37 @@ describe('FailoverLlmProviderAdapter', () => {
         ]);
         expect((e as LlmAllProvidersExhaustedError).lastError).toBe(lastErr);
       }
+    });
+
+    it('preserves normalized reasons from every exhausted candidate', async () => {
+      const candidateA = makeCandidate({
+        name: 'a',
+        generateJson: () => Promise.reject(new Error('invalid request')),
+        normalizeError: () => badRequestError(),
+      });
+      const candidateB = makeCandidate({
+        name: 'b',
+        generateJson: () => Promise.reject(new Error('provider down')),
+        normalizeError: () => serverError(),
+      });
+      const adapter = new FailoverLlmProviderAdapter(
+        [candidateA, candidateB],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        0,
+        undefined,
+        undefined,
+        undefined,
+        1,
+      );
+
+      await expect(
+        adapter.generateJson(makeJsonRequest()),
+      ).rejects.toMatchObject({
+        failureReasons: ['bad_request', 'server_error'],
+      });
     });
   });
 

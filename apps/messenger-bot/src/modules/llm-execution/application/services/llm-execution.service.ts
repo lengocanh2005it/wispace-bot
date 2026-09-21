@@ -16,7 +16,7 @@ import {
 import {
   acquireRedisSlot,
   createLlmExecutionFailureTracker,
-  type LlmExecutionFailureKind,
+  type LlmExecutionFailureClassification,
   type LlmExecutionFailureTracker,
 } from '@wispace/llm-agent/execution';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -39,7 +39,7 @@ function isOpossumOpenError(error: unknown): boolean {
 }
 
 type BreakerExecutionContext = LlmExecutionContext & {
-  failureKind?: LlmExecutionFailureKind;
+  failureClassification?: LlmExecutionFailureClassification;
   failureTracker?: LlmExecutionFailureTracker;
 };
 
@@ -100,7 +100,7 @@ export class LlmExecutionService {
         volumeThreshold: 3,
         errorFilter: (_error: unknown, ...args: unknown[]) => {
           const context = args[1] as BreakerExecutionContext | undefined;
-          return context?.failureKind !== 'provider';
+          return context?.failureClassification?.countsForCircuit !== true;
         },
       },
     );
@@ -289,7 +289,13 @@ export class LlmExecutionService {
       );
     } catch (error) {
       if (failureTracker) {
-        context.failureKind = failureTracker.classify();
+        const classification = failureTracker.classify(error, this.adapter);
+        context.failureClassification = classification;
+        if (classification.kind === 'provider') {
+          this.metrics.incLlmExecutionCircuitFailure?.(
+            classification.errorClass,
+          );
+        }
       }
       throw error;
     }

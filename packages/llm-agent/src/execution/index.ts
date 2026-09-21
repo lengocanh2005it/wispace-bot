@@ -27,6 +27,8 @@ export {
 } from './circuit-error';
 export {
   createLlmExecutionFailureTracker,
+  type LlmExecutionFailureClass,
+  type LlmExecutionFailureClassification,
   type LlmExecutionFailureKind,
   type LlmExecutionFailureTracker,
 } from './failure-attribution';

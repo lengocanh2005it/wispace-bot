@@ -468,6 +468,86 @@ describe('createEnvLlmExecutionPort', () => {
     expect(calls).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps the shared execution circuit closed for repeated bad_request failures', async () => {
+    const adapter = makeAdapter();
+    const calls = jest.fn().mockRejectedValue({
+      provider: 'openai',
+      retryable: false,
+      reason: 'bad_request',
+      status: 400,
+    });
+    const observed = jest.fn();
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxAttempts: 1,
+        requestTimeoutMs: 1_000,
+      },
+      adapter,
+      noopLogger,
+      {
+        incrementCounter: jest.fn(),
+        observeWaitSeconds: jest.fn(),
+        observeQueueDepth: jest.fn(),
+        observeQueueDrainLag: jest.fn(),
+        observeExecutionCircuitFailure: observed,
+      },
+    );
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await expect(
+        port.run(calls, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({ reason: 'bad_request' });
+    }
+
+    expect(calls).toHaveBeenCalledTimes(4);
+    expect(observed).toHaveBeenCalledTimes(4);
+    expect(observed).toHaveBeenCalledWith('bad_request');
+  });
+
+  it.each([
+    'server_error',
+    'rate_limit',
+    'quota_exceeded',
+    'auth',
+    'timeout',
+    'network',
+    'unknown',
+  ] as const)(
+    'opens the shared execution circuit for %s failures',
+    async (reason) => {
+      const error = {
+        provider: 'openai',
+        retryable: false,
+        reason,
+      };
+      const calls = jest.fn().mockRejectedValue(error);
+      const port = createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          maxAttempts: 1,
+          requestTimeoutMs: 1_000,
+        },
+        makeAdapter(),
+        noopLogger,
+      );
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(
+          port.run(calls, { feature: 'FREE_FORM_CHAT' }),
+        ).rejects.toMatchObject({ reason });
+      }
+
+      await expect(
+        port.run(calls, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({
+        name: 'LlmProviderCircuitOpenError',
+        state: 'open',
+      });
+      expect(calls).toHaveBeenCalledTimes(3);
+    },
+  );
+
   it('keeps provider attribution when the deadline aborts after the call fails', async () => {
     const timeoutControllers: AbortController[] = [];
     const timeoutSpy = jest
@@ -607,10 +687,16 @@ describe('createEnvLlmExecutionPort', () => {
   });
 
   it('does not open the execution circuit for caller cancellation', async () => {
+    const observed = jest.fn();
     const port = createEnvLlmExecutionPort(
       { ...DEFAULT_CONFIG, maxAttempts: 1, requestTimeoutMs: 100 },
       makeAdapter(),
       noopLogger,
+      {
+        incrementCounter: jest.fn(),
+        observeWaitSeconds: jest.fn(),
+        observeExecutionCircuitFailure: observed,
+      },
     );
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -627,6 +713,7 @@ describe('createEnvLlmExecutionPort', () => {
         }),
       ).rejects.toThrow('caller gone');
     }
+    expect(observed).not.toHaveBeenCalled();
 
     const providerFailure = jest
       .fn()
@@ -635,6 +722,7 @@ describe('createEnvLlmExecutionPort', () => {
       port.run(providerFailure, { feature: 'FREE_FORM_CHAT' }),
     ).rejects.toThrow('provider down');
     expect(providerFailure).toHaveBeenCalledTimes(1);
+    expect(observed).toHaveBeenCalledWith('unknown');
   });
 
   it('counts a global deadline that expires during a provider call', async () => {

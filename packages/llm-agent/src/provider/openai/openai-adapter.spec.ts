@@ -142,6 +142,32 @@ describe('OpenAiAdapter', () => {
     });
   });
 
+  describe('normalizeError — bad_request', () => {
+    it('returns bad_request for a generic HTTP 400', () => {
+      const adapter = makeAdapter();
+      const result = adapter.normalizeError(
+        makeError(400, 'invalid request payload'),
+      );
+
+      expect(result).toEqual({
+        provider: 'openai',
+        retryable: false,
+        reason: 'bad_request',
+        status: 400,
+      });
+    });
+
+    it('returns bad_request for HTTP 422', () => {
+      const adapter = makeAdapter();
+      const result = adapter.normalizeError(
+        makeError(422, 'unprocessable request'),
+      );
+
+      expect(result.reason).toBe('bad_request');
+      expect(result.retryable).toBe(false);
+    });
+  });
+
   describe('normalizeError — unknown', () => {
     it('returns unknown for unrecognized error', () => {
       const adapter = makeAdapter();

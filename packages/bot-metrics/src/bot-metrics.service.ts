@@ -127,6 +127,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmProviderNeverSucceeded: Counter;
   private llmProviderCircuitEvents: Counter;
   private llmProvidersExhausted: Counter;
+  private llmExecutionCircuitFailures: Counter;
   private llmDegradedMode: Counter;
   private quotaDenied: Counter;
   private writeToolBudgetDenied: Counter;
@@ -339,6 +340,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_providers_exhausted_total`,
       help: 'LLM requests for which every configured provider failed',
       labelNames: ['provider_count', 'feature'],
+      registers: [this.registry],
+    });
+
+    this.llmExecutionCircuitFailures = new Counter({
+      name: `${this.prefix}_llm_execution_circuit_failures_total`,
+      help: 'Terminal LLM execution failures by normalized error class',
+      labelNames: ['error_class'],
       registers: [this.registry],
     });
 
@@ -956,6 +964,10 @@ export class BotMetricsService implements OnModuleDestroy {
     });
   }
 
+  incLlmExecutionCircuitFailure(errorClass: string): void {
+    this.llmExecutionCircuitFailures.inc({ error_class: errorClass });
+  }
+
   /**
    * Records a degraded response without accepting correlation/user data as
    * labels. The caller logs the correlation id separately after redaction.
@@ -981,6 +993,7 @@ export class BotMetricsService implements OnModuleDestroy {
     observeWaitSeconds(seconds: number): void;
     observeQueueDepth(depth: number): void;
     observeQueueDrainLag(seconds: number): void;
+    observeExecutionCircuitFailure(errorClass: string): void;
     observeTotalProviderAttempts(
       attempts: number,
       labels?: Record<string, string>,
@@ -998,6 +1011,8 @@ export class BotMetricsService implements OnModuleDestroy {
       observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
       observeQueueDepth: (depth) => this.setLlmAdmissionQueueDepth(depth),
       observeQueueDrainLag: (seconds) => this.setLlmAdmissionDrainLag(seconds),
+      observeExecutionCircuitFailure: (errorClass) =>
+        this.incLlmExecutionCircuitFailure(errorClass),
       observeTotalProviderAttempts: (attempts, labels) =>
         this.incLlmTotalProviderAttempts(
           labels?.feature ?? 'unknown',

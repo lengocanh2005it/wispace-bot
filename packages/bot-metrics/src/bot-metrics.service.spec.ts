@@ -321,6 +321,7 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     svc.incLlmProviderCircuitEvent('openai', 'open', 'quota_exceeded');
     svc.incLlmProviderCircuitEvent('openrouter', 'quarantine', 'auth');
     svc.incLlmProvidersExhausted(2, 'FREE_FORM_CHAT');
+    svc.incLlmExecutionCircuitFailure('bad_request');
 
     const out = await svc.getMetrics();
     expect(out).toContain(
@@ -343,6 +344,9 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     );
     expect(out).toContain(
       'test_llm_providers_exhausted_total{provider_count="2",feature="FREE_FORM_CHAT"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_execution_circuit_failures_total{error_class="bad_request"} 1',
     );
   });
 

@@ -8,6 +8,7 @@ const noopMetrics = {
   observeLlmAdmissionWait: jest.fn(),
   setLlmAdmissionQueueDepth: jest.fn(),
   setLlmAdmissionDrainLag: jest.fn(),
+  incLlmExecutionCircuitFailure: jest.fn(),
 } as unknown as BotMetricsService;
 
 const mockAdapter = {
@@ -263,6 +264,73 @@ describe('LlmExecutionService', () => {
     expect(providerCall).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps Opossum closed for repeated bad_request failures and records each terminal execution', async () => {
+    const incFailure = jest.fn();
+    const metrics = {
+      ...noopMetrics,
+      incLlmExecutionCircuitFailure: incFailure,
+    } as unknown as BotMetricsService;
+    const config = createConfig({
+      enabled: true,
+      retryMaxAttempts: 1,
+      requestTimeoutMs: 1_000,
+    });
+    const service = new LlmExecutionService(config, metrics, mockAdapter);
+    const providerCall = jest.fn().mockRejectedValue({
+      provider: 'openai',
+      retryable: false,
+      reason: 'bad_request',
+      status: 400,
+    });
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await expect(
+        service.run(providerCall, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({ reason: 'bad_request' });
+    }
+
+    expect(providerCall).toHaveBeenCalledTimes(4);
+    expect(incFailure).toHaveBeenCalledTimes(4);
+    expect(incFailure).toHaveBeenCalledWith('bad_request');
+  });
+
+  it.each([
+    'server_error',
+    'rate_limit',
+    'quota_exceeded',
+    'auth',
+    'timeout',
+    'network',
+    'unknown',
+  ] as const)('opens Opossum for %s provider failures', async (reason) => {
+    const config = createConfig({
+      enabled: true,
+      retryMaxAttempts: 1,
+      retryBackoffMs: 1,
+      requestTimeoutMs: 1_000,
+    });
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+    const providerCall = jest.fn().mockRejectedValue({
+      provider: 'openai',
+      retryable: false,
+      reason,
+    });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(
+        service.run(providerCall, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toMatchObject({ reason });
+    }
+
+    await expect(
+      service.run(providerCall, { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toMatchObject({
+      name: 'LlmProviderCircuitOpenError',
+      state: 'open',
+    });
+    expect(providerCall).toHaveBeenCalledTimes(3);
+  });
+
   it('opens Opossum after repeated provider-side attempt timeouts', async () => {
     const timeoutControllers: AbortController[] = [];
     const timeoutSpy = jest
@@ -355,7 +423,12 @@ describe('LlmExecutionService', () => {
         requestTimeoutMs: 30_000,
         perAttemptTimeoutMs: 0,
       });
-      const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+      const incFailure = jest.fn();
+      const metrics = {
+        ...noopMetrics,
+        incLlmExecutionCircuitFailure: incFailure,
+      } as unknown as BotMetricsService;
+      const service = new LlmExecutionService(config, metrics, mockAdapter);
       const retryableFailure = Object.assign(new Error('rate limit'), {
         status: 429,
       });
@@ -377,6 +450,8 @@ describe('LlmExecutionService', () => {
         state: 'open',
       });
       expect(providerCall).toHaveBeenCalledTimes(9);
+      expect(incFailure).toHaveBeenCalledTimes(3);
+      expect(incFailure).toHaveBeenCalledWith('unknown');
     } finally {
       jest.useRealTimers();
     }
