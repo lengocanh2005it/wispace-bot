@@ -45,6 +45,7 @@ POST /messenger/send-study-reminders
 - [ ] `remind_at` has passed but `scheduled_at` is still in the future?
 - [ ] Wispace called sync after changing schedule? (common integration gap)
 - [ ] UserCalendar API returns correct schedule for `x-psid`?
+- [ ] Is `eventDate` + `time` interpreted in the configured IANA timezone? Around DST, repeated times use the first occurrence and nonexistent times fail closed.
 - [ ] For cross-platform duplicates, does `CanonicalPlatformService` resolve
       the expected owner (`zalo > discord > messenger` fallback)?
 - [ ] Is the mapping noncanonical? It must not upsert; only `pending` / `failed`
@@ -67,6 +68,7 @@ POST /messenger/send-study-reminders
 ## 5. Code changes
 
 - Schedule logic → `study-reminder-schedule.service.ts` + spec
+- Calendar local-time/DST resolution → `packages/wispace-client/src/utils/study-calendar.utils.ts` + spec
 - Sync → `study-reminder-sync.service.ts` (including the canonical platform gate)
 - Dispatch/ownership fence → `study-reminder-dispatch.service.ts`,
   `typeorm-study-reminder-job.repository.ts`, and mapping-link upserts

@@ -1,5 +1,6 @@
 const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+const OFFSET_PROBE_HOURS = [-48, -24, 0, 24, 48];
 
 import {
   getDatePartsInTimezone,
@@ -66,7 +67,7 @@ export function resolveScheduledAtFromEventDate(
   const minute = Number(minuteText);
   const dateParts = parseLocalDatePartsFromEventDate(eventDate, timezone);
   const pad = (value: number) => String(value).padStart(2, '0');
-  const offset = getUtcOffsetForTimezone(timezone, dateParts);
+  const offset = getUtcOffsetForTimezone(timezone, dateParts, hour, minute);
 
   return new Date(
     `${dateParts.year}-${pad(dateParts.month)}-${pad(dateParts.day)}T${pad(hour)}:${pad(minute)}:00${offset}`,
@@ -76,28 +77,108 @@ export function resolveScheduledAtFromEventDate(
 function getUtcOffsetForTimezone(
   timezone: string,
   dateParts: { year: number; month: number; day: number },
+  hour: number,
+  minute: number,
 ): string {
-  const probe = new Date(
-    Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day, 12, 0, 0),
+  const localDateAsUtc = Date.UTC(
+    dateParts.year,
+    dateParts.month - 1,
+    dateParts.day,
+    hour,
+    minute,
   );
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    timeZoneName: 'shortOffset',
-  }).formatToParts(probe);
+
+  const offsetCandidates = new Set<number>();
+  for (const probeHours of OFFSET_PROBE_HOURS) {
+    offsetCandidates.add(
+      getUtcOffsetMsAtInstant(
+        timezone,
+        new Date(localDateAsUtc + probeHours * 60 * 60 * 1000),
+      ),
+    );
+  }
+
+  const matchingCandidates = [...offsetCandidates]
+    .map((offsetMs) => ({
+      offsetMs,
+      instant: new Date(localDateAsUtc - offsetMs),
+    }))
+    .filter(({ instant }) =>
+      matchesLocalDateTime(timezone, instant, dateParts, hour, minute),
+    )
+    .sort((left, right) => left.instant.getTime() - right.instant.getTime());
+
+  const candidate = matchingCandidates[0];
+  if (!candidate) {
+    throw new Error(
+      `Local time ${dateParts.year}-${dateParts.month}-${dateParts.day} ${hour}:${minute} does not exist in timezone ${timezone}`,
+    );
+  }
+
+  // Ambiguous fall-back times use the first occurrence. Spring-forward gaps fail closed.
+  return formatUtcOffset(candidate.offsetMs);
+}
+
+function getUtcOffsetMsAtInstant(timezone: string, instant: Date): number {
+  const parts = getTimezoneParts(timezone, instant);
   const label = parts.find((part) => part.type === 'timeZoneName')?.value;
 
   if (!label || label === 'GMT') {
-    return 'Z';
+    return 0;
   }
 
   const match = label.match(/^GMT(?:(\+|-)(\d{1,2})(?::(\d{2}))?)?$/);
   if (!match) {
-    return 'Z';
+    return 0;
   }
 
-  const sign = match[1] ?? '+';
+  const sign = match[1] === '-' ? -1 : 1;
   const hours = Number(match[2] ?? 0);
   const minutes = Number(match[3] ?? 0);
+
+  return sign * (hours * 60 + minutes) * 60 * 1000;
+}
+
+function getTimezoneParts(timezone: string, instant: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'shortOffset',
+  }).formatToParts(instant);
+}
+
+function matchesLocalDateTime(
+  timezone: string,
+  instant: Date,
+  dateParts: { year: number; month: number; day: number },
+  hour: number,
+  minute: number,
+): boolean {
+  const parts = getTimezoneParts(timezone, instant);
+  const value = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value);
+
+  return (
+    value('year') === dateParts.year &&
+    value('month') === dateParts.month &&
+    value('day') === dateParts.day &&
+    value('hour') === hour &&
+    value('minute') === minute
+  );
+}
+
+function formatUtcOffset(offsetMs: number): string {
+  if (offsetMs === 0) return 'Z';
+
+  const sign = offsetMs < 0 ? '-' : '+';
+  const totalMinutes = Math.abs(offsetMs) / 60_000;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   const pad = (value: number) => String(value).padStart(2, '0');
 
   return `${sign}${pad(hours)}:${pad(minutes)}`;

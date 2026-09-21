@@ -138,6 +138,15 @@ describe('study-calendar.utils', () => {
       expect(result.toISOString()).toBe('2026-09-01T03:00:00.000Z');
     });
 
+    it('handles a non-hour timezone offset', () => {
+      const result = resolveScheduledAtFromEventDate(
+        '2026-09-01',
+        '10:00',
+        'Asia/Kathmandu',
+      );
+      expect(result.toISOString()).toBe('2026-09-01T04:15:00.000Z');
+    });
+
     it('handles DST timezone (EDT)', () => {
       const result = resolveScheduledAtFromEventDate(
         '2026-07-01',
@@ -172,6 +181,52 @@ describe('study-calendar.utils', () => {
         'Europe/Berlin',
       );
       expect(result.toISOString()).toBe('2026-07-01T08:00:00.000Z');
+    });
+
+    it('uses the pre-transition offset for a spring-forward morning session', () => {
+      const result = resolveScheduledAtFromEventDate(
+        '2026-03-08',
+        '01:30',
+        'America/New_York',
+      );
+      expect(result.toISOString()).toBe('2026-03-08T06:30:00.000Z');
+    });
+
+    it('uses the pre-transition offset for a fall-back morning session', () => {
+      const result = resolveScheduledAtFromEventDate(
+        '2026-11-01',
+        '00:30',
+        'America/New_York',
+      );
+      expect(result.toISOString()).toBe('2026-11-01T04:30:00.000Z');
+    });
+
+    it('uses the first occurrence during a fall-back repeated hour', () => {
+      const result = resolveScheduledAtFromEventDate(
+        '2026-11-01',
+        '01:30',
+        'America/New_York',
+      );
+      expect(result.toISOString()).toBe('2026-11-01T05:30:00.000Z');
+    });
+
+    it('uses the first occurrence for a positive-offset fall-back zone', () => {
+      const result = resolveScheduledAtFromEventDate(
+        '2026-10-25',
+        '02:30',
+        'Europe/Berlin',
+      );
+      expect(result.toISOString()).toBe('2026-10-25T00:30:00.000Z');
+    });
+
+    it('rejects a nonexistent spring-forward local time', () => {
+      expect(() =>
+        resolveScheduledAtFromEventDate(
+          '2026-03-08',
+          '02:30',
+          'America/New_York',
+        ),
+      ).toThrow('does not exist');
     });
   });
 

@@ -368,6 +368,8 @@ x-psid: {messenger_psid}
 
 Implementation: `UserCalendarApiClient` + `UserCalendarScheduleClient` from `@wispace/wispace-client` package (normalize → `session_key: calendar:{id}`, combine `eventDate` + `time` per `STUDY_REMINDER_TIMEZONE`).
 
+`eventDate` + `time` are interpreted as a local wall-clock in the configured IANA timezone. The resolver samples the offset at the session time, supports non-hour offsets, uses the first occurrence during a repeated fall-back hour, and fails closed for a nonexistent spring-forward time.
+
 All schedule changes (POST/DELETE) **must call** `POST /messenger/study-calendar/sync` — see section [3.6](#36-api-sync-on-schedule-change).
 
 ### 4.2. Data for LLM

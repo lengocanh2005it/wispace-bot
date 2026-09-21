@@ -94,6 +94,8 @@ semantics.
 
 `STUDY_REMINDER_*` variables in `.env` — use `readRequiredPositiveNumber`, **no** hardcoded fallback values in code.
 
+Schedule datetime rule: interpret `eventDate` + `time` as a local wall-clock in the IANA `STUDY_REMINDER_TIMEZONE`. Resolve the offset at that session time, use the first occurrence for repeated fall-back times, and fail closed for nonexistent spring-forward times. Keep coverage in `packages/wispace-client/src/utils/study-calendar.utils.spec.ts`.
+
 ## Main files (Clean Architecture)
 
 | File                                                          | Layer          | Role                                                                                                                                          |
