@@ -432,6 +432,12 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
       'capacity_overload',
     );
     svc.incLlmOverloadRegeneration('STUDENT_REPORT');
+    svc.observeLlmBackgroundAdmission(
+      'unexpected-feature',
+      'retry',
+      'admitted',
+    );
+    svc.incLlmOverloadRegeneration('unexpected-feature');
     svc.observeReportWaveCompletionLag(12.5);
 
     const out = await svc.getMetrics();
@@ -440,6 +446,12 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     );
     expect(out).toContain(
       'messenger_llm_overload_regenerations_total{platform="messenger",feature="STUDENT_REPORT"} 1',
+    );
+    expect(out).toContain(
+      'messenger_llm_background_admission_total{platform="messenger",feature="unknown",attempt="retry",outcome="admitted"} 1',
+    );
+    expect(out).toContain(
+      'messenger_llm_overload_regenerations_total{platform="messenger",feature="unknown"} 1',
     );
     expect(out).toContain(
       'messenger_report_wave_completion_lag_seconds_count{platform="messenger"} 1',

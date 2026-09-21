@@ -108,6 +108,62 @@ describe('createEnvLlmExecutionPort', () => {
     await expect(held).resolves.toBe('held');
   });
 
+  it('records capacity overloads and later retry regenerations', async () => {
+    const metrics = {
+      incrementCounter: jest.fn(),
+      observeWaitSeconds: jest.fn(),
+      observeBackgroundAdmission: jest.fn(),
+      observeOverloadRegeneration: jest.fn(),
+    };
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxConcurrent: 1,
+        backgroundAdmissionWaitMs: 20,
+      },
+      makeAdapter(),
+      noopLogger,
+      metrics,
+    );
+    let release!: () => void;
+    const held = port.run(
+      () =>
+        new Promise<string>((resolve) => {
+          release = () => resolve('held');
+        }),
+      { feature: 'STUDENT_REPORT' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const overloaded = port.run(() => Promise.resolve('shed'), {
+      feature: 'STUDENT_REPORT',
+      attempt: 'retry',
+      retryCause: 'capacity_overload',
+    });
+    await expect(overloaded).rejects.toMatchObject({
+      name: 'LlmOverloadError',
+      reason: 'wait_timeout',
+    });
+    expect(metrics.observeBackgroundAdmission).toHaveBeenCalledWith(
+      'STUDENT_REPORT',
+      'retry',
+      'capacity_overload',
+    );
+
+    release();
+    await held;
+    await expect(
+      port.run(() => Promise.resolve('regenerated'), {
+        feature: 'STUDENT_REPORT',
+        attempt: 'retry',
+        retryCause: 'capacity_overload',
+      }),
+    ).resolves.toBe('regenerated');
+    expect(metrics.observeOverloadRegeneration).toHaveBeenCalledWith(
+      'STUDENT_REPORT',
+    );
+  });
+
   it('lets interactive chat wait longer than background features (#389)', async () => {
     const port = createEnvLlmExecutionPort(
       {

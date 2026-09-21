@@ -27,7 +27,7 @@ import {
   LlmOverloadError,
   type LlmExecutionAttempt,
   type LlmExecutionRetryCause,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 
 export const ZERO: ClaimAndSendResult = {

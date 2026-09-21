@@ -308,6 +308,7 @@ async function exerciseMessengerReminderConsent(jobRepository) {
       'messenger',
       { generateReminder: async () => 'consent smoke reminder' },
       {
+        concurrencyLimit: 3,
         getMappingState: (externalUserId) =>
           mappingReader.getMappingState('messenger', externalUserId),
         backoffMode: 'flat',
@@ -470,7 +471,7 @@ try {
     dispatchSchedule(),
     'messenger',
     { generateReminder: async () => 'provider-accepted reminder' },
-    { backoffMode: 'flat' },
+    { concurrencyLimit: 3, backoffMode: 'flat' },
   );
   const dispatchCrashResult = await dispatchCrashService.dispatchDueReminders();
   assert(
@@ -635,7 +636,7 @@ try {
         return 'old generation';
       },
     },
-    { backoffMode: 'flat' },
+    { concurrencyLimit: 3, backoffMode: 'flat' },
   );
   const oldGenerationDispatch = oldGenerationService.dispatchDueReminders();
   await waitUntil(
@@ -667,7 +668,7 @@ try {
     dispatchSchedule(),
     'messenger',
     { generateReminder: async () => 'new generation' },
-    { backoffMode: 'flat' },
+    { concurrencyLimit: 3, backoffMode: 'flat' },
   );
   const newGenerationResult = await newGenerationService.dispatchDueReminders();
   assert(newGenerationResult.sent === 1, 'new schedule did not dispatch');

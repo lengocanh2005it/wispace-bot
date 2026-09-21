@@ -50,11 +50,9 @@ export function resolveBackgroundProducerConcurrency(
         );
 
   if (!options.enabled) {
-    if (configured > capacity) {
-      options.onWarning?.(
-        `LLM execution disabled; ${options.producerName} producer cap is not enforced (configured concurrency ${configured}, capacity ${capacity})`,
-      );
-    }
+    (options.onWarning ?? console.warn)(
+      `LLM execution disabled; ${options.producerName} producer cap is not enforced (configured concurrency ${configured}, capacity ${capacity})`,
+    );
     return configured;
   }
 
@@ -68,15 +66,15 @@ export function resolveBackgroundProducerConcurrency(
 }
 
 function positiveInteger(value: number, name: string): number {
-  if (!Number.isFinite(value) || value <= 0) {
+  if (!Number.isInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive number`);
   }
-  return Math.floor(value);
+  return value;
 }
 
 function nonNegativeInteger(value: number, name: string): number {
-  if (!Number.isFinite(value) || value < 0) {
+  if (!Number.isInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative number`);
   }
-  return Math.floor(value);
+  return value;
 }

@@ -27,7 +27,7 @@ import type { MessengerLinkContext } from '@messenger/shared/config/poc.constant
 import type {
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 
 @Injectable()
 export class MessengerReportDeliveryService {

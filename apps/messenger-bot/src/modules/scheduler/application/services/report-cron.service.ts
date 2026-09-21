@@ -34,7 +34,7 @@ import type { Platform } from '@wispace/contracts';
 import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/adapters';
 
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 

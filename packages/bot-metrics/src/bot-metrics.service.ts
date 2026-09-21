@@ -52,6 +52,15 @@ const SHARED_SLOT_METRIC_OUTCOMES: Record<string, LlmConcurrencyOutcome> = {
   llm_concurrency_release_error: 'release_error',
 };
 
+const BACKGROUND_LLM_FEATURES: ReadonlySet<string> = new Set([
+  'STUDENT_REPORT',
+  'STUDY_REMINDER',
+]);
+
+function normalizeBackgroundLlmFeature(feature: string): string {
+  return BACKGROUND_LLM_FEATURES.has(feature) ? feature : 'unknown';
+}
+
 const REDIS_COMMAND_METRIC_NAMES: ReadonlySet<string> = new Set([
   'del',
   'decr',
@@ -949,7 +958,7 @@ export class BotMetricsService implements OnModuleDestroy {
   ): void {
     this.llmBackgroundAdmission.inc({
       platform: this.prefix,
-      feature,
+      feature: normalizeBackgroundLlmFeature(feature),
       attempt,
       outcome,
     });
@@ -958,7 +967,7 @@ export class BotMetricsService implements OnModuleDestroy {
   incLlmOverloadRegeneration(feature: string): void {
     this.llmOverloadRegenerations.inc({
       platform: this.prefix,
-      feature,
+      feature: normalizeBackgroundLlmFeature(feature),
     });
   }
 

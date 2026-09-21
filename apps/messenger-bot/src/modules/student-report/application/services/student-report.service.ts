@@ -9,7 +9,7 @@ import type {
   LlmProviderAdapter,
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { todayUsageDate } from '@wispace/chat-metering';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';

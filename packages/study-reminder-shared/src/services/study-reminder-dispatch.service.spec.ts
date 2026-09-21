@@ -12,6 +12,7 @@ describe('StudyReminderDispatchService', () => {
   let scheduleService: jest.Mocked<StudyReminderScheduleService>;
   let hooks: jest.Mocked<DispatchHooksPort>;
   let options: {
+    concurrencyLimit: number;
     backoffMode: 'exponential' | 'flat';
     preloadDisplayNames: jest.Mock;
     classifyFailure: jest.Mock;
@@ -93,6 +94,7 @@ describe('StudyReminderDispatchService', () => {
     };
 
     options = {
+      concurrencyLimit: 3,
       backoffMode: 'flat',
       preloadDisplayNames: jest.fn().mockResolvedValue(undefined),
       classifyFailure: jest.fn().mockReturnValue(undefined),
@@ -376,7 +378,7 @@ describe('StudyReminderDispatchService', () => {
       scheduleService,
       'messenger',
       hooks,
-      { getMappingState },
+      { concurrencyLimit: 3, getMappingState },
     );
 
     const first = await service.dispatchDueReminders();
@@ -408,6 +410,7 @@ describe('StudyReminderDispatchService', () => {
       'messenger',
       hooks,
       {
+        concurrencyLimit: 3,
         getMappingState: jest.fn().mockResolvedValue({
           state: 'active',
           userId: 99,
@@ -438,6 +441,7 @@ describe('StudyReminderDispatchService', () => {
       'messenger',
       hooks,
       {
+        concurrencyLimit: 3,
         getMappingState: jest.fn().mockResolvedValue({
           state: 'active',
           userId: 42,
@@ -480,6 +484,7 @@ describe('StudyReminderDispatchService', () => {
         platform,
         hooks,
         {
+          concurrencyLimit: 3,
           getMappingState: jest.fn().mockResolvedValue({
             state: 'active',
             userId: 42,

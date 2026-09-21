@@ -47,9 +47,9 @@ import {
 } from '@wispace/database';
 import {
   buildLlmExecutionConfig,
-  calculateBackgroundAdmissionCapacity,
-  type LlmUsageRecorderPort,
-} from '@wispace/llm-agent';
+  resolveBackgroundProducerConcurrency,
+} from '@wispace/llm-agent/adapters';
+import type { LlmUsageRecorderPort } from '@wispace/llm-agent/core';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { StudyCalendarCommandService } from './infrastructure/adapters/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
@@ -109,10 +109,13 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     // provider for a token wins).
     ...createStudyReminderProviders({
       platform: 'messenger',
-      backgroundProducerConcurrencyFactory: (readConfig) =>
-        calculateBackgroundAdmissionCapacity(
-          buildLlmExecutionConfig(readConfig),
-        ),
+      backgroundProducerConcurrencyFactory: (readConfig) => {
+        const executionConfig = buildLlmExecutionConfig(readConfig);
+        return resolveBackgroundProducerConcurrency(executionConfig, {
+          enabled: executionConfig.enabled,
+          producerName: 'messenger study reminder',
+        });
+      },
       outboundService: MessengerOutboundService,
       canonicalPlatformService: CanonicalPlatformService,
       mappingReader: {
@@ -378,17 +381,26 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         mappingReader: MappingReaderPort,
         webActivity: WebActivityService,
         configService: ConfigService,
-      ) =>
-        new StudyReminderDispatchService(
+      ) => {
+        const executionConfig = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key),
+        );
+        const concurrencyLimit = resolveBackgroundProducerConcurrency(
+          executionConfig,
+          {
+            enabled: executionConfig.enabled,
+            producerName: 'messenger study reminder',
+          },
+        );
+
+        return new StudyReminderDispatchService(
           jobRepository,
           messageSender,
           scheduleService,
           'messenger',
           hooks,
           {
-            concurrencyLimit: calculateBackgroundAdmissionCapacity(
-              buildLlmExecutionConfig((key) => configService.get<string>(key)),
-            ),
+            concurrencyLimit,
             getMappingState: async (externalUserId) => {
               if (mappingReader.getMappingState) {
                 return mappingReader.getMappingState(
@@ -422,7 +434,8 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
               }),
             filterDormantUserIds: (ids) => webActivity.filterDormant(ids),
           },
-        ),
+        );
+      },
       inject: [
         STUDY_REMINDER_JOB_REPOSITORY,
         MESSAGE_SENDER,

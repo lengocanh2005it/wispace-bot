@@ -25,8 +25,8 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import {
   buildLlmExecutionConfig,
-  calculateBackgroundAdmissionCapacity,
-} from '@wispace/llm-agent';
+  resolveBackgroundProducerConcurrency,
+} from '@wispace/llm-agent/adapters';
 
 @Module({
   imports: [
@@ -51,10 +51,13 @@ import {
     },
     ...createStudyReminderProviders({
       platform: 'zalo',
-      backgroundProducerConcurrencyFactory: (readConfig) =>
-        calculateBackgroundAdmissionCapacity(
-          buildLlmExecutionConfig(readConfig),
-        ),
+      backgroundProducerConcurrencyFactory: (readConfig) => {
+        const executionConfig = buildLlmExecutionConfig(readConfig);
+        return resolveBackgroundProducerConcurrency(executionConfig, {
+          enabled: executionConfig.enabled,
+          producerName: 'zalo study reminder',
+        });
+      },
       mappingTable: 'zalo_account_links',
       mappingEntity: ZaloAccountLinkEntity,
       outboundService: ZaloOutboundService,

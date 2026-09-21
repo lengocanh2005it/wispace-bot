@@ -268,8 +268,19 @@ export function createStudyReminderProviders(
           /** Delivery outcomes for the reminder-delivery SLO (#829). */
           incReminderDispatch?(status: string): void;
         },
-      ) =>
-        new StudyReminderDispatchService(
+      ) => {
+        const concurrencyLimit = options.backgroundProducerConcurrencyFactory
+          ? options.backgroundProducerConcurrencyFactory((key) =>
+              configService.get<string>(key),
+            )
+          : options.backgroundProducerConcurrency;
+        if (concurrencyLimit === undefined) {
+          throw new Error(
+            'createStudyReminderProviders requires background producer concurrency',
+          );
+        }
+
+        return new StudyReminderDispatchService(
           jobRepository,
           messageSender,
           scheduleService,
@@ -298,11 +309,7 @@ export function createStudyReminderProviders(
               }
             : undefined,
           {
-            concurrencyLimit: options.backgroundProducerConcurrencyFactory
-              ? options.backgroundProducerConcurrencyFactory((key) =>
-                  configService.get<string>(key),
-                )
-              : options.backgroundProducerConcurrency,
+            concurrencyLimit,
             getMappingState: async (externalUserId) => {
               if (mappingReader.getMappingState) {
                 return mappingReader.getMappingState(
@@ -327,7 +334,8 @@ export function createStudyReminderProviders(
               ? (ids) => dormancyGate.filterDormant(ids)
               : undefined,
           },
-        ),
+        );
+      },
       inject: [
         STUDY_REMINDER_JOB_REPOSITORY,
         MESSAGE_SENDER,

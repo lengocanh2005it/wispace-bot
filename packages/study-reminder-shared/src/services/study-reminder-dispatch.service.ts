@@ -48,7 +48,7 @@ export interface StudyReminderDispatchResult {
 
 export interface StudyReminderDispatchServiceOptions {
   /** Producer-side cap derived from the local LLM admission capacity (#1363). */
-  concurrencyLimit?: number;
+  concurrencyLimit: number;
   /** Re-check ownership after claiming and immediately before any send. */
   getMappingState?: (
     externalUserId: string,
@@ -109,8 +109,8 @@ export class StudyReminderDispatchService {
     private readonly platform: Platform,
     @Optional()
     @Inject(DISPATCH_HOOKS)
-    private readonly hooks?: DispatchHooksPort,
-    @Optional() private readonly options?: StudyReminderDispatchServiceOptions,
+    private readonly hooks: DispatchHooksPort | undefined,
+    private readonly options: StudyReminderDispatchServiceOptions,
   ) {}
 
   async dispatchDueReminders(): Promise<StudyReminderDispatchResult> {
@@ -164,7 +164,7 @@ export class StudyReminderDispatchService {
     let failed = 0;
     const failures: StudyReminderDispatchFailure[] = [];
 
-    const concurrencyLimit = this.options?.concurrencyLimit ?? 3;
+    const concurrencyLimit = this.options.concurrencyLimit;
     const processJob = async (job: StudyReminderJob) => {
       const claimedJob = await this.jobRepository.claimJob(
         this.platform,

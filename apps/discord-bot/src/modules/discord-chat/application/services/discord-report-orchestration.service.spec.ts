@@ -1,4 +1,5 @@
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
+import { LlmOverloadError } from '@wispace/llm-agent/core';
 
 const MAPPING = {
   id: '1',
@@ -93,6 +94,14 @@ describe('DiscordReportOrchestrationService', () => {
       reportText: '',
       classifyError: expect.any(Function),
       generateReport: expect.any(Function),
+    });
+
+    const classifyError =
+      orchestration.claimAndSend.mock.calls[0][1].classifyError;
+    expect(classifyError?.(new LlmOverloadError('queue_full'))).toEqual({
+      kind: 'retryable',
+      message: 'Report generation temporarily unavailable',
+      retryCause: 'capacity_overload',
     });
   });
 });

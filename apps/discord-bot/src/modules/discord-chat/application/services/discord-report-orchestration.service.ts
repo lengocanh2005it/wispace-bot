@@ -15,7 +15,7 @@ import {
   LlmOverloadError,
   type LlmExecutionAttempt,
   type LlmExecutionRetryCause,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 
 /**
  * Discord-specific wrapper around the shared ReportOrchestrationService.

@@ -35,8 +35,8 @@ import type { Platform } from '@wispace/contracts';
 import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
-  LlmOverloadError,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/adapters';
+import { LlmOverloadError } from '@wispace/llm-agent/core';
 
 const PAGE_SIZE = 200;
 const MAX_REPORTED_ERRORS = 50;

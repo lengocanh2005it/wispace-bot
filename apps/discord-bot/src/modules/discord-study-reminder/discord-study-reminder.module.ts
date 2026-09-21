@@ -24,8 +24,8 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import {
   buildLlmExecutionConfig,
-  calculateBackgroundAdmissionCapacity,
-} from '@wispace/llm-agent';
+  resolveBackgroundProducerConcurrency,
+} from '@wispace/llm-agent/adapters';
 
 @Module({
   imports: [
@@ -49,10 +49,13 @@ import {
     },
     ...createStudyReminderProviders({
       platform: 'discord',
-      backgroundProducerConcurrencyFactory: (readConfig) =>
-        calculateBackgroundAdmissionCapacity(
-          buildLlmExecutionConfig(readConfig),
-        ),
+      backgroundProducerConcurrencyFactory: (readConfig) => {
+        const executionConfig = buildLlmExecutionConfig(readConfig);
+        return resolveBackgroundProducerConcurrency(executionConfig, {
+          enabled: executionConfig.enabled,
+          producerName: 'discord study reminder',
+        });
+      },
       mappingTable: 'discord_account_links',
       mappingEntity: DiscordAccountLinkEntity,
       outboundService: DiscordOutboundService,

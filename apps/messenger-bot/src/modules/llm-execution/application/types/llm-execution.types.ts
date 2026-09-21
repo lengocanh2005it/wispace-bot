@@ -2,7 +2,7 @@ import type {
   LlmAttemptBudget,
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 
 export type LlmExecutionFeature =
   | 'FREE_FORM_CHAT'

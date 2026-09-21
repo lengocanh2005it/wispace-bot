@@ -23,7 +23,7 @@ import {
   type LlmProviderAdapter,
   type LlmUsageRecorderPort,
   sanitizeUntrustedTextForLlm,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';

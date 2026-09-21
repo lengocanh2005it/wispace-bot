@@ -13,13 +13,13 @@ import {
   LlmAttemptBudget,
   type AdmissionTicket,
   type LlmProviderAdapter,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import {
   acquireRedisSlot,
   createLlmExecutionFailureTracker,
   type LlmExecutionFailureClassification,
   type LlmExecutionFailureTracker,
-} from '@wispace/llm-agent/execution';
+} from '@wispace/llm-agent/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';

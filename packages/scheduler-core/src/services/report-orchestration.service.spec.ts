@@ -275,6 +275,37 @@ describe('ReportOrchestrationService', () => {
       expect(delivery.sendReport).not.toHaveBeenCalled();
     });
 
+    it('persists capacity overload as the durable retry cause', async () => {
+      const claimRepo = buildClaimRepo();
+      const jobRepo = buildJobRepo();
+      const service = new ReportOrchestrationService(
+        claimRepo,
+        buildDelivery(true),
+        jobRepo,
+        buildScheduleService(),
+        buildConfig(),
+      );
+
+      const result = await service.claimAndSend(MAPPING, {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: '',
+        generateReport: jest.fn().mockRejectedValue(new Error('queue full')),
+        classifyError: () => ({
+          kind: 'retryable',
+          message: 'capacity overloaded',
+          retryCause: 'capacity_overload',
+        }),
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({ deferred: 1, retryQueued: 1 }),
+      );
+      expect(jobRepo.recordRetryableFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ retryCause: 'capacity_overload' }),
+      );
+    });
+
     it('falls back to reportText when generateReport is not provided', async () => {
       const claimRepo = buildClaimRepo();
       const delivery = buildDelivery(true);
