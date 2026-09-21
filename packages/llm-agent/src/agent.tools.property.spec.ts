@@ -1,5 +1,9 @@
 import fc from 'fast-check';
-import { readValidatedDate, readValidatedTime } from './agent.tools';
+import {
+  canonicalizeToolArguments,
+  readValidatedDate,
+  readValidatedTime,
+} from './agent.tools';
 
 /**
  * #621 property suite: the reschedule datetime argument parsers are total
@@ -13,6 +17,20 @@ const ARBITRARY_VALUE: fc.Arbitrary<unknown> = fc.oneof(
   fc.jsonValue(),
   fc.constantFrom(NaN, Infinity, -Infinity),
 );
+
+const JSON_VALUE = fc.jsonValue();
+
+function reorderObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reorderObjectKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .reverse()
+        .map(([key, entry]) => [key, reorderObjectKeys(entry)]),
+    );
+  }
+  return value;
+}
 
 describe('readValidatedDate/readValidatedTime property (#621 fuzz)', () => {
   it('any tool argument yields undefined or a strict shape — never a throw', () => {
@@ -82,5 +100,27 @@ describe('readValidatedDate/readValidatedTime property (#621 fuzz)', () => {
     expect(readValidatedDate('2025-02-30')).toBe('2025-02-30');
     expect(readValidatedDate('2026-13-45')).toBe('2026-13-45');
     expect(readValidatedTime('25:00')).toBe('25:00');
+  });
+});
+
+describe('canonicalizeToolArguments property', () => {
+  it('ignores recursive object key order', () => {
+    fc.assert(
+      fc.property(JSON_VALUE, (value) => {
+        expect(canonicalizeToolArguments(reorderObjectKeys(value))).toBe(
+          canonicalizeToolArguments(value),
+        );
+      }),
+    );
+  });
+
+  it('preserves array order', () => {
+    fc.assert(
+      fc.property(fc.integer(), (value) => {
+        expect(canonicalizeToolArguments([value, value + 1])).not.toBe(
+          canonicalizeToolArguments([value + 1, value]),
+        );
+      }),
+    );
   });
 });
