@@ -7,22 +7,60 @@ import { parseReportOutput } from './report-formatter';
  * Error, never a half-populated result; only the prose field is read from
  * the model contract (factual fields are deterministic, #124).
  */
-const ARBITRARY_STRING: fc.Arbitrary<string> = fc
-  .string({ maxLength: 1024 })
-  .chain((s) => fc.constantFrom(s, `${s}{`, `${s}}`, `[${s}]`));
+/**
+ * #621/#1351: the generator must reach the *success* path too. Brace-mangled
+ * random strings almost never parse into a valid object with a `headline`,
+ * so a suite built only from them would pass vacuously — the guard would be
+ * inert in exactly the way #1351 describes.
+ */
+const VALID_REPORT_JSON: fc.Arbitrary<string> = fc
+  .record({
+    headline: fc
+      .string({ minLength: 1, maxLength: 200 })
+      .filter((s) => s.trim().length > 0),
+    // Extra model keys must be ignored, never merged into the prose.
+    ignored_extra: fc.option(fc.jsonValue(), { nil: undefined }),
+  })
+  .map((value) => JSON.stringify(value));
+
+const ARBITRARY_STRING: fc.Arbitrary<string> = fc.oneof(
+  fc
+    .string({ maxLength: 1024 })
+    .chain((s) => fc.constantFrom(s, `${s}{`, `${s}}`, `[${s}]`)),
+  fc.jsonValue().map((value) => JSON.stringify(value)),
+  fc.constantFrom('[]', '[1,2]', 'null', 'true', '42', '"text"', '{}'),
+  VALID_REPORT_JSON,
+);
 
 fc.configureGlobal({ numRuns: 200 });
+
+/**
+ * #1351: classify the outcome first and assert outside the try — a
+ * JestAssertionError from a success-path expectation must fail the property
+ * instead of being absorbed as "a bounded Error".
+ */
+type ClassifiedOutcome<T> =
+  | { kind: 'result'; value: T }
+  | { kind: 'error'; error: unknown };
+
+function classifyOutcome<T>(fn: () => T): ClassifiedOutcome<T> {
+  try {
+    return { kind: 'result', value: fn() };
+  } catch (error) {
+    return { kind: 'error', error };
+  }
+}
 
 describe('report-formatter.parseReportOutput property (#621 fuzz)', () => {
   it('any string yields { headline } or a bounded Error — never an unhandled throw', () => {
     fc.assert(
       fc.property(ARBITRARY_STRING, (content) => {
-        try {
-          const prose = parseReportOutput(content);
-          expect(Object.keys(prose).sort()).toEqual(['headline']);
-          expect(typeof prose.headline).toBe('string');
-        } catch (error) {
-          expect(error).toBeInstanceOf(Error);
+        const outcome = classifyOutcome(() => parseReportOutput(content));
+        if (outcome.kind === 'result') {
+          expect(Object.keys(outcome.value).sort()).toEqual(['headline']);
+          expect(typeof outcome.value.headline).toBe('string');
+        } else {
+          expect(outcome.error).toBeInstanceOf(Error);
         }
       }),
     );
