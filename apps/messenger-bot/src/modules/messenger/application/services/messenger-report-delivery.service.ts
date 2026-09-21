@@ -138,10 +138,9 @@ export class MessengerReportDeliveryService {
     },
   ): Promise<string | 'rate_limited'> {
     try {
-      const report = await this.studentReportService.generateReport(
-        psid,
-        options,
-      );
+      const report = options
+        ? await this.studentReportService.generateReport(psid, options)
+        : await this.studentReportService.generateReport(psid);
       const result = await this.sendReportBubbles({
         psid,
         userId,
