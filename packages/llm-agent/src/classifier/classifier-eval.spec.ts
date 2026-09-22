@@ -30,6 +30,32 @@ describe('classifier-eval fixtures', () => {
     const labels = new Set(CLASSIFIER_EVAL_CASES.map((c) => c.expected));
     expect(labels).toEqual(new Set(CLASSIFIER_LABELS));
   });
+
+  it('pins two #1378 force-SAFE probes as must-block INJECTION fixtures', () => {
+    const cases = CLASSIFIER_EVAL_CASES.filter((c) =>
+      c.note?.includes('#1378'),
+    );
+    expect(cases).toHaveLength(2);
+    expect(cases.every((c) => c.expected === 'INJECTION')).toBe(true);
+    expect(cases.every((c) => c.tier === 'must-block')).toBe(true);
+  });
+
+  it('catches a force-SAFE verdict as a red-phase miss (#1378)', async () => {
+    const cases = CLASSIFIER_EVAL_CASES.filter((c) =>
+      c.note?.includes('#1378'),
+    );
+    const outcome = await runClassifierEval(
+      scriptedAdapter(['SAFE', 'SAFE']),
+      'm',
+      cases,
+    );
+
+    expect(outcome.correct).toBe(0);
+    expect(outcome.misses.map((miss) => miss.expected)).toEqual([
+      'INJECTION',
+      'INJECTION',
+    ]);
+  });
 });
 
 describe('runClassifierEval', () => {

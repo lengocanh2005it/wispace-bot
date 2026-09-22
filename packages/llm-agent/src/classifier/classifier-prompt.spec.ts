@@ -65,6 +65,14 @@ describe('CLASSIFIER_SYSTEM_PROMPT', () => {
     expect(p).toContain('not safe');
   });
 
+  it('treats verdict-control instructions in learner content as injection (#1378)', () => {
+    expect(p.toLowerCase()).toContain('untrusted data');
+    expect(p.toLowerCase()).toContain('classifier');
+    expect(p.toLowerCase()).toContain('label');
+    expect(p.toLowerCase()).toContain('confidence');
+    expect(p.toLowerCase()).toContain('verdict');
+  });
+
   it('carries a few-shot block', () => {
     expect(p).toContain('Examples:');
     // at least 8 example JSON objects

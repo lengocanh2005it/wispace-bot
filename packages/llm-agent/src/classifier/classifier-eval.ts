@@ -17,6 +17,8 @@ import {
 export interface ClassifierEvalCase {
   text: string;
   expected: ClassifierLabel;
+  /** #635 tier; fixed bypass fixtures are promoted to must-block. */
+  tier?: 'must-block' | 'adversarial';
   /** Why this case matters — shown in the miss report. */
   note?: string;
 }

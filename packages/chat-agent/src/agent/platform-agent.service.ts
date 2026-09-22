@@ -30,6 +30,8 @@ import {
   buildCrisisSupportHandoffMessage,
   buildNonDisclosureReply,
   isExtractionReason,
+  detectPromptInjection,
+  detectPromptInjectionAcrossTurns,
   redactSecrets,
   sanitizeUntrustedTextForLlm,
   type LlmDegradedAction,
@@ -979,6 +981,21 @@ export class PlatformAgentService {
   ): Promise<PlatformAgentReply | null> {
     const classifier = this.options.contentClassifier;
     if (!classifier || !this.classifierEnabled) return null;
+    // Tier-1 is authoritative. Reuse the shared detectors before admitting
+    // tier-2 so a known injection never produces a misleading SAFE verdict or
+    // spends a classifier provider call. LlmAgentService repeats the checks as
+    // the final guard before any main-model call.
+    if (
+      detectPromptInjection(input.userText).isInjection ||
+      detectPromptInjectionAcrossTurns(
+        input.userText,
+        input.userTextParts,
+        input.history,
+        input.userText.length,
+      ).isInjection
+    ) {
+      return null;
+    }
     // Skip conditions (#649, #1048, #1054). Greeting / self-intro / off-topic / clarification
     // are normally consumed upstream (bot gateway `IntentDetector`, then
     // `handleClarification`); the checks here make that a guarantee, not an
