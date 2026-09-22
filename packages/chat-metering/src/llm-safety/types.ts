@@ -41,6 +41,19 @@ export interface RecordInjectionEventInput {
   toolName?: string;
 }
 
+export type HarmfulOutputReason =
+  | 'self_harm_instruction'
+  | 'targeted_harassment';
+
+export interface RecordHarmfulOutputBlockedInput {
+  externalUserId: string;
+  userId?: number;
+  correlationId?: string;
+  reason: HarmfulOutputReason;
+  /** Persisted only as a redacted excerpt + hash (#1377). */
+  assistantTextPreview: string;
+}
+
 export interface RecordClassifierVerdictInput {
   externalUserId: string;
   userId?: number;

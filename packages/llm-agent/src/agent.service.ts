@@ -11,6 +11,7 @@ import {
   detectPromptInjectionAcrossTurns,
   detectDisclosureProbe,
 } from './utils/prompt-injection.utils';
+import { isHarmfulOutputSafetyReason } from './utils/final-output.utils';
 import {
   isObviouslyOffTopic,
   isAmbiguousMessage,
@@ -397,9 +398,25 @@ export class LlmAgentService<TToolContext> {
                 input.externalUserId,
               )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
             );
+            if (isHarmfulOutputSafetyReason(safety.reason)) {
+              try {
+                this.ports.safetyEvents.recordHarmfulOutputBlocked?.({
+                  externalUserId: input.externalUserId,
+                  userId: input.userId,
+                  correlationId: input.correlationId,
+                  reason: safety.reason,
+                  assistantTextPreview: text,
+                });
+              } catch {
+                // Safety telemetry is best effort; never replace the safe
+                // fallback with an event-persistence failure.
+                logger.warn('HARMFUL_OUTPUT_EVENT_PERSIST_FAILED');
+              }
+            }
           }
           return {
             text: safety.text,
+            ...(safety.skipHistory ? { skipHistory: true } : {}),
             toolSummary: buildToolSummary(
               [...toolsCalledThisTurn],
               toolObservations,

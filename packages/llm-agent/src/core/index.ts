@@ -150,8 +150,12 @@ export type {
 export {
   SYSTEM_PROMPT_LEAK_MARKERS,
   checkFinalOutputSafety,
+  isHarmfulOutputSafetyReason,
 } from '../utils/final-output.utils';
-export type { FinalOutputSafetyResult } from '../utils/final-output.utils';
+export type {
+  FinalOutputSafetyResult,
+  HarmfulOutputSafetyReason,
+} from '../utils/final-output.utils';
 export {
   CREDENTIAL_SHAPES,
   findCredentialShape,
@@ -174,6 +178,7 @@ export type {
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
   LlmRoundOutcome,
+  LlmHarmfulOutputReason,
   LlmSafetyEventPort,
   LlmUsageRecorderPort,
   ToolExecutorPort,

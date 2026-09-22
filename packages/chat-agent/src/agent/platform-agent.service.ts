@@ -870,6 +870,14 @@ export class PlatformAgentService {
             textPreview: params.textPreview,
             toolName: params.toolName,
           }),
+        recordHarmfulOutputBlocked: (params) =>
+          this.safetyEventService.recordHarmfulOutputBlocked({
+            externalUserId: params.externalUserId,
+            userId: params.userId,
+            correlationId: params.correlationId,
+            reason: params.reason,
+            assistantTextPreview: params.assistantTextPreview,
+          }),
       },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,

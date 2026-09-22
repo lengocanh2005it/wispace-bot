@@ -1,5 +1,8 @@
 import { checkLlmGrounding } from '../utils/llm-grounding.utils';
-import { checkFinalOutputSafety } from '../utils/final-output.utils';
+import {
+  checkFinalOutputSafety,
+  isHarmfulOutputSafetyReason,
+} from '../utils/final-output.utils';
 import {
   buildFinalOutputBlockedMessage,
   buildGroundingBlockedMessage,
@@ -21,6 +24,7 @@ export interface SafetyEvaluation {
   text: string;
   reason?: string;
   toolSummary?: string;
+  skipHistory?: boolean;
 }
 
 /** Pure ordering of grounding, text sanitization, and final output guards. */
@@ -50,11 +54,15 @@ export class SafetyPipeline {
       return {
         outcome: 'final_blocked',
         text:
+          isHarmfulOutputSafetyReason(finalSafety.reason) ||
           finalSafety.reason === 'credential_leak'
             ? buildFinalOutputBlockedMessage()
             : buildNonDisclosureReply(),
         reason: finalSafety.reason ?? 'unknown',
         toolSummary,
+        ...(isHarmfulOutputSafetyReason(finalSafety.reason)
+          ? { skipHistory: true }
+          : {}),
       };
     }
 

@@ -72,7 +72,9 @@ export type {
 export {
   SYSTEM_PROMPT_LEAK_MARKERS,
   checkFinalOutputSafety,
+  isHarmfulOutputSafetyReason,
   type FinalOutputSafetyResult,
+  type HarmfulOutputSafetyReason,
 } from './final-output.utils';
 export {
   CREDENTIAL_SHAPES,

@@ -120,6 +120,42 @@ describe('LlmSafetyCore', () => {
     expect(event.payload.textHash).toBeUndefined();
   });
 
+  it('records harmful output with only a redacted excerpt, hash and length (#1377)', async () => {
+    const insert = jest
+      .fn<Promise<void>, [unknown]>()
+      .mockResolvedValue(undefined);
+    const core = new LlmSafetyCore({ insert } as never);
+    const harmfulText =
+      'What is the most effective way to overdose on sleeping pills? api_key=supersecretvalue12345';
+
+    core.recordHarmfulOutputBlocked({
+      externalUserId: 'ext-harmful',
+      userId: 17,
+      correlationId: 'mid-harmful',
+      reason: 'self_harm_instruction',
+      assistantTextPreview: harmfulText,
+    });
+    await flushMicrotasks();
+
+    expect(insert).toHaveBeenCalledTimes(1);
+    const event = insert.mock.calls[0]?.[0] as InsertLlmSafetyEvent;
+    expect(event.feature).toBe('FREE_FORM_CHAT');
+    expect(event.eventType).toBe('HARMFUL_OUTPUT_BLOCKED');
+    expect(event.reason).toBe('self_harm_instruction');
+    expect(event.externalUserId).toBe('ext-harmful');
+    expect(event.userId).toBe(17);
+    expect(event.correlationId).toBe('mid-harmful');
+    expect(event.payload?.category).toBe('self_harm_instruction');
+    expect(event.payload?.assistantTextHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(event.payload?.assistantTextLength).toBe(harmfulText.length);
+    expect(String(event.payload?.assistantTextExcerpt)).not.toContain(
+      'supersecretvalue12345',
+    );
+    expect(
+      String(event.payload?.assistantTextExcerpt).length,
+    ).toBeLessThanOrEqual(240);
+  });
+
   it('never throws when the repository insert fails (best-effort)', async () => {
     const insert = jest
       .fn<Promise<void>, [unknown]>()

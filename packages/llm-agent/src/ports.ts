@@ -48,6 +48,10 @@ export interface LlmUsageRecorderPort {
 /** Where a neutralized prompt-injection payload came from (#629). */
 export type LlmInjectionSource = 'user_input' | 'tool_result' | 'history';
 
+export type LlmHarmfulOutputReason =
+  | 'self_harm_instruction'
+  | 'targeted_harassment';
+
 export interface LlmSafetyEventPort {
   recordGroundingWarning(params: {
     externalUserId: string;
@@ -72,6 +76,17 @@ export interface LlmSafetyEventPort {
     reason: string;
     textPreview: string;
     toolName?: string;
+  }): void;
+  /**
+   * The final-output guard replaced actionable harmful content. The adapter
+   * persists only a bounded redacted excerpt/hash of `assistantTextPreview`.
+   */
+  recordHarmfulOutputBlocked?(params: {
+    externalUserId: string;
+    userId?: number;
+    correlationId?: string;
+    reason: LlmHarmfulOutputReason;
+    assistantTextPreview: string;
   }): void;
 }
 

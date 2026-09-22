@@ -193,6 +193,7 @@ export type {
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
   LlmRoundOutcome,
+  LlmHarmfulOutputReason,
   LlmSafetyEventPort,
   LlmUsageRecorderPort,
   ToolExecutorPort,

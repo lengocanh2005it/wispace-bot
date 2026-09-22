@@ -9,6 +9,7 @@ import { LlmSafetyEventRepository } from './llm-safety.repository';
 import type {
   RecordGroundingWarningInput,
   RecordInjectionEventInput,
+  RecordHarmfulOutputBlockedInput,
   RecordClassifierVerdictInput,
 } from './types';
 
@@ -34,6 +35,10 @@ export class PlatformLlmSafetyEventAdapter {
 
   recordInjectionEvent(input: RecordInjectionEventInput): void {
     this.getCore().recordInjectionEvent(input);
+  }
+
+  recordHarmfulOutputBlocked(input: RecordHarmfulOutputBlockedInput): void {
+    this.getCore().recordHarmfulOutputBlocked(input);
   }
 
   recordClassifierVerdict(input: RecordClassifierVerdictInput): void {

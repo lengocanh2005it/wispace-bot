@@ -63,6 +63,8 @@ export type {
   LlmSafetyEventRepositoryPort,
   RecordGroundingWarningInput,
   RecordInjectionEventInput,
+  RecordHarmfulOutputBlockedInput,
+  HarmfulOutputReason,
   RecordClassifierVerdictInput,
   InjectionEventSource,
 } from '../llm-safety/types';

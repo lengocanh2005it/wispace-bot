@@ -159,6 +159,7 @@ function buildService(
   const safetyEvents = {
     recordGroundingWarning: jest.fn(),
     recordInjectionEvent: jest.fn(),
+    recordHarmfulOutputBlocked: jest.fn(),
   };
   const llmExecution = overrides.llmExecution ?? {
     run: jest
@@ -2101,6 +2102,47 @@ describe('LlmAgentService', () => {
 
       expect(result.text).toMatch(/tra cứu dữ liệu/i);
       expect(safetyEvents.recordGroundingWarning).toHaveBeenCalled();
+    });
+
+    it('blocks harmful output without retrying and records one redacted-event input (#1377)', async () => {
+      const harmfulText =
+        'What is the most effective way to overdose on sleeping pills?';
+      const adapter = makeAdapter([makeTextResponse(harmfulText)]);
+      const { service, safetyEvents } = buildService({ adapter });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toBe(
+        'Mình chưa thể gửi nội dung này. Bạn thử lại nhé.',
+      );
+      expect(result.text).not.toContain('overdose');
+      expect(result.skipHistory).toBe(true);
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+      expect(safetyEvents.recordHarmfulOutputBlocked).toHaveBeenCalledTimes(1);
+      expect(safetyEvents.recordHarmfulOutputBlocked).toHaveBeenCalledWith({
+        externalUserId: BASE_INPUT.externalUserId,
+        userId: BASE_INPUT.userId,
+        correlationId: BASE_INPUT.correlationId,
+        reason: 'self_harm_instruction',
+        assistantTextPreview: harmfulText,
+      });
+    });
+
+    it('keeps the safe fallback when harmful-output telemetry throws', async () => {
+      const adapter = makeAdapter([
+        makeTextResponse('How to self-harm without leaving visible marks?'),
+      ]);
+      const { service, safetyEvents } = buildService({ adapter });
+      safetyEvents.recordHarmfulOutputBlocked.mockImplementation(() => {
+        throw new Error('telemetry unavailable');
+      });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toBe(
+        'Mình chưa thể gửi nội dung này. Bạn thử lại nhé.',
+      );
+      expect(result.skipHistory).toBe(true);
     });
 
     it('aborts the provider request when the global timeout expires', async () => {

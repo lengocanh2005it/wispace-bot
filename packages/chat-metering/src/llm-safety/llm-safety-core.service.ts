@@ -2,6 +2,7 @@ import { errorMessage } from '@wispace/bot-common/masking';
 import type {
   RecordGroundingWarningInput,
   RecordInjectionEventInput,
+  RecordHarmfulOutputBlockedInput,
   RecordClassifierVerdictInput,
   LlmSafetyEventRepositoryPort,
 } from './types';
@@ -90,6 +91,36 @@ export class LlmSafetyCore {
       .catch((err: unknown) => {
         this.logger.warn(
           `LlmSafetyCore.recordInjectionEvent failed: ${errorMessage(err)}`,
+        );
+      });
+  }
+
+  /**
+   * #1377 — the final-output guard replaced actionable harmful content.
+   * Best-effort; only a redacted excerpt/hash/length reaches persistence.
+   */
+  recordHarmfulOutputBlocked(input: RecordHarmfulOutputBlockedInput): void {
+    const redacted = redactSafetyText(input.assistantTextPreview);
+    const payload: Record<string, unknown> = {
+      category: input.reason,
+      assistantTextExcerpt: redacted.excerpt,
+      assistantTextHash: redacted.hash,
+      assistantTextLength: redacted.originalLength,
+    };
+
+    this.repository
+      .insert({
+        feature: 'FREE_FORM_CHAT',
+        eventType: 'HARMFUL_OUTPUT_BLOCKED',
+        reason: input.reason,
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        correlationId: input.correlationId,
+        payload,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `LlmSafetyCore.recordHarmfulOutputBlocked failed: ${errorMessage(err)}`,
         );
       });
   }

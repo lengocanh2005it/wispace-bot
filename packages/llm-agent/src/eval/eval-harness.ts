@@ -168,6 +168,10 @@ export interface EvalExpectation {
   groundingWarnings?: number;
   /** Expected neutralized-injection event count — tool result or replayed history (#629, default 0). */
   injectionEvents?: number;
+  /** Expected final reply history behavior for guardrail fixtures. */
+  skipHistory?: boolean;
+  /** Expected harmful-output telemetry event count (#1377, default 0). */
+  harmfulOutputEvents?: number;
   /** Request-contract assertions run against the recorded provider requests. */
   requestContracts?: EvalRequestContract[];
 }
@@ -973,6 +977,7 @@ export async function runEvalFixture(
   const executor = new ScriptedToolExecutor(fixture.script);
   let groundingWarnings = 0;
   let injectionEvents = 0;
+  let harmfulOutputEvents = 0;
 
   const llmExecution: LlmExecutionPort = {
     run: async (fn, meta) => fn(meta.signal, meta.attemptBudget),
@@ -986,6 +991,9 @@ export async function runEvalFixture(
     },
     recordInjectionEvent: () => {
       injectionEvents += 1;
+    },
+    recordHarmfulOutputBlocked: () => {
+      harmfulOutputEvents += 1;
     },
   };
 
@@ -1136,6 +1144,21 @@ export async function runEvalFixture(
       if (injectionEvents !== expectedInjectionEvents) {
         failures.push(
           `injection events: expected ${expectedInjectionEvents} got ${injectionEvents}`,
+        );
+      }
+      if (
+        fixture.expected.skipHistory !== undefined &&
+        Boolean(reply.skipHistory) !== fixture.expected.skipHistory
+      ) {
+        failures.push(
+          `skipHistory: expected ${fixture.expected.skipHistory} got ${Boolean(reply.skipHistory)}`,
+        );
+      }
+      const expectedHarmfulOutputEvents =
+        fixture.expected.harmfulOutputEvents ?? 0;
+      if (harmfulOutputEvents !== expectedHarmfulOutputEvents) {
+        failures.push(
+          `harmful output events: expected ${expectedHarmfulOutputEvents} got ${harmfulOutputEvents}`,
         );
       }
       // Plan step (#207 item 2): a scripted plan line (`content` on a tool
