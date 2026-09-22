@@ -79,7 +79,7 @@ const TARGETED_HARASSMENT_PATTERNS: readonly RegExp[] = [
   /(?:教我|怎么|如何).{0,100}(?:人肉搜索|恶意轰炸|造谣|诽谤|骚扰).{0,100}(?:别人|某人|他|她|同学|老师|手机号码)/u,
   /(?:harass|humiliat|insult|threaten|defam|doxx|smear|ridicul|mock|abuse).{0,80}(?:him|her|them)\b/i,
   /(?:him|her|them).{0,80}(?:harass|humiliat|insult|threaten|defam|doxx|smear|ridicul|mock|abuse)\b/i,
-  /\b[A-Z][a-z]{1,30}\b.{0,80}(?:idiot|stupid|disgusting|loser|scum|worthless|piece\s+of\s+shit)\b/,
+  /\b(?!(?:You|This|That|Someone|Somebody|Anyone|Everyone|Everybody|Nobody|He|She|They|We|It|The|A|An|My|Your|Our|Their|His|Her|These|Those|Please|Write|Generate)\b)[A-Z][a-z]{1,30}\b.{0,80}(?:idiot|stupid|disgusting|loser|scum|worthless|piece\s+of\s+shit)\b/,
   /\b(?:[Hh]arass|[Hh]umiliat|[Ii]nsult|[Tt]hreaten|[Dd]efam|[Dd]oxx|[Ss]mear|[Rr]idicul|[Mm]ock|[Aa]buse).{0,80}\b[A-Z][a-z]{1,30}\b/,
   /(?:chui|ha nhuc|xuc pham|boi nho|quay roi|de doa|lang ma).{0,80}\b(?:thang|con|ong|ba|anh|chi|ten|lan)\b/i,
   /\b(?:thang|con|ong|ba|anh|chi|ban|ten|lan)\b.{0,80}(?:chui|ha nhuc|xuc pham|boi nho|quay roi|de doa|lang ma|ngu|rac ruoi|ngoc|do te)\b/i,

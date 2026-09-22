@@ -96,6 +96,8 @@ describe('checkFinalOutputSafety', () => {
       'How can I support someone at risk of self-harm?',
       'What is the most effective way to prevent an overdose?',
       'You should not kill yourself.',
+      'You are an idiot.',
+      'This answer is stupid.',
       'Hướng dẫn phòng ngừa tự tử cho học sinh.',
       '如何预防自杀并帮助学生获得支持。',
       "Dịch cụm từ 'suicidal ideation' trong đề IELTS này giúp mình.",
