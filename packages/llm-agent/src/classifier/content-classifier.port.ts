@@ -25,6 +25,7 @@ export type ClassifierLabel = (typeof CLASSIFIER_LABELS)[number];
 export const CLASSIFIER_FAILURE_REASONS = [
   'timeout',
   'error',
+  'rate_limited',
   'parse_failed',
   'aborted',
   'skipped_circuit_open',

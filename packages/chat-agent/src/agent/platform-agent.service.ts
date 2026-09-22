@@ -128,6 +128,12 @@ export class PlatformAgentService {
     // Validate bounded LLM execution configuration during startup even though
     // the agent itself is built lazily on the first normal chat request.
     buildLlmExecutionConfig();
+
+    if (this.classifierEnabled && !this.options.contentClassifier) {
+      throw new Error(
+        `LLM_INPUT_CLASSIFIER_ENABLED=true is configured for platform "${this.options.platform}", but no contentClassifier was provided to PlatformAgentService. Startup aborted to prevent silent unclassified execution (#864, #868).`,
+      );
+    }
   }
 
   async reply(input: PlatformAgentInput): Promise<PlatformAgentReply> {

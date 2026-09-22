@@ -1510,6 +1510,14 @@ describe('PlatformAgentService', () => {
       expect(mockLlmReply).toHaveBeenCalled();
     });
 
+    it('fails startup closed when LLM_INPUT_CLASSIFIER_ENABLED is on without a classifier collaborator (#864, #868)', () => {
+      expect(() =>
+        buildService(historyService, {
+          config: { LLM_INPUT_CLASSIFIER_ENABLED: 'true' },
+        }),
+      ).toThrow('no contentClassifier was provided');
+    });
+
     it('shadow mode: meters the verdict but does not change the reply', async () => {
       const classify = classifierStub({
         ok: true,
@@ -1911,6 +1919,7 @@ describe('PlatformAgentService', () => {
     it.each([
       'timeout',
       'error',
+      'rate_limited',
       'parse_failed',
       'skipped_circuit_open',
     ] as const)(
@@ -2060,6 +2069,50 @@ describe('PlatformAgentService', () => {
         errorMessage: 'parse_failed',
       });
     });
+
+    it.each([
+      'queue_full',
+      'wait_timeout',
+      'global_saturated',
+      'redis_unavailable',
+      'rate_limited',
+    ] as const)(
+      'records %s failure as a zero-token error usage event (#868)',
+      async (reason) => {
+        const classify = classifierStub({
+          ok: false,
+          reason,
+        });
+        const recordFromCompletion = jest.fn();
+        const svc = buildService(historyService, {
+          contentClassifier: classify,
+          usageRecorder: { recordFromCompletion },
+          classifierUsage: { provider: 'test-provider', model: 'test-model' },
+          config: {
+            LLM_INPUT_CLASSIFIER_ENABLED: 'true',
+            LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
+          },
+        });
+
+        await svc.reply(baseInput('cách viết mở bài task 2 cho dạng opinion?'));
+
+        expect(recordFromCompletion).toHaveBeenCalledWith({
+          feature: 'LLM_INPUT_CLASSIFIER',
+          externalUserId: 'test-psid',
+          userId: undefined,
+          provider: 'test-provider',
+          model: 'test-model',
+          response: {
+            id: '',
+            usage: null,
+          },
+          correlationId: undefined,
+          toolRound: 0,
+          status: 'error',
+          errorMessage: reason,
+        });
+      },
+    );
 
     it('shadow mode: CRISIS remains observational even below the normal confidence floor', async () => {
       const classify = classifierStub({

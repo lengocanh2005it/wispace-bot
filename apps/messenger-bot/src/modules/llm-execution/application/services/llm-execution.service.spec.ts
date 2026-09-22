@@ -237,6 +237,21 @@ describe('LlmExecutionService', () => {
     ).resolves.toBe('chat still available');
   });
 
+  it('rejects classifier mode without provider passthrough when execution control is disabled', async () => {
+    const config = createConfig({ enabled: false });
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+    const classifierCall = jest.fn().mockResolvedValue('ok');
+
+    await expect(
+      service.run(classifierCall, {
+        feature: 'LLM_INPUT_CLASSIFIER',
+        executionMode: 'classifier',
+      }),
+    ).rejects.toThrow('LLM execution control is disabled');
+
+    expect(classifierCall).not.toHaveBeenCalled();
+  });
+
   it('caps concurrent runs when enabled', async () => {
     const config = createConfig({ enabled: true, maxConcurrent: 1 });
     const service = new LlmExecutionService(config, noopMetrics, mockAdapter);

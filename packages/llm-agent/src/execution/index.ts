@@ -2,6 +2,7 @@
 export {
   BoundedAdmissionQueue,
   LlmOverloadError,
+  LlmExecutionDisabledError,
   raceAbort,
   INTERACTIVE_LLM_FEATURES,
   admissionWaitBudgetMs,

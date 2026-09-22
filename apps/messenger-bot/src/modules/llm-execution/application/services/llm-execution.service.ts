@@ -7,6 +7,7 @@ import {
   cappedExponentialBackoff,
   retryWithBackoff,
   LlmOverloadError,
+  LlmExecutionDisabledError,
   LlmAdmissionCoordinator,
   LlmProviderCircuitOpenError,
   LlmAttemptBudget,
@@ -127,6 +128,9 @@ export class LlmExecutionService {
     context?: LlmExecutionContext,
   ): Promise<T> {
     if (!this.config.isEnabled()) {
+      if (context?.executionMode === 'classifier') {
+        throw new LlmExecutionDisabledError();
+      }
       return fn(undefined, undefined);
     }
 

@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { join } from 'path';
+import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import {
   createLlmProviderAdapterFromEnv,
   buildLlmExecutionConfig,
@@ -24,6 +25,9 @@ import {
 } from '@wispace/chat-metering';
 import {
   PlatformAgentService,
+  LlmContentClassifier,
+  buildClassifierConfig,
+  resolveClassifierModel,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
@@ -414,6 +418,42 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           learnerProfileStore,
           'zalo',
         );
+        const classifierConfig = buildClassifierConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        const classifierModel = resolveClassifierModel({
+          ...classifierConfig,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+        });
+        const contentClassifier = new LlmContentClassifier({
+          adapter,
+          execution: executionPort,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+          model: classifierModel,
+          maxInputChars: Math.max(
+            1,
+            readEnvPositiveInt(
+              configService,
+              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
+              512,
+            ),
+          ),
+          timeoutMs: readEnvPositiveInt(
+            configService,
+            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
+            1200,
+          ),
+          onInputShape: (shape) => metrics.incClassifierInput(shape, 'zalo'),
+          logger: new Logger('LlmContentClassifier'),
+        });
         return new PlatformAgentService(
           configService,
           toolsService,
@@ -459,12 +499,19 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
               totalProviderAttemptsInc: (feature, attempts, outcome) =>
                 metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
+              classifierVerdictInc: (label, mode) =>
+                metrics.incClassifierVerdict(label, mode, 'zalo'),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
             // Bounded admission telemetry (#389)
             llmAdmissionMetrics: metrics.llmAdmission,
             llmExecution: executionPort,
+            contentClassifier,
+            classifierUsage: {
+              provider: adapter.providerName,
+              model: classifierModel,
+            },
           },
           redisClient,
         );

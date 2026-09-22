@@ -795,8 +795,12 @@ A classifier invocation refused before provider execution because bounded local 
 _Avoid_: provider failure, classifier says safe
 
 **classifier unavailable**:
-The classifier could not produce a usable verdict because of timeout, provider error, invalid output, an open local circuit, classifier admission rejection, caller cancellation, or disabled execution control. It is not evidence that the learner input is safe or a crisis; the caller applies the mode-specific safety fallback and records only bounded failure metadata. The bounded failure labels are `timeout`, `error`, `parse_failed`, `aborted`, `skipped_circuit_open`, `queue_full`, `wait_timeout`, `global_saturated`, `redis_unavailable`, and `execution_disabled`.
+The classifier could not produce a usable verdict because of timeout, provider error, rate limiting, invalid output, an open local circuit, classifier admission rejection, caller cancellation, or disabled execution control. It is not evidence that the learner input is safe or a crisis; the caller applies the mode-specific safety fallback and records only bounded failure metadata. The bounded failure labels are `timeout`, `error`, `rate_limited`, `parse_failed`, `aborted`, `skipped_circuit_open`, `queue_full`, `wait_timeout`, `global_saturated`, `redis_unavailable`, and `execution_disabled`.
 _Avoid_: classifier says safe, crisis fallback — neither is implied by an unavailable result
+
+**classifier breaker failure classes**:
+The partition of classifier failure outcomes for the local circuit breaker. **Dependency-shaped** failures (`timeout`, `error`, `rate_limited`) indicate upstream provider distress, accumulate toward tripping the breaker, and re-open the circuit if seen during a half-open probe. **Input-shaped** failures (`parse_failed`) indicate learner-specific formatting anomaly with a healthy provider; they fail open for that turn but never increment the breaker's failure counter and close the circuit if received during a half-open probe. Admission rejections, caller cancellation, and disabled execution bypass breaker accounting.
+_Avoid_: shared execution circuit, global safety trip
 
 **classifier execution mode**:
 The shared execution policy reserved for the input classifier: one provider attempt, no shared retry/circuit side effects, shared local/fleet admission, and an end-to-end classifier deadline. When execution control is disabled, the optional classifier is skipped rather than bypassing this policy.

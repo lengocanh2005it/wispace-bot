@@ -8,7 +8,9 @@ import type {
   LlmProviderEntryConfig,
   LlmProviderPolicy,
 } from '@wispace/llm-agent';
+import { PlatformAgentService } from '@wispace/chat-agent';
 import { DiscordSharedModule } from './discord-shared.module';
+import { DiscordChatModule } from './discord-chat.module';
 
 const TEST_POLICY: LlmProviderPolicy = {
   nodeEnv: 'test',
@@ -122,5 +124,110 @@ describe('Discord chat module — LLM provider factory', () => {
         ),
       ).toThrow(/missing provider|no configuration/i);
     });
+  });
+
+  it('wires PlatformAgentService with LlmContentClassifier in DiscordChatModule (#864, #868)', () => {
+    const providers = (Reflect.getMetadata('providers', DiscordChatModule) ??
+      []) as Array<unknown>;
+    const binding = providers.find(
+      (
+        provider,
+      ): provider is {
+        provide: unknown;
+        useFactory: (...args: unknown[]) => unknown;
+      } =>
+        typeof provider === 'object' &&
+        provider !== null &&
+        'provide' in provider &&
+        provider.provide === PlatformAgentService &&
+        'useFactory' in provider &&
+        typeof provider.useFactory === 'function',
+    );
+    expect(binding).toBeDefined();
+
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
+        if (key === 'LLM_INPUT_CLASSIFIER_MODEL')
+          return 'google/gemini-2.0-flash-lite';
+        if (key === 'LLM_ALLOWED_MODELS')
+          return 'openai:google/gemini-2.0-flash-lite';
+        return undefined;
+      }),
+    };
+    const adapter = {
+      providerName: 'openrouter',
+      getDefaultModel: () => 'google/gemini-2.0-flash-lite',
+      isRateLimitError: () => false,
+    };
+    const metrics = {
+      incClassifierInput: jest.fn(),
+      incClassifierVerdict: jest.fn(),
+    };
+
+    const agent = binding!.useFactory(
+      configService,
+      {},
+      {},
+      {},
+      {},
+      adapter,
+      {},
+      metrics,
+      null,
+      {},
+      {},
+      {},
+      {},
+    );
+    expect(agent).toBeInstanceOf(PlatformAgentService);
+  });
+
+  it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
+    const providers = (Reflect.getMetadata('providers', DiscordChatModule) ??
+      []) as Array<unknown>;
+    const binding = providers.find(
+      (
+        provider,
+      ): provider is {
+        provide: unknown;
+        useFactory: (...args: unknown[]) => unknown;
+      } =>
+        typeof provider === 'object' &&
+        provider !== null &&
+        'provide' in provider &&
+        provider.provide === PlatformAgentService &&
+        'useFactory' in provider &&
+        typeof provider.useFactory === 'function',
+    );
+    expect(binding).toBeDefined();
+
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
+        if (key === 'LLM_INPUT_CLASSIFIER_MODEL') return 'unapproved-model';
+        if (key === 'LLM_ALLOWED_MODELS')
+          return 'openai:google/gemini-2.0-flash-lite';
+        return undefined;
+      }),
+    };
+
+    expect(() =>
+      binding!.useFactory(
+        configService,
+        {},
+        {},
+        {},
+        {},
+        { providerName: 'openai', isRateLimitError: () => false },
+        {},
+        {},
+        null,
+        {},
+        {},
+        {},
+        {},
+      ),
+    ).toThrow(/not approved by LLM_ALLOWED_MODELS/i);
   });
 });

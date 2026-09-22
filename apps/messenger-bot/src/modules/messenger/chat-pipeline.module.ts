@@ -288,9 +288,6 @@ import {
             true,
           ),
         });
-        const classifierTimeoutRaw = Number(
-          configService.get<string>('LLM_INPUT_CLASSIFIER_TIMEOUT_MS'),
-        );
         const contentClassifier = new LlmContentClassifier({
           adapter,
           execution: llmExecution,
@@ -308,10 +305,11 @@ import {
               512,
             ),
           ),
-          timeoutMs:
-            Number.isFinite(classifierTimeoutRaw) && classifierTimeoutRaw > 0
-              ? Math.floor(classifierTimeoutRaw)
-              : 1200,
+          timeoutMs: readEnvPositiveInt(
+            configService,
+            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
+            1200,
+          ),
           onInputShape: (shape) =>
             metrics.incClassifierInput(shape, 'messenger'),
           logger: new Logger('LlmContentClassifier'),

@@ -3,6 +3,7 @@ import { ZALO_OUTBOUND } from './application/ports/zalo-outbound.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 describe('Zalo outbound port wiring', () => {
   it('registers one shared coordinator with feature-local execution ports', () => {
@@ -74,5 +75,110 @@ describe('Zalo outbound port wiring', () => {
         { provide: ZALO_OUTBOUND, useExisting: ZaloOutboundService },
       ]),
     );
+  });
+
+  it('wires PlatformAgentService with LlmContentClassifier in ZaloChatModule (#864, #868)', () => {
+    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
+      []) as Array<unknown>;
+    const binding = providers.find(
+      (
+        provider,
+      ): provider is {
+        provide: unknown;
+        useFactory: (...args: unknown[]) => unknown;
+      } =>
+        typeof provider === 'object' &&
+        provider !== null &&
+        'provide' in provider &&
+        provider.provide === PlatformAgentService &&
+        'useFactory' in provider &&
+        typeof provider.useFactory === 'function',
+    );
+    expect(binding).toBeDefined();
+
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
+        if (key === 'LLM_INPUT_CLASSIFIER_MODEL')
+          return 'google/gemini-2.0-flash-lite';
+        if (key === 'LLM_ALLOWED_MODELS')
+          return 'openai:google/gemini-2.0-flash-lite';
+        return undefined;
+      }),
+    };
+    const adapter = {
+      providerName: 'openrouter',
+      getDefaultModel: () => 'google/gemini-2.0-flash-lite',
+      isRateLimitError: () => false,
+    };
+    const metrics = {
+      incClassifierInput: jest.fn(),
+      incClassifierVerdict: jest.fn(),
+    };
+
+    const agent = binding!.useFactory(
+      configService,
+      {},
+      {},
+      {},
+      {},
+      adapter,
+      {},
+      metrics,
+      null,
+      {},
+      {},
+      {},
+      {},
+    );
+    expect(agent).toBeInstanceOf(PlatformAgentService);
+  });
+
+  it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
+    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
+      []) as Array<unknown>;
+    const binding = providers.find(
+      (
+        provider,
+      ): provider is {
+        provide: unknown;
+        useFactory: (...args: unknown[]) => unknown;
+      } =>
+        typeof provider === 'object' &&
+        provider !== null &&
+        'provide' in provider &&
+        provider.provide === PlatformAgentService &&
+        'useFactory' in provider &&
+        typeof provider.useFactory === 'function',
+    );
+    expect(binding).toBeDefined();
+
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
+        if (key === 'LLM_INPUT_CLASSIFIER_MODEL') return 'unapproved-model';
+        if (key === 'LLM_ALLOWED_MODELS')
+          return 'openai:google/gemini-2.0-flash-lite';
+        return undefined;
+      }),
+    };
+
+    expect(() =>
+      binding!.useFactory(
+        configService,
+        {},
+        {},
+        {},
+        {},
+        { providerName: 'openai', isRateLimitError: () => false },
+        {},
+        {},
+        null,
+        {},
+        {},
+        {},
+        {},
+      ),
+    ).toThrow(/not approved by LLM_ALLOWED_MODELS/i);
   });
 });

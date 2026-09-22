@@ -14,6 +14,7 @@ import {
 import { acquireRedisSlot, type SlotLogger } from './redis-slot-limiter';
 import {
   LlmOverloadError,
+  LlmExecutionDisabledError,
   INTERACTIVE_LLM_FEATURES,
 } from './bounded-admission';
 import {
@@ -251,6 +252,9 @@ export function createEnvLlmExecutionPort(
       },
     ): Promise<T> => {
       if (!config.enabled) {
+        if (meta?.executionMode === 'classifier') {
+          throw new LlmExecutionDisabledError();
+        }
         return fn(undefined, undefined);
       }
       const attemptBudget =

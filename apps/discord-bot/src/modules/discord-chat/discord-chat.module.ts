@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
@@ -14,6 +14,7 @@ import {
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatMeteringModule,
@@ -31,6 +32,9 @@ import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/
 import { WispaceModule } from '../wispace/wispace.module';
 import {
   PlatformAgentService,
+  LlmContentClassifier,
+  buildClassifierConfig,
+  resolveClassifierModel,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
@@ -287,6 +291,42 @@ const REGISTER_REPORT_MESSAGE =
           learnerProfileStore,
           'discord',
         );
+        const classifierConfig = buildClassifierConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        const classifierModel = resolveClassifierModel({
+          ...classifierConfig,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+        });
+        const contentClassifier = new LlmContentClassifier({
+          adapter,
+          execution: executionPort,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+          model: classifierModel,
+          maxInputChars: Math.max(
+            1,
+            readEnvPositiveInt(
+              configService,
+              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
+              512,
+            ),
+          ),
+          timeoutMs: readEnvPositiveInt(
+            configService,
+            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
+            1200,
+          ),
+          onInputShape: (shape) => metrics.incClassifierInput(shape, 'discord'),
+          logger: new Logger('LlmContentClassifier'),
+        });
         return new PlatformAgentService(
           configService,
           toolsService,
@@ -332,12 +372,19 @@ const REGISTER_REPORT_MESSAGE =
               degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
               totalProviderAttemptsInc: (feature, attempts, outcome) =>
                 metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
+              classifierVerdictInc: (label, mode) =>
+                metrics.incClassifierVerdict(label, mode, 'discord'),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
             // Bounded admission telemetry (#389)
             llmAdmissionMetrics: metrics.llmAdmission,
             llmExecution: executionPort,
+            contentClassifier,
+            classifierUsage: {
+              provider: adapter.providerName,
+              model: classifierModel,
+            },
           },
           redisClient,
         );

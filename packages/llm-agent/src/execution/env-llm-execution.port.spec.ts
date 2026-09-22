@@ -587,6 +587,27 @@ describe('createEnvLlmExecutionPort', () => {
     expect(calls).toHaveBeenCalledTimes(4);
   });
 
+  it('rejects classifier mode without provider passthrough when execution control is disabled', async () => {
+    const calls = jest.fn().mockResolvedValue('ok');
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        enabled: false,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+
+    await expect(
+      port.run(calls, {
+        feature: 'LLM_INPUT_CLASSIFIER',
+        executionMode: 'classifier',
+      }),
+    ).rejects.toThrow('LLM execution control is disabled');
+
+    expect(calls).not.toHaveBeenCalled();
+  });
+
   it('keeps the shared execution circuit closed for repeated bad_request failures', async () => {
     const adapter = makeAdapter();
     const calls = jest.fn().mockRejectedValue({
@@ -1120,5 +1141,65 @@ describe('createEnvLlmExecutionPort', () => {
 
     // acquire (Lua ACQUIRE_SCRIPT) + release (Lua RELEASE_SCRIPT)
     expect(redis.eval).toHaveBeenCalledTimes(2);
+  });
+
+  it('acquires and releases Redis-distributed lease in classifier execution mode across success, failure, and abort (#868)', async () => {
+    const redis = {
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        globalConcurrencyEnabled: true,
+        redis: redis as never,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+
+    // Success: 1 acquire + 1 release = 2 evals
+    await expect(
+      port.run(() => Promise.resolve('ok'), {
+        feature: 'LLM_INPUT_CLASSIFIER',
+        executionMode: 'classifier',
+      }),
+    ).resolves.toBe('ok');
+    expect(redis.eval).toHaveBeenCalledTimes(2);
+
+    // Error: 1 acquire + 1 release = 4 evals total
+    await expect(
+      port.run(() => Promise.reject(new Error('fail')), {
+        feature: 'LLM_INPUT_CLASSIFIER',
+        executionMode: 'classifier',
+      }),
+    ).rejects.toThrow('fail');
+    expect(redis.eval).toHaveBeenCalledTimes(4);
+
+    // Abort during execution: acquire + release = 6 evals total
+    const abortController = new AbortController();
+    await expect(
+      port.run(
+        async () => {
+          abortController.abort();
+          throw new Error('call aborted');
+        },
+        {
+          feature: 'LLM_INPUT_CLASSIFIER',
+          executionMode: 'classifier',
+          signal: abortController.signal,
+        },
+      ),
+    ).rejects.toThrow('call aborted');
+    expect(redis.eval).toHaveBeenCalledTimes(6);
+
+    // Pre-aborted signal: sheds immediately without acquiring Redis slot
+    await expect(
+      port.run(() => Promise.resolve('ok'), {
+        feature: 'LLM_INPUT_CLASSIFIER',
+        executionMode: 'classifier',
+        signal: abortController.signal,
+      }),
+    ).rejects.toThrow(/abort/i);
+    expect(redis.eval).toHaveBeenCalledTimes(6);
   });
 });

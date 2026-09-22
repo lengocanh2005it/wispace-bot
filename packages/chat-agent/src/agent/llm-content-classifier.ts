@@ -2,6 +2,7 @@ import {
   CLASSIFIER_LABELS,
   CLASSIFIER_SYSTEM_PROMPT,
   LlmOverloadError,
+  LlmExecutionDisabledError,
   redactSecrets,
   type ClassifierLabel,
   type ClassifyFailureReason,
@@ -106,12 +107,19 @@ export class LlmContentClassifier implements ContentClassifierPort {
         this.halfOpenInFlight = false;
         return { ok: false, reason: error.reason };
       }
+      if (error instanceof LlmExecutionDisabledError) {
+        this.halfOpenInFlight = false;
+        return { ok: false, reason: 'execution_disabled' };
+      }
       if (callerSignal?.aborted) {
         this.halfOpenInFlight = false;
         return { ok: false, reason: 'aborted' };
       }
       if (signal.aborted || isAbortError(error)) {
         return this.settle('timeout');
+      }
+      if (this.deps.adapter.isRateLimitError(error)) {
+        return this.settle('rate_limited');
       }
       return this.settle('error');
     }
@@ -146,6 +154,20 @@ export class LlmContentClassifier implements ContentClassifierPort {
       ReturnType<LlmProviderAdapter['generateJson']>
     >['metadata'],
   ): ClassifyResult {
+    if (reason === 'parse_failed') {
+      // Input-shaped failure (#863, #868): model answered and provider is alive,
+      // but output was unparseable. Does not count as a dependency failure.
+      if (this.halfOpenInFlight) {
+        this.halfOpenInFlight = false;
+        this.openUntil = 0;
+        this.consecutiveFailures = 0;
+        this.deps.logger?.warn(
+          'LlmContentClassifier half-open probe received input-shaped parse failure; provider is responsive, circuit closed',
+        );
+      }
+      return { ok: false, reason, ...(completion ? { completion } : {}) };
+    }
+
     if (this.halfOpenInFlight) {
       // The half-open probe failed — re-open immediately, no need to
       // re-accumulate `CIRCUIT_FAILURE_THRESHOLD` failures.
@@ -161,7 +183,7 @@ export class LlmContentClassifier implements ContentClassifierPort {
       this.openUntil = Date.now() + CIRCUIT_OPEN_MS;
       this.consecutiveFailures = 0;
       this.deps.logger?.warn(
-        `LlmContentClassifier circuit opened for ${CIRCUIT_OPEN_MS}ms`,
+        `LlmContentClassifier circuit opened for ${CIRCUIT_OPEN_MS}ms (${reason})`,
       );
     }
     return { ok: false, reason, ...(completion ? { completion } : {}) };

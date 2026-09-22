@@ -1,5 +1,9 @@
 import { LlmContentClassifier } from './llm-content-classifier';
-import { LlmOverloadError, REDACTED_PLACEHOLDER } from '@wispace/llm-agent';
+import {
+  LlmOverloadError,
+  LlmExecutionDisabledError,
+  REDACTED_PLACEHOLDER,
+} from '@wispace/llm-agent';
 import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
 
 function adapterReturning(
@@ -363,6 +367,118 @@ it('releases a half-open probe when admission rejects before the provider call',
   );
   await expect(c.classify('x')).resolves.toMatchObject({ ok: true });
   jest.useRealTimers();
+});
+
+it('does not open the circuit for consecutive input-shaped parse failures (#863, #868)', async () => {
+  const badJson = adapterReturning('not a json');
+  const c = new LlmContentClassifier({ adapter: badJson, ...base });
+
+  for (let i = 0; i < 10; i++) {
+    expect(await c.classify('x')).toEqual({
+      ok: false,
+      reason: 'parse_failed',
+      completion,
+    });
+  }
+  expect((badJson.generateJson as jest.Mock).mock.calls.length).toBe(10);
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'parse_failed',
+    completion,
+  });
+  expect((badJson.generateJson as jest.Mock).mock.calls.length).toBe(11);
+});
+
+it('closes the circuit when a half-open probe receives an input-shaped parse failure (#863, #868)', async () => {
+  jest.useFakeTimers();
+  const bad = adapterReturning('{}');
+  (bad.generateJson as jest.Mock).mockRejectedValue(new Error('boom'));
+  const c = new LlmContentClassifier({ adapter: bad, ...base });
+
+  for (let i = 0; i < 5; i++) {
+    expect(await c.classify('x')).toEqual({ ok: false, reason: 'error' });
+  }
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'skipped_circuit_open',
+  });
+
+  jest.advanceTimersByTime(30_001);
+  // Half-open probe returns unparseable JSON (provider is alive!)
+  (bad.generateJson as jest.Mock).mockResolvedValue({
+    content: 'invalid json',
+    metadata: completion,
+  });
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'parse_failed',
+    completion,
+  });
+
+  // Circuit should now be closed; subsequent call reaches provider instead of being skipped
+  (bad.generateJson as jest.Mock).mockResolvedValue({
+    content: '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
+    metadata: completion,
+  });
+  const next = await c.classify('x');
+  expect(next.ok).toBe(true);
+  jest.useRealTimers();
+});
+
+it('maps 429 errors to rate_limited and trips the circuit after threshold (#868)', async () => {
+  jest.useFakeTimers();
+  const rateLimitedAdapter = adapterReturning('{}');
+  rateLimitedAdapter.isRateLimitError = jest.fn(() => true);
+  const rateLimitError = Object.assign(new Error('Rate limit exceeded'), {
+    status: 429,
+    name: 'RateLimitError',
+  });
+  (rateLimitedAdapter.generateJson as jest.Mock).mockRejectedValue(
+    rateLimitError,
+  );
+  const c = new LlmContentClassifier({ adapter: rateLimitedAdapter, ...base });
+
+  for (let i = 0; i < 5; i++) {
+    expect(await c.classify('x')).toEqual({
+      ok: false,
+      reason: 'rate_limited',
+    });
+  }
+
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'skipped_circuit_open',
+  });
+
+  jest.advanceTimersByTime(30_001);
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'rate_limited',
+  });
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'skipped_circuit_open',
+  });
+  jest.useRealTimers();
+});
+
+it('returns execution_disabled when execution port throws LlmExecutionDisabledError (#868)', async () => {
+  const adapter = adapterReturning('{}');
+  const execution = {
+    run: jest.fn().mockRejectedValue(new LlmExecutionDisabledError()),
+  } as unknown as LlmExecutionPort;
+  const c = new LlmContentClassifier({
+    adapter,
+    ...base,
+    execution,
+    executionEnabled: true,
+  });
+
+  await expect(c.classify('hi')).resolves.toEqual({
+    ok: false,
+    reason: 'execution_disabled',
+  });
+  expect(adapter.generateJson).not.toHaveBeenCalled();
 });
 
 it('#632 — routes classifier input through redactSecrets; bounds the projected input', async () => {

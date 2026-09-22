@@ -15,6 +15,16 @@ export class LlmOverloadError extends Error {
   }
 }
 
+/** Typed disabled-execution outcome — classifier calls refuse unmetered passthrough (#868). */
+export class LlmExecutionDisabledError extends Error {
+  constructor(
+    message = 'LLM execution control is disabled; classifier calls refuse unmetered passthrough (#868)',
+  ) {
+    super(message);
+    this.name = 'LlmExecutionDisabledError';
+  }
+}
+
 /**
  * Features that represent interactive user chat. Everything else
  * (reports, reminders) is background work that sheds first under load.

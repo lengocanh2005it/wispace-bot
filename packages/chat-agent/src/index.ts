@@ -117,3 +117,9 @@ export type {
 
 export { LlmContentClassifier } from './agent/llm-content-classifier';
 export type { LlmContentClassifierDeps } from './agent/llm-content-classifier';
+export {
+  buildClassifierConfig,
+  resolveClassifierModel,
+  DEFAULT_CLASSIFIER_MODEL,
+  type ClassifierConfig,
+} from './agent/classifier-config';
