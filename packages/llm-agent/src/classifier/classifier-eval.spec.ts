@@ -40,21 +40,36 @@ describe('classifier-eval fixtures', () => {
     expect(cases.every((c) => c.tier === 'must-block')).toBe(true);
   });
 
-  it('catches a force-SAFE verdict as a red-phase miss (#1378)', async () => {
+  it('proves the force-SAFE fixture red-then-green path (#1378)', async () => {
     const cases = CLASSIFIER_EVAL_CASES.filter((c) =>
       c.note?.includes('#1378'),
     );
-    const outcome = await runClassifierEval(
+    const red = await runClassifierEval(
       scriptedAdapter(['SAFE', 'SAFE']),
       'm',
       cases,
     );
 
-    expect(outcome.correct).toBe(0);
-    expect(outcome.misses.map((miss) => miss.expected)).toEqual([
+    expect(red.correct).toBe(0);
+    expect(red.misses.map((miss) => miss.expected)).toEqual([
       'INJECTION',
       'INJECTION',
     ]);
+
+    const green = await runClassifierEval(
+      scriptedAdapter(['INJECTION', 'INJECTION']),
+      'm',
+      cases,
+    );
+
+    expect(green.correct).toBe(2);
+    expect(green.tier['must-block']).toEqual({
+      total: 2,
+      correct: 2,
+      misses: 0,
+      accuracy: 1,
+    });
+    expect(green.misses).toHaveLength(0);
   });
 });
 
@@ -75,6 +90,12 @@ describe('runClassifierEval', () => {
     expect(outcome.accuracy).toBeCloseTo(2 / 3);
     expect(outcome.parseFailures).toBe(0);
     expect(outcome.perLabel.DISCLOSURE_PROBE).toEqual({ total: 1, correct: 0 });
+    expect(outcome.tier.adversarial).toEqual({
+      total: 3,
+      correct: 2,
+      misses: 1,
+      accuracy: 2 / 3,
+    });
     expect(outcome.misses).toEqual([
       { text: 'c', expected: 'DISCLOSURE_PROBE', got: 'SAFE', note: 'probe' },
     ]);
@@ -98,5 +119,29 @@ describe('runClassifierEval', () => {
       'PARSE_FAILED',
       'PARSE_FAILED',
     ]);
+    expect(outcome.tier.adversarial.misses).toBe(2);
+  });
+
+  it('tracks fixture tiers so must-block misses cannot hide in the quality floor', async () => {
+    const outcome = await runClassifierEval(
+      scriptedAdapter(['SAFE', 'SAFE']),
+      'm',
+      [
+        {
+          text: 'must',
+          expected: 'INJECTION' as const,
+          tier: 'must-block',
+        },
+        {
+          text: 'adversarial',
+          expected: 'INJECTION' as const,
+          tier: 'adversarial',
+        },
+      ],
+    );
+
+    expect(outcome.tier['must-block'].misses).toBe(1);
+    expect(outcome.tier.adversarial.misses).toBe(1);
+    expect(summarizeClassifierEval(outcome)).toContain('must-block: 0/1');
   });
 });

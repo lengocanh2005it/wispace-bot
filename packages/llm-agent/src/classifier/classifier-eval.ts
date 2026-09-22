@@ -17,13 +17,21 @@ import {
 export interface ClassifierEvalCase {
   text: string;
   expected: ClassifierLabel;
-  /** #635 tier; fixed bypass fixtures are promoted to must-block. */
+  /** #635 tier; classifier-quality fixtures stay adversarial unless promoted. */
   tier?: 'must-block' | 'adversarial';
   /** Why this case matters — shown in the miss report. */
   note?: string;
 }
 
 type Got = ClassifierLabel | 'PARSE_FAILED';
+
+export interface ClassifierEvalTierOutcome {
+  total: number;
+  correct: number;
+  misses: number;
+  /** correct / total (1 when total is 0). */
+  accuracy: number;
+}
 
 export interface ClassifierEvalOutcome {
   total: number;
@@ -32,6 +40,7 @@ export interface ClassifierEvalOutcome {
   accuracy: number;
   parseFailures: number;
   perLabel: Record<ClassifierLabel, { total: number; correct: number }>;
+  tier: Record<'must-block' | 'adversarial', ClassifierEvalTierOutcome>;
   misses: Array<{
     text: string;
     expected: ClassifierLabel;
@@ -72,8 +81,14 @@ export async function runClassifierEval(
   const misses: ClassifierEvalOutcome['misses'] = [];
   let correct = 0;
   let parseFailures = 0;
+  const tier: ClassifierEvalOutcome['tier'] = {
+    'must-block': { total: 0, correct: 0, misses: 0, accuracy: 1 },
+    adversarial: { total: 0, correct: 0, misses: 0, accuracy: 1 },
+  };
 
   for (const testCase of cases) {
+    const testTier = testCase.tier ?? 'adversarial';
+    tier[testTier].total += 1;
     perLabel[testCase.expected].total += 1;
     let got: Got;
     try {
@@ -95,7 +110,9 @@ export async function runClassifierEval(
     if (got === testCase.expected) {
       correct += 1;
       perLabel[testCase.expected].correct += 1;
+      tier[testTier].correct += 1;
     } else {
+      tier[testTier].misses += 1;
       misses.push({
         text: testCase.text,
         expected: testCase.expected,
@@ -105,12 +122,17 @@ export async function runClassifierEval(
     }
   }
 
+  for (const stats of Object.values(tier)) {
+    stats.accuracy = stats.total === 0 ? 1 : stats.correct / stats.total;
+  }
+
   return {
     total: cases.length,
     correct,
     accuracy: cases.length === 0 ? 1 : correct / cases.length,
     parseFailures,
     perLabel,
+    tier,
     misses,
   };
 }
@@ -126,6 +148,15 @@ export function summarizeClassifierEval(
   for (const label of CLASSIFIER_LABELS) {
     const p = outcome.perLabel[label];
     lines.push(`  ${label}: ${p.correct}/${p.total}`);
+  }
+
+  for (const tier of ['must-block', 'adversarial'] as const) {
+    const stats = outcome.tier[tier];
+    lines.push(
+      `  ${tier}: ${stats.correct}/${stats.total} (${(
+        stats.accuracy * 100
+      ).toFixed(1)}%), misses: ${stats.misses}`,
+    );
   }
 
   if (outcome.misses.length > 0) {
