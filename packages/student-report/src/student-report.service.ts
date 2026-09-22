@@ -71,6 +71,15 @@ export interface StudentReportGenerationOptions {
   userId?: number;
 }
 
+/** Context bundle for a failed LLM call — eliminates positional Data Clumps. */
+interface LlmFailureRowInput {
+  externalUserId: string;
+  userId?: number;
+  model: string;
+  correlationId: string;
+  error: unknown;
+}
+
 function isRetryableApiError(error: unknown): error is RetryableApiError {
   return (
     error instanceof Error &&
@@ -294,13 +303,13 @@ export class StudentReportCore {
       );
     } catch (error) {
       // #1380 — emit a zero-token error row when the LLM call itself failed
-      this.recordLlmFailureRow(
+      this.recordLlmFailureRow({
         externalUserId,
+        userId,
         model,
         correlationId,
         error,
-        userId,
-      );
+      });
       throw error;
     }
 
@@ -359,13 +368,13 @@ export class StudentReportCore {
    * #1380 — one zero-token failure row for an LLM call that never produced a
    * completion, classified with the bounded failure class (never raw text).
    */
-  private recordLlmFailureRow(
-    externalUserId: string,
-    model: string,
-    correlationId: string,
-    error: unknown,
-    userId?: number,
-  ): void {
+  private recordLlmFailureRow({
+    externalUserId,
+    userId,
+    model,
+    correlationId,
+    error,
+  }: LlmFailureRowInput): void {
     try {
       this.ports.usageRecorder.recordFromCompletion({
         feature: FEATURE,
