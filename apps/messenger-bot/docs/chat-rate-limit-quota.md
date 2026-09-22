@@ -64,7 +64,17 @@ documented passthrough and bypasses this control.
 
 The `message_logs` table already exists — used for sent/received message audit (`message_type`, `external_user_id`, `user_id`, `created_at`).
 
-### 1.4. Outbound learner-message backstop (#622)
+### 1.4. Shared harmful-output egress guard (#1377)
+
+Every free-form reply from the shared LLM agent passes through the final-output
+guard after grounding and existing prompt/credential/vendor leak checks. Bounded
+Vietnamese/English/Chinese patterns replace actionable self-harm instructions
+or targeted harassment with the generic blocked reply, mark the reply
+`skipHistory`, and emit a redacted `HARMFUL_OUTPUT_BLOCKED` safety event. The
+guard is shared by Messenger, Discord, and Zalo; prevention, academic,
+translation, fictional, and constructive-criticism replies remain allowed.
+
+### 1.5. Outbound learner-message backstop (#622)
 
 The shared `@wispace/bot-common` outbound limiter is separate from the inbound
 FREE_FORM quota. It contains retry storms and accidental fan-out immediately
