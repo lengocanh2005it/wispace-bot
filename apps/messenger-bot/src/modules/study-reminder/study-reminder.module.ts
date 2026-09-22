@@ -242,6 +242,8 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
             response: input.response,
             correlationId: input.correlationId,
             toolRound: input.toolRound,
+            status: input.status,
+            errorMessage: input.errorMessage,
           }),
       }),
       inject: [LlmUsageRecorderService],

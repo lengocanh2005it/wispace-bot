@@ -59,13 +59,12 @@ export class DiscordReportOrchestrationService {
         const reportOptions = {
           ...(opts.attempt ? { attempt: opts.attempt } : {}),
           ...(opts.retryCause ? { retryCause: opts.retryCause } : {}),
+          ...(mapping.userId !== undefined ? { userId: mapping.userId } : {}),
         };
-        const report = Object.keys(reportOptions).length
-          ? await this.reportService.generateReport(
-              mapping.externalUserId,
-              reportOptions,
-            )
-          : await this.reportService.generateReport(mapping.externalUserId);
+        const report = await this.reportService.generateReport(
+          mapping.externalUserId,
+          reportOptions,
+        );
         return opts.appendOptOutFooter
           ? report + buildReportOptOutFooter()
           : report;

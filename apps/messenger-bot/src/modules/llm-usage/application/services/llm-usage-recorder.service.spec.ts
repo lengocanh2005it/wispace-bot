@@ -80,4 +80,55 @@ describe('LlmUsageRecorderService', () => {
 
     expect(insertUsage).not.toHaveBeenCalled();
   });
+
+  it('inserts zero-token failure row and suppresses incMissingTokens (#1380)', () => {
+    const insertUsage = jest.fn().mockResolvedValue(undefined);
+    const repository: LlmUsageRepositoryPort = {
+      insertUsage,
+      deleteOlderThan: jest.fn(),
+      aggregateUsage: jest.fn(),
+      aggregateFleetByDate: jest.fn(),
+    };
+    const configService = {
+      isEnabled: () => true,
+      todayUsageDate: () => '2026-06-18',
+      estimateCostUsdForModel: () => '0.000000',
+    } as unknown as LlmUsageConfigService;
+
+    const service = new LlmUsageRecorderService(
+      configService,
+      repository,
+      metrics,
+    );
+    service.recordFromCompletion({
+      feature: 'STUDY_REMINDER',
+      psid: 'psid-1',
+      userId: 42,
+      model: 'gpt-5.4',
+      response: {
+        id: '',
+        usage: null,
+      },
+      correlationId: 'rem-1',
+      toolRound: 0,
+      status: 'error',
+      errorMessage: 'timeout',
+    });
+
+    expect(insertUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: 'STUDY_REMINDER',
+        psid: 'psid-1',
+        userId: 42,
+        model: 'gpt-5.4',
+        usageDate: '2026-06-18',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        status: 'error',
+        errorMessage: 'timeout',
+      }),
+    );
+    expect(metrics.incLlmMissingTokens).not.toHaveBeenCalled();
+  });
 });

@@ -2,7 +2,11 @@
 // Keep runtime factories, SDK adapters, Redis admission, and privacy state in
 // `@wispace/llm-agent/adapters`.
 
-export { LlmAgentService, LlmRetryExhaustedError } from '../agent.service';
+export {
+  LlmAgentService,
+  LlmRetryExhaustedError,
+  classifyLlmFailure,
+} from '../agent.service';
 export type { LlmAgentPorts } from '../agent.service';
 export {
   IntentDetector,

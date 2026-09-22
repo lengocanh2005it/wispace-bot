@@ -314,6 +314,7 @@ export class ZaloReportCronService {
         generateReport: async () => {
           const report = await this.reportService.generateReport(
             link.externalUserId,
+            { userId: link.userId ?? undefined },
           );
           return pendingNotice ? report + buildReportOptOutFooter() : report;
         },

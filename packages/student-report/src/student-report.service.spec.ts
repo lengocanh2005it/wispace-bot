@@ -5,7 +5,11 @@ import {
   type RetryableApiError,
 } from './errors';
 import type { StudentCapacityInput } from './types';
-import type { LlmProviderAdapter, LlmJsonResponse } from '@wispace/llm-agent';
+import {
+  LlmOverloadError,
+  type LlmProviderAdapter,
+  type LlmJsonResponse,
+} from '@wispace/llm-agent';
 
 const baseInput: StudentCapacityInput = {
   exam_date: '2026-08-01',
@@ -375,5 +379,90 @@ describe('StudentReportCore', () => {
       .catch((value: unknown) => value);
 
     expect(isStudentReportRetryableError(error)).toBe(true);
+  });
+
+  it('records a zero-token error row when LLM call throws (#1380)', async () => {
+    const error = new LlmOverloadError('queue_full');
+    const llmExecution = { run: jest.fn().mockRejectedValue(error) };
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const capacityData = {
+      getCapacityData: jest.fn().mockResolvedValue(baseInput),
+    };
+    const adapter = {
+      isConfigured: () => true,
+      getDefaultModel: () => 'gpt-5.4',
+    } as unknown as LlmProviderAdapter;
+
+    const core = new StudentReportCore(
+      { adapter, systemPrompt: 'prompt' },
+      { llmExecution, usageRecorder, capacityData },
+    );
+
+    await expect(
+      core.generateReport('user-1', { correlationId: 'corr-1', userId: 42 }),
+    ).rejects.toThrow(error);
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith({
+      feature: 'STUDENT_REPORT',
+      externalUserId: 'user-1',
+      userId: 42,
+      model: 'gpt-5.4',
+      response: { id: '', usage: null },
+      correlationId: 'corr-1',
+      toolRound: 0,
+      status: 'error',
+      errorMessage: 'execution_overload',
+    });
+  });
+
+  it('passes userId and status ok on successful LLM call (#1380)', async () => {
+    const response: LlmJsonResponse = {
+      content: JSON.stringify({
+        overall_progress: 'Good progress',
+        strengths: 'Grammar',
+        weaknesses: 'Coherence',
+        recommendations: 'Practice task 2',
+      }),
+      metadata: {
+        provider: 'openai',
+        model: 'gpt-5.4',
+        responseId: 'resp-123',
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+    };
+    const llmExecution = { run: jest.fn().mockResolvedValue(response) };
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const capacityData = {
+      getCapacityData: jest.fn().mockResolvedValue(baseInput),
+    };
+    const adapter = {
+      isConfigured: () => true,
+      getDefaultModel: () => 'gpt-5.4',
+    } as unknown as LlmProviderAdapter;
+
+    const core = new StudentReportCore(
+      { adapter, systemPrompt: 'prompt' },
+      { llmExecution, usageRecorder, capacityData },
+    );
+
+    await core.generateReport('user-1', {
+      correlationId: 'corr-1',
+      userId: 42,
+    });
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith({
+      feature: 'STUDENT_REPORT',
+      externalUserId: 'user-1',
+      userId: 42,
+      provider: 'openai',
+      model: 'gpt-5.4',
+      response: {
+        id: 'resp-123',
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+      correlationId: 'corr-1',
+      toolRound: 0,
+      status: 'ok',
+    });
   });
 });

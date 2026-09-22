@@ -8,6 +8,7 @@ export {
   DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
   LlmAgentService,
   LlmRetryExhaustedError,
+  classifyLlmFailure,
 } from './agent.service';
 export type { LlmAgentPorts } from './agent.service';
 export {

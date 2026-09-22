@@ -58,6 +58,7 @@ export class StudentReportService {
     options?: {
       attempt?: LlmExecutionAttempt;
       retryCause?: LlmExecutionRetryCause;
+      userId?: number;
     },
   ): Promise<string> {
     if (!this.core) {
@@ -77,6 +78,7 @@ export class StudentReportService {
         correlationId,
         ...(options?.attempt ? { attempt: options.attempt } : {}),
         ...(options?.retryCause ? { retryCause: options.retryCause } : {}),
+        ...(options?.userId !== undefined ? { userId: options.userId } : {}),
       })
       .then((text) => {
         this.reportCache.set(correlationId, {
@@ -136,10 +138,14 @@ export class StudentReportService {
           this.llmUsageRecorder.recordFromCompletion({
             feature: 'STUDENT_REPORT',
             psid: params.externalUserId,
+            userId: params.userId,
             provider: params.provider,
             model: params.model,
             response: params.response,
             correlationId: params.correlationId,
+            toolRound: params.toolRound,
+            status: params.status,
+            errorMessage: params.errorMessage,
           }),
       },
       capacityData: {

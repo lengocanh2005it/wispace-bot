@@ -13,9 +13,7 @@ import {
 } from '@wispace/bot-common/masking';
 import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import {
-  LlmAllProvidersExhaustedError,
-  LlmOverloadError,
-  LlmProviderCircuitOpenError,
+  classifyLlmFailure,
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
   type LlmDegradedModeEvent,
@@ -24,7 +22,6 @@ import {
   type LlmUsageRecorderPort,
   sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent/core';
-import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
@@ -232,6 +229,27 @@ export class StudyReminderService {
         },
       );
     } catch (error) {
+      // #1380 — emit a zero-token error row when the LLM call itself failed
+      try {
+        this.llmUsageRecorder.recordFromCompletion({
+          feature: 'STUDY_REMINDER',
+          externalUserId: context.psid,
+          userId: context.userId,
+          model,
+          response: { id: '', usage: null },
+          correlationId,
+          toolRound: 0,
+          status: 'error',
+          errorMessage: classifyLlmFailure(error),
+        });
+      } catch (recorderError) {
+        this.logger.warn(
+          `Study reminder failure usage record failed psid=${maskExternalId(
+            context.psid,
+          )}: ${errorMessage(recorderError)}`,
+        );
+      }
+
       this.recordDegraded(
         context.psid,
         this.classifyLlmFailure(error),
@@ -256,6 +274,7 @@ export class StudyReminderService {
       },
       correlationId,
       toolRound: 0,
+      status: 'ok',
     });
 
     const content = response.content;
@@ -303,17 +322,7 @@ export class StudyReminderService {
   }
 
   private classifyLlmFailure(error: unknown): LlmDegradedFailureClass {
-    if (error instanceof LlmAllProvidersExhaustedError) {
-      return 'provider_exhausted';
-    }
-    if (error instanceof LlmProviderCircuitOpenError) {
-      return 'provider_circuit_open';
-    }
-    if (error instanceof LlmOverloadError) {
-      return 'execution_overload';
-    }
-    if (isAbortError(error)) return 'timeout';
-    return 'unknown';
+    return classifyLlmFailure(error);
   }
 
   private recordDegraded(

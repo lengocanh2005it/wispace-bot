@@ -753,8 +753,12 @@ _Avoid_: default reply, error reply
 ### LLM Usage Tracking
 
 **llm_usage_events** (DB table):
-Records token usage for each LLM call. Entity: `LlmUsageEventEntity`. Fields: `feature`, `model`, `promptTokens`, `completionTokens`, `totalTokens`, `estimatedCostUsd`, `toolRound`.
+Records token usage for each LLM call. Entity: `LlmUsageEventEntity`. Fields: `feature`, `model`, `promptTokens`, `completionTokens`, `totalTokens`, `estimatedCostUsd`, `toolRound`, `status`, `errorMessage`.
 _Avoid_: token log, usage log
+
+**zero-token failure row**:
+A usage event recorded in `llm_usage_events` with `status: 'error'`, zero token counts (`prompt_tokens: 0`, `completion_tokens: 0`, `total_tokens: 0`), and a bounded failure class in `errorMessage`. Emitted when an LLM call fails without producing a completion across `FREE_FORM_CHAT`, `STUDENT_REPORT`, and `STUDY_REMINDER`. It never contains raw error text or external identifiers in `errorMessage`.
+_Avoid_: error log, failed token event
 
 **estimatedCostUsd**:
 Estimated cost in USD for an LLM call, calculated from token counts and model pricing (`LLM_COST_USD_PER_1M_*`). Not the actual invoice amount.

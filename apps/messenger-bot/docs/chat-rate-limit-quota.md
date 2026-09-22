@@ -924,11 +924,15 @@ flowchart LR
 | `chat_quota_events` table + replay rebuild projection | Audit & quota rule changes |
 | Per-token billing (if product requires)               | Outside scope              |
 
-##### Billable vs failed attempts (#549)
+##### Billable vs failed attempts (#549, #1380)
 
 `llm_usage_events` carries `status` (`'ok'` default, `'error'` for failed LLM
-rounds) + `error_message` (bounded failure class, never raw text) alongside
-zero-token rows. Billable spend vs retry-storm waste:
+rounds/calls) + `error_message` (bounded failure class enum, never raw text) alongside
+zero-token rows. This applies across interactive chat (`FREE_FORM_CHAT`, #549) and
+background batch generation (`STUDENT_REPORT` across Discord/Zalo/Messenger and
+`STUDY_REMINDER` on Messenger, #1380). Missing token counter increments
+(`incMissingTokens`) are suppressed for expected zero-token error rows.
+Billable spend vs retry-storm waste:
 
 ```sql
 -- Billable tokens per feature/model (NULL-safe: pre-#549 rows have NULL status)

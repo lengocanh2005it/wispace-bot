@@ -97,6 +97,29 @@ describe('LlmUsageRecorderCore failure rows (#549)', () => {
     expect(incMissingTokens).toHaveBeenCalledWith('FREE_FORM_CHAT');
   });
 
+  it('does not increment incMissingTokens when status is error (#1380)', () => {
+    const incMissingTokens = jest.fn();
+    const core = new LlmUsageRecorderCore(
+      { write: () => undefined },
+      () => null,
+      () => '2026-09-03',
+      undefined,
+      {
+        incMissingTokens,
+        incUnpricedModelTokens: jest.fn(),
+        incInsertFailure: jest.fn(),
+      },
+    );
+
+    core.recordFromCompletion({
+      ...base,
+      status: 'error',
+      errorMessage: 'timeout',
+    });
+
+    expect(incMissingTokens).not.toHaveBeenCalled();
+  });
+
   it('passes the selected provider to the pricing resolver', () => {
     const estimate = jest.fn().mockReturnValue('0.010000');
     const core = new LlmUsageRecorderCore(

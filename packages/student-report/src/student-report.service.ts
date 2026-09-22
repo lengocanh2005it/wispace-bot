@@ -1,9 +1,4 @@
-import {
-  LlmAllProvidersExhaustedError,
-  LlmOverloadError,
-  LlmProviderCircuitOpenError,
-  retryWithBackoff,
-} from '@wispace/llm-agent/core';
+import { classifyLlmFailure, retryWithBackoff } from '@wispace/llm-agent/core';
 import type {
   LlmExecutionPort,
   LlmDegradedAction,
@@ -20,7 +15,6 @@ import {
   maskExternalIdInText,
   sanitizeLogValue,
 } from '@wispace/bot-common/masking';
-import { isAbortError } from '@wispace/bot-common/utils';
 import type { CapacityDataPort } from './ports';
 import {
   StudentReportNoScoreDataError,
@@ -74,6 +68,7 @@ export interface StudentReportGenerationOptions {
   signal?: AbortSignal;
   attempt?: LlmExecutionAttempt;
   retryCause?: LlmExecutionRetryCause;
+  userId?: number;
 }
 
 function isRetryableApiError(error: unknown): error is RetryableApiError {
@@ -115,6 +110,7 @@ export class StudentReportCore {
           options?.signal,
           options?.attempt,
           options?.retryCause,
+          options?.userId,
         ).then(formatReport),
       options?.signal,
     );
@@ -255,6 +251,7 @@ export class StudentReportCore {
     signal?: AbortSignal,
     attempt?: LlmExecutionAttempt,
     retryCause?: LlmExecutionRetryCause,
+    userId?: number,
   ): Promise<StudentCapacityReport> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const adapter = this.config.adapter;
@@ -273,30 +270,44 @@ export class StudentReportCore {
 
     const model = adapter.getDefaultModel();
 
-    const response = await this.ports.llmExecution.run(
-      (execSignal, attemptBudget) =>
-        adapter.generateJson({
+    let response;
+    try {
+      response = await this.ports.llmExecution.run(
+        (execSignal, attemptBudget) =>
+          adapter.generateJson({
+            feature: FEATURE,
+            model,
+            systemPrompt: this.config.systemPrompt,
+            userContent: JSON.stringify(input),
+            correlationId,
+            maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
+            signal: execSignal,
+            attemptBudget,
+          }),
+        {
           feature: FEATURE,
-          model,
-          systemPrompt: this.config.systemPrompt,
-          userContent: JSON.stringify(input),
           correlationId,
-          maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
-          signal: execSignal,
-          attemptBudget,
-        }),
-      {
-        feature: FEATURE,
+          signal,
+          ...(attempt ? { attempt } : {}),
+          ...(retryCause ? { retryCause } : {}),
+        },
+      );
+    } catch (error) {
+      // #1380 — emit a zero-token error row when the LLM call itself failed
+      this.recordLlmFailureRow(
+        externalUserId,
+        model,
         correlationId,
-        signal,
-        ...(attempt ? { attempt } : {}),
-        ...(retryCause ? { retryCause } : {}),
-      },
-    );
+        error,
+        userId,
+      );
+      throw error;
+    }
 
     this.ports.usageRecorder.recordFromCompletion({
       feature: FEATURE,
       externalUserId,
+      userId,
       provider: response.metadata.provider,
       model: response.metadata.model,
       response: {
@@ -308,6 +319,7 @@ export class StudentReportCore {
       },
       correlationId,
       toolRound: 0,
+      status: 'ok',
     });
 
     const content = response.content;
@@ -343,23 +355,44 @@ export class StudentReportCore {
     }
   }
 
+  /**
+   * #1380 — one zero-token failure row for an LLM call that never produced a
+   * completion, classified with the bounded failure class (never raw text).
+   */
+  private recordLlmFailureRow(
+    externalUserId: string,
+    model: string,
+    correlationId: string,
+    error: unknown,
+    userId?: number,
+  ): void {
+    try {
+      this.ports.usageRecorder.recordFromCompletion({
+        feature: FEATURE,
+        externalUserId,
+        userId,
+        model,
+        response: { id: '', usage: null },
+        correlationId,
+        toolRound: 0,
+        status: 'error',
+        errorMessage: classifyLlmFailure(error),
+      });
+    } catch (recorderError) {
+      const logger = this.ports.logger ?? NOOP_LOGGER;
+      logger.warn(
+        `Student report failure usage record failed externalUserId=${maskExternalId(
+          externalUserId,
+        )}: ${errorMessage(recorderError)}`,
+      );
+    }
+  }
+
   private classifyRetryableFailure(error: unknown): LlmDegradedFailureClass {
     if (error instanceof StudentReportRetryableError) {
       return 'upstream_unavailable';
     }
-    if (error instanceof LlmAllProvidersExhaustedError) {
-      return 'provider_exhausted';
-    }
-    if (error instanceof LlmProviderCircuitOpenError) {
-      return 'provider_circuit_open';
-    }
-    if (error instanceof LlmOverloadError) {
-      return 'execution_overload';
-    }
-    if (isAbortError(error)) {
-      return 'timeout';
-    }
-    return 'unknown';
+    return classifyLlmFailure(error);
   }
 
   private recordDegraded(

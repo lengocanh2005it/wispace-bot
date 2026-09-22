@@ -81,7 +81,7 @@ export class LlmUsageRecorderCore {
   /** Non-blocking. */
   recordFromCompletion(input: RecordLlmUsageFromCompletionInput): void {
     const usage = input.response.usage;
-    if (!usage) {
+    if (!usage && input.status !== 'error') {
       this.logger.warn(
         `LLM_USAGE_MISSING_TOKENS feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}`,
       );

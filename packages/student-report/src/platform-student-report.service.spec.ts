@@ -175,4 +175,80 @@ describe('PlatformStudentReportService', () => {
       undefined,
     );
   });
+
+  it('passes userId in options to StudentReportCore.generateReport (#1380)', async () => {
+    const service = buildService();
+
+    await service.generateReport('external-1', { userId: 42 });
+
+    expect(mockGenerateReport).toHaveBeenCalledWith('external-1', {
+      correlationId: expect.stringContaining('external-1:'),
+      userId: 42,
+    });
+  });
+
+  it('forwards userId, toolRound, status, and errorMessage to usageRecorder (#1380)', async () => {
+    const configGet = jest.fn((key: string) => {
+      if (key === 'STUDY_REMINDER_TIMEZONE') return 'Asia/Ho_Chi_Minh';
+      return undefined;
+    });
+    const config = { get: configGet } as unknown as ConfigService;
+    const usageRecorder = {
+      recordFromCompletion: jest.fn(),
+    } as unknown as PlatformLlmUsageRecorderAdapter;
+
+    const service = new PlatformStudentReportService(
+      'discord',
+      config,
+      {} as unknown as WispaceGoalsService,
+      usageRecorder,
+      {} as unknown as LlmProviderAdapter,
+      '/prompts',
+    );
+
+    await service.generateReport('external-1');
+
+    const ports = mockPorts as {
+      usageRecorder: {
+        recordFromCompletion: (params: {
+          feature: string;
+          externalUserId: string;
+          userId?: number;
+          provider?: string;
+          model: string;
+          response: { id: string; usage?: unknown };
+          correlationId?: string;
+          toolRound: number;
+          status?: 'ok' | 'error';
+          errorMessage?: string;
+        }) => void;
+      };
+    };
+
+    ports.usageRecorder.recordFromCompletion({
+      feature: 'STUDENT_REPORT',
+      externalUserId: 'external-1',
+      userId: 42,
+      provider: 'openai',
+      model: 'gpt-5.4',
+      response: { id: 'resp-1', usage: null },
+      correlationId: 'corr-1',
+      toolRound: 0,
+      status: 'error',
+      errorMessage: 'timeout',
+    });
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith({
+      feature: 'STUDENT_REPORT',
+      externalUserId: 'external-1',
+      userId: 42,
+      provider: 'openai',
+      model: 'gpt-5.4',
+      response: { id: 'resp-1', usage: null },
+      correlationId: 'corr-1',
+      toolRound: 0,
+      status: 'error',
+      errorMessage: 'timeout',
+    });
+  });
 });

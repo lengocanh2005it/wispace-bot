@@ -19,9 +19,6 @@ import {
 } from './utils/scope.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
 import { jitteredDelayMs } from '@wispace/bot-common/utils';
-import { LlmAllProvidersExhaustedError } from './provider/failover/failover.errors';
-import { LlmOverloadError } from './execution/bounded-admission';
-import { LlmProviderCircuitOpenError } from './execution/circuit-error';
 import {
   buildExhaustionPartialAnswer,
   buildNonDisclosureReply,
@@ -60,32 +57,13 @@ import {
 } from './utils/tool-summary';
 
 export { DEFAULT_TOOL_EXECUTION_TIMEOUT_MS } from './internal/agent-limits';
+import {
+  classifyLlmFailure,
+  LlmRetryExhaustedError,
+} from './execution/llm-failure-classifier';
+export { classifyLlmFailure, LlmRetryExhaustedError };
 
 const FEATURE = 'FREE_FORM_CHAT';
-
-function classifyAgentFailure(error: unknown): LlmDegradedFailureClass {
-  if (error instanceof LlmAllProvidersExhaustedError) {
-    return 'provider_exhausted';
-  }
-  if (error instanceof LlmProviderCircuitOpenError) {
-    return 'provider_circuit_open';
-  }
-  if (error instanceof LlmOverloadError) {
-    return 'execution_overload';
-  }
-  if (error instanceof LlmRetryExhaustedError) {
-    // #549 — the agent-level retry wrapper hides the terminal cause; meter
-    // the cause so retry-exhaustion keeps its retry-story meaning instead of
-    // collapsing into 'unknown'.
-    return error.cause instanceof Error
-      ? classifyAgentFailure(error.cause)
-      : 'unknown';
-  }
-  if (isAbortError(error)) {
-    return 'timeout';
-  }
-  return 'unknown';
-}
 
 export interface LlmAgentPorts<TToolContext> {
   /** Platform label used for bounded degraded-mode telemetry. */
@@ -105,16 +83,6 @@ export interface LlmAgentPorts<TToolContext> {
 const NOOP_LOGGER = { warn: () => undefined, debug: () => undefined };
 
 const MAX_RETRY_DELAY_MS = 10_000;
-
-export class LlmRetryExhaustedError extends Error {
-  constructor(
-    public readonly attempts: number,
-    cause: unknown,
-  ) {
-    super(`LLM call failed after ${attempts} attempts`);
-    this.cause = cause;
-  }
-}
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -635,7 +603,7 @@ export class LlmAgentService<TToolContext> {
           input,
           metrics,
           logger,
-          classifyAgentFailure(err),
+          classifyLlmFailure(err),
           'chat_fallback',
         );
         throw err;
@@ -839,7 +807,7 @@ export class LlmAgentService<TToolContext> {
         correlationId,
         toolRound,
         status: 'error',
-        errorMessage: classifyAgentFailure(error),
+        errorMessage: classifyLlmFailure(error),
       });
     } catch (recorderError) {
       const logger = this.ports.logger ?? NOOP_LOGGER;

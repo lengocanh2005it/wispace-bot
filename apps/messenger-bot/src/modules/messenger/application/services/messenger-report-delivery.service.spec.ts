@@ -80,6 +80,7 @@ describe('MessengerReportDeliveryService', () => {
       expect(result).toBe('Report content');
       expect(studentReportService.generateReport).toHaveBeenCalledWith(
         'psid-1',
+        expect.objectContaining({ userId: 10 }),
       );
       expect(outbound.sendTextBubblesViaPsid).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -161,6 +162,7 @@ describe('MessengerReportDeliveryService', () => {
       expect(result).toBe('Progress report');
       expect(studentReportService.generateReport).toHaveBeenCalledWith(
         'psid-1',
+        expect.objectContaining({ userId: 10 }),
       );
       expect(outbound.sendTextBubblesViaPsid).toHaveBeenCalledWith(
         expect.objectContaining({

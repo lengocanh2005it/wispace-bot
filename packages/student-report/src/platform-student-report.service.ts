@@ -98,6 +98,7 @@ export class PlatformStudentReportService {
       ...(options?.signal ? { signal: options.signal } : {}),
       ...(options?.attempt ? { attempt: options.attempt } : {}),
       ...(options?.retryCause ? { retryCause: options.retryCause } : {}),
+      ...(options?.userId !== undefined ? { userId: options.userId } : {}),
     });
   }
 
@@ -125,10 +126,14 @@ export class PlatformStudentReportService {
           this.usageRecorder.recordFromCompletion({
             feature: FEATURE,
             externalUserId: params.externalUserId,
+            userId: params.userId,
             provider: params.provider,
             model: params.model,
             response: params.response,
             correlationId: params.correlationId,
+            toolRound: params.toolRound,
+            status: params.status,
+            errorMessage: params.errorMessage,
           }),
       },
       capacityData: {

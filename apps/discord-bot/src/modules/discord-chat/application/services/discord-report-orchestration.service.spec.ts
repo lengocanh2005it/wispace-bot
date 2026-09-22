@@ -56,7 +56,9 @@ describe('DiscordReportOrchestrationService', () => {
     const callback = callArgs[1].generateReport;
     const text = await callback();
     expect(text).toBe('report text');
-    expect(reportService.generateReport).toHaveBeenCalledWith('discord-1');
+    expect(reportService.generateReport).toHaveBeenCalledWith('discord-1', {
+      userId: 10,
+    });
   });
 
   it('propagates generation errors through the callback', async () => {

@@ -17,6 +17,8 @@ export interface RecordLlmUsageFromCompletionInput {
   response: { id: string; usage?: LlmUsage | null };
   correlationId?: string;
   toolRound?: number;
+  status?: LlmUsageStatus;
+  errorMessage?: string;
 }
 
 export interface RecordLlmUsageInput {

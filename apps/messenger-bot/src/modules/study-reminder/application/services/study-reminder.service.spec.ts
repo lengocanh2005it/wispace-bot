@@ -220,4 +220,91 @@ describe('StudyReminderService', () => {
       }),
     );
   });
+
+  it('records zero-token failure row when LLM call fails (#1380)', async () => {
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const service = new StudyReminderService(
+      {
+        getUpcomingSessions: jest.fn(),
+      } as unknown as StudySessionSourceService,
+      {
+        getMinutesUntilSession: jest.fn(() => 60),
+        formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
+      } as unknown as StudyReminderScheduleService,
+      {
+        getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
+        getCapacityData: jest.fn(() =>
+          Promise.reject(new Error('skip scores')),
+        ),
+      },
+      {
+        resolveDisplayName: jest.fn(() => Promise.resolve('Mai')),
+      } as unknown as StudyReminderDisplayNamePort,
+      usageRecorder as unknown as LlmUsageRecorderPort,
+      {
+        run: jest.fn(() => {
+          const error = new Error('LLM call timed out after 30000ms');
+          error.name = 'TimeoutError';
+          return Promise.reject(error);
+        }),
+      } as unknown as LlmExecutionPort,
+      mockAdapter,
+    );
+
+    await expect(
+      service.generateReminderForSession('psid-1', {
+        ...session,
+        topic: 'Task 2',
+      }),
+    ).rejects.toThrow('LLM call timed out after 30000ms');
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalUserId: 'psid-1',
+        feature: 'STUDY_REMINDER',
+        status: 'error',
+        errorMessage: 'timeout',
+        response: { id: '', usage: null },
+      }),
+    );
+  });
+
+  it('does not crash reminder generation if usage recorder fails on failure row (#1380)', async () => {
+    const usageRecorder = {
+      recordFromCompletion: jest.fn().mockImplementation(() => {
+        throw new Error('DB connection error');
+      }),
+    };
+    const service = new StudyReminderService(
+      {
+        getUpcomingSessions: jest.fn(),
+      } as unknown as StudySessionSourceService,
+      {
+        getMinutesUntilSession: jest.fn(() => 60),
+        formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
+      } as unknown as StudyReminderScheduleService,
+      {
+        getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
+        getCapacityData: jest.fn(() =>
+          Promise.reject(new Error('skip scores')),
+        ),
+      },
+      {
+        resolveDisplayName: jest.fn(() => Promise.resolve('Mai')),
+      } as unknown as StudyReminderDisplayNamePort,
+      usageRecorder as unknown as LlmUsageRecorderPort,
+      {
+        run: jest.fn(() => Promise.reject(new Error('network error'))),
+      } as unknown as LlmExecutionPort,
+      mockAdapter,
+    );
+
+    // Should reject with original LLM error, not the DB recorder error
+    await expect(
+      service.generateReminderForSession('psid-1', {
+        ...session,
+        topic: 'Task 2',
+      }),
+    ).rejects.toThrow('network error');
+  });
 });

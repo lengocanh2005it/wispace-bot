@@ -53,3 +53,7 @@ export {
   type LlmExecutionFailureKind,
   type LlmExecutionFailureTracker,
 } from './failure-attribution';
+export {
+  classifyLlmFailure,
+  LlmRetryExhaustedError,
+} from './llm-failure-classifier';

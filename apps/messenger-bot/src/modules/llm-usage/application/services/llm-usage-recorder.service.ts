@@ -44,6 +44,8 @@ export class LlmUsageRecorderService {
       response: input.response,
       correlationId: input.correlationId,
       toolRound: input.toolRound,
+      status: input.status,
+      errorMessage: input.errorMessage,
     });
   }
 
@@ -99,6 +101,8 @@ export class LlmUsageRecorderService {
               openaiResponseId: event.openaiResponseId,
               correlationId: event.correlationId,
               toolRound: event.toolRound,
+              status: event.status,
+              errorMessage: event.errorMessage,
               estimatedCostUsd: event.estimatedCostUsd,
               usageDate: event.usageDate,
             })
