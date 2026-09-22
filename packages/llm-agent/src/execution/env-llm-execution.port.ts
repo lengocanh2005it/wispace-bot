@@ -3,6 +3,7 @@ import type Redis from 'ioredis';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import type {
   LlmExecutionAttempt,
+  LlmExecutionMode,
   LlmExecutionRetryCause,
   LlmExecutionPort,
 } from '../ports';
@@ -199,6 +200,7 @@ export function createEnvLlmExecutionPort(
         attemptBudget?: LlmAttemptBudget;
         attempt?: LlmExecutionAttempt;
         retryCause?: LlmExecutionRetryCause;
+        executionMode?: LlmExecutionMode;
       },
     ): Promise<T> => {
       if (!config.enabled) {
@@ -210,7 +212,8 @@ export function createEnvLlmExecutionPort(
           normalizeMaxTotalProviderAttempts(config.maxTotalProviderAttempts),
         );
       const ownsAttemptBudget = meta?.attemptBudget === undefined;
-      assertCircuitAvailable();
+      const isClassifier = meta?.executionMode === 'classifier';
+      if (!isClassifier) assertCircuitAvailable();
 
       // One deadline covers admission, the optional Redis slot, retries, and
       // the provider request; no nested layer gets a fresh timeout budget.
@@ -252,7 +255,7 @@ export function createEnvLlmExecutionPort(
       } catch (error) {
         // A half-open probe may be rejected before a provider call (queue or
         // Redis failure); do not leave the execution circuit wedged forever.
-        halfOpenInFlight = false;
+        if (!isClassifier) halfOpenInFlight = false;
         if (error instanceof LlmOverloadError) {
           metrics?.incrementCounter('llm_admission_rejected_total', {
             reason: error.reason,
@@ -299,6 +302,39 @@ export function createEnvLlmExecutionPort(
           backgroundAdmissionRecorded = true;
           if (attempt === 'retry' && meta?.retryCause === 'capacity_overload') {
             metrics?.observeOverloadRegeneration?.(meta?.feature ?? 'unknown');
+          }
+        }
+        if (isClassifier) {
+          try {
+            attemptBudget.consume();
+            const result = await fn(signal, attemptBudget);
+            metrics?.observeRetryAttempts?.(1, { outcome: 'success' });
+            if (ownsAttemptBudget) {
+              metrics?.observeTotalProviderAttempts?.(
+                attemptBudget.attemptsUsed,
+                {
+                  feature: meta?.feature ?? FEATURE,
+                  outcome: 'success',
+                },
+              );
+            }
+            return result;
+          } catch (error) {
+            metrics?.observeRetryAttempts?.(1, { outcome: 'exhausted' });
+            if (ownsAttemptBudget) {
+              metrics?.observeTotalProviderAttempts?.(
+                attemptBudget.attemptsUsed,
+                {
+                  feature: meta?.feature ?? FEATURE,
+                  outcome: attemptBudget.exhausted
+                    ? 'budget_exhausted'
+                    : 'error',
+                },
+              );
+            }
+            throw error;
+          } finally {
+            attemptBudget.completeProviderAttempt();
           }
         }
         try {
@@ -373,7 +409,7 @@ export function createEnvLlmExecutionPort(
         }
         throw error;
       } finally {
-        halfOpenInFlight = false;
+        if (!isClassifier) halfOpenInFlight = false;
         await release?.();
         ticket.release();
         observeQueueState();

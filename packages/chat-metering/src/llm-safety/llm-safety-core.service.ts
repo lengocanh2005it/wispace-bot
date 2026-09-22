@@ -18,6 +18,27 @@ const NOOP_LOGGER: LlmSafetyLogger = {
   log: () => undefined,
 };
 
+function redactClassifierReason(reason: string, textPreview: string) {
+  const normalizedText = textPreview.replace(/\s+/g, ' ').trim();
+  const targets = new Set<string>();
+  if (normalizedText.length >= 4) {
+    targets.add(normalizedText);
+    if (normalizedText.length > 64) {
+      targets.add(normalizedText.slice(0, 32));
+      targets.add(normalizedText.slice(-32));
+    }
+  }
+  let redacted = reason;
+  for (const target of targets) {
+    const pattern = target
+      .split(/\s+/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('\\s+');
+    redacted = redacted.replace(new RegExp(pattern, 'gi'), '[REDACTED]');
+  }
+  return redactSafetyText(redacted, 100);
+}
+
 /** Best-effort — never throws. Platform-agnostic core, shared across bots. */
 export class LlmSafetyCore {
   constructor(
@@ -133,6 +154,11 @@ export class LlmSafetyCore {
    */
   recordClassifierVerdict(input: RecordClassifierVerdictInput): void {
     const redacted = redactSafetyText(input.textPreview);
+    const reason = redactSafetyText(input.reason);
+    const reasonExcerpt = redactClassifierReason(
+      input.reason,
+      input.textPreview,
+    );
     const payload: Record<string, unknown> = {
       label: input.label,
       mode: input.mode,
@@ -140,6 +166,8 @@ export class LlmSafetyCore {
       textExcerpt: redacted.excerpt,
       textHash: redacted.hash,
       textLength: redacted.originalLength,
+      reasonHash: reason.hash,
+      reasonLength: reason.originalLength,
     };
 
     this.repository
@@ -148,7 +176,7 @@ export class LlmSafetyCore {
         eventType: 'CLASSIFIER_FLAGGED',
         // `reason` column is varchar(100) — bound it here too, not only in
         // the classifier, so any future caller is safe.
-        reason: input.reason.slice(0, 100),
+        reason: reasonExcerpt.excerpt.slice(0, 100),
         externalUserId: input.externalUserId,
         userId: input.userId,
         correlationId: input.correlationId,

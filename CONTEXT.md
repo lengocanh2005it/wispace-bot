@@ -754,9 +754,29 @@ _Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection
 Second-tier input check admitted only after the tier-1 preflight: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Tier-1 single-turn, joint-scan, and length guards are authoritative; a classifier verdict can never downgrade a tier-1 hit to `SAFE`. The classifier treats learner content as untrusted data, so instructions inside the message to control its label, confidence, reason, or JSON verdict are `INJECTION`. Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`, `ABUSE`, and `CRISIS`; `CRISIS` is a measurement/enforcement signal, not the learner-facing posture itself. In shadow mode a non-`SAFE` verdict is recorded without changing the reply; in enforce mode a qualifying verdict can select its fixed safety posture, and `CRISIS` uses the crisis handoff without the normal confidence floor. Classifier unavailability is a separate typed outcome, never a synthetic `CRISIS` verdict: shadow mode continues the normal path with bounded telemetry, while enforce mode uses the deterministic classifier safety fallback before the main LLM.
 _Avoid_: moderation, filter — it decides nothing on its own
 
+**classifier invocation**:
+One attempt to obtain a classifier verdict after the classifier's skip guards have passed while execution control is enabled. Its hard deadline covers admission wait and provider execution; it may end before provider execution because the local circuit or shared admission rejects it, and it is distinct from the provider call itself.
+_Avoid_: provider attempt, chat turn
+
+**admitted classifier provider call**:
+A classifier invocation that passes shared local and fleet admission and reaches the provider once. It retains the classifier's hard deadline, no-retry behavior, and separate local circuit rather than inheriting the main chat circuit policy.
+_Avoid_: classifier invocation, chat generation
+
+**classifier admission rejection**:
+A classifier invocation refused before provider execution because bounded local capacity, the Redis-global slot, or Redis availability cannot admit it. Its closed reasons are `queue_full`, `wait_timeout`, `global_saturated`, and `redis_unavailable`; it is fail-open and never becomes a fabricated verdict.
+_Avoid_: provider failure, classifier says safe
+
 **classifier unavailable**:
-The classifier could not produce a usable verdict because of timeout, provider error, invalid output, or an open local circuit. It is not evidence that the learner input is safe or a crisis; the caller applies the mode-specific safety fallback and records only bounded failure metadata.
+The classifier could not produce a usable verdict because of timeout, provider error, invalid output, an open local circuit, classifier admission rejection, caller cancellation, or disabled execution control. It is not evidence that the learner input is safe or a crisis; the caller applies the mode-specific safety fallback and records only bounded failure metadata. The bounded failure labels are `timeout`, `error`, `parse_failed`, `aborted`, `skipped_circuit_open`, `queue_full`, `wait_timeout`, `global_saturated`, `redis_unavailable`, and `execution_disabled`.
 _Avoid_: classifier says safe, crisis fallback — neither is implied by an unavailable result
+
+**classifier execution mode**:
+The shared execution policy reserved for the input classifier: one provider attempt, no shared retry/circuit side effects, shared local/fleet admission, and an end-to-end classifier deadline. When execution control is disabled, the optional classifier is skipped rather than bypassing this policy.
+_Avoid_: chat execution mode, passthrough classifier
+
+**classifier reason telemetry**:
+The bounded explanation emitted by the classifier and persisted for a non-`SAFE` verdict. Policy routing may inspect the in-memory reason, but persisted safety events contain only a redacted excerpt and optional hash/length metadata; raw model-generated reason text never crosses the persistence boundary.
+_Avoid_: model rationale, raw reason
 
 **classifier input ceiling**:
 The maximum number of Unicode code points in the redacted learner text sent to the second-tier classifier. It bounds classifier cost; exceeding it selects a bounded head-and-tail sample instead of silently dropping one side of the message.

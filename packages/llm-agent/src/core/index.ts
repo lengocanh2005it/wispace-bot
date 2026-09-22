@@ -177,6 +177,7 @@ export type {
   LlmExecutionPort,
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
+  LlmExecutionMode,
   LlmRoundOutcome,
   LlmHarmfulOutputReason,
   LlmSafetyEventPort,

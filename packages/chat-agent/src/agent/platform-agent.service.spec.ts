@@ -62,6 +62,7 @@ describe('PlatformAgentService', () => {
       ) => Promise<{ userId: number; mappingVersion: string } | undefined>;
       systemPromptSuffix?: () => Promise<string | undefined>;
       contentClassifier?: { classify: jest.Mock };
+      classifierUsage?: PlatformAgentOptions['classifierUsage'];
       tryFastReschedule?: PlatformAgentOptions['tryFastReschedule'];
       cancelPendingReschedule?: PlatformAgentOptions['cancelPendingReschedule'];
       toolExecutionTimeoutMs?: number;
@@ -104,6 +105,7 @@ describe('PlatformAgentService', () => {
         metrics: overrides.metrics,
         systemPromptSuffix: overrides.systemPromptSuffix,
         contentClassifier: overrides.contentClassifier,
+        classifierUsage: overrides.classifierUsage,
         tryFastReschedule: overrides.tryFastReschedule,
         cancelPendingReschedule: overrides.cancelPendingReschedule,
         toolExecutionTimeoutMs: overrides.toolExecutionTimeoutMs,
@@ -1529,6 +1531,10 @@ describe('PlatformAgentService', () => {
       const svc = buildService(historyService, {
         contentClassifier: classify,
         usageRecorder: { recordFromCompletion },
+        classifierUsage: {
+          provider: 'resolved-provider',
+          model: 'resolved-model',
+        },
         config: { LLM_INPUT_CLASSIFIER_ENABLED: 'true' },
         metrics: { classifierVerdictInc } as unknown as AgentMetricsPort,
         safetyEventService: {
@@ -1543,6 +1549,7 @@ describe('PlatformAgentService', () => {
       // single fresh message only — no history object handed to the classifier
       expect(classify.classify).toHaveBeenCalledWith(
         'cách viết mở bài task 2 cho dạng opinion?',
+        undefined,
         undefined,
       );
       expect(classifierVerdictInc).toHaveBeenCalledWith('INJECTION', 'shadow');
@@ -1577,6 +1584,10 @@ describe('PlatformAgentService', () => {
       const svc = buildService(historyService, {
         contentClassifier: classify,
         usageRecorder: { recordFromCompletion },
+        classifierUsage: {
+          provider: 'resolved-provider',
+          model: 'resolved-model',
+        },
         config: { LLM_INPUT_CLASSIFIER_ENABLED: 'true' },
         metrics: { classifierVerdictInc } as unknown as AgentMetricsPort,
       });
@@ -1591,13 +1602,44 @@ describe('PlatformAgentService', () => {
       expect(recordFromCompletion).toHaveBeenCalledWith(
         expect.objectContaining({
           feature: 'LLM_INPUT_CLASSIFIER',
-          model: 'unknown',
+          provider: 'resolved-provider',
+          model: 'resolved-model',
           response: { id: '', usage: null },
           toolRound: 0,
           status: 'error',
           errorMessage: 'timeout',
         }),
       );
+    });
+
+    it('execution-disabled classifier uses enforce fallback without usage recording', async () => {
+      const classify = classifierStub({
+        ok: false,
+        reason: 'execution_disabled',
+      });
+      const recordFromCompletion = jest.fn();
+      const classifierVerdictInc = jest.fn();
+      const svc = buildService(historyService, {
+        contentClassifier: classify,
+        usageRecorder: { recordFromCompletion },
+        config: {
+          LLM_INPUT_CLASSIFIER_ENABLED: 'true',
+          LLM_INPUT_CLASSIFIER_ENFORCE: 'true',
+        },
+        metrics: { classifierVerdictInc } as unknown as AgentMetricsPort,
+      });
+
+      const r = await svc.reply(
+        baseInput('cách viết mở bài task 2 cho dạng opinion?'),
+      );
+
+      expect(r.text).toBe(CHAT_FAILURE_FALLBACK_MESSAGE);
+      expect(mockLlmReply).not.toHaveBeenCalled();
+      expect(classifierVerdictInc).toHaveBeenCalledWith(
+        'execution_disabled',
+        'enforce',
+      );
+      expect(recordFromCompletion).not.toHaveBeenCalled();
     });
 
     it('enforce mode: INJECTION -> prompt-injection blocked message, no LLM call', async () => {
@@ -1727,6 +1769,7 @@ describe('PlatformAgentService', () => {
       const r = await svc.reply(baseInput('mình áp lực thi quá, muốn bỏ cuộc'));
       expect(classify.classify).toHaveBeenCalledWith(
         'mình áp lực thi quá, muốn bỏ cuộc',
+        undefined,
         undefined,
       );
       expect(mockLlmReply).toHaveBeenCalled();

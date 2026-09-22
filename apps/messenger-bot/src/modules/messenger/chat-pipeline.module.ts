@@ -293,6 +293,12 @@ import {
         );
         const contentClassifier = new LlmContentClassifier({
           adapter,
+          execution: llmExecution,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
           model: classifierModel,
           maxInputChars: Math.max(
             1,
@@ -393,6 +399,10 @@ import {
                 approvalToken,
               ),
             contentClassifier,
+            classifierUsage: {
+              provider: adapter.providerName,
+              model: classifierModel,
+            },
           },
           redisClient,
         );

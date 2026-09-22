@@ -37,6 +37,7 @@ import {
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
   type LlmDegradedModeEvent,
+  type ClassifierOutcomeLabel,
   buildLlmExecutionConfig,
 } from '@wispace/llm-agent';
 import {
@@ -1016,6 +1017,7 @@ export class PlatformAgentService {
       const result = await classifier.classify(
         input.userText,
         input.correlationId,
+        input.signal,
       );
       if (!result.ok) {
         return this.handleClassifierUnavailable(input, mode, result);
@@ -1082,7 +1084,7 @@ export class PlatformAgentService {
   }
 
   private recordClassifierVerdictMetric(
-    label: string,
+    label: ClassifierOutcomeLabel,
     mode: 'shadow' | 'enforce',
   ): void {
     try {
@@ -1096,15 +1098,29 @@ export class PlatformAgentService {
     input: PlatformAgentInput,
     result: ClassifyResult,
   ): void {
-    if (!result.ok && result.reason === 'skipped_circuit_open') return;
+    if (
+      !result.ok &&
+      (result.reason === 'skipped_circuit_open' ||
+        result.reason === 'execution_disabled')
+    ) {
+      return;
+    }
     const completion = result.completion;
+    const fallback = this.options.classifierUsage;
     try {
       this.usageRecorder.recordFromCompletion({
         feature: 'LLM_INPUT_CLASSIFIER',
         externalUserId: input.externalUserId,
         userId: input.userId,
-        provider: completion?.provider,
-        model: completion?.model ?? 'unknown',
+        provider:
+          completion?.provider ??
+          fallback?.provider ??
+          this.adapter.providerName,
+        model:
+          completion?.model ??
+          fallback?.model ??
+          this.adapter.getDefaultModel?.() ??
+          'unknown',
         response: {
           id: completion?.responseId ?? '',
           usage: completion?.usage ?? null,

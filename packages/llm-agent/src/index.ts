@@ -192,6 +192,7 @@ export type {
   LlmExecutionPort,
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
+  LlmExecutionMode,
   LlmRoundOutcome,
   LlmHarmfulOutputReason,
   LlmSafetyEventPort,
@@ -232,8 +233,11 @@ export type {
 export { CLASSIFIER_SYSTEM_PROMPT } from './classifier/classifier-prompt';
 export {
   CLASSIFIER_LABELS,
+  CLASSIFIER_FAILURE_REASONS,
+  CLASSIFIER_OUTCOME_LABELS,
   isExtractionReason,
   type ClassifierLabel,
+  type ClassifierOutcomeLabel,
   type FlaggedClassifierLabel,
   type ClassifierVerdict,
   type ClassifyResult,

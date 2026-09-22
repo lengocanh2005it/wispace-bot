@@ -524,6 +524,30 @@ describe('createEnvLlmExecutionPort', () => {
     expect(calls).toHaveBeenCalledTimes(3);
   });
 
+  it('classifier mode uses one admitted attempt without shared circuit effects', async () => {
+    const calls = jest.fn().mockRejectedValue(new Error('provider down'));
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxAttempts: 3,
+        requestTimeoutMs: 1_000,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await expect(
+        port.run(calls, {
+          feature: 'LLM_INPUT_CLASSIFIER',
+          executionMode: 'classifier',
+        }),
+      ).rejects.toThrow('provider down');
+    }
+
+    expect(calls).toHaveBeenCalledTimes(4);
+  });
+
   it('keeps the shared execution circuit closed for repeated bad_request failures', async () => {
     const adapter = makeAdapter();
     const calls = jest.fn().mockRejectedValue({

@@ -1,7 +1,9 @@
 import type { LlmAttemptBudget } from './execution/attempt-budget';
+import type { ClassifierOutcomeLabel } from './classifier/content-classifier.port';
 
 export type LlmExecutionAttempt = 'initial' | 'retry';
 export type LlmExecutionRetryCause = 'capacity_overload';
+export type LlmExecutionMode = 'standard' | 'classifier';
 
 export interface LlmExecutionPort {
   /**
@@ -20,6 +22,7 @@ export interface LlmExecutionPort {
       attemptBudget?: LlmAttemptBudget;
       attempt?: LlmExecutionAttempt;
       retryCause?: LlmExecutionRetryCause;
+      executionMode?: LlmExecutionMode;
     },
   ): Promise<T>;
 }
@@ -162,7 +165,10 @@ export interface AgentMetricsPort {
   /** #629: a prompt-injection payload was neutralized. `source` is a bounded label. */
   injectionBlockedInc?(source: LlmInjectionSource): void;
   /** #649: an LLM input-classifier verdict. `label` and `mode` are bounded labels. */
-  classifierVerdictInc?(label: string, mode: 'shadow' | 'enforce'): void;
+  classifierVerdictInc?(
+    label: ClassifierOutcomeLabel,
+    mode: 'shadow' | 'enforce',
+  ): void;
   /** One bounded observation per top-level generation. */
   totalProviderAttemptsInc?(
     feature: string,

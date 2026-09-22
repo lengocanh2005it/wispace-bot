@@ -22,6 +22,28 @@ export const CLASSIFIER_LABELS = [
 
 export type ClassifierLabel = (typeof CLASSIFIER_LABELS)[number];
 
+export const CLASSIFIER_FAILURE_REASONS = [
+  'timeout',
+  'error',
+  'parse_failed',
+  'aborted',
+  'skipped_circuit_open',
+  'queue_full',
+  'wait_timeout',
+  'global_saturated',
+  'redis_unavailable',
+  'execution_disabled',
+] as const;
+
+export type ClassifyFailureReason = (typeof CLASSIFIER_FAILURE_REASONS)[number];
+
+export const CLASSIFIER_OUTCOME_LABELS = [
+  ...CLASSIFIER_LABELS,
+  ...CLASSIFIER_FAILURE_REASONS,
+] as const;
+
+export type ClassifierOutcomeLabel = (typeof CLASSIFIER_OUTCOME_LABELS)[number];
+
 /** Non-SAFE classifier labels recorded as CLASSIFIER_FLAGGED events. */
 export type FlaggedClassifierLabel = Exclude<ClassifierLabel, 'SAFE'>;
 
@@ -45,12 +67,6 @@ export function isExtractionReason(reason: string): boolean {
  * the local circuit breaker was open and the call was not attempted; the
  * others mean the call ran and failed.
  */
-export type ClassifyFailureReason =
-  | 'timeout'
-  | 'error'
-  | 'parse_failed'
-  | 'skipped_circuit_open';
-
 /**
  * Discriminated result. `completion` is preserved whenever the provider
  * returned response metadata, including malformed JSON responses.
@@ -73,5 +89,9 @@ export interface ContentClassifierPort {
    * `{ ok: false, reason }`. `userText` is the raw learner message; the
    * implementation applies secret redaction + bounded projection itself.
    */
-  classify(userText: string, correlationId?: string): Promise<ClassifyResult>;
+  classify(
+    userText: string,
+    correlationId?: string,
+    signal?: AbortSignal,
+  ): Promise<ClassifyResult>;
 }

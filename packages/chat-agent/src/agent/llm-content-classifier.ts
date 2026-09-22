@@ -1,13 +1,16 @@
 import {
   CLASSIFIER_LABELS,
   CLASSIFIER_SYSTEM_PROMPT,
+  LlmOverloadError,
   redactSecrets,
   type ClassifierLabel,
   type ClassifyFailureReason,
   type ClassifyResult,
   type ContentClassifierPort,
+  type LlmExecutionPort,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
+import { isAbortError } from '@wispace/bot-common/utils';
 
 const DEFAULT_MAX_INPUT_CHARS = 512;
 const SAMPLE_MARKER = '…';
@@ -17,6 +20,8 @@ const CIRCUIT_OPEN_MS = 30_000;
 
 export interface LlmContentClassifierDeps {
   adapter: LlmProviderAdapter;
+  execution: LlmExecutionPort;
+  executionEnabled: boolean;
   model: string;
   timeoutMs: number;
   maxInputChars: number;
@@ -28,10 +33,12 @@ export interface LlmContentClassifierDeps {
  * #649 — second-tier input classifier. Calls the provider's single-shot
  * JSON endpoint on its own path: secret redaction + deterministic bounded
  * full/head-tail projection, own `AbortSignal.timeout` deadline (which aborts
- * the in-flight request, not just the wrapper promise), no retry, no shared
- * concurrency budget, and a local circuit breaker. Never throws — every
+ * the in-flight request, not just the wrapper promise), shared local/Redis
+ * admission with no retry, and a local circuit breaker. Never throws — every
  * provider failure returns a bounded typed reason; provider completion
- * metadata is retained when it exists for usage accounting.
+ * metadata is retained when it exists for usage accounting. Shared admission
+ * is selected through the classifier execution mode; retry and the shared
+ * execution circuit remain disabled for this optional safety call.
  *
  * Circuit breaker: `CIRCUIT_FAILURE_THRESHOLD` consecutive failures open it
  * for `CIRCUIT_OPEN_MS`; the first call afterwards is a single half-open
@@ -48,7 +55,14 @@ export class LlmContentClassifier implements ContentClassifierPort {
   async classify(
     userText: string,
     correlationId?: string,
+    callerSignal?: AbortSignal,
   ): Promise<ClassifyResult> {
+    if (!this.deps.executionEnabled) {
+      return { ok: false, reason: 'execution_disabled' };
+    }
+    if (callerSignal?.aborted) {
+      return { ok: false, reason: 'aborted' };
+    }
     if (!this.admit()) {
       return { ok: false, reason: 'skipped_circuit_open' };
     }
@@ -62,21 +76,44 @@ export class LlmContentClassifier implements ContentClassifierPort {
         'LlmContentClassifier input-shape telemetry failed; continuing',
       );
     }
-    const signal = AbortSignal.timeout(this.deps.timeoutMs);
+    const deadlineSignal = AbortSignal.timeout(this.deps.timeoutMs);
+    const signal = callerSignal
+      ? AbortSignal.any([callerSignal, deadlineSignal])
+      : deadlineSignal;
 
     let response: Awaited<ReturnType<LlmProviderAdapter['generateJson']>>;
     try {
-      response = await this.deps.adapter.generateJson({
-        feature: 'LLM_INPUT_CLASSIFIER',
-        model: this.deps.model,
-        systemPrompt: CLASSIFIER_SYSTEM_PROMPT,
-        userContent: projected.text,
-        maxOutputTokens: 120,
-        correlationId,
-        signal,
-      });
-    } catch {
-      return this.settle(signal.aborted ? 'timeout' : 'error');
+      response = await this.deps.execution.run(
+        (executionSignal) =>
+          this.deps.adapter.generateJson({
+            feature: 'LLM_INPUT_CLASSIFIER',
+            model: this.deps.model,
+            systemPrompt: CLASSIFIER_SYSTEM_PROMPT,
+            userContent: projected.text,
+            maxOutputTokens: 120,
+            correlationId,
+            signal: executionSignal ?? signal,
+          }),
+        {
+          feature: 'LLM_INPUT_CLASSIFIER',
+          correlationId,
+          signal,
+          executionMode: 'classifier',
+        },
+      );
+    } catch (error) {
+      if (error instanceof LlmOverloadError) {
+        this.halfOpenInFlight = false;
+        return { ok: false, reason: error.reason };
+      }
+      if (callerSignal?.aborted) {
+        this.halfOpenInFlight = false;
+        return { ok: false, reason: 'aborted' };
+      }
+      if (signal.aborted || isAbortError(error)) {
+        return this.settle('timeout');
+      }
+      return this.settle('error');
     }
 
     const verdict = this.parse(response.content);

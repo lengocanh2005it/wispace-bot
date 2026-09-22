@@ -1,6 +1,7 @@
 import type {
   LlmAttemptBudget,
   LlmExecutionAttempt,
+  LlmExecutionMode,
   LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
 
@@ -19,4 +20,5 @@ export interface LlmExecutionContext {
   attemptBudget?: LlmAttemptBudget;
   attempt?: LlmExecutionAttempt;
   retryCause?: LlmExecutionRetryCause;
+  executionMode?: LlmExecutionMode;
 }

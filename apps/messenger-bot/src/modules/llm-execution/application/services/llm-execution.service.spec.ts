@@ -207,6 +207,36 @@ describe('LlmExecutionService', () => {
     expect(maxConcurrent).toBe(2);
   });
 
+  it('classifier mode admits once without retrying or opening the chat circuit', async () => {
+    const config = createConfig({
+      enabled: true,
+      retryMaxAttempts: 3,
+      maxConcurrent: 1,
+    });
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+    const providerFailure = Object.assign(new Error('rate limit'), {
+      name: 'RateLimitError',
+      status: 429,
+    });
+    const classifierCall = jest.fn().mockRejectedValue(providerFailure);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(
+        service.run(classifierCall, {
+          feature: 'LLM_INPUT_CLASSIFIER',
+          executionMode: 'classifier',
+        }),
+      ).rejects.toThrow('rate limit');
+    }
+
+    expect(classifierCall).toHaveBeenCalledTimes(3);
+    await expect(
+      service.run(() => Promise.resolve('chat still available'), {
+        feature: 'FREE_FORM_CHAT',
+      }),
+    ).resolves.toBe('chat still available');
+  });
+
   it('caps concurrent runs when enabled', async () => {
     const config = createConfig({ enabled: true, maxConcurrent: 1 });
     const service = new LlmExecutionService(config, noopMetrics, mockAdapter);

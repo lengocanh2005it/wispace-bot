@@ -1,6 +1,6 @@
 import { LlmContentClassifier } from './llm-content-classifier';
-import { REDACTED_PLACEHOLDER } from '@wispace/llm-agent';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { LlmOverloadError, REDACTED_PLACEHOLDER } from '@wispace/llm-agent';
+import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
 
 function adapterReturning(
   content: string,
@@ -27,7 +27,18 @@ function adapterReturning(
 
 const completion = { provider: 'test', model: 'test-model' };
 
-const base = { model: 'm', timeoutMs: 1000, maxInputChars: 512 };
+const base = {
+  model: 'm',
+  timeoutMs: 1000,
+  maxInputChars: 512,
+  executionEnabled: true,
+  execution: {
+    run: async (
+      fn: (signal?: AbortSignal) => Promise<unknown>,
+      _meta: unknown,
+    ) => fn(),
+  } as unknown as LlmExecutionPort,
+};
 
 it('returns a parsed verdict on a well-formed response', async () => {
   const c = new LlmContentClassifier({
@@ -46,6 +57,96 @@ it('returns a parsed verdict on a well-formed response', async () => {
     },
     completion,
   });
+});
+
+it('routes the provider call through classifier execution mode and caller signal', async () => {
+  const execution = {
+    run: jest.fn(
+      async (
+        fn: (signal?: AbortSignal) => Promise<unknown>,
+        meta: { feature: string; executionMode?: string; signal?: AbortSignal },
+      ) => {
+        expect(meta).toMatchObject({
+          feature: 'LLM_INPUT_CLASSIFIER',
+          executionMode: 'classifier',
+        });
+        expect(meta.signal).toBeInstanceOf(AbortSignal);
+        return fn(meta.signal);
+      },
+    ),
+  } as unknown as LlmExecutionPort;
+  const c = new LlmContentClassifier({
+    adapter: adapterReturning(
+      '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
+    ),
+    ...base,
+    execution,
+  });
+  const caller = new AbortController();
+
+  await expect(c.classify('hi', 'mid-1', caller.signal)).resolves.toMatchObject(
+    { ok: true },
+  );
+  expect(execution.run).toHaveBeenCalledTimes(1);
+});
+
+it('returns a bounded admission failure without calling the provider', async () => {
+  const adapter = adapterReturning('{}');
+  const execution = {
+    run: jest.fn().mockRejectedValue(new LlmOverloadError('queue_full')),
+  } as unknown as LlmExecutionPort;
+  const c = new LlmContentClassifier({
+    adapter,
+    ...base,
+    execution,
+  });
+
+  await expect(c.classify('hi')).resolves.toEqual({
+    ok: false,
+    reason: 'queue_full',
+  });
+  expect(adapter.generateJson).not.toHaveBeenCalled();
+});
+
+it('skips provider and admission when execution control is disabled', async () => {
+  const adapter = adapterReturning('{}');
+  const execution = {
+    run: jest.fn(),
+  } as unknown as LlmExecutionPort;
+  const c = new LlmContentClassifier({
+    adapter,
+    ...base,
+    execution,
+    executionEnabled: false,
+  });
+
+  await expect(c.classify('hi')).resolves.toEqual({
+    ok: false,
+    reason: 'execution_disabled',
+  });
+  expect(execution.run).not.toHaveBeenCalled();
+  expect(adapter.generateJson).not.toHaveBeenCalled();
+});
+
+it('returns aborted when the caller signal is already cancelled', async () => {
+  const adapter = adapterReturning('{}');
+  const execution = {
+    run: jest.fn(),
+  } as unknown as LlmExecutionPort;
+  const c = new LlmContentClassifier({
+    adapter,
+    ...base,
+    execution,
+  });
+  const caller = new AbortController();
+  caller.abort(new DOMException('cancelled', 'AbortError'));
+
+  await expect(c.classify('hi', undefined, caller.signal)).resolves.toEqual({
+    ok: false,
+    reason: 'aborted',
+  });
+  expect(execution.run).not.toHaveBeenCalled();
+  expect(adapter.generateJson).not.toHaveBeenCalled();
 });
 
 it('parses CRISIS and ABUSE labels from the canonical registry (#1054 / #975)', async () => {
@@ -178,6 +279,7 @@ it('passes an AbortSignal to generateJson and returns timeout when it fires', as
       }),
   );
   const c = new LlmContentClassifier({
+    ...base,
     adapter: slow,
     model: 'm',
     timeoutMs: 10,
@@ -225,6 +327,41 @@ it('opens after 5 consecutive failures, then allows a single half-open probe', a
     metadata: {},
   });
   expect((await c.classify('x')).ok).toBe(true); // succeeding probe closes it
+  jest.useRealTimers();
+});
+
+it('releases a half-open probe when admission rejects before the provider call', async () => {
+  jest.useFakeTimers();
+  const adapter = adapterReturning('{}');
+  (adapter.generateJson as jest.Mock).mockRejectedValue(new Error('boom'));
+  const execution = {
+    run: jest.fn((fn: (signal?: AbortSignal) => Promise<unknown>) => fn()),
+  } as unknown as LlmExecutionPort;
+  const c = new LlmContentClassifier({ adapter, ...base, execution });
+
+  for (let i = 0; i < 5; i++) {
+    await expect(c.classify('x')).resolves.toMatchObject({
+      ok: false,
+      reason: 'error',
+    });
+  }
+  jest.advanceTimersByTime(30_001);
+  (execution.run as jest.Mock).mockRejectedValueOnce(
+    new LlmOverloadError('queue_full'),
+  );
+  await expect(c.classify('x')).resolves.toEqual({
+    ok: false,
+    reason: 'queue_full',
+  });
+
+  (adapter.generateJson as jest.Mock).mockResolvedValue({
+    content: '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
+    metadata: completion,
+  });
+  (execution.run as jest.Mock).mockImplementation(
+    (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+  );
+  await expect(c.classify('x')).resolves.toMatchObject({ ok: true });
   jest.useRealTimers();
 });
 
@@ -397,6 +534,7 @@ it('keeps Unicode code points intact around the sample boundary', async () => {
     '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
   );
   const c = new LlmContentClassifier({
+    ...base,
     adapter,
     model: 'm',
     timeoutMs: 1000,

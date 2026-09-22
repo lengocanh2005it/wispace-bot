@@ -193,6 +193,8 @@ export interface PlatformAgentOptions {
    * Verdict/failure telemetry goes through the platform adapters.
    */
   contentClassifier?: ContentClassifierPort;
+  /** Resolved classifier provider/model used for zero-token failure accounting. */
+  classifierUsage?: { provider: string; model: string };
 }
 
 /**

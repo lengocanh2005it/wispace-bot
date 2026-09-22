@@ -129,9 +129,13 @@ export class LlmExecutionService {
       return fn(undefined, undefined);
     }
 
+    const isClassifier = context?.executionMode === 'classifier';
+
     const attemptBudget =
       context?.attemptBudget ??
-      new LlmAttemptBudget(this.config.getMaxTotalProviderAttempts());
+      new LlmAttemptBudget(
+        isClassifier ? 1 : this.config.getMaxTotalProviderAttempts(),
+      );
     const ownsAttemptBudget = context?.attemptBudget === undefined;
 
     // Create the one deadline before admission so queueing, Redis acquisition,
@@ -144,6 +148,7 @@ export class LlmExecutionService {
       : deadlineSignal;
     const executionContext: BreakerExecutionContext = {
       feature: context?.feature ?? 'unknown',
+      executionMode: context?.executionMode,
       ...(context?.correlationId
         ? { correlationId: context.correlationId }
         : {}),
@@ -231,6 +236,36 @@ export class LlmExecutionService {
       }
 
       try {
+        if (isClassifier) {
+          try {
+            attemptBudget.consume();
+            const result = await this.metrics.timeLlmExecution(
+              executionContext.feature,
+              () => fn(signal, attemptBudget),
+            );
+            if (ownsAttemptBudget) {
+              this.metrics.incLlmTotalProviderAttempts?.(
+                executionContext.feature,
+                attemptBudget.attemptsUsed,
+                'success',
+              );
+            }
+            return result;
+          } catch (error) {
+            attemptBudget.recordFailure(error);
+            if (ownsAttemptBudget) {
+              this.metrics.incLlmTotalProviderAttempts?.(
+                executionContext.feature,
+                attemptBudget.attemptsUsed,
+                'error',
+              );
+            }
+            throw error;
+          } finally {
+            attemptBudget.completeProviderAttempt();
+          }
+        }
+
         try {
           const result = (await this.breaker.fire(
             fn,
