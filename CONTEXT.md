@@ -739,7 +739,7 @@ _Avoid_: cluster, deployment
 ### LLM Safety
 
 **llm_safety_events** (DB table):
-Records safety-related events (grounding warnings, prompt injection blocks, classifier verdicts). Entity: `LlmSafetyEventEntity`. Learner text is never stored raw — only a redacted excerpt plus a hash.
+Records safety-related events (grounding warnings, prompt injection blocks, classifier verdicts, and harmful-output blocks). Entity: `LlmSafetyEventEntity`. Learner or assistant text is never stored raw — only a redacted excerpt plus a hash.
 _Avoid_: safety log, security events
 
 **grounding warning**:
@@ -773,6 +773,14 @@ _Avoid_: dry run, passive mode
 **classifier safety fallback**:
 The deterministic generic processing-error reply used when enforce mode cannot obtain a classifier verdict. It is not a crisis handoff, does not call tools or the main LLM, and is not appended to chat history.
 _Avoid_: crisis fallback, provider fallback — those are different safety boundaries
+
+**harmful-output guardrail**:
+The shared last-mile check over model-generated chat text that blocks actionable self-harm instructions/encouragement and targeted abusive content before delivery. It is distinct from the input classifier, input moderation, grounding check, and leak guard.
+_Avoid_: output moderation, toxicity filter
+
+**harmful-output blocked event**:
+A safety event emitted when the harmful-output guardrail replaces model text with the generic safe reply; it records the bounded category/reason and a redacted excerpt, hash, and length, never raw text.
+_Avoid_: moderation event, safety log
 
 **non-disclosure**:
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
