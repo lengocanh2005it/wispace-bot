@@ -125,6 +125,28 @@ describe('BoundedAdmissionQueue', () => {
     }
   });
 
+  it('keeps delayed requeues bounded and FIFO', async () => {
+    jest.useFakeTimers();
+    try {
+      const queue = new BoundedAdmissionQueue(1, 1);
+      const held = await queue.acquire();
+      const delayed = queue.acquire({ delayMs: 50, waitBudgetMs: 100 });
+
+      await expect(queue.acquire()).rejects.toMatchObject({
+        reason: 'queue_full',
+      });
+      held.release();
+      expect(queue.activeCount).toBe(0);
+
+      jest.advanceTimersByTime(50);
+      const delayedTicket = await delayed;
+      delayedTicket.release();
+      expect(queue.activeCount).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('ignores double release', async () => {
     const queue = new BoundedAdmissionQueue(1, 5);
     const ticket = await queue.acquire();

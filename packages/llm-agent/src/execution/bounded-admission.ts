@@ -41,6 +41,8 @@ export function admissionWaitBudgetMs(
 export interface BoundedAcquireOptions {
   signal?: AbortSignal;
   waitBudgetMs?: number;
+  /** Keep the waiter in the bounded FIFO queue until this delay elapses. */
+  delayMs?: number;
 }
 
 export interface AdmissionTicket {
@@ -83,6 +85,8 @@ interface Waiter {
   timer?: ReturnType<typeof setTimeout>;
   signal?: AbortSignal;
   onAbort?: () => void;
+  ready: boolean;
+  readyTimer?: ReturnType<typeof setTimeout>;
 }
 
 const abortError = (): Error => new DOMException('Aborted', 'AbortError');
@@ -124,9 +128,16 @@ export class BoundedAdmissionQueue {
   }
 
   async acquire(options?: BoundedAcquireOptions): Promise<AdmissionTicket> {
-    const { signal, waitBudgetMs } = options ?? {};
+    const { signal, waitBudgetMs, delayMs = 0 } = options ?? {};
     if (signal?.aborted) throw rejectionFromSignal(signal);
-    if (this.active < this.concurrency) {
+    if (delayMs < 0 || !Number.isFinite(delayMs)) {
+      throw new Error('delayMs must be a finite non-negative number');
+    }
+    if (
+      delayMs === 0 &&
+      this.active < this.concurrency &&
+      this.waiters.length === 0
+    ) {
       this.active += 1;
       return this.makeTicket();
     }
@@ -140,7 +151,14 @@ export class BoundedAdmissionQueue {
         reject,
         signal,
         enqueuedAt: Date.now(),
+        ready: delayMs === 0,
       };
+      if (delayMs > 0) {
+        waiter.readyTimer = setTimeout(() => {
+          waiter.ready = true;
+          this.pump();
+        }, delayMs);
+      }
       if (waitBudgetMs !== undefined) {
         waiter.timer = setTimeout(() => {
           this.remove(waiter);
@@ -155,6 +173,7 @@ export class BoundedAdmissionQueue {
         signal.addEventListener('abort', waiter.onAbort, { once: true });
       }
       this.waiters.push(waiter);
+      this.pump();
     });
   }
 
@@ -164,25 +183,33 @@ export class BoundedAdmissionQueue {
       release: () => {
         if (released) return;
         released = true;
-        const next = this.waiters.shift();
-        if (next) {
-          this.clearWaiter(next);
-          next.resolve(this.makeTicket()); // slot transfers; active unchanged
-          return;
-        }
         this.active -= 1;
+        this.pump();
       },
     };
+  }
+
+  private pump(): void {
+    while (this.active < this.concurrency) {
+      const next = this.waiters[0];
+      if (!next || !next.ready) return;
+      this.waiters.shift();
+      this.clearWaiter(next);
+      this.active += 1;
+      next.resolve(this.makeTicket());
+    }
   }
 
   private remove(waiter: Waiter): void {
     const index = this.waiters.indexOf(waiter);
     if (index >= 0) this.waiters.splice(index, 1);
     this.clearWaiter(waiter);
+    this.pump();
   }
 
   private clearWaiter(waiter: Waiter): void {
     if (waiter.timer) clearTimeout(waiter.timer);
+    if (waiter.readyTimer) clearTimeout(waiter.readyTimer);
     if (waiter.signal && waiter.onAbort) {
       waiter.signal.removeEventListener('abort', waiter.onAbort);
     }

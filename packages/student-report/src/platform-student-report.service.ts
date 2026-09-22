@@ -17,6 +17,7 @@ import {
   type LlmDegradedModeEvent,
   loadSystemPromptFile,
   type LlmProviderAdapter,
+  type LlmExecutionPort,
 } from '@wispace/llm-agent/core';
 import {
   StudentReportCore,
@@ -71,6 +72,8 @@ export class PlatformStudentReportService {
     private readonly llmAdmissionMetrics?: AdmissionMetrics,
     @Optional()
     private readonly degradedMode?: (event: LlmDegradedModeEvent) => void,
+    @Optional()
+    private readonly llmExecution?: LlmExecutionPort,
   ) {
     // Fail closed during module construction when the explicit shared budget
     // is invalid; report core creation is otherwise lazy.
@@ -104,17 +107,19 @@ export class PlatformStudentReportService {
     const ports: StudentReportPorts = {
       // ponytail: shared execution-control port from llm-agent (was a local
       // hardcoded sleep+backoff copy) — same LLM_EXECUTION_* contract as chat.
-      llmExecution: createEnvLlmExecutionPort(
-        {
-          ...config,
-          redis: config.globalConcurrencyEnabled
-            ? (this.redisClient?.getNativeClient() ?? null)
-            : null,
-        },
-        this.adapter,
-        { warn: (message) => this.logger.warn(message) },
-        this.llmAdmissionMetrics,
-      ),
+      llmExecution:
+        this.llmExecution ??
+        createEnvLlmExecutionPort(
+          {
+            ...config,
+            redis: config.globalConcurrencyEnabled
+              ? (this.redisClient?.getNativeClient() ?? null)
+              : null,
+          },
+          this.adapter,
+          { warn: (message) => this.logger.warn(message) },
+          this.llmAdmissionMetrics,
+        ),
       usageRecorder: {
         recordFromCompletion: (params) =>
           this.usageRecorder.recordFromCompletion({

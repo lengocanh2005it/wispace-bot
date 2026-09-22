@@ -7,11 +7,22 @@ export {
   admissionWaitBudgetMs,
 } from './bounded-admission';
 export type { AdmissionTicket, LlmOverloadReason } from './bounded-admission';
-export { createEnvLlmExecutionPort } from './env-llm-execution.port';
+export {
+  createEnvLlmExecutionPort,
+  createLlmAdmissionCoordinator,
+} from './env-llm-execution.port';
 export type {
   AdmissionMetrics,
   EnvLlmExecutionConfig,
+  LlmAdmissionRedisSource,
 } from './env-llm-execution.port';
+export { LlmAdmissionCoordinator } from './llm-admission-coordinator';
+export type {
+  LlmAdmissionGlobalMetrics,
+  LlmAdmissionGlobalPort,
+  LlmAdmissionCoordinatorConfig,
+  LlmAdmissionLease,
+} from './llm-admission-coordinator';
 export { buildLlmExecutionConfig } from './llm-execution.config';
 export type { LlmExecutionConfigReader } from './llm-execution.config';
 export {

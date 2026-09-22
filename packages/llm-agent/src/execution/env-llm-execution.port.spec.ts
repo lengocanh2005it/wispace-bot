@@ -7,6 +7,7 @@ import { LlmOverloadError } from './bounded-admission';
 import type { LlmExecutionPort } from '../ports';
 import {
   createEnvLlmExecutionPort,
+  createLlmAdmissionCoordinator,
   type EnvLlmExecutionConfig,
 } from './env-llm-execution.port';
 import { LlmProviderCircuitOpenError } from './circuit-error';
@@ -76,6 +77,44 @@ describe('createEnvLlmExecutionPort', () => {
         noopLogger,
       ),
     ).toThrow(/aggregate limit/i);
+  });
+
+  it('keeps global mode fail-closed even when execution passthrough is disabled', () => {
+    expect(() =>
+      createEnvLlmExecutionPort(
+        {
+          ...DEFAULT_CONFIG,
+          enabled: false,
+          globalConcurrencyEnabled: true,
+          redis: null,
+        },
+        makeAdapter(),
+        noopLogger,
+      ),
+    ).toThrow(/aggregate limit/i);
+  });
+
+  it('resolves a Redis client lazily after module initialization (#867)', async () => {
+    let nativeRedis: { eval: jest.Mock } | null = null;
+    const redisSource = {
+      isConfiguredEnabled: () => true,
+      getNativeClient: () => nativeRedis as never,
+    };
+    const coordinator = createLlmAdmissionCoordinator(
+      {
+        ...DEFAULT_CONFIG,
+        globalConcurrencyEnabled: true,
+      },
+      noopLogger,
+      undefined,
+      redisSource,
+    );
+    const redis = { eval: jest.fn().mockResolvedValue(1) };
+    nativeRedis = redis;
+
+    const lease = await coordinator.acquire('FREE_FORM_CHAT');
+    await lease.release();
+    expect(redis.eval).toHaveBeenCalledTimes(2);
   });
 
   it('sheds background features with a typed wait_timeout under saturation (#389)', async () => {

@@ -462,6 +462,34 @@ _Avoid_: queue capacity, background throughput
 A pre-provider admission rejection caused by queue or slot capacity (`queue_full`, `wait_timeout`, or `global_saturated`). `redis_unavailable` is an infrastructure failure, not capacity overload.
 _Avoid_: provider overload, execution failure
 
+**LLM admission contract**:
+The single bounded decision boundary shared by interactive chat, reports, and study reminders in one bot process. It covers local capacity and, when enabled, the Redis aggregate budget; it produces one typed pre-provider outcome and never silently bypasses an enabled global budget.
+_Avoid_: feature-local limiter, provider retry
+
+**admission coordinator**:
+The owner of one LLM admission attempt across local capacity and the optional global lease. It admits a generation only after both scopes are available, and releases the local permit before waiting or backing off for global capacity.
+_Avoid_: local queue, Redis limiter
+
+**admission probe**:
+One bounded attempt to pair a local permit with a global lease. A probe is not a provider attempt; when global capacity is unavailable, the local permit is released before the request is re-queued or rejected.
+_Avoid_: retry attempt, provider probe
+
+**local admission permit**:
+A short-lived process-local permit used for one admission probe or an admitted provider generation. It is not held across global-capacity backoff or retry waits.
+_Avoid_: local slot, provider slot
+
+**global admission lease**:
+An owner-fenced Redis lease that limits aggregate LLM generations across participating processes. One lease covers the provider retries and failover of one generation and is released when that generation ends; when the Redis budget is disabled, no cross-bot fairness guarantee is claimed.
+_Avoid_: global lock, Redis counter
+
+**shared process admission**:
+The one local LLM capacity budget of a bot process, shared by chat, reports, and reminders. It is distinct from per-learner fairness and from the fleet-wide Redis aggregate budget.
+_Avoid_: feature pool, bot-wide quota
+
+**admission wait**:
+The time before a generation is admitted. Local queue wait and global lease wait are measured separately, while one caller deadline covers both and all later provider work.
+_Avoid_: provider latency, retry delay
+
 **overload-induced regeneration**:
 A new LLM generation for the same logical report or reminder after its previous generation ended with capacity overload and was persisted for retry. Provider retries inside one generation and retries caused by other failure classes are not overload-induced regeneration.
 _Avoid_: provider retry, queue replay

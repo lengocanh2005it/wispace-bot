@@ -28,7 +28,7 @@ export interface SlotMetrics {
 const RETRY_BASE_DELAY_MS = 50;
 const RETRY_MAX_DELAY_MS = 1000;
 const MAX_RETRIES = 200;
-const DEFAULT_MAX_CONSECUTIVE_REDIS_ERRORS = 3;
+export const DEFAULT_MAX_CONSECUTIVE_REDIS_ERRORS = 3;
 const DEFAULT_LEASE_MS = 60_000;
 const LEASE_PREFIX = ':lease:';
 
@@ -135,10 +135,13 @@ export async function acquireRedisSlot(
       break;
     }
 
+    let acquirePromise: Promise<unknown> | undefined;
     try {
+      acquirePromise = acquireCommand();
+      const command = acquirePromise;
       // Signal-aware: a caller abort or request deadline rejects even when
       // the Redis command itself hangs (#389).
-      const result = await raceAbort(acquireCommand, signal);
+      const result = await raceAbort(() => command, signal);
       // Any Redis response proves reachability — reset the fail-fast counter.
       consecutiveRedisErrors = 0;
 
@@ -150,8 +153,29 @@ export async function acquireRedisSlot(
 
       metrics?.incrementCounter('llm_concurrency_rejected');
     } catch (err) {
-      // AbortError from signal abort during redis.eval
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      // Preserve caller cancellation during redis.eval, including custom
+      // Error reasons supplied to AbortController.abort().
+      if (signal?.aborted) {
+        // The EVAL continues after raceAbort rejects. If it acquired a lease
+        // before settling, release it asynchronously so cancellation cannot
+        // leak a global slot (#867).
+        if (acquirePromise) {
+          void acquirePromise.then(
+            (result) => {
+              if (result === 1) {
+                void releaseRedisSlot(
+                  redis,
+                  key,
+                  leaseKey,
+                  uuid,
+                  logger,
+                  metrics,
+                );
+              }
+            },
+            () => undefined,
+          );
+        }
         throw err;
       }
       sawRedisError = true;

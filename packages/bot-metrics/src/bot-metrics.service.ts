@@ -127,8 +127,13 @@ export class BotMetricsService implements OnModuleDestroy {
   private clarificationOutcomes: Counter;
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
+  private llmAdmissionLocalWait: Histogram;
+  private llmAdmissionGlobalWait: Histogram;
   private llmAdmissionQueueDepth: Gauge;
   private llmAdmissionDrainLag: Gauge;
+  private llmAdmissionActive: Gauge;
+  private llmAdmissionCapacity: Gauge;
+  private llmRetryAttempts: Counter;
   private llmBackgroundAdmission: Counter;
   private llmOverloadRegenerations: Counter;
   private reportWaveCompletionLag: Histogram;
@@ -289,7 +294,21 @@ export class BotMetricsService implements OnModuleDestroy {
 
     this.llmAdmissionWait = new Histogram({
       name: `${this.prefix}_llm_admission_wait_seconds`,
-      help: 'Time spent waiting for local admission before LLM execution starts',
+      help: 'Total time spent waiting for LLM admission before execution starts',
+      buckets: [0.005, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8],
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionLocalWait = new Histogram({
+      name: `${this.prefix}_llm_admission_local_wait_seconds`,
+      help: 'Time spent waiting for a local LLM admission permit',
+      buckets: [0.005, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8],
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionGlobalWait = new Histogram({
+      name: `${this.prefix}_llm_admission_global_wait_seconds`,
+      help: 'Time spent waiting for the global LLM admission lease',
       buckets: [0.005, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8],
       registers: [this.registry],
     });
@@ -303,6 +322,25 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionDrainLag = new Gauge({
       name: `${this.prefix}_llm_admission_drain_lag_seconds`,
       help: 'Age of the oldest queued LLM admission waiter',
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionActive = new Gauge({
+      name: `${this.prefix}_llm_admission_active`,
+      help: 'Current number of active local LLM admissions',
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionCapacity = new Gauge({
+      name: `${this.prefix}_llm_admission_capacity`,
+      help: 'Configured local LLM admission capacity',
+      registers: [this.registry],
+    });
+
+    this.llmRetryAttempts = new Counter({
+      name: `${this.prefix}_llm_retry_attempts_total`,
+      help: 'Provider attempts made by the shared LLM execution boundary',
+      labelNames: ['outcome'],
       registers: [this.registry],
     });
 
@@ -936,9 +974,17 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionRejected.inc({ reason });
   }
 
-  /** How long an admitted call waited for a local slot before executing (#389). */
+  /** Total admission wait across local and global coordination (#867). */
   observeLlmAdmissionWait(seconds: number): void {
-    this.llmAdmissionWait.observe(seconds);
+    this.llmAdmissionWait.observe(Math.max(0, seconds));
+  }
+
+  observeLlmAdmissionLocalWait(seconds: number): void {
+    this.llmAdmissionLocalWait.observe(Math.max(0, seconds));
+  }
+
+  observeLlmAdmissionGlobalWait(seconds: number): void {
+    this.llmAdmissionGlobalWait.observe(Math.max(0, seconds));
   }
 
   /** Current local admission queue depth — saturation signal (#389). */
@@ -949,6 +995,20 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Age of the oldest local admission waiter, or zero when the queue is empty. */
   setLlmAdmissionDrainLag(seconds: number): void {
     this.llmAdmissionDrainLag.set(Math.max(0, seconds));
+  }
+
+  setLlmAdmissionActiveCapacity(active: number, capacity: number): void {
+    this.llmAdmissionActive.set(Math.max(0, Math.floor(active)));
+    this.llmAdmissionCapacity.set(Math.max(0, Math.floor(capacity)));
+  }
+
+  observeLlmRetryAttempts(
+    attempts: number,
+    labels?: Record<string, string>,
+  ): void {
+    if (attempts <= 0) return;
+    const outcome = labels?.outcome === 'success' ? 'success' : 'exhausted';
+    this.llmRetryAttempts.inc({ outcome }, Math.floor(attempts));
   }
 
   observeLlmBackgroundAdmission(
@@ -1052,8 +1112,15 @@ export class BotMetricsService implements OnModuleDestroy {
   get llmAdmission(): {
     incrementCounter(name: string, labels?: Record<string, string>): void;
     observeWaitSeconds(seconds: number): void;
+    observeLocalWaitSeconds(seconds: number): void;
+    observeGlobalWaitSeconds(seconds: number): void;
     observeQueueDepth(depth: number): void;
     observeQueueDrainLag(seconds: number): void;
+    observeActiveCapacity(active: number, capacity: number): void;
+    observeRetryAttempts(
+      attempts: number,
+      labels?: Record<string, string>,
+    ): void;
     observeBackgroundAdmission(
       feature: string,
       attempt: 'initial' | 'retry',
@@ -1076,8 +1143,16 @@ export class BotMetricsService implements OnModuleDestroy {
         this.incLlmAdmissionRejected(labels?.reason ?? 'unknown');
       },
       observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
+      observeLocalWaitSeconds: (seconds) =>
+        this.observeLlmAdmissionLocalWait(seconds),
+      observeGlobalWaitSeconds: (seconds) =>
+        this.observeLlmAdmissionGlobalWait(seconds),
       observeQueueDepth: (depth) => this.setLlmAdmissionQueueDepth(depth),
       observeQueueDrainLag: (seconds) => this.setLlmAdmissionDrainLag(seconds),
+      observeActiveCapacity: (active, capacity) =>
+        this.setLlmAdmissionActiveCapacity(active, capacity),
+      observeRetryAttempts: (attempts, labels) =>
+        this.observeLlmRetryAttempts(attempts, labels),
       observeBackgroundAdmission: (feature, attempt, outcome) =>
         this.observeLlmBackgroundAdmission(feature, attempt, outcome),
       observeOverloadRegeneration: (feature) =>

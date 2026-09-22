@@ -17,6 +17,18 @@ const TEST_POLICY: LlmProviderPolicy = {
 };
 
 describe('Discord chat module — LLM provider factory', () => {
+  it('registers one shared coordinator with feature-local execution ports', () => {
+    const providers = (Reflect.getMetadata('providers', DiscordSharedModule) ??
+      []) as Array<{ provide?: unknown }>;
+    expect(providers.map((provider) => provider.provide)).toEqual(
+      expect.arrayContaining([
+        'LLM_ADMISSION_COORDINATOR',
+        'LLM_EXECUTION_PORT',
+        'LLM_REPORT_EXECUTION_PORT',
+      ]),
+    );
+  });
+
   it('wires the shared fail-closed policy into the startup binding', () => {
     const providers = (Reflect.getMetadata('providers', DiscordSharedModule) ??
       []) as Array<unknown>;

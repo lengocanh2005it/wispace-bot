@@ -4,7 +4,12 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { join } from 'path';
 import {
   createLlmProviderAdapterFromEnv,
+  buildLlmExecutionConfig,
+  createEnvLlmExecutionPort,
+  createLlmAdmissionCoordinator,
   type LlmProviderAdapter,
+  type LlmExecutionPort,
+  type LlmAdmissionCoordinator,
   buildWriteToolDailyBudgetMessage,
 } from '@wispace/llm-agent';
 import {
@@ -186,6 +191,84 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [ConfigService, BotMetricsService],
     },
     {
+      provide: 'LLM_ADMISSION_COORDINATOR',
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+        redisClient?: RedisClientPort | null,
+      ): LlmAdmissionCoordinator => {
+        const config = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        return createLlmAdmissionCoordinator(
+          config,
+          { warn: (message) => console.warn(message) },
+          metrics.llmAdmission,
+          config.globalConcurrencyEnabled ? (redisClient ?? null) : null,
+        );
+      },
+      inject: [
+        ConfigService,
+        BotMetricsService,
+        { token: REDIS_CLIENT, optional: true },
+      ],
+    },
+    {
+      provide: 'LLM_EXECUTION_PORT',
+      useFactory: (
+        configService: ConfigService,
+        adapter: LlmProviderAdapter,
+        metrics: BotMetricsService,
+        admission: LlmAdmissionCoordinator,
+      ): LlmExecutionPort => {
+        const config = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        return createEnvLlmExecutionPort(
+          {
+            ...config,
+            redis: null,
+          },
+          adapter,
+          { warn: (message) => console.warn(message) },
+          metrics.llmAdmission,
+          admission,
+        );
+      },
+      inject: [
+        ConfigService,
+        'LLM_PROVIDER_ADAPTER',
+        BotMetricsService,
+        'LLM_ADMISSION_COORDINATOR',
+      ],
+    },
+    {
+      provide: 'LLM_REPORT_EXECUTION_PORT',
+      useFactory: (
+        configService: ConfigService,
+        adapter: LlmProviderAdapter,
+        metrics: BotMetricsService,
+        admission: LlmAdmissionCoordinator,
+      ): LlmExecutionPort => {
+        const config = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        return createEnvLlmExecutionPort(
+          { ...config, redis: null },
+          adapter,
+          { warn: (message) => console.warn(message) },
+          metrics.llmAdmission,
+          admission,
+        );
+      },
+      inject: [
+        ConfigService,
+        'LLM_PROVIDER_ADAPTER',
+        BotMetricsService,
+        'LLM_ADMISSION_COORDINATOR',
+      ],
+    },
+    {
       provide: DeliveryLogService,
       useFactory: (repo: Repository<ZaloMessageLogEntity>) =>
         new DeliveryLogService(repo, 'zalo'),
@@ -325,6 +408,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         clarificationStore: ClarificationStateStore,
         accountLinkService: ZaloAccountLinkService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
+        executionPort: LlmExecutionPort,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -380,6 +464,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               metrics.incClarificationOutcome(outcome),
             // Bounded admission telemetry (#389)
             llmAdmissionMetrics: metrics.llmAdmission,
+            llmExecution: executionPort,
           },
           redisClient,
         );
@@ -397,6 +482,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         CLARIFICATION_STATE_STORE,
         ZaloAccountLinkService,
         RescheduleConfirmationService,
+        'LLM_EXECUTION_PORT',
       ],
     },
     {
@@ -744,6 +830,9 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   ],
   exports: [
     'LLM_PROVIDER_ADAPTER',
+    'LLM_ADMISSION_COORDINATOR',
+    'LLM_EXECUTION_PORT',
+    'LLM_REPORT_EXECUTION_PORT',
     PlatformAgentService,
     PlatformChatHistoryService,
     PlatformChatQueueService,

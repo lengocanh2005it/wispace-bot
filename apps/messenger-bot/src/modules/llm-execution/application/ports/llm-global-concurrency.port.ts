@@ -10,6 +10,9 @@ export interface LlmGlobalConcurrencyPort {
       metrics?: LlmGlobalConcurrencyMetricsPort;
       signal?: AbortSignal;
       waitBudgetMs?: number;
+      maxRetries?: number;
+      retryDelayMs?: number;
+      leaseMs?: number;
     },
   ): Promise<() => Promise<void>>;
 }

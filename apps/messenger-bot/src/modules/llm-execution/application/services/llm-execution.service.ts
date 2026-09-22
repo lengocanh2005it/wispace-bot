@@ -3,15 +3,13 @@ import { errorMessage } from '@wispace/bot-common/masking';
 import { isAbortError } from '@wispace/bot-common/utils';
 import CircuitBreaker from 'opossum';
 import {
-  admissionWaitBudgetMs,
   INTERACTIVE_LLM_FEATURES,
   cappedExponentialBackoff,
   retryWithBackoff,
-  BoundedAdmissionQueue,
   LlmOverloadError,
+  LlmAdmissionCoordinator,
   LlmProviderCircuitOpenError,
   LlmAttemptBudget,
-  type AdmissionTicket,
   type LlmProviderAdapter,
   createLlmExecutionFailureTracker,
   type LlmExecutionFailureClassification,
@@ -46,11 +44,7 @@ type BreakerExecutionContext = LlmExecutionContext & {
 @Injectable()
 export class LlmExecutionService {
   private readonly logger = new Logger(LlmExecutionService.name);
-  private readonly queue: BoundedAdmissionQueue;
-  private readonly budgets: {
-    chatAdmissionWaitMs: number;
-    backgroundAdmissionWaitMs: number;
-  };
+  private readonly admission: LlmAdmissionCoordinator;
   private readonly breaker: CircuitBreaker;
 
   constructor(
@@ -62,15 +56,6 @@ export class LlmExecutionService {
     @Inject(LLM_GLOBAL_CONCURRENCY_PORT)
     private readonly globalConcurrencyPort?: LlmGlobalConcurrencyPort | null,
   ) {
-    this.queue = new BoundedAdmissionQueue(
-      this.config.getMaxConcurrent(),
-      this.config.getMaxQueueDepth(),
-    );
-    this.budgets = {
-      chatAdmissionWaitMs: this.config.getChatAdmissionWaitMs(),
-      backgroundAdmissionWaitMs: this.config.getBackgroundAdmissionWaitMs(),
-    };
-
     // Fail closed at startup when the aggregate budget is enabled without its
     // Redis dependency — never silently bypass the shared limit (#389).
     if (
@@ -81,6 +66,22 @@ export class LlmExecutionService {
         'LLM_GLOBAL_CONCURRENCY_ENABLED=true requires a configured Redis client — refusing to start with the aggregate limit silently bypassed (#389)',
       );
     }
+
+    this.admission = new LlmAdmissionCoordinator(
+      {
+        enabled: this.config.isEnabled(),
+        maxConcurrent: this.config.getMaxConcurrent(),
+        maxQueueDepth: this.config.getMaxQueueDepth(),
+        chatAdmissionWaitMs: this.config.getChatAdmissionWaitMs(),
+        backgroundAdmissionWaitMs: this.config.getBackgroundAdmissionWaitMs(),
+        globalMaxConcurrent: this.config.getGlobalMaxConcurrent(),
+        globalConcurrencyEnabled: this.config.isGlobalConcurrencyEnabled(),
+        requestTimeoutMs: this.config.getRequestTimeoutMs(),
+      },
+      this.logger,
+      this.metrics.llmAdmission,
+      this.globalConcurrencyPort,
+    );
 
     this.breaker = new CircuitBreaker(
       (
@@ -161,7 +162,6 @@ export class LlmExecutionService {
       }),
     };
 
-    const startedAtMs = Date.now();
     const attempt = context?.attempt ?? 'initial';
     const isBackground = !INTERACTIVE_LLM_FEATURES.has(
       executionContext.feature,
@@ -177,49 +177,24 @@ export class LlmExecutionService {
         backgroundAdmissionRecorded = true;
       }
     };
-    let ticket: AdmissionTicket;
+    let admissionLease: Awaited<ReturnType<LlmAdmissionCoordinator['acquire']>>;
     try {
-      const admission = this.queue.acquire({
+      admissionLease = await this.admission.acquire(
+        executionContext.feature,
         signal,
-        waitBudgetMs: admissionWaitBudgetMs(
-          this.budgets,
-          executionContext.feature,
-        ),
-      });
-      this.observeQueueState();
-      ticket = await admission;
+      );
     } catch (error) {
       if (error instanceof LlmOverloadError) {
-        this.metrics.incLlmAdmissionRejected(error.reason);
         if (error.reason !== 'redis_unavailable') {
           recordCapacityOverload();
         }
       }
-      this.observeQueueState();
       throw error;
     }
-    this.metrics.observeLlmAdmissionWait((Date.now() - startedAtMs) / 1000);
-    this.observeQueueState();
-
-    let releaseGlobal: (() => Promise<void>) | undefined;
     try {
-      if (this.globalConcurrencyPort) {
-        // Cancellation aborts the Redis retry loop and avoids holding a local
-        // admission slot while spinning (#364 parity on Messenger).
-        releaseGlobal = await this.globalConcurrencyPort.acquire(
-          this.config.getGlobalMaxConcurrent(),
-          { warn: (message) => this.logger.warn(message) },
-          {
-            metrics: this.metrics.llmAdmission,
-            signal,
-            waitBudgetMs: admissionWaitBudgetMs(
-              this.budgets,
-              executionContext.feature,
-            ),
-          },
-        );
-      }
-
+      const attemptsBeforeExecution = attemptBudget.attemptsUsed;
+      const attemptsForExecution = () =>
+        Math.max(0, attemptBudget.attemptsUsed - attemptsBeforeExecution);
       if (isBackground && !backgroundAdmissionRecorded) {
         this.metrics.observeLlmBackgroundAdmission?.(
           executionContext.feature,
@@ -243,6 +218,10 @@ export class LlmExecutionService {
               executionContext.feature,
               () => fn(signal, attemptBudget),
             );
+            this.metrics.llmAdmission?.observeRetryAttempts?.(
+              attemptsForExecution(),
+              { outcome: 'success' },
+            );
             if (ownsAttemptBudget) {
               this.metrics.incLlmTotalProviderAttempts?.(
                 executionContext.feature,
@@ -253,6 +232,10 @@ export class LlmExecutionService {
             return result;
           } catch (error) {
             attemptBudget.recordFailure(error);
+            this.metrics.llmAdmission?.observeRetryAttempts?.(
+              attemptsForExecution(),
+              { outcome: 'exhausted' },
+            );
             if (ownsAttemptBudget) {
               this.metrics.incLlmTotalProviderAttempts?.(
                 executionContext.feature,
@@ -271,6 +254,10 @@ export class LlmExecutionService {
             fn,
             executionContext,
           )) as Promise<T>;
+          this.metrics.llmAdmission?.observeRetryAttempts?.(
+            attemptsForExecution(),
+            { outcome: 'success' },
+          );
           if (ownsAttemptBudget) {
             this.metrics.incLlmTotalProviderAttempts?.(
               executionContext.feature,
@@ -280,6 +267,10 @@ export class LlmExecutionService {
           }
           return result;
         } catch (error) {
+          this.metrics.llmAdmission?.observeRetryAttempts?.(
+            attemptsForExecution(),
+            { outcome: 'exhausted' },
+          );
           if (ownsAttemptBudget) {
             this.metrics.incLlmTotalProviderAttempts?.(
               executionContext.feature,
@@ -306,15 +297,8 @@ export class LlmExecutionService {
       }
       throw error;
     } finally {
-      await releaseGlobal?.();
-      ticket.release();
-      this.observeQueueState();
+      await admissionLease.release();
     }
-  }
-
-  private observeQueueState(): void {
-    this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
-    this.metrics.setLlmAdmissionDrainLag(this.queue.oldestWaitingAgeMs / 1000);
   }
 
   private async runWithRetry<T>(

@@ -224,6 +224,14 @@ export {
   normalizeMaxTotalProviderAttempts,
   readMaxTotalProviderAttempts,
 } from '../execution/attempt-budget';
+export { LlmAdmissionCoordinator } from '../execution/llm-admission-coordinator';
+export type {
+  AdmissionMetrics,
+  LlmAdmissionGlobalMetrics,
+  LlmAdmissionGlobalPort,
+  LlmAdmissionCoordinatorConfig,
+  LlmAdmissionLease,
+} from '../execution/llm-admission-coordinator';
 
 export { CLASSIFIER_SYSTEM_PROMPT } from '../classifier/classifier-prompt';
 export {

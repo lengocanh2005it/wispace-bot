@@ -208,6 +208,8 @@ export {
   INTERACTIVE_LLM_FEATURES,
   admissionWaitBudgetMs,
   createEnvLlmExecutionPort,
+  createLlmAdmissionCoordinator,
+  LlmAdmissionCoordinator,
   buildLlmExecutionConfig,
   calculateBackgroundAdmissionCapacity,
   resolveBackgroundProducerConcurrency,
@@ -226,6 +228,11 @@ export type {
   BackgroundProducerConcurrencyOptions,
   LlmExecutionConfigReader,
   EnvLlmExecutionConfig,
+  LlmAdmissionRedisSource,
+  LlmAdmissionGlobalMetrics,
+  LlmAdmissionGlobalPort,
+  LlmAdmissionCoordinatorConfig,
+  LlmAdmissionLease,
   LlmProviderCircuitState,
 } from './execution/index';
 

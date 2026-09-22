@@ -46,7 +46,7 @@ import type {
   ChatQueueStorePort,
   ClarificationStateStore,
 } from '@wispace/chat-agent';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
 import { buildWriteToolDailyBudgetMessage } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
@@ -281,6 +281,7 @@ const REGISTER_REPORT_MESSAGE =
         clarificationStore: ClarificationStateStore,
         accountLinkService: DiscordAccountLinkService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
+        executionPort: LlmExecutionPort,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -336,6 +337,7 @@ const REGISTER_REPORT_MESSAGE =
               metrics.incClarificationOutcome(outcome),
             // Bounded admission telemetry (#389)
             llmAdmissionMetrics: metrics.llmAdmission,
+            llmExecution: executionPort,
           },
           redisClient,
         );
@@ -353,6 +355,7 @@ const REGISTER_REPORT_MESSAGE =
         CLARIFICATION_STATE_STORE,
         DiscordAccountLinkService,
         RescheduleConfirmationService,
+        'LLM_EXECUTION_PORT',
       ],
     },
     {

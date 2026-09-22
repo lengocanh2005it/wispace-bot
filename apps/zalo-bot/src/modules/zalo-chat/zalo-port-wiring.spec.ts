@@ -5,6 +5,18 @@ import { ZaloOutboundService } from './application/services/zalo-outbound.servic
 import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
 
 describe('Zalo outbound port wiring', () => {
+  it('registers one shared coordinator with feature-local execution ports', () => {
+    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
+      []) as Array<{ provide?: unknown }>;
+    expect(providers.map((provider) => provider.provide)).toEqual(
+      expect.arrayContaining([
+        'LLM_ADMISSION_COORDINATOR',
+        'LLM_EXECUTION_PORT',
+        'LLM_REPORT_EXECUTION_PORT',
+      ]),
+    );
+  });
+
   it('wires the shared fail-closed policy into the startup binding', () => {
     const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
       []) as Array<unknown>;

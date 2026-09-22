@@ -209,6 +209,33 @@ describe('acquireRedisSlot', () => {
     await expectation;
   });
 
+  it('releases a lease acquired after the caller aborts (#867)', async () => {
+    const controller = new AbortController();
+    let resolveAcquire!: (value: number) => void;
+    const redis = {
+      eval: jest
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<number>((resolve) => {
+              resolveAcquire = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(1),
+    };
+
+    const pending = acquireRedisSlot(redis as never, 'test', 10, mockLogger, {
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort(new Error('caller gone'));
+    await expect(pending).rejects.toThrow('caller gone');
+
+    resolveAcquire(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(redis.eval).toHaveBeenCalledTimes(2);
+  });
+
   it('aborts immediately when already aborted before a hung command (#389)', async () => {
     const controller = new AbortController();
     controller.abort();

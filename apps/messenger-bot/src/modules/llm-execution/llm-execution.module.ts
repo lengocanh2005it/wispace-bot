@@ -9,6 +9,7 @@ import {
   assertSupportedLlmProvider,
   OpenAiAdapter,
   acquireRedisSlot,
+  LlmOverloadError,
 } from '@wispace/llm-agent/adapters';
 import type { LlmProviderAdapter } from '@wispace/llm-agent/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -34,17 +35,21 @@ import {
         redisClient?: RedisClientPort | null,
       ): LlmGlobalConcurrencyPort | null => {
         if (!config.isGlobalConcurrencyEnabled()) return null;
-        const redis = redisClient?.getNativeClient();
-        if (!redis) return null;
+        if (!redisClient || !redisClient.isConfiguredEnabled()) return null;
         return {
-          acquire: (limit, logger, options) =>
-            acquireRedisSlot(
+          acquire: (limit, logger, options) => {
+            const redis = redisClient.getNativeClient();
+            if (!redis) {
+              return Promise.reject(new LlmOverloadError('redis_unavailable'));
+            }
+            return acquireRedisSlot(
               redis as Redis,
               'llm:concurrency:global',
               limit,
               logger,
               options,
-            ),
+            );
+          },
         };
       },
       inject: [

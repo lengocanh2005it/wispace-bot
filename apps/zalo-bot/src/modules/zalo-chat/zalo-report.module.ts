@@ -11,7 +11,7 @@ import {
   provideWiredUsageRecorder,
 } from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,
@@ -180,6 +180,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
         metrics: BotMetricsService,
+        executionPort: LlmExecutionPort,
       ) =>
         new PlatformStudentReportService(
           'zalo',
@@ -191,6 +192,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
           undefined,
           metrics.llmAdmission,
           (event) => metrics.incLlmDegradedMode(event),
+          executionPort,
         ),
       inject: [
         ConfigService,
@@ -198,6 +200,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
         BotMetricsService,
+        'LLM_REPORT_EXECUTION_PORT',
       ],
     },
   ],

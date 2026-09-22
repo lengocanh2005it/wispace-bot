@@ -10,7 +10,7 @@ import {
   ChatMeteringModule,
 } from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -153,6 +153,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
         metrics: BotMetricsService,
+        executionPort: LlmExecutionPort,
       ) =>
         new PlatformStudentReportService(
           'discord',
@@ -164,6 +165,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
           undefined,
           metrics.llmAdmission,
           (event) => metrics.incLlmDegradedMode(event),
+          executionPort,
         ),
       inject: [
         ConfigService,
@@ -171,6 +173,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
         BotMetricsService,
+        'LLM_REPORT_EXECUTION_PORT',
       ],
     },
     ReportScheduleService,

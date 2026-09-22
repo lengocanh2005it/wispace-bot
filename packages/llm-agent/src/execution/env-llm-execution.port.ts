@@ -13,12 +13,15 @@ import {
 } from '../utils/retry.utils';
 import { acquireRedisSlot, type SlotLogger } from './redis-slot-limiter';
 import {
-  BoundedAdmissionQueue,
   LlmOverloadError,
   INTERACTIVE_LLM_FEATURES,
-  admissionWaitBudgetMs,
-  type AdmissionTicket,
 } from './bounded-admission';
+import {
+  LlmAdmissionCoordinator,
+  type LlmAdmissionGlobalPort,
+  type AdmissionMetrics,
+} from './llm-admission-coordinator';
+export type { AdmissionMetrics } from './llm-admission-coordinator';
 import { LlmProviderCircuitOpenError } from './circuit-error';
 import {
   LlmAttemptBudget,
@@ -71,36 +74,81 @@ const REDIS_SLOT_KEY = 'llm:concurrency:global';
 const EXECUTION_CIRCUIT_FAILURE_THRESHOLD = 3;
 const EXECUTION_CIRCUIT_RESET_MS = 60_000;
 
-/**
- * Admission telemetry for all three bots (#389): low-cardinality rejection
- * reasons plus how long admitted calls waited before execution started.
- * Extends SlotMetrics so the same object feeds the shared Redis slot limiter.
- */
-export interface AdmissionMetrics {
-  incrementCounter(name: string, labels?: Record<string, string>): void;
-  observeWaitSeconds(seconds: number): void;
-  /** Optional local queue saturation gauge (#389). */
-  observeQueueDepth?(depth: number): void;
-  /** Optional age of the oldest queued waiter, in seconds. */
-  observeQueueDrainLag?(seconds: number): void;
-  /** Observe the number of attempts used per tool round. */
-  observeRetryAttempts?(
-    attempts: number,
-    labels?: Record<string, string>,
-  ): void;
-  /** Observe one terminal provider classification at the execution boundary. */
-  observeExecutionCircuitFailure?(errorClass: string): void;
-  /** One observation per generation, not one per tool round. */
-  observeTotalProviderAttempts?(
-    attempts: number,
-    labels?: Record<string, string>,
-  ): void;
-  observeBackgroundAdmission?(
-    feature: string,
-    attempt: LlmExecutionAttempt,
-    outcome: 'admitted' | 'capacity_overload',
-  ): void;
-  observeOverloadRegeneration?(feature: string): void;
+export interface LlmAdmissionRedisSource {
+  getNativeClient(): Redis | null;
+  isConfiguredEnabled?(): boolean;
+}
+
+type RedisSource = Redis | LlmAdmissionRedisSource;
+
+function isRedisSource(source: RedisSource): source is LlmAdmissionRedisSource {
+  return (
+    typeof (source as { getNativeClient?: unknown }).getNativeClient ===
+    'function'
+  );
+}
+
+function resolveRedis(source: RedisSource): Redis | null {
+  return isRedisSource(source) ? source.getNativeClient() : source;
+}
+
+function createRedisGlobalPort(source: RedisSource): LlmAdmissionGlobalPort {
+  return {
+    acquire: (
+      limit,
+      portLogger,
+      options?: {
+        metrics?: {
+          incrementCounter(name: string, labels?: Record<string, string>): void;
+        };
+        signal?: AbortSignal;
+        waitBudgetMs?: number;
+        maxRetries?: number;
+        retryDelayMs?: number;
+        leaseMs?: number;
+      },
+    ) => {
+      const redis = resolveRedis(source);
+      if (!redis) {
+        throw new LlmOverloadError('redis_unavailable');
+      }
+      return acquireRedisSlot(redis, REDIS_SLOT_KEY, limit, portLogger, {
+        metrics: options?.metrics,
+        signal: options?.signal,
+        leaseMs: options?.leaseMs,
+        maxRetries: options?.maxRetries,
+        retryDelayMs: options?.retryDelayMs,
+        waitBudgetMs: options?.waitBudgetMs,
+      });
+    },
+  };
+}
+
+export function createLlmAdmissionCoordinator(
+  config: EnvLlmExecutionConfig,
+  logger: SlotLogger,
+  metrics?: AdmissionMetrics,
+  redis?: RedisSource | null,
+): LlmAdmissionCoordinator {
+  if (
+    config.globalConcurrencyEnabled &&
+    redis &&
+    isRedisSource(redis) &&
+    redis.isConfiguredEnabled &&
+    !redis.isConfiguredEnabled()
+  ) {
+    throw new Error(
+      'LLM_GLOBAL_CONCURRENCY_ENABLED=true requires Redis to be configured — refusing to start with the aggregate limit silently bypassed (#867)',
+    );
+  }
+  return new LlmAdmissionCoordinator(
+    config,
+    logger,
+    metrics,
+    config.globalConcurrencyEnabled && redis
+      ? createRedisGlobalPort(redis)
+      : null,
+  );
 }
 
 /**
@@ -121,19 +169,23 @@ export function createEnvLlmExecutionPort(
   adapter: LlmProviderAdapter,
   logger: SlotLogger,
   metrics?: AdmissionMetrics,
+  admissionCoordinator?: LlmAdmissionCoordinator,
 ): LlmExecutionPort {
-  if (config.enabled && config.globalConcurrencyEnabled && !config.redis) {
+  if (
+    config.globalConcurrencyEnabled &&
+    !config.redis &&
+    !admissionCoordinator
+  ) {
     throw new Error(
       'LLM_GLOBAL_CONCURRENCY_ENABLED=true requires a Redis client — refusing to start with the aggregate limit silently bypassed (#389)',
     );
   }
-  const queue = new BoundedAdmissionQueue(
-    config.maxConcurrent,
-    config.maxQueueDepth,
-  );
   const nativeRedis = config.globalConcurrencyEnabled
     ? (config.redis ?? null)
     : null;
+  const admission =
+    admissionCoordinator ??
+    createLlmAdmissionCoordinator(config, logger, metrics, nativeRedis);
   let consecutiveFailures = 0;
   let circuitOpenedAt = 0;
   let halfOpenInFlight = false;
@@ -182,11 +234,6 @@ export function createEnvLlmExecutionPort(
     }
   };
 
-  const observeQueueState = (): void => {
-    metrics?.observeQueueDepth?.(queue.waitingCount);
-    metrics?.observeQueueDrainLag?.(queue.oldestWaitingAgeMs / 1000);
-  };
-
   return {
     run: async <T>(
       fn: (
@@ -227,10 +274,6 @@ export function createEnvLlmExecutionPort(
         attemptBudget,
       });
 
-      // Acquire global Redis slot INSIDE the local limiter callback (#153) —
-      // slots are only held during actual LLM execution, not while waiting
-      // in the bounded admission queue.
-      const startedAtMs = Date.now();
       const attempt = meta?.attempt ?? 'initial';
       const isBackground = !INTERACTIVE_LLM_FEATURES.has(meta?.feature ?? '');
       let backgroundAdmissionRecorded = false;
@@ -244,55 +287,27 @@ export function createEnvLlmExecutionPort(
           backgroundAdmissionRecorded = true;
         }
       };
-      let ticket: AdmissionTicket;
+      let admissionLease: Awaited<
+        ReturnType<LlmAdmissionCoordinator['acquire']>
+      >;
       try {
-        const admission = queue.acquire({
+        admissionLease = await admission.acquire(
+          meta?.feature ?? FEATURE,
           signal,
-          waitBudgetMs: admissionWaitBudgetMs(config, meta?.feature),
-        });
-        observeQueueState();
-        ticket = await admission;
+        );
       } catch (error) {
         // A half-open probe may be rejected before a provider call (queue or
         // Redis failure); do not leave the execution circuit wedged forever.
         if (!isClassifier) halfOpenInFlight = false;
         if (error instanceof LlmOverloadError) {
-          metrics?.incrementCounter('llm_admission_rejected_total', {
-            reason: error.reason,
-          });
           if (error.reason !== 'redis_unavailable') {
             recordCapacityOverload();
           }
         }
-        observeQueueState();
         throw error;
       }
-      metrics?.observeWaitSeconds((Date.now() - startedAtMs) / 1000);
-      observeQueueState();
-
-      let release: (() => Promise<void>) | undefined;
-      const waitBudgetMs = admissionWaitBudgetMs(config, meta?.feature);
       try {
         let attemptCount = 0;
-        if (nativeRedis) {
-          // Compose deadline + caller signal BEFORE slot acquisition so
-          // cancellation aborts the Redis retry loop and avoids holding
-          // a local admission slot while spinning (#364).
-          release = await acquireRedisSlot(
-            nativeRedis,
-            REDIS_SLOT_KEY,
-            config.globalMaxConcurrent,
-            logger,
-            {
-              metrics,
-              signal,
-              leaseMs: Math.max(config.requestTimeoutMs, 60_000),
-              maxRetries: config.globalAcquireMaxRetries,
-              retryDelayMs: config.globalAcquireRetryDelayMs,
-              waitBudgetMs,
-            },
-          );
-        }
         if (isBackground && !backgroundAdmissionRecorded) {
           metrics?.observeBackgroundAdmission?.(
             meta?.feature ?? 'unknown',
@@ -410,9 +425,7 @@ export function createEnvLlmExecutionPort(
         throw error;
       } finally {
         if (!isClassifier) halfOpenInFlight = false;
-        await release?.();
-        ticket.release();
-        observeQueueState();
+        await admissionLease.release();
       }
     },
   };

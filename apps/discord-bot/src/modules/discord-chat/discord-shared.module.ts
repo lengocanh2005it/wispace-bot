@@ -2,8 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   createLlmProviderAdapterFromEnv,
+  buildLlmExecutionConfig,
+  createEnvLlmExecutionPort,
+  createLlmAdmissionCoordinator,
   type LlmProviderAdapter,
+  type LlmExecutionPort,
+  type LlmAdmissionCoordinator,
 } from '@wispace/llm-agent';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';
@@ -54,6 +60,84 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         ),
       inject: [ConfigService, BotMetricsService],
     },
+    {
+      provide: 'LLM_ADMISSION_COORDINATOR',
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+        redisClient?: RedisClientPort | null,
+      ): LlmAdmissionCoordinator => {
+        const config = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        return createLlmAdmissionCoordinator(
+          config,
+          { warn: (message) => console.warn(message) },
+          metrics.llmAdmission,
+          config.globalConcurrencyEnabled ? (redisClient ?? null) : null,
+        );
+      },
+      inject: [
+        ConfigService,
+        BotMetricsService,
+        { token: REDIS_CLIENT, optional: true },
+      ],
+    },
+    {
+      provide: 'LLM_EXECUTION_PORT',
+      useFactory: (
+        configService: ConfigService,
+        adapter: LlmProviderAdapter,
+        metrics: BotMetricsService,
+        admission: LlmAdmissionCoordinator,
+      ): LlmExecutionPort => {
+        const config = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        return createEnvLlmExecutionPort(
+          {
+            ...config,
+            redis: null,
+          },
+          adapter,
+          { warn: (message) => console.warn(message) },
+          metrics.llmAdmission,
+          admission,
+        );
+      },
+      inject: [
+        ConfigService,
+        'LLM_PROVIDER_ADAPTER',
+        BotMetricsService,
+        'LLM_ADMISSION_COORDINATOR',
+      ],
+    },
+    {
+      provide: 'LLM_REPORT_EXECUTION_PORT',
+      useFactory: (
+        configService: ConfigService,
+        adapter: LlmProviderAdapter,
+        metrics: BotMetricsService,
+        admission: LlmAdmissionCoordinator,
+      ): LlmExecutionPort => {
+        const config = buildLlmExecutionConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        return createEnvLlmExecutionPort(
+          { ...config, redis: null },
+          adapter,
+          { warn: (message) => console.warn(message) },
+          metrics.llmAdmission,
+          admission,
+        );
+      },
+      inject: [
+        ConfigService,
+        'LLM_PROVIDER_ADAPTER',
+        BotMetricsService,
+        'LLM_ADMISSION_COORDINATOR',
+      ],
+    },
     DiscordReportDeliveryService,
     TypeormDiscordReportAccountReader,
     {
@@ -65,6 +149,12 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       useExisting: DiscordReportDeliveryService,
     },
   ],
-  exports: ['LLM_PROVIDER_ADAPTER', REPORT_DELIVERY_PORT],
+  exports: [
+    'LLM_PROVIDER_ADAPTER',
+    'LLM_ADMISSION_COORDINATOR',
+    'LLM_EXECUTION_PORT',
+    'LLM_REPORT_EXECUTION_PORT',
+    REPORT_DELIVERY_PORT,
+  ],
 })
 export class DiscordSharedModule {}
