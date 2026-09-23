@@ -95,13 +95,15 @@ export function buildSafetyScanCandidates(text: string): string[] {
  */
 const PRACTICE_ROLE_REQUEST_PATTERN =
   /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/i;
+const ACT_AS_HOSTILE_PERSONA_PATTERN =
+  /(?:unrestricted|different|other|new|another|alternative|evil|free|uncensored|dangerous|DAN|hacker|malicious|unfiltered)/i;
 const GENERIC_ROLE_INJECTION_PATTERNS = [
   /pretend\s+(you\s+are|to\s+be)/i,
   /roleplay\s+as/i,
   /(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i,
 ] as const;
 const PRACTICE_ROLE_HOSTILE_PATTERN = new RegExp(
-  `(?:${PRACTICE_ROLE_REQUEST_PATTERN.source}).{0,100}(?:\\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ai|llm|model|bot)\\b|\\b(?:ignore|bypass|override|disregard)\\b.{0,24}\\b(?:rules?|instructions?|constraints?|restrictions?)\\b|\\b(?:no|without)\\b.{0,12}\\b(?:rules?|restrictions?|limits?)\\b|\\b(?:different|new|another|alternative|other)\\s+(?:ai|llm|model|bot|assistant|system|persona|identity)\\b)`,
+  `(?:${PRACTICE_ROLE_REQUEST_PATTERN.source}).{0,100}(?:\\b${ACT_AS_HOSTILE_PERSONA_PATTERN.source}\\b|\\b(?:developer|jailbreak|system|assistant|ai|llm|model|bot)\\b|\\b(?:ignore|bypass|override|disregard)\\b.{0,24}\\b(?:rules?|instructions?|constraints?|restrictions?)\\b|\\b(?:no|without)\\b.{0,12}\\b(?:rules?|restrictions?|limits?)\\b|\\b(?:different|new|another|alternative|other)\\s+(?:ai|llm|model|bot|assistant|system|persona|identity)\\b)`,
   'i',
 );
 const INJECTION_PATTERNS: Array<[RegExp, string]> = [
@@ -165,7 +167,10 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
   ],
   // "act as" — only flag when implying AI persona override, not general usage
   [
-    /act\s+as\s+(a\s+|an\s+)?(unrestricted|different|other|new|another|alternative|evil|free|uncensored|dangerous|DAN|hacker|malicious|unfiltered)/i,
+    new RegExp(
+      `act\\s+as\\s+(a\\s+|an\\s+)?${ACT_AS_HOSTILE_PERSONA_PATTERN.source}`,
+      'i',
+    ),
     'persona_override',
   ],
   [GENERIC_ROLE_INJECTION_PATTERNS[0], 'persona_override'],
