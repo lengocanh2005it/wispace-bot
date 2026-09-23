@@ -42,6 +42,17 @@ METRICS_PATH="/metrics"
 BOOTSTRAP_ENV="vault-bootstrap.env"
 BACKUP_BOOTSTRAP_ENV="backup-bootstrap.env"
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/home/ngoc_anh/backups/ai_chat_bot_db/backup.env}"
+HOST_SCRIPTS_DIR="${HOST_SCRIPTS_DIR:-/home/ngoc_anh/scripts}"
+DEPLOY_SCRIPTS_DIR="${DEPLOY_SCRIPTS_DIR:-scripts}"
+DEPLOY_SHA="${DEPLOY_SHA:-}"
+
+MANAGED_HOST_SCRIPTS=(
+  "postgres-backup.sh"
+  "postgres-offsite-sync.sh"
+  "postgres-restore-verify.sh"
+  "backup-monitor.sh"
+  "vps-hardening-check.sh"
+)
 
 ENV_INSTALL_TMP=""
 ENV_FILE=""
@@ -496,6 +507,92 @@ if [ -f "$BACKUP_ENV_FILE" ]; then
     echo "ERROR: invalid host backup env — refusing to deploy" >&2
     exit 1
   fi
+fi
+
+# Automated host operational scripts distribution (#1325).
+# Messenger-bot is the migration owner and distributes shared host automation.
+install_host_scripts() {
+  local scripts_dir="$DEPLOY_SCRIPTS_DIR"
+  local target_dir="$HOST_SCRIPTS_DIR"
+  local manifest_file="$target_dir/.installed-manifest.json"
+
+  if [ ! -d "$scripts_dir" ]; then
+    return 0
+  fi
+
+  if ! mkdir -p "$target_dir" || ! chmod 750 "$target_dir"; then
+    echo "ERROR: could not prepare host scripts directory $target_dir" >&2
+    return 1
+  fi
+
+  # Explicitly remove retired scripts (#1325)
+  rm -f "$target_dir/postgres-restore-test.sh"
+
+  local manifest_tmp
+  if ! manifest_tmp=$(mktemp "$target_dir/.installed-manifest.tmp.XXXXXX"); then
+    echo "ERROR: could not create temporary manifest in $target_dir" >&2
+    return 1
+  fi
+
+  local sha_entries=()
+  for script_name in "${MANAGED_HOST_SCRIPTS[@]}"; do
+    local src="$scripts_dir/$script_name"
+    local dst="$target_dir/$script_name"
+    if [ ! -f "$src" ]; then
+      echo "ERROR: managed host script missing from bundle: $script_name" >&2
+      rm -f "$manifest_tmp"
+      return 1
+    fi
+
+    local tmp
+    if ! tmp=$(mktemp "$target_dir/${script_name}.tmp.XXXXXX"); then
+      echo "ERROR: could not create temporary file for $script_name" >&2
+      rm -f "$manifest_tmp"
+      return 1
+    fi
+
+    if ! cp "$src" "$tmp" || ! chmod 750 "$tmp" || ! mv -f "$tmp" "$dst"; then
+      echo "ERROR: could not install $script_name to $dst" >&2
+      rm -f "$tmp" "$manifest_tmp"
+      return 1
+    fi
+
+    local file_sha
+    file_sha=$(sha256sum "$dst" | cut -d' ' -f1)
+    sha_entries+=("\"$script_name\": \"$file_sha\"")
+  done
+
+  local installed_at
+  installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  {
+    echo "{"
+    echo "  \"commit_sha\": \"$DEPLOY_SHA\","
+    echo "  \"installed_at\": \"$installed_at\","
+    echo "  \"scripts\": {"
+    local count=${#sha_entries[@]}
+    for ((i=0; i<count; i++)); do
+      if [ $i -lt $((count - 1)) ]; then
+        echo "    ${sha_entries[i]},"
+      else
+        echo "    ${sha_entries[i]}"
+      fi
+    done
+    echo "  }"
+    echo "}"
+  } > "$manifest_tmp"
+
+  if ! chmod 640 "$manifest_tmp" || ! mv -f "$manifest_tmp" "$manifest_file"; then
+    echo "ERROR: could not finalize manifest at $manifest_file" >&2
+    rm -f "$manifest_tmp"
+    return 1
+  fi
+
+  echo "Host operational scripts installed into $target_dir (manifest sha: ${DEPLOY_SHA:-unknown})"
+}
+
+if [ "$APP_NAME" = "messenger-bot" ]; then
+  install_host_scripts
 fi
 
 # A self-pull/retry uses the already-installed bootstrap. Never accept a

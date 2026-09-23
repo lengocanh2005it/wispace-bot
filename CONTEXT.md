@@ -904,6 +904,24 @@ _Avoid_: hardening phase — these are specifically numbered items
 Redis integration phases. R0=basic connection, R1=chat history, R2=webhook dedupe, R3=burst counter, R4=chat queue, R5=user display cache.
 _Avoid_: generic redis phase
 
+### Disaster Recovery & Host Scripts
+
+**host operational scripts**:
+Host-side bash scripts residing at `/home/ngoc_anh/scripts/` executed by cron or operations outside Docker containers (`postgres-backup.sh`, `backup-monitor.sh`, `postgres-offsite-sync.sh`, `postgres-restore-verify.sh`, `vps-hardening-check.sh`).
+_Avoid_: bot scripts, infra scripts, deploy scripts (when referring specifically to host-level operational cron scripts)
+
+**host script manifest**:
+Authoritative machine-readable inventory (`/home/ngoc_anh/scripts/.installed-manifest.json`) generated at deployment time, recording the git commit SHA, deployment timestamp, and SHA256 checksum of every installed host script.
+_Avoid_: script version file, release stamp
+
+**host script drift**:
+The condition where an operational script on the host is missing, outdated compared to the deployment revision, or differs in SHA256 checksum from the host script manifest.
+_Avoid_: out of sync script, stale script (use drift for checksum or file presence divergence)
+
+**fail-safe script execution**:
+The execution discipline where host scripts run under `set -euo pipefail` without crashing silently: requiring an immediate startup timestamp banner, non-panicking variable extraction (`grep ... 2>/dev/null || true`), and an `ERR` trap that surfaces abnormal termination to Alertmanager.
+_Avoid_: quiet execution, silent failure
+
 ### Redis Availability
 
 **Redis operation deadline**:
@@ -1119,3 +1137,6 @@ _Avoid_: SQL syntax contract, query-shape contract
 | `postback`           | `buttonClick`                                         | Messenger platform terminology                              |
 | `dead letter`        | `failed queue`                                        | Standard messaging pattern                                  |
 | qualified `fan-out`  | bare `fan-out`                                        | Four meanings in this repo, two of them opposite            |
+| `host scripts`       | `infra scripts`, `host cron scripts`                  | Canonical location `/home/ngoc_anh/scripts/`                |
+| `host script manifest`| `version lock`, `script list`                        | Machine-readable JSON inventory on host                     |
+| `host script drift`  | `stale scripts`, `dirty scripts`                      | Checksum or presence divergence from manifest               |

@@ -11,6 +11,9 @@ set -euo pipefail
 # Weekly remote decryptability:
 #   0 4 * * 0 RUN_RESTORE_VERIFY=1 /home/ngoc_anh/scripts/backup-monitor.sh >> /home/ngoc_anh/backups/monitor.log 2>&1
 
+# Immediate startup banner so executions always leave an observable signal (#1325).
+echo "[$(date -Is)] [backup-monitor] Starting backup health and drift check..."
+
 BACKUP_DIR="${BACKUP_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db}"
 ENV_FILE="${ENV_FILE:-/home/ngoc_anh/backups/ai_chat_bot_db/backup.env}"
 SUCCESS_MARKER="$BACKUP_DIR/.last-backup-success"
@@ -22,6 +25,10 @@ BACKUP_STALE_ALERT="postgres_backup_stale"
 OFFSITE_STALE_ALERT="postgres_offsite_stale"
 RUN_RESTORE_VERIFY="${RUN_RESTORE_VERIFY:-0}"
 RESTORE_VERIFY_SCRIPT="${RESTORE_VERIFY_SCRIPT:-/home/ngoc_anh/scripts/postgres-restore-verify.sh}"
+HOST_SCRIPTS_DIR="${HOST_SCRIPTS_DIR:-/home/ngoc_anh/scripts}"
+MANIFEST_FILE="${HOST_MANIFEST_FILE:-$HOST_SCRIPTS_DIR/.installed-manifest.json}"
+DRIFT_ALERT="host_scripts_drift_detected"
+CHECK_SCRIPT_DRIFT="${CHECK_SCRIPT_DRIFT:-1}"
 
 TMP_DIR=""
 RCLONE_CONF=""
@@ -61,6 +68,13 @@ post_alert() { # alertname summary description [ends_at]
     -H 'Content-Type: application/json' -d "$body" >/dev/null 2>&1 \
     || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
 }
+
+on_monitor_error() {
+  local exit_code="$1" line="$2"
+  echo "ERROR [$(date -Is)]: backup-monitor failed at line $line with exit code $exit_code" >&2
+  post_alert "backup_monitor_failed" "Backup monitor crashed" "Script error at line $line with exit code $exit_code" 2>/dev/null || true
+}
+trap 'on_monitor_error $? $LINENO' ERR
 
 resolve_alert() {
   post_alert "$1" "" "" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -228,8 +242,98 @@ download_and_verify_remote() {
     --target disposable
 }
 
+verify_host_scripts_drift() {
+  if [ "$CHECK_SCRIPT_DRIFT" != "1" ]; then
+    return 0
+  fi
+
+  if [ ! -s "$MANIFEST_FILE" ]; then
+    echo "ERROR: host script manifest missing or empty at $MANIFEST_FILE" >&2
+    post_alert "$DRIFT_ALERT" "Host scripts drift detected" "Host script manifest is missing or empty at $MANIFEST_FILE"
+    return 1
+  fi
+
+  local drift_found=0
+  local drift_reason=""
+  local verified_count=0
+
+  local in_scripts=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" =~ \"scripts\":[[:space:]]*\{ ]]; then
+      in_scripts=1
+      continue
+    fi
+    if [ "$in_scripts" -eq 1 ]; then
+      if [[ "$line" =~ \} ]]; then
+        in_scripts=0
+        break
+      fi
+      if [[ "$line" =~ \"([^\"]+)\":[[:space:]]*\"([^\"]+)\" ]]; then
+        local script_name="${BASH_REMATCH[1]}"
+        local expected_sha="${BASH_REMATCH[2]}"
+
+        # Prevent path traversal and malformed inputs (#1325 review)
+        if ! [[ "$script_name" =~ ^[a-zA-Z0-9_.-]+$ ]] || [[ "$script_name" == *"/"* ]] || [[ "$script_name" == *".."* ]]; then
+          echo "ERROR: invalid script name in manifest: $script_name" >&2
+          drift_found=1
+          drift_reason="Invalid script name in manifest: $script_name"
+          break
+        fi
+
+        if ! [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "ERROR: invalid sha256 checksum in manifest for $script_name" >&2
+          drift_found=1
+          drift_reason="Invalid sha256 in manifest for $script_name"
+          break
+        fi
+
+        local script_path="$HOST_SCRIPTS_DIR/$script_name"
+
+        if [ ! -f "$script_path" ]; then
+          echo "ERROR: host script missing: $script_path" >&2
+          drift_found=1
+          drift_reason="Missing script: $script_name"
+          break
+        fi
+
+        if [ ! -x "$script_path" ]; then
+          echo "ERROR: host script is not executable: $script_path" >&2
+          drift_found=1
+          drift_reason="Script not executable: $script_name"
+          break
+        fi
+
+        local actual_sha
+        actual_sha=$(sha256sum "$script_path" | cut -d' ' -f1)
+        if [ "$actual_sha" != "$expected_sha" ]; then
+          echo "ERROR: host script checksum mismatch for $script_name (expected $expected_sha, got $actual_sha)" >&2
+          drift_found=1
+          drift_reason="Checksum mismatch for $script_name"
+          break
+        fi
+
+        verified_count=$((verified_count + 1))
+      fi
+    fi
+  done < "$MANIFEST_FILE"
+
+  if [ "$drift_found" -ne 0 ] || [ "$verified_count" -lt 5 ]; then
+    local reason="${drift_reason:-Manifest incomplete: only $verified_count/5 scripts verified}"
+    post_alert "$DRIFT_ALERT" "Host scripts drift detected" "$reason"
+    return 1
+  fi
+
+  resolve_alert "$DRIFT_ALERT"
+  echo "Host operational scripts OK: checksums match manifest ($verified_count verified)"
+  return 0
+}
+
 EXIT_CODE=0
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/backup-monitor.XXXXXX")
+
+if ! verify_host_scripts_drift; then
+  EXIT_CODE=1
+fi
 
 if ! check_age "$SUCCESS_MARKER" "Local backup" "$MAX_BACKUP_AGE_HOURS"; then
   post_alert "$BACKUP_STALE_ALERT" "Postgres backup stale" "Local backup success marker is missing, invalid, future-dated, or stale."

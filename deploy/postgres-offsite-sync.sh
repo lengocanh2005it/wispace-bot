@@ -24,6 +24,9 @@ set -euo pipefail
 #     --env-file /home/ngoc_anh/backups/ai_chat_bot_db/backup.env \
 #     >> /home/ngoc_anh/backups/offsite-sync.log 2>&1
 
+# Immediate startup banner so executions always leave an observable signal (#1325).
+echo "[$(date -Is)] [postgres-offsite-sync] Starting PostgreSQL offsite sync..."
+
 usage() {
   cat >&2 <<'USAGE'
 Usage: postgres-offsite-sync.sh --backup-dir DIR --env-file ENV_FILE [--self-check]
@@ -53,7 +56,7 @@ done
 [ -n "$ENV_FILE" ] || usage
 
 env_value() { # NAME FILE
-  grep -E "^$1=" "$2" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true
+  grep -E "^$1=" "$2" 2>/dev/null | tail -1 | cut -d= -f2- | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//' || true
 }
 
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
@@ -85,6 +88,15 @@ sync_fail() {
     "{\"summary\":\"Offsite backup sync failed\",\"description\":\"$escaped\"}"
   die "$message"
 }
+
+on_error() {
+  local exit_code="$1" line="$2"
+  echo "ERROR [$(date -Is)]: postgres-offsite-sync failed at line $line with exit code $exit_code" >&2
+  local escaped
+  escaped=$(json_escape "Script error at line $line with exit code $exit_code")
+  post_alert "$OFFSITE_ALERT" "{\"summary\":\"Offsite backup sync failed\",\"description\":\"$escaped\"}" 2>/dev/null || true
+}
+trap 'on_error $? $LINENO' ERR
 
 command -v rclone >/dev/null || sync_fail "rclone is required"
 command -v sha256sum >/dev/null || sync_fail "sha256sum is required"

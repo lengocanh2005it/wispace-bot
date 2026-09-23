@@ -812,5 +812,48 @@ grep -q 'VAULT_SECRET_ID=secret-new' "$dir/deploy/.env" || fail "new bootstrap w
 [ ! -f "$dir/deploy/.env.pre-deploy" ] || fail "backup survived a successful deploy"
 pass "successful deploy cleans up the backup"
 
+echo "Test 38: messenger deploy installs host scripts and writes manifest (#1325)"
+dir=$(make_env host-scripts-install)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+write_upstream "$dir" 5007
+mkdir -p "$dir/deploy/scripts"
+for s in postgres-backup.sh postgres-offsite-sync.sh postgres-restore-verify.sh backup-monitor.sh vps-hardening-check.sh; do
+  echo "#!/bin/bash" > "$dir/deploy/scripts/$s"
+  echo "echo $s" >> "$dir/deploy/scripts/$s"
+done
+fake_scripts_dir="$dir/host_scripts"
+mkdir -p "$fake_scripts_dir"
+touch "$fake_scripts_dir/postgres-restore-test.sh"
+
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" HOST_SCRIPTS_DIR="$fake_scripts_dir" DEPLOY_SHA="testsha123")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+[ ! -f "$fake_scripts_dir/postgres-restore-test.sh" ] || fail "retired script postgres-restore-test.sh was not purged"
+for s in postgres-backup.sh postgres-offsite-sync.sh postgres-restore-verify.sh backup-monitor.sh vps-hardening-check.sh; do
+  [ -f "$fake_scripts_dir/$s" ] || fail "host script $s was not installed"
+done
+[ -f "$fake_scripts_dir/.installed-manifest.json" ] || fail "manifest file was not generated"
+grep -q '"commit_sha": "testsha123"' "$fake_scripts_dir/.installed-manifest.json" || fail "manifest missing commit_sha"
+grep -q '"postgres-backup.sh":' "$fake_scripts_dir/.installed-manifest.json" || fail "manifest missing script checksum"
+pass "host scripts installed, manifest created, retired script purged"
+
+echo "Test 39: non-messenger deploy skips host scripts installation (#1325 review)"
+dir=$(make_env discord-scripts-skip)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+printf 'upstream discord_backend {\n    server 127.0.0.1:%s;\n}\n' 3001 > "$dir/upstreams/discord-bot.conf"
+mkdir -p "$dir/deploy/scripts"
+for s in postgres-backup.sh postgres-offsite-sync.sh postgres-restore-verify.sh backup-monitor.sh vps-hardening-check.sh; do
+  echo "#!/bin/bash" > "$dir/deploy/scripts/$s"
+done
+fake_scripts_dir="$dir/host_scripts"
+mkdir -p "$fake_scripts_dir"
+
+code=$(run_script "$dir" APP_NAME="discord-bot" FAKE_EXISTING="discord-bot-old" FAKE_PORT_MAP="3001:discord-bot-old" HOST_SCRIPTS_DIR="$fake_scripts_dir")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+[ ! -f "$fake_scripts_dir/postgres-backup.sh" ] || fail "non-messenger deploy must not install host scripts"
+[ ! -f "$fake_scripts_dir/.installed-manifest.json" ] || fail "non-messenger deploy must not create manifest"
+pass "non-messenger deploy skips host scripts distribution"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

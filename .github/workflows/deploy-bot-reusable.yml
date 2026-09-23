@@ -74,8 +74,7 @@ jobs:
               - 'package-lock.json'
               - 'turbo.json'
             deploy:
-              - 'deploy/Dockerfile.bot'
-              - 'deploy/verify-runtime-image.mjs'
+              - 'deploy/**'
               - '.github/workflows/**'
               - '.github/scripts/**'
 
@@ -369,6 +368,12 @@ jobs:
           if [ "${{ inputs.app }}" = "messenger-bot" ]; then
             [ -f backup-bootstrap.env ] || { echo "ERROR: host backup bootstrap is missing" >&2; exit 1; }
             cp backup-bootstrap.env upload-bundle/
+            mkdir -p upload-bundle/scripts
+            cp deploy/postgres-backup.sh upload-bundle/scripts/
+            cp deploy/postgres-offsite-sync.sh upload-bundle/scripts/
+            cp deploy/postgres-restore-verify.sh upload-bundle/scripts/
+            cp deploy/backup-monitor.sh upload-bundle/scripts/
+            cp deploy/vps-hardening-check.sh upload-bundle/scripts/
           fi
           # Copy nginx upstream config for zero-downtime deploy
           mkdir -p upload-bundle/upstreams
@@ -412,8 +417,9 @@ jobs:
           NGINX_UPSTREAM_DIR: /home/ngoc_anh/infra/nginx/upstreams
           MIGRATION_PREFLIGHT_CMD: ${{ env.MIGRATION_PREFLIGHT_CMD }}
           MIGRATION_STATUS_CMD: ${{ env.MIGRATION_STATUS_CMD }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD MIGRATION_PREFLIGHT_CMD MIGRATION_STATUS_CMD NGINX_UPSTREAM_DIR
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD MIGRATION_PREFLIGHT_CMD MIGRATION_STATUS_CMD NGINX_UPSTREAM_DIR DEPLOY_SHA
           bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh
 
       - name: Remove Vault bootstrap workspace files

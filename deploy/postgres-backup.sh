@@ -21,52 +21,13 @@ KEEP_DAYS="${KEEP_DAYS:-14}"
 DB_CONTAINER="${DB_CONTAINER:-}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://127.0.0.1:9093}"
 BACKUP_ALERT="postgres_backup_failed"
-
-# Backups hold PII + OAuth/linking material — restrict file creation (600)
-# and lock down the backup directory (700) (#204/#185).
-umask 077
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
-
-DB_USER=$(grep -E '^DB_USER=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-DB_NAME=$(grep -E '^DB_NAME=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-DB_PASSWORD=$(grep -E '^DB_PASSWORD=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-DB_HOST=$(grep -E '^DB_HOST=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-DB_PORT=$(grep -E '^DB_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-BACKUP_PASSPHRASE=$(grep -E '^BACKUP_ENCRYPTION_PASSPHRASE=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-
-DB_PORT="${DB_PORT:-5432}"
-if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_PASSWORD" ] || [ -z "$DB_HOST" ]; then
-  echo "ERROR: missing DB_* (including DB_HOST) in $ENV_FILE" >&2
-  exit 1
-fi
-
-if ! printf '%s' "$DB_HOST" | grep -Eq '^[a-zA-Z0-9._-]+$' || \
-  ! printf '%s' "$DB_PORT" | grep -Eq '^[0-9]+$' ||
-  [ "$DB_PORT" -lt 1 ] || [ "$DB_PORT" -gt 65535 ]; then
-  echo "ERROR: invalid DB_HOST/DB_PORT in $ENV_FILE" >&2
-  exit 1
-fi
-
-if [ -z "$BACKUP_PASSPHRASE" ]; then
-  echo "ERROR: missing BACKUP_ENCRYPTION_PASSPHRASE in $ENV_FILE" >&2
-  exit 1
-fi
-
-STAMP=$(date +%Y%m%d-%H%M%S)
-OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.sql.gz.gpg"
-TMP="$OUT.tmp"
-GPG_TMP="$OUT.gpg.tmp"
-STATE_OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.state.json.gz.gpg"
-STATE_TMP="$STATE_OUT.tmp"
-STATE_GPG_TMP="$STATE_OUT.gpg.tmp"
-# Passphrase handoff file — fd 3 for GPG, mode 600, removed on exit (#865).
-PASSPHRASE_FD_FILE="$BACKUP_DIR/.backup-passphrase.$$"
-printf '%s' "$BACKUP_PASSPHRASE" > "$PASSPHRASE_FD_FILE"
-chmod 600 "$PASSPHRASE_FD_FILE"
-trap 'rm -f "$PASSPHRASE_FD_FILE"' EXIT INT TERM
 FAILURE_MARKER="$BACKUP_DIR/.last-backup-failed"
 SUCCESS_MARKER="$BACKUP_DIR/.last-backup-success"
+
+# Immediate startup banner so cron executions always leave an observable signal (#1325).
+echo "[$(date -Is)] [postgres-backup] Starting PostgreSQL backup..."
+
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 post_alert() { # alertname annotations_json [ends_at]
   local alertname="$1"
@@ -80,12 +41,84 @@ post_alert() { # alertname annotations_json [ends_at]
 }
 
 notify_backup_failed() { # summary description
-  post_alert "$BACKUP_ALERT" "{\"summary\":\"$1\",\"description\":\"$2\"}"
+  local summary description
+  summary=$(json_escape "$1")
+  description=$(json_escape "$2")
+  post_alert "$BACKUP_ALERT" "{\"summary\":\"$summary\",\"description\":\"$description\"}"
 }
 
 resolve_backup() {
   post_alert "$BACKUP_ALERT" "{}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
+
+die() {
+  local msg="$1"
+  echo "ERROR [$(date -Is)]: $msg" >&2
+  touch "$FAILURE_MARKER" 2>/dev/null || true
+  notify_backup_failed "Postgres backup failed" "$msg" 2>/dev/null || true
+  exit 1
+}
+
+on_error() {
+  local exit_code="$1" line="$2"
+  echo "ERROR [$(date -Is)]: postgres-backup failed at line $line with exit code $exit_code" >&2
+  touch "$FAILURE_MARKER" 2>/dev/null || true
+  notify_backup_failed "Postgres backup failed" "Script error at line $line with exit code $exit_code" 2>/dev/null || true
+}
+trap 'on_error $? $LINENO' ERR
+
+cleanup() {
+  rm -f "${PASSPHRASE_FD_FILE:-}" "${TMP:-}" "${GLOBALS_TMP:-}" "${STATE_TMP:-}" "${GPG_TMP:-}" "${GLOBALS_GPG_TMP:-}" "${STATE_GPG_TMP:-}" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Backups hold PII + OAuth/linking material — restrict file creation (600)
+# and lock down the backup directory (700) (#204/#185).
+umask 077
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+if [ ! -f "$ENV_FILE" ]; then
+  die "env file does not exist at $ENV_FILE"
+fi
+
+env_value() { # NAME FILE
+  grep -E "^$1=" "$2" 2>/dev/null | tail -1 | cut -d= -f2- | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//' || true
+}
+
+DB_USER=$(env_value DB_USER "$ENV_FILE")
+DB_NAME=$(env_value DB_NAME "$ENV_FILE")
+DB_PASSWORD=$(env_value DB_PASSWORD "$ENV_FILE")
+DB_HOST=$(env_value DB_HOST "$ENV_FILE")
+DB_PORT=$(env_value DB_PORT "$ENV_FILE")
+BACKUP_PASSPHRASE=$(env_value BACKUP_ENCRYPTION_PASSPHRASE "$ENV_FILE")
+
+DB_PORT="${DB_PORT:-5432}"
+if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_PASSWORD" ] || [ -z "$DB_HOST" ]; then
+  die "missing DB_* (including DB_HOST) in $ENV_FILE"
+fi
+
+if ! printf '%s' "$DB_HOST" | grep -Eq '^[a-zA-Z0-9._-]+$' || \
+  ! printf '%s' "$DB_PORT" | grep -Eq '^[0-9]+$' ||
+  [ "$DB_PORT" -lt 1 ] || [ "$DB_PORT" -gt 65535 ]; then
+  die "invalid DB_HOST/DB_PORT in $ENV_FILE"
+fi
+
+if [ -z "$BACKUP_PASSPHRASE" ]; then
+  die "missing BACKUP_ENCRYPTION_PASSPHRASE in $ENV_FILE"
+fi
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.sql.gz.gpg"
+TMP="$OUT.tmp"
+GPG_TMP="$OUT.gpg.tmp"
+STATE_OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.state.json.gz.gpg"
+STATE_TMP="$STATE_OUT.tmp"
+STATE_GPG_TMP="$STATE_OUT.gpg.tmp"
+# Passphrase handoff file — fd 3 for GPG, mode 600, removed on exit (#865).
+PASSPHRASE_FD_FILE="$BACKUP_DIR/.backup-passphrase.$$"
+printf '%s' "$BACKUP_PASSPHRASE" > "$PASSPHRASE_FD_FILE"
+chmod 600 "$PASSPHRASE_FD_FILE"
 
 run_db_client() {
   if command -v "$1" >/dev/null 2>&1; then

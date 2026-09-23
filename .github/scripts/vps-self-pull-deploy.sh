@@ -640,6 +640,15 @@ deploy_app() {
   cp "$REPO_DIR/.github/scripts/vps-deploy.sh" "$target_dir/"
   cp "$REPO_DIR/deploy/nginx/upstreams/${app}.conf" "$target_dir/upstreams/" 2>/dev/null || true
 
+  if [ "$app" = "messenger-bot" ]; then
+    mkdir -p "$target_dir/scripts"
+    cp "$REPO_DIR/deploy/postgres-backup.sh" "$target_dir/scripts/"
+    cp "$REPO_DIR/deploy/postgres-offsite-sync.sh" "$target_dir/scripts/"
+    cp "$REPO_DIR/deploy/postgres-restore-verify.sh" "$target_dir/scripts/"
+    cp "$REPO_DIR/deploy/backup-monitor.sh" "$target_dir/scripts/"
+    cp "$REPO_DIR/deploy/vps-hardening-check.sh" "$target_dir/scripts/"
+  fi
+
   migration_cmd=""
   if [ "$run_migrations" = "true" ]; then
     migration_cmd="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run"
@@ -655,6 +664,7 @@ deploy_app() {
     MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \
     APP_NETWORK="$APP_NETWORK" \
+    DEPLOY_SHA="$NEW_SHA" \
     bash vps-deploy.sh
   ); then
     echo "$NEW_SHA" > "$state_file"

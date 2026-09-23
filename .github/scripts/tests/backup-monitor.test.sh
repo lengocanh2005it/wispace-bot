@@ -74,6 +74,37 @@ OFFSITE_S3_ACCESS_KEY=test-access
 OFFSITE_S3_SECRET_KEY=test-secret
 ENV
 
+SCRIPTS_DIR="$TEST_ROOT/scripts"
+mkdir -p "$SCRIPTS_DIR"
+for s in postgres-backup.sh postgres-offsite-sync.sh postgres-restore-verify.sh backup-monitor.sh vps-hardening-check.sh; do
+  printf '#!/bin/bash\necho %s\n' "$s" > "$SCRIPTS_DIR/$s"
+  chmod 750 "$SCRIPTS_DIR/$s"
+done
+
+write_manifest() {
+  local manifest="$SCRIPTS_DIR/.installed-manifest.json"
+  local s1 s2 s3 s4 s5
+  s1=$(sha256sum "$SCRIPTS_DIR/postgres-backup.sh" | cut -d' ' -f1)
+  s2=$(sha256sum "$SCRIPTS_DIR/postgres-offsite-sync.sh" | cut -d' ' -f1)
+  s3=$(sha256sum "$SCRIPTS_DIR/postgres-restore-verify.sh" | cut -d' ' -f1)
+  s4=$(sha256sum "$SCRIPTS_DIR/backup-monitor.sh" | cut -d' ' -f1)
+  s5=$(sha256sum "$SCRIPTS_DIR/vps-hardening-check.sh" | cut -d' ' -f1)
+  cat > "$manifest" <<MANIFEST
+{
+  "commit_sha": "testsha001",
+  "installed_at": "2026-09-08T03:00:00Z",
+  "scripts": {
+    "postgres-backup.sh": "$s1",
+    "postgres-offsite-sync.sh": "$s2",
+    "postgres-restore-verify.sh": "$s3",
+    "backup-monitor.sh": "$s4",
+    "vps-hardening-check.sh": "$s5"
+  }
+}
+MANIFEST
+}
+write_manifest
+
 REMOTE_DIR="$TEST_ROOT/store/wispacedr/latest"
 mkdir -p "$REMOTE_DIR"
 printf remote-dump > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg"
@@ -109,7 +140,7 @@ run_monitor() { # <VAR=val...> — env assignments passed as arguments
     case "$var" in *=*) export "$var" ;; *) break ;; esac
   done
   CURL_LOG="$TEST_ROOT/curl.log" RCLONE_STORE="$TEST_ROOT/store" PATH="$FAKE_BIN:$PATH" \
-    BACKUP_DIR="$BACKUP_DIR" ENV_FILE="$ENV_FILE" \
+    BACKUP_DIR="$BACKUP_DIR" ENV_FILE="$ENV_FILE" HOST_SCRIPTS_DIR="$SCRIPTS_DIR" \
     RESTORE_VERIFY_SCRIPT="$FAKE_BIN/fake-verify" bash "$MONITOR"
   local status=$?
   # unset the per-run overrides so they do not leak into the next run
@@ -190,7 +221,53 @@ rm -f "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg"
 run_monitor >/dev/null 2>&1 && fail "missing remote state sidecar must exit non-zero (#879)" || true
 grep -q 'postgres_offsite_stale' "$TEST_ROOT/curl.log" \
   || fail "missing state sidecar must fire the offsite alert"
-pass "missing remote state sidecar fails closed"
+# --- 8. Host scripts drift: missing script fires drift alert --------------------
+printf remote-state > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg"
+rm -f "$TEST_ROOT/curl.log"
+rm -f "$SCRIPTS_DIR/postgres-backup.sh"
+run_monitor >/dev/null 2>&1 && fail "missing host script must exit non-zero" || true
+grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" || fail "missing host script must fire drift alert"
+pass "missing host script fires drift alert"
+
+# --- 9. Host scripts drift: tampered script fires drift alert -------------------
+printf '#!/bin/bash\necho tampered\n' > "$SCRIPTS_DIR/postgres-backup.sh"
+chmod 750 "$SCRIPTS_DIR/postgres-backup.sh"
+rm -f "$TEST_ROOT/curl.log"
+run_monitor >/dev/null 2>&1 && fail "tampered host script must exit non-zero" || true
+grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" || fail "tampered host script must fire drift alert"
+pass "tampered host script fires drift alert"
+
+# --- 10. Host scripts recovery: matching manifest resolves drift alert ---------
+printf '#!/bin/bash\necho postgres-backup.sh\n' > "$SCRIPTS_DIR/postgres-backup.sh"
+chmod 750 "$SCRIPTS_DIR/postgres-backup.sh"
+rm -f "$TEST_ROOT/curl.log"
+run_monitor >/dev/null 2>&1 || fail "clean host scripts must exit 0"
+grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" && grep -q '"endsAt"' "$TEST_ROOT/curl.log" || fail "recovered host scripts must resolve drift alert"
+pass "recovered host scripts resolve drift alert"
+
+# --- 11. Empty manifest file (0 bytes) fires drift alert (#1325 review) --------
+rm -f "$TEST_ROOT/curl.log"
+: > "$SCRIPTS_DIR/.installed-manifest.json"
+run_monitor >/dev/null 2>&1 && fail "empty manifest must exit non-zero" || true
+grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" || fail "empty manifest must fire drift alert"
+pass "empty manifest file fires drift alert"
+
+# --- 12. Incomplete manifest (<5 scripts) fires drift alert (#1325 review) -----
+rm -f "$TEST_ROOT/curl.log"
+cat > "$SCRIPTS_DIR/.installed-manifest.json" <<MANIFEST
+{
+  "commit_sha": "testsha001",
+  "installed_at": "2026-09-08T03:00:00Z",
+  "scripts": {
+    "postgres-backup.sh": "$(sha256sum "$SCRIPTS_DIR/postgres-backup.sh" | cut -d' ' -f1)"
+  }
+}
+MANIFEST
+run_monitor >/dev/null 2>&1 && fail "incomplete manifest must exit non-zero" || true
+grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" || fail "incomplete manifest must fire drift alert"
+pass "incomplete manifest (<5 scripts) fires drift alert"
+
+write_manifest # restore for clean finish
 
 if [ "$FAILED" -ne 0 ]; then
   echo "TESTS FAILED" >&2

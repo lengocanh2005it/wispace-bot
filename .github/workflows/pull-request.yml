@@ -365,6 +365,9 @@ jobs:
       - name: Test backup monitor offsite + decryptability checks (#866)
         run: bash .github/scripts/tests/backup-monitor.test.sh
 
+      - name: Test fail-safe postgres backup execution (#1325)
+        run: bash .github/scripts/tests/postgres-backup.test.sh
+
       - name: Check retired secret-manager references (#655)
         run: bash .github/scripts/check-secret-manager-references.sh
 
