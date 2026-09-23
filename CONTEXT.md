@@ -702,6 +702,10 @@ _Avoid_: trace ID, request ID
 Attack where malicious text tricks the LLM. Detected by `detectPromptInjection()` and blocked before the provider call. Carries a source — `user_input`, `tool_result` or `history` — because the payload does not have to come from the learner.
 _Avoid_: injection attack — use "prompt injection"
 
+**practice role**:
+A fictional role the learner asks the bot to portray within an explicit practice scenario, such as an IELTS examiner, interviewer, customer, or teacher. It shapes the exercise but does not change the assistant's actual instructions or limits.
+_Avoid_: persona override when referring to benign roleplay
+
 **grounding check**:
 Verification that the LLM response is actually grounded in tool results (no hallucination). Performed by `checkLlmGrounding()`. Logs a warning if suspicious.
 _Avoid_: hallucination check

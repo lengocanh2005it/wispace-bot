@@ -22,6 +22,7 @@ describe('detectPromptInjection', () => {
       'Act as a helpful tutor and help me with IELTS',
       'How do I improve my IELTS Writing task 2?',
       'đóng vai một giám khảo IELTS để chấm bài của mình',
+      'Sửa giúp mình câu này: “You are now a student at this school.”',
       'the education system: an essay topic for IELTS Writing',
     ];
 

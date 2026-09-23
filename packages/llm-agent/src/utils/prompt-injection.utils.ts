@@ -593,6 +593,62 @@ export function buildJointScanView(
     : selectedHistory || current;
 }
 
+function normalizePracticeFrame(text: string): string {
+  return normalizeForPromptScan(text, ' ');
+}
+
+/** Applies only narrow, current-message exemptions for ordinary learning text. */
+function prepareLearnerInputForScan(text: string): string {
+  const normalized = normalizePracticeFrame(text);
+  let scanText = text;
+
+  const hasPracticeRoleFrame =
+    /\b(?:practice|practise|practising|language exercise)\b|\b(?:luyen|thuc hanh|tap)\b/i.test(
+      normalized,
+    ) &&
+    /\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:dong vai|gia vo|nhap vai)\b/i.test(
+      normalized,
+    );
+  if (hasPracticeRoleFrame) {
+    const unsafePersona =
+      /\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ignore|bypass)\b|no restrictions|without rules/i;
+    scanText = scanText.replace(
+      /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/gi,
+      (match, offset: number, whole: string) => {
+        const following = whole.slice(
+          offset + match.length,
+          offset + match.length + 100,
+        );
+        return unsafePersona.test(following) ? match : ' '.repeat(match.length);
+      },
+    );
+  }
+
+  const hasPracticeTranscriptFrame =
+    /\b(?:dialogue|transcript)\b|\b(?:luyen|thuc hanh)\b.{0,60}\b(?:hoi thoai|doan thoai)\b/i.test(
+      normalized,
+    );
+  if (hasPracticeTranscriptFrame) {
+    scanText = scanText.replace(
+      /(^|[\n.!?]\s*)assistant\s*:/gim,
+      '$1' + ' '.repeat(10),
+    );
+  }
+
+  const hasCorrectionFrame =
+    /\b(?:correct|proofread|fix|check the grammar)\b|\b(?:sua giup minh|sua cau|chinh sua)\b/i.test(
+      normalized,
+    );
+  if (hasCorrectionFrame) {
+    scanText = scanText.replace(
+      /(["“'‘])\s*you\s+are\s+now\s+a\s+student\s+at\s+this\s+school\s*\.?\s*(["”'’])/gi,
+      (match) => ' '.repeat(match.length),
+    );
+  }
+
+  return scanText;
+}
+
 /**
  * Scans the bounded current-turn/history view for payloads split across
  * message or history boundaries. Per-message length and single-turn guards
@@ -604,9 +660,14 @@ export function detectPromptInjectionAcrossTurns(
   history?: readonly ChatHistoryMessage[],
   currentTextMaxChars = MAX_JOINT_SCAN_CHARS,
 ): InjectionCheckResult {
+  const learnerParts =
+    currentUserTextParts && currentUserTextParts.length > 0
+      ? currentUserTextParts
+      : [currentUserText];
+  const learnerText = prepareLearnerInputForScan(learnerParts.join('\n'));
   const view = buildJointScanView(
-    currentUserText,
-    currentUserTextParts,
+    learnerText,
+    undefined,
     history,
     currentTextMaxChars,
   );
@@ -622,7 +683,7 @@ export function detectPromptInjection(userText: string): InjectionCheckResult {
     return { isInjection: true, reason: 'message_too_long' };
   }
 
-  return scanPatterns(text);
+  return scanPatterns(prepareLearnerInputForScan(text));
 }
 
 export function sanitizeUntrustedTextForLlm(
