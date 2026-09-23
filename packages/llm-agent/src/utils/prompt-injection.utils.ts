@@ -96,9 +96,10 @@ export function buildSafetyScanCandidates(text: string): string[] {
 const PRETEND_ROLE_PATTERN = /pretend\s+(you\s+are|to\s+be)/i;
 const ROLEPLAY_AS_PATTERN = /roleplay\s+as/i;
 const VIETNAMESE_ROLE_PHRASE =
-  '(?:đóng\\s*vai|dong\\s*vai|giả\\s*vờ|gia\\s*vo|nhập\\s*vai|nhap\\s*vai)';
+  '(?:đóng\\s*vai|dong\\s*vai|giả\\s*vờ|gia\\s*vo)';
+const VIETNAMESE_PRACTICE_ROLE_PHRASE = `(?:${VIETNAMESE_ROLE_PHRASE}|nhập\\s*vai|nhap\\s*vai)`;
 const PRACTICE_ROLE_REQUEST_PATTERN = new RegExp(
-  `\\b(?:${PRETEND_ROLE_PATTERN.source}|${ROLEPLAY_AS_PATTERN.source})\\b|${VIETNAMESE_ROLE_PHRASE}\\s+(?:là|la)?`,
+  `\\b(?:${PRETEND_ROLE_PATTERN.source}|${ROLEPLAY_AS_PATTERN.source})\\b|${VIETNAMESE_PRACTICE_ROLE_PHRASE}\\s+(?:là|la)?`,
   'i',
 );
 const ACT_AS_HOSTILE_PERSONA_PATTERN =
