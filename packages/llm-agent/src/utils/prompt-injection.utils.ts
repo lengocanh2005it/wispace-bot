@@ -93,14 +93,23 @@ export function buildSafetyScanCandidates(text: string): string[] {
  * Patterns that strongly indicate prompt injection attempts.
  * Each entry: [pattern, reason label]
  */
-const PRACTICE_ROLE_REQUEST_PATTERN =
-  /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/i;
+const PRETEND_ROLE_PATTERN = /pretend\s+(you\s+are|to\s+be)/i;
+const ROLEPLAY_AS_PATTERN = /roleplay\s+as/i;
+const VIETNAMESE_ROLE_PHRASE =
+  '(?:đóng\\s*vai|dong\\s*vai|giả\\s*vờ|gia\\s*vo|nhập\\s*vai|nhap\\s*vai)';
+const PRACTICE_ROLE_REQUEST_PATTERN = new RegExp(
+  `\\b(?:${PRETEND_ROLE_PATTERN.source}|${ROLEPLAY_AS_PATTERN.source})\\b|${VIETNAMESE_ROLE_PHRASE}\\s+(?:là|la)?`,
+  'i',
+);
 const ACT_AS_HOSTILE_PERSONA_PATTERN =
   /(?:unrestricted|different|other|new|another|alternative|evil|free|uncensored|dangerous|DAN|hacker|malicious|unfiltered)/i;
 const GENERIC_ROLE_INJECTION_PATTERNS = [
-  /pretend\s+(you\s+are|to\s+be)/i,
-  /roleplay\s+as/i,
-  /(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i,
+  PRETEND_ROLE_PATTERN,
+  ROLEPLAY_AS_PATTERN,
+  new RegExp(
+    `${VIETNAMESE_ROLE_PHRASE}\\s+(?:là|la)\\s+(?!trợ\\s*lý\\s*WISPACE|tro\\s*ly\\s*WISPACE)`,
+    'i',
+  ),
 ] as const;
 const PRACTICE_ROLE_HOSTILE_PATTERN = new RegExp(
   `(?:${PRACTICE_ROLE_REQUEST_PATTERN.source}).{0,100}(?:\\b${ACT_AS_HOSTILE_PERSONA_PATTERN.source}\\b|\\b(?:developer|jailbreak|system|assistant|ai|llm|model|bot)\\b|\\b(?:ignore|bypass|override|disregard)\\b.{0,24}\\b(?:rules?|instructions?|constraints?|restrictions?)\\b|\\b(?:no|without)\\b.{0,12}\\b(?:rules?|restrictions?|limits?)\\b|\\b(?:different|new|another|alternative|other)\\s+(?:ai|llm|model|bot|assistant|system|persona|identity)\\b)`,
@@ -610,8 +619,7 @@ const PRACTICE_TRANSCRIPT_INTRO =
   /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|(?:luyện|luyen|thực hành|thuc hanh)[^.!?\n]{0,60}(?:hội thoại|hoi thoai|đoạn thoại|doan thoai)/i;
 const LANGUAGE_PRACTICE_CONTEXT =
   /\blanguage exercise\b|\b(?:practice|practise|practising)\b.{0,50}\b(?:ielts|english|speaking|writing|language|conversation|dialogue)\b|\b(?:ielts|english|speaking|writing|language|conversation|dialogue)\b.{0,40}\b(?:practice|practise|practising)\b|\b(?:luyen|thuc hanh|tap)\b.{0,50}\b(?:ielts|english|speaking|writing|language|conversation|dialogue|hoi thoai|giao tiep|tieng anh|tieng viet)\b|\b(?:ielts|english|speaking|writing|language|conversation|dialogue|hoi thoai|giao tiep|tieng anh|tieng viet)\b.{0,50}\b(?:luyen|thuc hanh|tap)\b/i;
-const PRACTICE_ROLE_REQUEST =
-  /\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:dong vai|gia vo|nhap vai)\b/i;
+const PRACTICE_ROLE_REQUEST = PRACTICE_ROLE_REQUEST_PATTERN;
 
 function prepareLearnerInputForScan(text: string): {
   text: string;
