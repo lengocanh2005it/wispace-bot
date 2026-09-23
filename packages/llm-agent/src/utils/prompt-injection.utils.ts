@@ -594,12 +594,15 @@ export function buildJointScanView(
 }
 
 /** Applies only narrow, current-message exemptions for ordinary learning text. */
+const PRACTICE_TRANSCRIPT_INTRO =
+  /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|(?:luyện|luyen|thực hành|thuc hanh)[^.!?\n]{0,60}(?:hội thoại|hoi thoai|đoạn thoại|doan thoai)/i;
+
 function prepareLearnerInputForScan(text: string): string {
   const normalized = normalizeForPromptScan(text, ' ', false);
   let scanText = text;
 
   const hasPracticeRoleFrame =
-    /\b(?:practice|practise|practising|language exercise)\b[^.!?\n]{0,120}\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:luyen|thuc hanh|tap)\b[^.!?\n]{0,120}\b(?:dong vai|gia vo|nhap vai)\b/i.test(
+    /\b(?:practice|practise|practising|language exercise)\b[^.!?\n]{0,120}\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:pretend you are|pretend to be|roleplay as)\b[^.!?\n]{0,120}\b(?:practice|practise|practising|language exercise)\b|\b(?:luyen|thuc hanh|tap)\b[^.!?\n]{0,120}\b(?:dong vai|gia vo|nhap vai)\b|\b(?:dong vai|gia vo|nhap vai)\b[^.!?\n]{0,120}\b(?:luyen|thuc hanh|tap)\b/i.test(
       normalized,
     );
   if (hasPracticeRoleFrame) {
@@ -617,15 +620,9 @@ function prepareLearnerInputForScan(text: string): string {
     );
   }
 
-  const hasPracticeTranscriptFrame =
-    /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|\b(?:luyen|thuc hanh)\b[^.!?\n]{0,60}\b(?:hoi thoai|doan thoai)\b/i.test(
-      normalized,
-    );
+  const hasPracticeTranscriptFrame = PRACTICE_TRANSCRIPT_INTRO.test(normalized);
   if (hasPracticeTranscriptFrame) {
-    const transcriptIntro =
-      /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|(?:luyện|luyen|thực hành|thuc hanh)[^.!?\n]{0,60}(?:hội thoại|hoi thoai|đoạn thoại|doan thoai)/i.exec(
-        scanText,
-      );
+    const transcriptIntro = PRACTICE_TRANSCRIPT_INTRO.exec(scanText);
     if (transcriptIntro) {
       const bodyStart = transcriptIntro.index + transcriptIntro[0].length;
       const nextSection = scanText.indexOf('\n\n', bodyStart);
@@ -638,16 +635,10 @@ function prepareLearnerInputForScan(text: string): string {
     }
   }
 
-  const hasCorrectionFrame =
-    /\b(?:correct|proofread|fix|check the grammar)\b|\b(?:sua giup minh|sua cau|chinh sua)\b/i.test(
-      normalized,
-    );
-  if (hasCorrectionFrame) {
-    scanText = scanText.replace(
-      /(["“'‘])\s*you\s+are\s+now\s+a\s+student\s+at\s+this\s+school\s*\.?\s*(["”'’])/gi,
-      (match) => ' '.repeat(match.length),
-    );
-  }
+  scanText = scanText.replace(
+    /(?:\b(?:correct|proofread|fix|check)\s+(?:(?:this|the following|my)\s+)?(?:sentence|phrase|text|one|this)\b|(?:sửa|sua)\s+(?:giúp mình\s+)?(?:câu|đoạn|doan)(?:\s+(?:này|nay|sau))?|chỉnh sửa\s+(?:câu|đoạn|doan)(?:\s+(?:này|nay|sau))?)\s*[:：]?\s*(["“'‘])\s*you\s+are\s+now\s+a\s+student\s+at\s+this\s+school\s*\.?\s*(["”'’])/gi,
+    (match) => ' '.repeat(match.length),
+  );
 
   return scanText;
 }
