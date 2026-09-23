@@ -95,8 +95,11 @@ export function buildSafetyScanCandidates(text: string): string[] {
  */
 const PRACTICE_ROLE_REQUEST_PATTERN =
   /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/i;
-const PRACTICE_ROLE_INJECTION_PATTERN =
-  /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i;
+const GENERIC_ROLE_INJECTION_PATTERNS = [
+  /pretend\s+(you\s+are|to\s+be)/i,
+  /roleplay\s+as/i,
+  /(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i,
+] as const;
 const PRACTICE_ROLE_HOSTILE_PATTERN = new RegExp(
   `(?:${PRACTICE_ROLE_REQUEST_PATTERN.source}).{0,100}(?:\\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ai|llm|model|bot)\\b|\\b(?:ignore|bypass|override|disregard)\\b.{0,24}\\b(?:rules?|instructions?|constraints?|restrictions?)\\b|\\b(?:no|without)\\b.{0,12}\\b(?:rules?|restrictions?|limits?)\\b|\\b(?:different|new|another|alternative|other)\\s+(?:ai|llm|model|bot|assistant|system|persona|identity)\\b)`,
   'i',
@@ -127,8 +130,6 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     /(?:quên|quen)\s+(?:hết|het|mọi|moi|tất\s*cả|tat\s*ca)\s+(?:hướng\s*dẫn|huong\s*dan|lệnh|lenh|chỉ\s*dẫn|chi\s*dan)/i,
     'instruction_override',
   ],
-  [PRACTICE_ROLE_HOSTILE_PATTERN, 'persona_override'],
-
   // Injected role markers — checked before persona_override to get correct reason
   // (?:^|\n) so a marker at the start of a JSON string field is caught (#961):
   // a tool result value never has a leading newline. Closing/inverted forms
@@ -167,7 +168,8 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     /act\s+as\s+(a\s+|an\s+)?(unrestricted|different|other|new|another|alternative|evil|free|uncensored|dangerous|DAN|hacker|malicious|unfiltered)/i,
     'persona_override',
   ],
-  [PRACTICE_ROLE_INJECTION_PATTERN, 'persona_override'],
+  [GENERIC_ROLE_INJECTION_PATTERNS[0], 'persona_override'],
+  [GENERIC_ROLE_INJECTION_PATTERNS[1], 'persona_override'],
   [/from\s+now\s+on\s+(you\s+are|act|respond|behave)/i, 'persona_override'],
   [
     /developer\s+mode|jailbreak\s+mode|unrestricted\s+mode/i,
@@ -177,6 +179,7 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     /(?:chế\s*độ|che\s*do)\s+(?:developer|nhà\s*phát\s*triển|nha\s*phat\s*trien|jailbreak|không\s*giới\s*hạn|khong\s*gioi\s*han)/i,
     'persona_override',
   ],
+  [GENERIC_ROLE_INJECTION_PATTERNS[2], 'persona_override'],
   [/(?:đóng\s*vai|dong\s*vai)\s+(?:một|mot)\s+hacker\b/i, 'persona_override'],
   [/\bDAN\b.*(?:do\s+anything|jailbreak)/i, 'persona_override'],
 
@@ -517,22 +520,13 @@ function hasRepetitionFlood(text: string): boolean {
   return /([^\s]{3,20}\s*)\1{25,}/i.test(text);
 }
 
-function scanPatterns(
-  text: string,
-  allowFramedPracticeRole = false,
-): InjectionCheckResult {
+function scanPatterns(text: string): InjectionCheckResult {
   const candidates = buildSafetyScanCandidates(text);
   if (candidates.some(hasRepetitionFlood)) {
     return { isInjection: true, reason: 'repetition_flood' };
   }
 
   for (const [pattern, reason] of INJECTION_PATTERNS) {
-    if (
-      allowFramedPracticeRole &&
-      pattern === PRACTICE_ROLE_INJECTION_PATTERN
-    ) {
-      continue;
-    }
     if (candidates.some((candidate) => pattern.test(candidate))) {
       return { isInjection: true, reason };
     }
@@ -616,7 +610,7 @@ const PRACTICE_ROLE_REQUEST =
 
 function prepareLearnerInputForScan(text: string): {
   text: string;
-  allowFramedPracticeRole: boolean;
+  hostilePracticeRole: boolean;
 } {
   const normalized = normalizeForPromptScan(text, ' ', false);
   let scanText = text;
@@ -648,7 +642,15 @@ function prepareLearnerInputForScan(text: string): {
     (match) => ' '.repeat(match.length),
   );
 
-  return { text: scanText, allowFramedPracticeRole: hasPracticeRoleFrame };
+  const hostilePracticeRole =
+    hasPracticeRoleFrame && PRACTICE_ROLE_HOSTILE_PATTERN.test(normalized);
+  if (hasPracticeRoleFrame) {
+    for (const pattern of GENERIC_ROLE_INJECTION_PATTERNS) {
+      scanText = scanText.replace(new RegExp(pattern.source, 'gi'), 'act as');
+    }
+  }
+
+  return { text: scanText, hostilePracticeRole };
 }
 
 /**
@@ -675,10 +677,10 @@ export function detectPromptInjectionAcrossTurns(
     history,
     currentTextMaxChars,
   );
-  const result = scanPatterns(
-    view,
-    preparedLearnerText.allowFramedPracticeRole,
-  );
+  if (preparedLearnerText.hostilePracticeRole) {
+    return { isInjection: true, reason: 'persona_override' };
+  }
+  const result = scanPatterns(view);
   return result.isInjection ? result : { isInjection: false };
 }
 
@@ -691,7 +693,10 @@ export function detectPromptInjection(userText: string): InjectionCheckResult {
   }
 
   const preparedText = prepareLearnerInputForScan(text);
-  return scanPatterns(preparedText.text, preparedText.allowFramedPracticeRole);
+  if (preparedText.hostilePracticeRole) {
+    return { isInjection: true, reason: 'persona_override' };
+  }
+  return scanPatterns(preparedText.text);
 }
 
 export function sanitizeUntrustedTextForLlm(
