@@ -593,13 +593,9 @@ export function buildJointScanView(
     : selectedHistory || current;
 }
 
-function normalizePracticeFrame(text: string): string {
-  return normalizeForPromptScan(text, ' ');
-}
-
 /** Applies only narrow, current-message exemptions for ordinary learning text. */
 function prepareLearnerInputForScan(text: string): string {
-  const normalized = normalizePracticeFrame(text);
+  const normalized = normalizeForPromptScan(text, ' ');
   let scanText = text;
 
   const hasPracticeRoleFrame =
@@ -625,7 +621,7 @@ function prepareLearnerInputForScan(text: string): string {
   }
 
   const hasPracticeTranscriptFrame =
-    /\b(?:dialogue|transcript)\b|\b(?:luyen|thuc hanh)\b.{0,60}\b(?:hoi thoai|doan thoai)\b/i.test(
+    /\b(?:practice|practise|practising)\b.{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b.{0,40}\bfor (?:my )?(?:practice|practise)\b|\b(?:luyen|thuc hanh)\b.{0,60}\b(?:hoi thoai|doan thoai)\b/i.test(
       normalized,
     );
   if (hasPracticeTranscriptFrame) {
