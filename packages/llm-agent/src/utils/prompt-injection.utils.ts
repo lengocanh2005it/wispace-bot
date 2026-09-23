@@ -596,15 +596,21 @@ export function buildJointScanView(
 /** Applies only narrow, current-message exemptions for ordinary learning text. */
 const PRACTICE_TRANSCRIPT_INTRO =
   /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|(?:luyện|luyen|thực hành|thuc hanh)[^.!?\n]{0,60}(?:hội thoại|hoi thoai|đoạn thoại|doan thoai)/i;
+const LANGUAGE_PRACTICE_CONTEXT =
+  /\blanguage exercise\b|\b(?:practice|practise|practising)\b.{0,50}\b(?:ielts|english|speaking|writing|language|conversation|dialogue)\b|\b(?:ielts|english|speaking|writing|language|conversation|dialogue)\b.{0,40}\b(?:practice|practise|practising)\b|\b(?:luyen|thuc hanh|tap)\b.{0,50}\b(?:ielts|english|speaking|writing|language|conversation|dialogue|hoi thoai|giao tiep|tieng anh|tieng viet)\b|\b(?:ielts|english|speaking|writing|language|conversation|dialogue|hoi thoai|giao tiep|tieng anh|tieng viet)\b.{0,50}\b(?:luyen|thuc hanh|tap)\b/i;
+const PRACTICE_ROLE_REQUEST =
+  /\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:dong vai|gia vo|nhap vai)\b/i;
 
 function prepareLearnerInputForScan(text: string): string {
   const normalized = normalizeForPromptScan(text, ' ', false);
   let scanText = text;
 
+  const practiceContext = LANGUAGE_PRACTICE_CONTEXT.exec(normalized);
+  const roleRequest = PRACTICE_ROLE_REQUEST.exec(normalized);
   const hasPracticeRoleFrame =
-    /\b(?:practice|practise|practising|language exercise)\b[^.!?\n]{0,120}\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:pretend you are|pretend to be|roleplay as)\b[^.!?\n]{0,120}\b(?:practice|practise|practising|language exercise)\b|\b(?:luyen|thuc hanh|tap)\b[^.!?\n]{0,120}\b(?:dong vai|gia vo|nhap vai)\b|\b(?:dong vai|gia vo|nhap vai)\b[^.!?\n]{0,120}\b(?:luyen|thuc hanh|tap)\b/i.test(
-      normalized,
-    );
+    practiceContext !== null &&
+    roleRequest !== null &&
+    Math.abs(practiceContext.index - roleRequest.index) <= 120;
   if (hasPracticeRoleFrame) {
     const unsafePersona =
       /\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ai|llm|model|bot)\b|\b(?:ignore|bypass|override|disregard)\b.{0,24}\b(?:rules?|instructions?|constraints?|restrictions?)\b|\b(?:no|without)\b.{0,12}\b(?:rules?|restrictions?|limits?)\b|\b(?:different|new|another|alternative|other)\s+(?:ai|llm|model|bot|assistant|system)\b|\b(?:different|new|another|alternative|other)\s+(?:persona|identity)\b/i;
