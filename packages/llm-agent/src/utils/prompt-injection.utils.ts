@@ -622,10 +622,20 @@ function prepareLearnerInputForScan(text: string): string {
       normalized,
     );
   if (hasPracticeTranscriptFrame) {
-    scanText = scanText.replace(
-      /(^|[\n.!?]\s*)assistant\s*:/gim,
-      '$1' + ' '.repeat(10),
-    );
+    const transcriptIntro =
+      /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|(?:luyện|luyen|thực hành|thuc hanh)[^.!?\n]{0,60}(?:hội thoại|hoi thoai|đoạn thoại|doan thoai)/i.exec(
+        scanText,
+      );
+    if (transcriptIntro) {
+      const bodyStart = transcriptIntro.index + transcriptIntro[0].length;
+      const nextSection = scanText.indexOf('\n\n', bodyStart);
+      const bodyEnd = nextSection < 0 ? scanText.length : nextSection;
+      const transcriptBody = scanText
+        .slice(bodyStart, bodyEnd)
+        .replace(/(^|[\n.!?]\s*)assistant\s*:/gim, '$1' + ' '.repeat(10));
+      scanText =
+        scanText.slice(0, bodyStart) + transcriptBody + scanText.slice(bodyEnd);
+    }
   }
 
   const hasCorrectionFrame =
