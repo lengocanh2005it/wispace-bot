@@ -93,6 +93,14 @@ export function buildSafetyScanCandidates(text: string): string[] {
  * Patterns that strongly indicate prompt injection attempts.
  * Each entry: [pattern, reason label]
  */
+const PRACTICE_ROLE_REQUEST_PATTERN =
+  /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/i;
+const PRACTICE_ROLE_INJECTION_PATTERN =
+  /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i;
+const PRACTICE_ROLE_HOSTILE_PATTERN = new RegExp(
+  `(?:${PRACTICE_ROLE_REQUEST_PATTERN.source}).{0,100}(?:\\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ai|llm|model|bot)\\b|\\b(?:ignore|bypass|override|disregard)\\b.{0,24}\\b(?:rules?|instructions?|constraints?|restrictions?)\\b|\\b(?:no|without)\\b.{0,12}\\b(?:rules?|restrictions?|limits?)\\b|\\b(?:different|new|another|alternative|other)\\s+(?:ai|llm|model|bot|assistant|system|persona|identity)\\b)`,
+  'i',
+);
 const INJECTION_PATTERNS: Array<[RegExp, string]> = [
   // Instruction override
   [
@@ -119,6 +127,7 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     /(?:quên|quen)\s+(?:hết|het|mọi|moi|tất\s*cả|tat\s*ca)\s+(?:hướng\s*dẫn|huong\s*dan|lệnh|lenh|chỉ\s*dẫn|chi\s*dan)/i,
     'instruction_override',
   ],
+  [PRACTICE_ROLE_HOSTILE_PATTERN, 'persona_override'],
 
   // Injected role markers — checked before persona_override to get correct reason
   // (?:^|\n) so a marker at the start of a JSON string field is caught (#961):
@@ -158,8 +167,7 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     /act\s+as\s+(a\s+|an\s+)?(unrestricted|different|other|new|another|alternative|evil|free|uncensored|dangerous|DAN|hacker|malicious|unfiltered)/i,
     'persona_override',
   ],
-  [/pretend\s+(you\s+are|to\s+be)/i, 'persona_override'],
-  [/roleplay\s+as/i, 'persona_override'],
+  [PRACTICE_ROLE_INJECTION_PATTERN, 'persona_override'],
   [/from\s+now\s+on\s+(you\s+are|act|respond|behave)/i, 'persona_override'],
   [
     /developer\s+mode|jailbreak\s+mode|unrestricted\s+mode/i,
@@ -167,10 +175,6 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
   ],
   [
     /(?:chế\s*độ|che\s*do)\s+(?:developer|nhà\s*phát\s*triển|nha\s*phat\s*trien|jailbreak|không\s*giới\s*hạn|khong\s*gioi\s*han)/i,
-    'persona_override',
-  ],
-  [
-    /(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i,
     'persona_override',
   ],
   [/(?:đóng\s*vai|dong\s*vai)\s+(?:một|mot)\s+hacker\b/i, 'persona_override'],
@@ -513,13 +517,22 @@ function hasRepetitionFlood(text: string): boolean {
   return /([^\s]{3,20}\s*)\1{25,}/i.test(text);
 }
 
-function scanPatterns(text: string): InjectionCheckResult {
+function scanPatterns(
+  text: string,
+  allowFramedPracticeRole = false,
+): InjectionCheckResult {
   const candidates = buildSafetyScanCandidates(text);
   if (candidates.some(hasRepetitionFlood)) {
     return { isInjection: true, reason: 'repetition_flood' };
   }
 
   for (const [pattern, reason] of INJECTION_PATTERNS) {
+    if (
+      allowFramedPracticeRole &&
+      pattern === PRACTICE_ROLE_INJECTION_PATTERN
+    ) {
+      continue;
+    }
     if (candidates.some((candidate) => pattern.test(candidate))) {
       return { isInjection: true, reason };
     }
@@ -601,7 +614,10 @@ const LANGUAGE_PRACTICE_CONTEXT =
 const PRACTICE_ROLE_REQUEST =
   /\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:dong vai|gia vo|nhap vai)\b/i;
 
-function prepareLearnerInputForScan(text: string): string {
+function prepareLearnerInputForScan(text: string): {
+  text: string;
+  allowFramedPracticeRole: boolean;
+} {
   const normalized = normalizeForPromptScan(text, ' ', false);
   let scanText = text;
 
@@ -611,20 +627,6 @@ function prepareLearnerInputForScan(text: string): string {
     practiceContext !== null &&
     roleRequest !== null &&
     Math.abs(practiceContext.index - roleRequest.index) <= 120;
-  if (hasPracticeRoleFrame) {
-    const unsafePersona =
-      /\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ai|llm|model|bot)\b|\b(?:ignore|bypass|override|disregard)\b.{0,24}\b(?:rules?|instructions?|constraints?|restrictions?)\b|\b(?:no|without)\b.{0,12}\b(?:rules?|restrictions?|limits?)\b|\b(?:different|new|another|alternative|other)\s+(?:ai|llm|model|bot|assistant|system)\b|\b(?:different|new|another|alternative|other)\s+(?:persona|identity)\b/i;
-    scanText = scanText.replace(
-      /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/gi,
-      (match, offset: number, whole: string) => {
-        const following = whole.slice(
-          offset + match.length,
-          offset + match.length + 100,
-        );
-        return unsafePersona.test(following) ? match : ' '.repeat(match.length);
-      },
-    );
-  }
 
   const hasPracticeTranscriptFrame = PRACTICE_TRANSCRIPT_INTRO.test(normalized);
   if (hasPracticeTranscriptFrame) {
@@ -646,7 +648,7 @@ function prepareLearnerInputForScan(text: string): string {
     (match) => ' '.repeat(match.length),
   );
 
-  return scanText;
+  return { text: scanText, allowFramedPracticeRole: hasPracticeRoleFrame };
 }
 
 /**
@@ -664,14 +666,19 @@ export function detectPromptInjectionAcrossTurns(
     currentUserTextParts && currentUserTextParts.length > 0
       ? currentUserTextParts
       : [currentUserText];
-  const learnerText = prepareLearnerInputForScan(learnerParts.join('\n'));
+  const preparedLearnerText = prepareLearnerInputForScan(
+    learnerParts.join('\n'),
+  );
   const view = buildJointScanView(
-    learnerText,
+    preparedLearnerText.text,
     undefined,
     history,
     currentTextMaxChars,
   );
-  const result = scanPatterns(view);
+  const result = scanPatterns(
+    view,
+    preparedLearnerText.allowFramedPracticeRole,
+  );
   return result.isInjection ? result : { isInjection: false };
 }
 
@@ -683,7 +690,8 @@ export function detectPromptInjection(userText: string): InjectionCheckResult {
     return { isInjection: true, reason: 'message_too_long' };
   }
 
-  return scanPatterns(prepareLearnerInputForScan(text));
+  const preparedText = prepareLearnerInputForScan(text);
+  return scanPatterns(preparedText.text, preparedText.allowFramedPracticeRole);
 }
 
 export function sanitizeUntrustedTextForLlm(
