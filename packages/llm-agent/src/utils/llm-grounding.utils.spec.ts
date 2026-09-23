@@ -114,11 +114,60 @@ describe('checkLlmGrounding', () => {
         expect(result.suspicious).toBe(false);
       });
 
+      it('allows an explicitly self-reported IELTS score echo', () => {
+        const result = checkLlmGrounding(
+          'Your IELTS score is 6.5.',
+          new Set<string>(),
+          'I got 6.5 in IELTS.',
+        );
+        expect(result.suspicious).toBe(false);
+      });
+
       it('still flags a separate ungrounded score beside an echoed number', () => {
         const result = checkLlmGrounding(
           'Điểm của bạn là 6.5. Điểm trung bình của bạn là 8.0.',
           new Set<string>(),
           'Mình vừa được chấm 6.5.',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('score_without_tool');
+      });
+
+      it('does not treat an unrelated decimal as an echoed score', () => {
+        const result = checkLlmGrounding(
+          'Band của bạn là 6.5.',
+          new Set<string>(),
+          'I have 6.5 hours free.',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('score_without_tool');
+      });
+
+      it('does not treat a generic band description as the learner score', () => {
+        const result = checkLlmGrounding(
+          'Band của bạn là 6.5.',
+          new Set<string>(),
+          'The rubric says band 6.5 is satisfactory.',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('score_without_tool');
+      });
+
+      it('does not treat a generic band question as the learner score', () => {
+        const result = checkLlmGrounding(
+          'Your IELTS score is 6.5.',
+          new Set<string>(),
+          'What does band 6.5 mean?',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('score_without_tool');
+      });
+
+      it('does not treat a quoted score example as the learner score', () => {
+        const result = checkLlmGrounding(
+          'Your IELTS score is 6.5.',
+          new Set<string>(),
+          'Is “I got 6.5 in IELTS” grammatically correct?',
         );
         expect(result.suspicious).toBe(true);
         expect(result.reason).toBe('score_without_tool');
@@ -150,6 +199,12 @@ describe('checkLlmGrounding', () => {
         'Điểm Writing của bạn là 6.0 điểm.',
         new Set(),
       );
+      expect(result.suspicious).toBe(true);
+      expect(result.reason).toBe('score_without_tool');
+    });
+
+    it('flags "your IELTS score is X" with no tool', () => {
+      const result = checkLlmGrounding('Your IELTS score is 6.5.', new Set());
       expect(result.suspicious).toBe(true);
       expect(result.reason).toBe('score_without_tool');
     });

@@ -90,9 +90,6 @@ export function matchStandaloneKeyword(
   });
 }
 
-const IN_SCOPE_HINTS =
-  /wispace|ielts|writing|task\s*1|task\s*2|lich\s*hoc|buoi\s*hoc|tien\s*do|bao\s*cao|band|muc\s*tieu|ngay\s*thi|doi\s*lich|nhac\s*lich|dang\s*ky|hoc\s*vien|luyen\s*de|essay|graph|chart|process/i;
-
 const OFF_TOPIC_PATTERNS = [
   /thoi\s*tiet|weather|mua\s*hom nay/i,
   /bong\s*da|world\s*cup|phim\s+|game\s+|netflix/i,
@@ -152,7 +149,7 @@ const ACK_ONLY = new Set([
 
 const SHORT_FRAGMENT_THRESHOLD = 4;
 const IELTS_WRITING_REQUEST =
-  /\b(?:task\s*[12]|writing|essay|bai\s*viet|de\s*bai)\b|\b(?:viet|write)\b.{0,30}\b(?:ve|about)\b/i;
+  /\btask\s*[12]\b|\bde\s*bai\b.{0,50}\b(?:viet|writing|essay|task)\b/i;
 
 /** WISPACE domain scope check — shared across all bot platforms. */
 export function isObviouslyOffTopic(userText: string): boolean {
@@ -168,19 +165,17 @@ export function isObviouslyOffTopic(userText: string): boolean {
     return false;
   }
 
-  // A prompt about an out-of-domain essay topic is still an IELTS Writing
-  // request; the LLM prompt, not the keyword gate, handles the topic boundary.
-  if (IELTS_WRITING_REQUEST.test(normalized)) {
-    return false;
-  }
-
-  if (IN_SCOPE_HINTS.test(normalized)) {
-    return false;
-  }
-
   // Known irrelevant phrases are blocked even when short; this keeps
-  // repeated off-topic follow-ups out of the LLM path (#401).
-  return OFF_TOPIC_PATTERNS.some((pattern) => pattern.test(normalized));
+  // repeated off-topic follow-ups out of the LLM path (#401). A clear IELTS
+  // writing frame lets the LLM handle the off-topic essay topic boundary.
+  if (
+    OFF_TOPIC_PATTERNS.some((pattern) => pattern.test(normalized)) &&
+    !IELTS_WRITING_REQUEST.test(normalized)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /** True when the message is only a greeting/ack — safe to answer with a canned reply when the LLM is unavailable. */

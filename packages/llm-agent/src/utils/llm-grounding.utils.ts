@@ -12,8 +12,14 @@ export interface LlmGroundingResult {
 // Require an explicit claim about the learner; generic band explanations
 // and advice are part of IELTS Writing support, not personal-data claims.
 const DECIMAL_SCORE = '\\d+[.,]\\d+';
+const USER_PERSONAL_SCORE_RE = new RegExp(
+  `(?:\\bmy\\s+(?:ielts\\s+)?(?:score|band)\\b[^.!?\\n]{0,25}?${DECIMAL_SCORE}|\\bi\\s+scored\\b[^.!?\\n]{0,20}?${DECIMAL_SCORE}|\\bi\\s+got\\b[^.!?\\n]{0,20}?${DECIMAL_SCORE}[^.!?\\n]{0,20}?\\b(?:in|on)\\s+ielts\\b|(?:mình|tôi|em|tớ)[^.!?\\n]{0,25}?(?:được\\s+chấm|đạt\\s+(?:band|điểm|score)|được\\s+(?:band|điểm|score)|(?:band|điểm|score))[^.!?\\n]{0,25}?${DECIMAL_SCORE}|(?:band|điểm|score)[^.!?\\n]{0,25}?của\\s+(?:mình|tôi|em|tớ)[^.!?\\n]{0,25}?${DECIMAL_SCORE})`,
+  'gi',
+);
+const QUOTED_USER_TEXT_RE =
+  /"[^"]*"|“[^”]*”|‘[^’]*’|`[^`]*`|(?<![\p{L}\p{N}])'[^'\r\n]*'(?![\p{L}\p{N}])/gu;
 const PERSONAL_SCORE_CONTEXT =
-  '(?:(?:điểm|band|score)[^.!?\\n]{0,25}của\\s+bạn|bạn\\s+(?:đang\\s+ở|đạt)\\s+(?:band|điểm|score)|your\\s+(?:current\\s+)?(?:score|band)|you\\s+(?:are\\s+at|scored))';
+  '(?:(?:điểm|band|score)[^.!?\\n]{0,25}của\\s+bạn|bạn\\s+(?:đang\\s+ở|đạt)\\s+(?:band|điểm|score)|your\\s+(?:current\\s+)?(?:ielts\\s+)?(?:score|band)|you\\s+(?:are\\s+at|scored))';
 const PERSONAL_SCORE_RE = new RegExp(
   `(?:${PERSONAL_SCORE_CONTEXT}[^.!?\\n]{0,60}?${DECIMAL_SCORE}|${DECIMAL_SCORE}[^.!?\\n]{0,40}(?:của\\s+bạn|your\\s+(?:current\\s+)?(?:score|band)))`,
   'gi',
@@ -134,8 +140,12 @@ function hasUngroundedPersonalScoreClaim(
   responseText: string,
   userText: string | undefined,
 ): boolean {
+  const unquotedUserText = userText?.replace(QUOTED_USER_TEXT_RE, ' ');
   const learnerScores = new Set(
-    (userText?.match(/\d+[.,]\d+/g) ?? []).map(Number),
+    [...(unquotedUserText?.matchAll(USER_PERSONAL_SCORE_RE) ?? [])]
+      .map((match) => match[0].match(/\d+[.,]\d+/)?.[0])
+      .filter((score): score is string => score !== undefined)
+      .map((score) => Number(score.replace(',', '.'))),
   );
   for (const match of responseText.matchAll(PERSONAL_SCORE_RE)) {
     const scoreText = match[0].match(/\d+[.,]\d+/)?.[0];

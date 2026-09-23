@@ -64,6 +64,18 @@ describe('isObviouslyOffTopic', () => {
       true,
     );
   });
+
+  it('does not let unrelated writing language bypass the off-topic guard', () => {
+    expect(
+      isObviouslyOffTopic("I'm writing a report; what crypto should I buy?"),
+    ).toBe(true);
+  });
+
+  it('does not let an unrelated IELTS mention bypass the off-topic guard', () => {
+    expect(
+      isObviouslyOffTopic("I'm writing about IELTS; what's the weather today?"),
+    ).toBe(true);
+  });
 });
 
 describe('isGreetingOnly', () => {

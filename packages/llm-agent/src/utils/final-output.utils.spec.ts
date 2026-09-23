@@ -139,6 +139,13 @@ describe('checkFinalOutputSafety', () => {
       'I am GPT, here to help.',
       'Được xây dựng bằng Claude 3.5 Sonnet.',
       'This assistant is powered by Anthropic.',
+      'ChatGPT powers me.',
+      'This assistant uses ChatGPT.',
+      'I use ChatGPT.',
+      'I am using ChatGPT.',
+      'Model: ChatGPT.',
+      'ChatGPT is the model used by this assistant.',
+      'ChatGPT is used by this assistant.',
       'Provider của mình là OpenRouter.',
       'Mình dùng Gemini Pro nhé.',
       'temperature=0.7, top_p: 0.9',
@@ -162,6 +169,62 @@ describe('checkFinalOutputSafety', () => {
         'Trong bài Task 2 về công nghệ, bạn có thể nêu lợi ích của AI và tự động hoá.',
       );
       expect(result.unsafe).toBe(false);
+    });
+
+    it('keeps generic model-answer discussion safe', () => {
+      expect(
+        checkFinalOutputSafety(
+          'A model answer can mention ChatGPT as an example of AI.',
+        ).unsafe,
+      ).toBe(false);
+    });
+
+    it('keeps quoted model-use grammar examples safe', () => {
+      expect(
+        checkFinalOutputSafety(
+          'The sentence “I use ChatGPT to study” is grammatically correct.',
+        ).unsafe,
+      ).toBe(false);
+    });
+
+    it('keeps explicitly grammatical quoted examples safe', () => {
+      expect(
+        checkFinalOutputSafety(
+          'Yes, it is grammatically correct to say “I use ChatGPT”.',
+        ).unsafe,
+      ).toBe(false);
+    });
+
+    it('keeps quoted passive model-disclosure grammar examples safe', () => {
+      expect(
+        checkFinalOutputSafety(
+          'The sentence “ChatGPT is used by this assistant” is grammatically correct.',
+        ).unsafe,
+      ).toBe(false);
+    });
+
+    it('keeps model-use example sentences safe', () => {
+      expect(
+        checkFinalOutputSafety(
+          'You can use “I use ChatGPT to study” as an example sentence.',
+        ).unsafe,
+      ).toBe(false);
+    });
+
+    it('does not treat factual correctness as a grammar judgment', () => {
+      expect(
+        checkFinalOutputSafety(
+          '“ChatGPT is used by this assistant” is correct.',
+        ),
+      ).toEqual({ unsafe: true, reason: 'vendor_leak' });
+    });
+
+    it('does not let unrelated grammar text exempt a model disclosure', () => {
+      expect(
+        checkFinalOutputSafety(
+          'The grammar sentence is correct. My model is “ChatGPT”.',
+        ),
+      ).toEqual({ unsafe: true, reason: 'vendor_leak' });
     });
 
     it.each([

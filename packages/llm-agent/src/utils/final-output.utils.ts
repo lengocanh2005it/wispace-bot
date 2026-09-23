@@ -31,7 +31,11 @@ export const SYSTEM_PROMPT_LEAK_MARKERS = [
  */
 const VENDOR_MODEL_PATTERNS: Array<RegExp> = [
   /\b(open\s*ai|anthropic|openrouter|together\s+ai|groq|mistral\s+ai|deepseek|minimax|azure\s+openai|aws\s+bedrock|vertex\s+ai|google\s+ai)\b/i,
-  /\b(?:i am|i'm|my model is|this assistant is|powered by|built (?:with|by)|running on|based on)\s+(?:the\s+)?(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
+  /\b(?:i am|i'm|my model is|this assistant (?:is|uses)|powered by|built (?:with|by)|running on|based on)\s+(?:the\s+)?(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
+  /\b(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\s+(?:powers|runs|operates)\s+(?:me|this assistant|the assistant)\b/i,
+  /\b(?:the\s+)?(?:model|llm)\s*(?::|=|is)\s+(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
+  /\b(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\s+is\s+(?:the\s+)?model\s+used\s+(?:by|for)\s+(?:this\s+)?(?:assistant|me|you)\b/i,
+  /\b(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\s+is\s+(?:being\s+)?used\s+(?:by|for)\s+(?:this\s+)?(?:assistant|me|you)\b/i,
   /\b(?:mình|tôi|minh|toi)\s+(?:là|la|chạy trên|chay tren|đang chạy trên|dang chay tren|dùng|dung|đang dùng|dang dung)\s+(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
   /\bgpt\b/i,
   /\bgpt[-_\s]?\d/i,
@@ -43,6 +47,38 @@ const VENDOR_MODEL_PATTERNS: Array<RegExp> = [
   /\btemperature\s*[:=]\s*\d/i,
   /\btop[_-]?p\s*[:=]/i,
 ];
+const FIRST_PERSON_MODEL_USAGE =
+  /\b(?:i am using|i'm using|i use)\s+(?:the\s+)?(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i;
+const QUOTED_MODEL_REFERENCE =
+  /["“‘`][^"“”‘’`\r\n]{0,120}\b(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b[^"“”‘’`\r\n]{0,120}["”’`]/gi;
+function isQuotedModelLanguageExample(
+  text: string,
+  quoted: string,
+  offset: number,
+): boolean {
+  const precedingText = text.slice(Math.max(0, offset - 80), offset);
+  const followingText = text.slice(
+    offset + quoted.length,
+    offset + quoted.length + 45,
+  );
+  const grammarJudgment =
+    /^\s*(?:(?:is|seems|sounds|looks)\s+)?(?:grammatically|grammar-wise)\s+(?:correct|incorrect|natural)\b/i.test(
+      followingText,
+    ) ||
+    /\b(?:grammatically|grammar-wise)\s+(?:correct|incorrect|natural)\s+to\s+(?:say|write|use|phrase|express)\s*$/i.test(
+      precedingText,
+    ) ||
+    (/\b(?:sentence|phrase|wording)\s*$/i.test(precedingText) &&
+      /^\s*(?:is|seems|sounds|looks)\s+(?:a\s+)?(?:correct|incorrect|natural)\b/i.test(
+        followingText,
+      ));
+  const introducedAsExample =
+    /\b(?:use|write|say|give|provide|include)\b[^.!?\n]{0,60}$/i.test(
+      precedingText,
+    ) && /^\s+as\s+an?\s+example\s+(?:sentence|phrase)\b/i.test(followingText);
+
+  return grammarJudgment || introducedAsExample;
+}
 
 export type HarmfulOutputSafetyReason =
   | 'self_harm_instruction'
@@ -166,8 +202,26 @@ export function checkFinalOutputSafety(text: string): FinalOutputSafetyResult {
       return { unsafe: true, reason: 'credential_leak' };
     }
   }
+  const vendorScanText = text.replace(
+    QUOTED_MODEL_REFERENCE,
+    (quoted, offset: number) =>
+      isQuotedModelLanguageExample(text, quoted, offset)
+        ? ' '
+        : quoted.slice(1, -1),
+  );
+  const vendorCandidates =
+    vendorScanText === text
+      ? outputCandidates
+      : buildSafetyScanCandidates(vendorScanText);
+  if (
+    vendorCandidates.some((candidate) =>
+      FIRST_PERSON_MODEL_USAGE.test(candidate),
+    )
+  ) {
+    return { unsafe: true, reason: 'vendor_leak' };
+  }
   for (const pattern of VENDOR_MODEL_PATTERNS) {
-    if (outputCandidates.some((candidate) => pattern.test(candidate))) {
+    if (vendorCandidates.some((candidate) => pattern.test(candidate))) {
       return { unsafe: true, reason: 'vendor_leak' };
     }
   }

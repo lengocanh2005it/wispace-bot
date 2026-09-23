@@ -255,6 +255,10 @@ const DISCLOSURE_PROBE_PATTERNS: Array<[RegExp, DisclosureProbeCategory]> = [
   // ── model / provider / vendor / version / fingerprint ──────────────────
   [/\b(which|what)\s+(ai\s+)?(model|llm)\s+(?:are|do)\s+you\b/i, 'model'],
   [
+    /\b(which|what)\s+(ai\s+)?(model|llm)\s+(?:powers|runs|operates)\s+you\b/i,
+    'model',
+  ],
+  [
     /\b(are|were)\s+you\s+(built|based|powered|trained|made|created)\s+(on|by|with|from)\b/i,
     'model',
   ],
@@ -335,11 +339,16 @@ const DISCLOSURE_PROBE_PATTERNS: Array<[RegExp, DisclosureProbeCategory]> = [
 
   // ── agent / architecture internals ────────────────────────────────────
   [
-    /\bhow\s+many\s+(?:tools?\s+do\s+you\s+have|functions?\s+(?:do\s+you\s+have|does\s+your\s+(?:assistant|agent)\s+have))\b/i,
+    /\bhow\s+many\s+(?:tools?|functions?)\s+(?:do\s+you\s+have|does\s+(?:your\s+)?(?:assistant|agent)\s+(?:have|use|support|expose))\b/i,
     'arch',
   ],
   [
     /\b(list|name|show|enumerate)\s+(?:your\s+(?:tools?|functions?)|all\s+of\s+your\s+(?:tools?|functions?)|(?:the\s+)?tools?\s+you\s+have)\b/i,
+    'arch',
+  ],
+  [/\b(list|name|show|enumerate)\s+all\s+(?:tools?|functions?)\b/i, 'arch'],
+  [
+    /\b(list|name|show|enumerate)\s+(?:(?:all|the)\s+)?(?:tools?|functions?)\s+(?:of|available\s+to|for)\s+(?:(?:your|the)\s+)?(?:assistant|agent)\b/i,
     'arch',
   ],
   [/\b(tool|function)\s+schema\b/i, 'arch'],
