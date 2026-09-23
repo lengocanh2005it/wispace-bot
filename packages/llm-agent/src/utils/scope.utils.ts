@@ -122,6 +122,8 @@ const DISTRESS_PATTERNS = [
   /khong\s*(the\s*)?(hoc|noi)\s*noi/,
   /stress(ed)?/,
   /burn(t|ing)?\s*out/,
+  /tam\s*ly\s+phong\s+thi/,
+  /tam\s*ly\s+so\s+viet/,
 ] as const;
 
 /** True when the message expresses study stress / discouragement (#598). */
@@ -149,6 +151,8 @@ const ACK_ONLY = new Set([
 ]);
 
 const SHORT_FRAGMENT_THRESHOLD = 4;
+const IELTS_WRITING_REQUEST =
+  /\b(?:task\s*[12]|writing|essay|bai\s*viet|de\s*bai)\b|\b(?:viet|write)\b.{0,30}\b(?:ve|about)\b/i;
 
 /** WISPACE domain scope check — shared across all bot platforms. */
 export function isObviouslyOffTopic(userText: string): boolean {
@@ -161,6 +165,12 @@ export function isObviouslyOffTopic(userText: string): boolean {
   // A distressed learner must reach the empathy-first prompt branch (#598),
   // even when the message mentions off-topic vocab (e.g. "đi khám tâm lý").
   if (matchesDistress(normalized)) {
+    return false;
+  }
+
+  // A prompt about an out-of-domain essay topic is still an IELTS Writing
+  // request; the LLM prompt, not the keyword gate, handles the topic boundary.
+  if (IELTS_WRITING_REQUEST.test(normalized)) {
     return false;
   }
 
@@ -189,16 +199,25 @@ const AMBIGUOUS_FRAGMENTS =
 /** Short acknowledgment patterns — safe for LLM, not ambiguous. */
 const SHORT_ACK =
   /^(?:ok|oke|okay|u|vang|da|a|o|ha|nhe|di|ok\s+nhe|ok\s+nha)$/i;
+const SHORT_AFFIRMATIVE_ACKS = new Set(['đúng', 'đồng ý']);
+
+function normalizeIntentText(text: string): string {
+  return text
+    .normalize('NFC')
+    .toLowerCase()
+    .trim()
+    .replace(/[.!?]+$/u, '')
+    .replace(/\s+/g, ' ');
+}
 
 /**
  * Stop/resume intent vocabulary (#959). A learner typing `dừng` / `thôi` /
  * `stop` stated an intent clearly — answering with the clarification menu
  * would be dishonest, and `tiếp` is the resume half of the same interaction.
- * Normalized (no-diacritic) exact match; polite trailing punctuation is
- * already stripped by `normalizeScopeText`.
+ * Diacritics are preserved so `đúng`/`dùng` cannot collapse into `dừng`.
  */
 const STOP_INTENT =
-  /^(?:dung|dung lai|stop|thoi|thoi khoi|thoi di|huy|huy di|huy bo|khoan|khoan da|khong can|khong can nua|bo qua|nevermind|never mind)$/i;
+  /^(?:dừng|dừng lại|stop|thôi|thôi khỏi|thôi đi|thoi|thoi khoi|thoi di|hủy|huỷ|hủy đi|huỷ đi|hủy bỏ|huy|huy di|huy bo|khoan|khoan da|khoan đã|không cần|không cần nữa|khong can|khong can nua|bỏ qua|bo qua|nevermind|never mind)$/i;
 const RESUME_INTENT = /^(?:tiep|tiep tuc|continue|go on)$/i;
 /**
  * Short but meaningful scores/band references — `7.0`, `6.5?`, `band`.
@@ -210,7 +229,7 @@ const SHORT_MEANINGFUL =
 
 /** True when the message is a stop request (#959) — gets an honest reply, not a menu. */
 export function isStopIntent(userText: string): boolean {
-  const text = normalizeScopeText(userText.trim());
+  const text = normalizeIntentText(userText);
   return text.length > 0 && STOP_INTENT.test(text);
 }
 
@@ -222,6 +241,7 @@ export function isAmbiguousMessage(userText: string): boolean {
   const rawText = userText.trim();
   const text = normalizeScopeText(rawText);
   if (!text) return true;
+  if (SHORT_AFFIRMATIVE_ACKS.has(normalizeIntentText(rawText))) return false;
   // A distressed learner reaches the empathy-first branch (#598), never the
   // clarification menu — short cries like "áp lực thi quá" must reach the LLM.
   if (matchesDistress(text)) {
@@ -242,7 +262,7 @@ export function isAmbiguousMessage(userText: string): boolean {
     !isGreetingOnly(rawText) &&
     // #959: known short intents are meaningful, not vague — a stop word, a
     // resume word, or a score reference must never hit the length gate.
-    !STOP_INTENT.test(text) &&
+    !isStopIntent(rawText) &&
     !RESUME_INTENT.test(text) &&
     !SHORT_MEANINGFUL.test(rawText)
   ) {

@@ -25,15 +25,14 @@ export const SYSTEM_PROMPT_LEAK_MARKERS = [
 ] as const;
 
 /**
- * Vendor / model identifier tokens that must never appear in a REPLY (#625) —
- * if one does, the model is disclosing which LLM powers the bot. Kept small
- * and hand-maintained; bare "ai" / "model" / "llm" / "bot" / "gpt" are NOT
- * listed (too many legitimate IELTS uses).
- * ponytail: manual denylist, extend only when a real bypass is observed (#336).
+ * Provider identifiers and explicit self-identification patterns. Common
+ * words such as "llama" and "gemini" need first-person/provider context so
+ * ordinary vocabulary and proper names remain usable (#1046).
  */
 const VENDOR_MODEL_PATTERNS: Array<RegExp> = [
   /\b(open\s*ai|anthropic|openrouter|together\s+ai|groq|mistral\s+ai|deepseek|minimax|azure\s+openai|aws\s+bedrock|vertex\s+ai|google\s+ai)\b/i,
-  /\b(chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
+  /\b(?:i am|i'm|my model is|this assistant is|powered by|built (?:with|by)|running on|based on)\s+(?:the\s+)?(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
+  /\b(?:mình|tôi|minh|toi)\s+(?:là|la|chạy trên|chay tren|đang chạy trên|dang chay tren|dùng|dung|đang dùng|dang dung)\s+(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
   /\bgpt\b/i,
   /\bgpt[-_\s]?\d/i,
   /\bclaude[-_\s]?\d/i,

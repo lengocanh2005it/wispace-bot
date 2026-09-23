@@ -253,7 +253,7 @@ export interface DisclosureProbeResult {
 
 const DISCLOSURE_PROBE_PATTERNS: Array<[RegExp, DisclosureProbeCategory]> = [
   // ── model / provider / vendor / version / fingerprint ──────────────────
-  [/\b(which|what)\s+(ai\s+)?(model|llm)\b/i, 'model'],
+  [/\b(which|what)\s+(ai\s+)?(model|llm)\s+(?:are|do)\s+you\b/i, 'model'],
   [
     /\b(are|were)\s+you\s+(built|based|powered|trained|made|created)\s+(on|by|with|from)\b/i,
     'model',
@@ -300,9 +300,12 @@ const DISCLOSURE_PROBE_PATTERNS: Array<[RegExp, DisclosureProbeCategory]> = [
     /\brepeat\s+(everything|all|the\s+text|the\s+words?)\s+(above|before)\b/i,
     'prompt',
   ],
-  [/\bwhat\s+(were|was)\s+you\s+told\b/i, 'prompt'],
   [
-    /\b(summarize|translate|print|show|reveal|paste|output|give\s+me)\s+(your\s+)?(instructions?|prompt|guidelines?|rules?)\b/i,
+    /\bwhat\s+(?:were|was)\s+you\s+told\s+(?:before\s+i\s+started\s+(?:chatting|using\s+you)|by\s+(?:your\s+developer|your\s+creator|the\s+people\s+who\s+built\s+you))\b/i,
+    'prompt',
+  ],
+  [
+    /\b(summarize|translate|print|show|reveal|paste|output|give\s+me)\s+(?:your|the\s+assistant's|the\s+system's)\s+(instructions?|prompt|guidelines?|rules?)\b/i,
     'prompt',
   ],
   // Spaced-out letters (taxonomy G): "s y s t e m   p r o m p t".
@@ -331,9 +334,12 @@ const DISCLOSURE_PROBE_PATTERNS: Array<[RegExp, DisclosureProbeCategory]> = [
   ],
 
   // ── agent / architecture internals ────────────────────────────────────
-  [/\bhow\s+many\s+(tools?|functions?)\b/i, 'arch'],
   [
-    /\b(list|name|show|enumerate)\s+(your\s+|the\s+|all\s+)?(tools?|functions?)\b/i,
+    /\bhow\s+many\s+(?:tools?\s+do\s+you\s+have|functions?\s+(?:do\s+you\s+have|does\s+your\s+(?:assistant|agent)\s+have))\b/i,
+    'arch',
+  ],
+  [
+    /\b(list|name|show|enumerate)\s+(?:your\s+(?:tools?|functions?)|all\s+of\s+your\s+(?:tools?|functions?)|(?:the\s+)?tools?\s+you\s+have)\b/i,
     'arch',
   ],
   [/\b(tool|function)\s+schema\b/i, 'arch'],

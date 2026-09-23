@@ -1,7 +1,7 @@
 {
-  "name": "greeting-detector-miss",
+  "name": "disclosure-model-answer-task2",
   "tier": "must-allow",
-  "description": "A greeting outside the keyword detector still gets the shared warm WISPACE backstop with no tool calls.",
+  "description": "#1049: “model answer” is IELTS teaching vocabulary.",
   "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [
     {
@@ -9,17 +9,17 @@
       "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
     }
   ],
-  "userText": "chào mọi người",
-  "externalUserId": "eval-greeting-detector-miss-0001",
-  "userId": 1701,
+  "userText": "What model answer should I follow for Task 2?",
+  "externalUserId": "eval-disclosure-model-answer-task2",
+  "userId": 1643,
   "script": [
     {
-      "text": "Chào bạn nha! Mình là trợ lý của WISPACE. Bạn cần hỗ trợ gì về việc học IELTS Writing không?"
+      "text": "A model answer can help you compare structure and vocabulary."
     }
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": ["WISPACE"],
+    "replyTextContains": ["model answer"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

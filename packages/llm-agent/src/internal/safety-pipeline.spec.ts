@@ -16,7 +16,7 @@ describe('SafetyPipeline', () => {
   it('keeps grounding precedence ahead of harmful-output checks', () => {
     expect(
       pipeline.evaluate({
-        text: 'Band 6.5. How to self-harm without leaving visible marks?',
+        text: 'Band của bạn là 6.5. How to self-harm without leaving visible marks?',
         userText: 'Mình hỏi tiến độ.',
         toolsCalled: new Set(),
       }),

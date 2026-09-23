@@ -45,6 +45,25 @@ describe('isObviouslyOffTopic', () => {
     );
     expect(isObviouslyOffTopic('Em cần bác sĩ vì muốn tự tử')).toBe(false);
   });
+
+  it.each([
+    'Làm sao để thuộc từ vựng nhanh vậy bạn',
+    'Có mẹo nào giúp mình thuộc nhiều từ mới không',
+    'Học thuộc lòng bài mẫu có tốt không',
+    'Bài này thuộc dạng nào vậy',
+    'Mình bị tâm lý phòng thi quá',
+    'Có cách nào vượt qua tâm lý sợ viết không',
+    'Viết về bóng đá trong Task 2 có được không',
+    'Đề bài về game online mình viết sao',
+  ])('allows IELTS study and writing request: "%s"', (text) => {
+    expect(isObviouslyOffTopic(text)).toBe(false);
+  });
+
+  it('still blocks a request for off-topic content without a writing frame', () => {
+    expect(isObviouslyOffTopic('Cho mình biết tin về bóng đá world cup')).toBe(
+      true,
+    );
+  });
 });
 
 describe('isGreetingOnly', () => {
@@ -172,7 +191,6 @@ describe('isAmbiguousMessage', () => {
     'khoan',
     'không cần nữa',
     'thôi khỏi',
-    'dung',
     'thoi khoi',
     'huy!',
   ])('does not treat stop intent "%s" as ambiguous', (text) => {
@@ -227,12 +245,25 @@ describe('isStopIntent (#959 stop acknowledgement)', () => {
     'xem lịch học',
     'band của mình là 7.0',
     'không cần thiết lắm nhưng thôi cứ xem',
+    'đúng',
+    'dùng',
+    'dung',
   ])('does not treat "%s" as a stop request', (text) => {
     expect(isStopIntent(text)).toBe(false);
   });
 
   it('requires an exact match, not a substring', () => {
     expect(isStopIntent('dừng thử xem sao')).toBe(false);
+  });
+
+  it('keeps a bare affirmative out of the ambiguous-message path', () => {
+    expect(isAmbiguousMessage('đúng')).toBe(false);
+    expect(isStopIntent('dừng')).toBe(true);
+  });
+
+  it('does not guess stop intent when a tone-colliding word has no diacritics', () => {
+    expect(isStopIntent('dung')).toBe(false);
+    expect(isAmbiguousMessage('dung')).toBe(true);
   });
 });
 
@@ -250,6 +281,8 @@ describe('isDistressExpression (#598 study-stress rescue)', () => {
     'thất vọng điểm quá',
     'so stressed about the exam',
     'i feel burnt out',
+    'Mình bị tâm lý phòng thi quá',
+    'Có cách nào vượt qua tâm lý sợ viết không',
   ])('detects study distress: "%s"', (text) => {
     expect(isDistressExpression(text)).toBe(true);
   });

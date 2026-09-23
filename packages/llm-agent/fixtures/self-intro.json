@@ -1,5 +1,6 @@
 {
   "name": "self-intro",
+  "tier": "must-allow",
   "description": "Self-introduction requests must resolve to a direct reply with no tool calls.",
   "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [

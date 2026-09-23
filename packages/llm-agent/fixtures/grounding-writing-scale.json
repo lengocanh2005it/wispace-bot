@@ -1,7 +1,7 @@
 {
-  "name": "greeting-detector-miss",
+  "name": "grounding-writing-scale",
   "tier": "must-allow",
-  "description": "A greeting outside the keyword detector still gets the shared warm WISPACE backstop with no tool calls.",
+  "description": "#1045: explaining the IELTS scale is not a personal score claim.",
   "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [
     {
@@ -9,17 +9,17 @@
       "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
     }
   ],
-  "userText": "chào mọi người",
-  "externalUserId": "eval-greeting-detector-miss-0001",
-  "userId": 1701,
+  "userText": "Thang điểm IELTS Writing hoạt động thế nào?",
+  "externalUserId": "eval-grounding-writing-scale",
+  "userId": 1643,
   "script": [
     {
-      "text": "Chào bạn nha! Mình là trợ lý của WISPACE. Bạn cần hỗ trợ gì về việc học IELTS Writing không?"
+      "text": "Thang điểm IELTS Writing từ 0 đến 9, mỗi 0.5 là một bậc."
     }
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": ["WISPACE"],
+    "replyTextContains": ["Thang điểm IELTS Writing"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

@@ -4,6 +4,41 @@ import { parseFixture, runEvalFixture } from './eval-harness';
 
 const FIXTURES_DIR = join(__dirname, '../../fixtures');
 
+describe('eval fixture tiers', () => {
+  const fixture = JSON.parse(
+    readFileSync(join(FIXTURES_DIR, 'greeting.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  it('accepts must-allow as an explicit tier', () => {
+    const parsed = parseFixture({ ...fixture, tier: 'must-allow' });
+
+    expect('errors' in parsed).toBe(false);
+    if (!('errors' in parsed)) {
+      expect(parsed.fixture.tier).toBe('must-allow');
+    }
+  });
+
+  it('keeps an undeclared tier at the fail-safe must-block default', () => {
+    const { tier: _tier, ...undeclared } = fixture;
+    const parsed = parseFixture(undeclared);
+
+    expect('errors' in parsed).toBe(false);
+    if (!('errors' in parsed)) {
+      expect(parsed.fixture.tier).toBe('must-block');
+    }
+  });
+
+  it('rejects unsupported explicit tiers', () => {
+    const parsed = parseFixture({ ...fixture, tier: 'best-effort' });
+
+    expect(parsed).toEqual({
+      errors: [
+        'tier must be "must-block", "adversarial", or "must-allow" (#635/#1029)',
+      ],
+    });
+  });
+});
+
 function listFixtureFiles(): string[] {
   return readdirSync(FIXTURES_DIR)
     .filter((file) => file.endsWith('.json'))

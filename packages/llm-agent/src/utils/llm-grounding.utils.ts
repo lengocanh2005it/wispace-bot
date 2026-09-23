@@ -9,14 +9,14 @@ export interface LlmGroundingResult {
   reason?: 'score_without_tool' | 'schedule_without_tool';
 }
 
-// Personal score claims require a score keyword ("điểm/band/score/ielts")
-// near a decimal — generic advice like "bạn có thể đạt 6.5 nếu luyện Task 1"
-// no longer trips the check.
-const SCORE_CONTEXT = '(điểm|band|score|ielts|thang\\s*điểm)';
+// Require an explicit claim about the learner; generic band explanations
+// and advice are part of IELTS Writing support, not personal-data claims.
 const DECIMAL_SCORE = '\\d+[.,]\\d+';
+const PERSONAL_SCORE_CONTEXT =
+  '(?:(?:điểm|band|score)[^.!?\\n]{0,25}của\\s+bạn|bạn\\s+(?:đang\\s+ở|đạt)\\s+(?:band|điểm|score)|your\\s+(?:current\\s+)?(?:score|band)|you\\s+(?:are\\s+at|scored))';
 const PERSONAL_SCORE_RE = new RegExp(
-  `${SCORE_CONTEXT}[^.!?\\n]{0,60}${DECIMAL_SCORE}|${DECIMAL_SCORE}[^.!?\\n]{0,40}${SCORE_CONTEXT}`,
-  'i',
+  `(?:${PERSONAL_SCORE_CONTEXT}[^.!?\\n]{0,60}?${DECIMAL_SCORE}|${DECIMAL_SCORE}[^.!?\\n]{0,40}(?:của\\s+bạn|your\\s+(?:current\\s+)?(?:score|band)))`,
+  'gi',
 );
 
 // Personal schedule claims require a schedule context word ("buổi học/lịch
@@ -76,10 +76,9 @@ const EXERCISE_TOOLS = getAgentToolNamesByGroundingClaim('exercise');
  * roadmap state) without a corresponding tool having been called in this
  * turn. Returns suspicious=true if grounding is missing.
  *
- * Echo suppression is claim-scoped (#157): a time marker the user supplied
- * in their own message suppresses ONLY the schedule claim carrying that
- * marker (re-statement) — unrelated score/schedule claims in the same
- * response are still checked.
+ * Echo suppression is claim-scoped: learner-supplied score/time markers
+ * suppress only their matching personal claim; unrelated claims remain
+ * checked.
  */
 export function checkLlmGrounding(
   responseText: string,
@@ -87,7 +86,7 @@ export function checkLlmGrounding(
   userText?: string,
 ): LlmGroundingResult {
   if (
-    PERSONAL_SCORE_RE.test(responseText) &&
+    hasUngroundedPersonalScoreClaim(responseText, userText) &&
     !hasAny(toolsCalledThisTurn, SCORE_TOOLS)
   ) {
     return { suspicious: true, reason: 'score_without_tool' };
@@ -129,6 +128,20 @@ export function checkLlmGrounding(
   }
 
   return { suspicious: false };
+}
+
+function hasUngroundedPersonalScoreClaim(
+  responseText: string,
+  userText: string | undefined,
+): boolean {
+  const learnerScores = new Set(
+    (userText?.match(/\d+[.,]\d+/g) ?? []).map(Number),
+  );
+  for (const match of responseText.matchAll(PERSONAL_SCORE_RE)) {
+    const scoreText = match[0].match(/\d+[.,]\d+/)?.[0];
+    if (!scoreText || !learnerScores.has(Number(scoreText))) return true;
+  }
+  return false;
 }
 
 /**

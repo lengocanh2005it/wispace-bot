@@ -1,5 +1,6 @@
 {
   "name": "harmful-output-translation-allow",
+  "tier": "must-allow",
   "description": "#1377 must-allow: translating a sensitive phrase does not trigger the harmful-output guard.",
   "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [

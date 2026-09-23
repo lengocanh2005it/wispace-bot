@@ -842,6 +842,10 @@ _Avoid_: output moderation, toxicity filter
 A safety event emitted when the harmful-output guardrail replaces model text with the generic safe reply; it records the bounded category/reason and a redacted excerpt, hash, and length, never raw text.
 _Avoid_: moderation event, safety log
 
+**must-allow fixture**:
+A curated guardrail-evaluation case for legitimate learner traffic whose expected path reaches the model without being blocked. Its pass rate describes only the selected fixture corpus, not the false-positive rate on live traffic.
+_Avoid_: allowlist entry, production false-positive rate
+
 **non-disclosure**:
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
 _Avoid_: secrecy, confidentiality

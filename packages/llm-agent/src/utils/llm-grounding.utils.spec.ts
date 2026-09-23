@@ -56,6 +56,15 @@ describe('checkLlmGrounding', () => {
       expect(result.suspicious).toBe(false);
     });
 
+    it.each([
+      'Band 6.5 yêu cầu bài viết mạch lạc và ít lỗi ngữ pháp.',
+      'Để lên band 7.0 bạn cần cải thiện Task Response.',
+      'Thang điểm IELTS Writing từ 0 đến 9, mỗi 0.5 là một bậc.',
+      'Sự khác nhau giữa band 6.0 và 6.5 nằm ở Coherence.',
+    ])('allows a generic band explanation: "%s"', (text) => {
+      expect(checkLlmGrounding(text, new Set()).suspicious).toBe(false);
+    });
+
     describe('user echo suppression', () => {
       it('does not flag a date the user just typed', () => {
         const result = checkLlmGrounding(
@@ -91,6 +100,25 @@ describe('checkLlmGrounding', () => {
           'Buổi học 15/08 đã được dời. Band của bạn là 7.0.',
           new Set<string>(),
           'buổi học 15/08 có bị dời không?',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('score_without_tool');
+      });
+
+      it('allows a score number echoed from the learner', () => {
+        const result = checkLlmGrounding(
+          'Band của bạn là 6.5.',
+          new Set<string>(),
+          'Mình vừa được chấm 6.5.',
+        );
+        expect(result.suspicious).toBe(false);
+      });
+
+      it('still flags a separate ungrounded score beside an echoed number', () => {
+        const result = checkLlmGrounding(
+          'Điểm của bạn là 6.5. Điểm trung bình của bạn là 8.0.',
+          new Set<string>(),
+          'Mình vừa được chấm 6.5.',
         );
         expect(result.suspicious).toBe(true);
         expect(result.reason).toBe('score_without_tool');

@@ -188,11 +188,12 @@ export interface EvalFixture {
   name: string;
   description?: string;
   /**
-   * #635 battery tier. `must-block` (default) fixtures are never allowed to
-   * fail; `adversarial` probes tolerate a configured bypass rate so a newly
-   * discovered bypass can land as a failing fixture before its fix.
+   * #635/#1029 battery tier. `must-block` (default) and `must-allow` fixtures
+   * are never allowed to fail; `adversarial` probes tolerate a configured
+   * bypass rate so a newly discovered bypass can land as a failing fixture
+   * before its fix.
    */
-  tier: 'must-block' | 'adversarial';
+  tier: 'must-block' | 'adversarial' | 'must-allow';
   /**
    * sha256 (hex) of the LF-normalized `CHAT_SYSTEM_PROMPT_CORE` value — the
    * exact core text production composes. A prompt edit fails the eval until
@@ -338,9 +339,11 @@ export function parseFixture(
   }
   if (
     raw.tier !== undefined &&
-    !['must-block', 'adversarial'].includes(String(raw.tier))
+    !['must-block', 'adversarial', 'must-allow'].includes(String(raw.tier))
   ) {
-    errors.push('tier must be "must-block" or "adversarial" (#635)');
+    errors.push(
+      'tier must be "must-block", "adversarial", or "must-allow" (#635/#1029)',
+    );
   }
   const promptFiles = raw.promptFiles;
   if (!Array.isArray(promptFiles) || promptFiles.length === 0) {
@@ -606,7 +609,9 @@ export function parseFixture(
       tier:
         raw.tier === 'adversarial'
           ? ('adversarial' as const)
-          : ('must-block' as const),
+          : raw.tier === 'must-allow'
+            ? ('must-allow' as const)
+            : ('must-block' as const),
       coreHash: String(raw.coreHash).toLowerCase(),
       promptFiles: (raw.promptFiles as EvalPromptFile[]).map((file) => ({
         path: String(file.path),

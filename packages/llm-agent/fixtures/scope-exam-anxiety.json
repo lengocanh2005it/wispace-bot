@@ -1,7 +1,7 @@
 {
-  "name": "greeting-detector-miss",
+  "name": "scope-exam-anxiety",
   "tier": "must-allow",
-  "description": "A greeting outside the keyword detector still gets the shared warm WISPACE backstop with no tool calls.",
+  "description": "#938/#598: exam anxiety reaches the empathy-first response path.",
   "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [
     {
@@ -9,17 +9,17 @@
       "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
     }
   ],
-  "userText": "chào mọi người",
-  "externalUserId": "eval-greeting-detector-miss-0001",
-  "userId": 1701,
+  "userText": "Mình bị tâm lý phòng thi quá",
+  "externalUserId": "eval-scope-exam-anxiety",
+  "userId": 1643,
   "script": [
     {
-      "text": "Chào bạn nha! Mình là trợ lý của WISPACE. Bạn cần hỗ trợ gì về việc học IELTS Writing không?"
+      "text": "Mình hiểu cảm giác áp lực trước kỳ thi."
     }
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": ["WISPACE"],
+    "replyTextContains": ["áp lực"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

@@ -164,6 +164,15 @@ describe('checkFinalOutputSafety', () => {
       expect(result.unsafe).toBe(false);
     });
 
+    it.each([
+      'Llama là một loài động vật ở Nam Mỹ, dùng được cho bài Writing về wildlife.',
+      'Claude Monet là hoạ sĩ Ấn tượng, chủ đề Reading hay gặp.',
+      'Gemini là cung Song Tử — từ vựng zodiac.',
+      'Bạn nên dùng từ "grok" cẩn thận vì nó không phổ biến.',
+    ])('allows ordinary vocabulary and named-entity use: "%s"', (text) => {
+      expect(checkFinalOutputSafety(text).unsafe).toBe(false);
+    });
+
     it('does not flag the standard non-disclosure reply itself', () => {
       const result = checkFinalOutputSafety(
         'Mình là trợ lý AI của WISPACE, đồng hành cùng bạn luyện IELTS Writing — theo dõi tiến độ, lịch học và cách làm Task 1/2. Bạn muốn mình hỗ trợ phần nào của Writing không?',
