@@ -595,19 +595,16 @@ export function buildJointScanView(
 
 /** Applies only narrow, current-message exemptions for ordinary learning text. */
 function prepareLearnerInputForScan(text: string): string {
-  const normalized = normalizeForPromptScan(text, ' ');
+  const normalized = normalizeForPromptScan(text, ' ', false);
   let scanText = text;
 
   const hasPracticeRoleFrame =
-    /\b(?:practice|practise|practising|language exercise)\b|\b(?:luyen|thuc hanh|tap)\b/i.test(
-      normalized,
-    ) &&
-    /\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:dong vai|gia vo|nhap vai)\b/i.test(
+    /\b(?:practice|practise|practising|language exercise)\b[^.!?\n]{0,120}\b(?:pretend you are|pretend to be|roleplay as)\b|\b(?:luyen|thuc hanh|tap)\b[^.!?\n]{0,120}\b(?:dong vai|gia vo|nhap vai)\b/i.test(
       normalized,
     );
   if (hasPracticeRoleFrame) {
     const unsafePersona =
-      /\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ignore|bypass)\b|no restrictions|without rules/i;
+      /\b(?:unrestricted|uncensored|unfiltered|developer|jailbreak|dan|hacker|system|assistant|ai|llm|model|bot)\b|\b(?:ignore|bypass|override|disregard)\b.{0,24}\b(?:rules?|instructions?|constraints?|restrictions?)\b|\b(?:no|without)\b.{0,12}\b(?:rules?|restrictions?|limits?)\b|\b(?:different|new|another|alternative|other)\s+(?:ai|llm|model|bot|assistant|system)\b|\b(?:different|new|another|alternative|other)\s+(?:persona|identity)\b/i;
     scanText = scanText.replace(
       /\b(?:pretend\s+(?:you\s+are|to\s+be)|roleplay\s+as)\b|(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo|nhập\s*vai|nhap\s*vai)\s+(?:là|la)?/gi,
       (match, offset: number, whole: string) => {
@@ -621,7 +618,7 @@ function prepareLearnerInputForScan(text: string): string {
   }
 
   const hasPracticeTranscriptFrame =
-    /\b(?:practice|practise|practising)\b.{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b.{0,40}\bfor (?:my )?(?:practice|practise)\b|\b(?:luyen|thuc hanh)\b.{0,60}\b(?:hoi thoai|doan thoai)\b/i.test(
+    /\b(?:practice|practise|practising)\b[^.!?\n]{0,60}\b(?:dialogue|transcript)\b|\b(?:dialogue|transcript)\b[^.!?\n]{0,40}\bfor (?:my )?(?:practice|practise)\b|\b(?:luyen|thuc hanh)\b[^.!?\n]{0,60}\b(?:hoi thoai|doan thoai)\b/i.test(
       normalized,
     );
   if (hasPracticeTranscriptFrame) {
