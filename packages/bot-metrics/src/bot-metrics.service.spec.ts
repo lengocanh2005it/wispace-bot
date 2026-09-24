@@ -545,6 +545,26 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     );
   });
 
+  it('exposes one bounded prompt canary hit counter per fixed platform', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'discord',
+      collectDefaults: false,
+    });
+    const promptCanary = '0123456789abcdef0123456789abcdef';
+    const rawReply = `Leaked ${promptCanary}`;
+    const externalUserId = 'discord-canary-user-123456789';
+
+    metrics.incLlmPromptCanaryHit('discord');
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'discord_llm_prompt_canary_hit_total{platform="discord"} 1',
+    );
+    expect(output).not.toContain(promptCanary);
+    expect(output).not.toContain(rawReply);
+    expect(output).not.toContain(externalUserId);
+  });
+
   it('exposes llm_classifier_input_total with shape/platform', async () => {
     const svc = new BotMetricsService({
       prefix: 'messenger',

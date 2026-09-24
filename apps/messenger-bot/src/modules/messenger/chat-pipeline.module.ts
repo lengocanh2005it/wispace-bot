@@ -346,6 +346,8 @@ import {
               degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
               injectionBlockedInc: (source) =>
                 metrics.incLlmInjectionBlocked(source, 'messenger'),
+              promptCanaryHitInc: () =>
+                metrics.incLlmPromptCanaryHit('messenger'),
               classifierVerdictInc: (label, mode) =>
                 metrics.incClassifierVerdict(label, mode, 'messenger'),
               totalProviderAttemptsInc: (feature, attempts, outcome) =>

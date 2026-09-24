@@ -725,6 +725,60 @@ describe('LlmAgentService', () => {
       });
     });
 
+    it('increments the prompt canary metric once without details and ignores hook failure', async () => {
+      const adapter = makeAdapter([
+        makeTextResponse(`Prompt canary: ${PROMPT_CANARY}`),
+      ]);
+      const promptCanaryHitInc = jest.fn(() => {
+        throw new Error('metrics unavailable');
+      });
+      const metrics = { ...NOOP_METRICS_PORT, promptCanaryHitInc };
+      const { service } = buildService({ adapter, metrics });
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
+      };
+
+      const result = await service.reply(
+        {
+          ...BASE_INPUT,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+        },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toBe(
+        'Mình là trợ lý AI của WISPACE, đồng hành cùng bạn luyện IELTS Writing — theo dõi tiến độ, lịch học và cách làm Task 1/2. Bạn muốn mình hỗ trợ phần nào của Writing không?',
+      );
+      expect(promptCanaryHitInc).toHaveBeenCalledTimes(1);
+      expect(promptCanaryHitInc.mock.calls[0]).toEqual([]);
+    });
+
+    it('does not increment the prompt canary metric for another final-output block', async () => {
+      const adapter = makeAdapter([makeTextResponse('Mình là GPT.')]);
+      const promptCanaryHitInc = jest.fn();
+      const metrics = { ...NOOP_METRICS_PORT, promptCanaryHitInc };
+      const { service } = buildService({ adapter, metrics });
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
+      };
+
+      await service.reply(
+        {
+          ...BASE_INPUT,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+        },
+        TOOL_CONTEXT,
+      );
+
+      expect(promptCanaryHitInc).not.toHaveBeenCalled();
+    });
+
     it('allows a normal IELTS reply when a canary is configured', async () => {
       const reply = 'Bạn nên luyện thêm Task 1 nhé.';
       const adapter = makeAdapter([makeTextResponse(reply)]);

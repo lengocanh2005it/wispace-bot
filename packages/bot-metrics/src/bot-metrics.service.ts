@@ -124,6 +124,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmObservationOutcome: Counter;
   private llmToolPolicyDenied: Counter;
   private llmInjectionBlocked: Counter;
+  private llmPromptCanaryHit: Counter<string>;
   private clarificationOutcomes: Counter;
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
@@ -275,6 +276,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_injection_blocked_total`,
       help: 'Prompt-injection payloads neutralized before reaching model context (#629)',
       labelNames: ['source', 'platform'],
+      registers: [this.registry],
+    });
+
+    this.llmPromptCanaryHit = new Counter({
+      name: `${this.prefix}_llm_prompt_canary_hit_total`,
+      help: 'LLM replies blocked after revealing the runtime prompt canary',
+      labelNames: ['platform'],
       registers: [this.registry],
     });
 
@@ -916,6 +924,10 @@ export class BotMetricsService implements OnModuleDestroy {
   /** #629 — a neutralized prompt-injection payload; `source` ∈ user_input | tool_result | history. */
   incLlmInjectionBlocked(source: string, platform: string): void {
     this.llmInjectionBlocked.inc({ source, platform });
+  }
+
+  incLlmPromptCanaryHit(platform: string): void {
+    this.llmPromptCanaryHit.inc({ platform });
   }
 
   /** #649 — an LLM input-classifier verdict. `label` ∈ SAFE|INJECTION|DISCLOSURE_PROBE or an unavailable reason. */

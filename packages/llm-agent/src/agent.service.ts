@@ -367,6 +367,13 @@ export class LlmAgentService<TToolContext> {
                 input.externalUserId,
               )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
             );
+            if (safety.reason === 'prompt_canary_hit') {
+              try {
+                metrics.promptCanaryHitInc?.();
+              } catch (error) {
+                void error;
+              }
+            }
             if (isHarmfulOutputSafetyReason(safety.reason)) {
               try {
                 this.ports.safetyEvents.recordHarmfulOutputBlocked?.({

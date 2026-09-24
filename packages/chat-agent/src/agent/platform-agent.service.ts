@@ -9,6 +9,7 @@ import {
   ToolExecutorPort,
   composeChatSystemPrompt,
   createEnvLlmExecutionPort,
+  generatePromptCanary,
   type LlmExecutionPort,
   type LlmProviderAdapter,
   type LlmAgentPromptParts,
@@ -100,6 +101,7 @@ export class PlatformAgentService {
   private readonly identityVersions = new Map<string, string>();
   private readonly clarificationMachine: ClarificationStateMachine;
   private readonly clarificationStore: ClarificationStateStore;
+  private readonly promptCanary: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -114,6 +116,7 @@ export class PlatformAgentService {
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
   ) {
+    this.promptCanary = generatePromptCanary();
     const limits = readClarificationLimits(configService);
     this.clarificationMachine = new ClarificationStateMachine(limits);
     if (options.clarificationStore) {
@@ -1160,11 +1163,13 @@ export class PlatformAgentService {
         ? {
             core: CHAT_SYSTEM_PROMPT_CORE,
             overlay,
+            promptCanary: this.promptCanary,
             identityDisplayName: redactPromptPart(suffix),
           }
         : {
             core: CHAT_SYSTEM_PROMPT_CORE,
             overlay,
+            promptCanary: this.promptCanary,
             identityDisplayName: redactPromptPart(suffix?.identityDisplayName),
             learnerProfile: redactPromptPart(suffix?.learnerProfile),
           };
