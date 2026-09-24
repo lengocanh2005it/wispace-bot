@@ -31,6 +31,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 ## Alert response
 
 <span id="llmproviderneversucceeded"></span>
+<span id="llmpromptcanarydetected"></span>
 
 <span id="botdown"></span><span id="alertdeliveryfailed"></span><span id="botrestartloop"></span><span id="prometheusjobmissing"></span><span id="webhookinboundbackloggrowing"></span><span id="dataqualitycheckfailed"></span><span id="redisconsistencydrift"></span><span id="llmadmissionsaturated"></span><span id="internalauthrejectedspike"></span><span id="dbcircuitbreakeropen"></span><span id="studyreminderfailureshigh"></span><span id="privacycleanupincomplete"></span><span id="privacycleanuprecoverystuck"></span><span id="platformlinkstatusunknown"></span><span id="messengerlinkhandofffailure"></span><span id="tokenrefreshfailure"></span><span id="llmprovidercircuitopen"></span><span id="llmprovidersexhausted"></span><span id="llmdegradedmodehigh"></span><span id="llmusagetelemetryloss"></span><span id="llmunpricedtokens"></span><span id="llmmissingtokens"></span><span id="llminjectionblockedrise"></span><span id="chatidentitystaledetected"></span><span id="chatflushrecovery"></span><span id="studyreminderlockskipped"></span><span id="cronexecutionstale"></span><span id="chatavailabilitylow"></span><span id="llmlatencyhigh"></span><span id="llmerrorratehigh"></span><span id="eventlooplagp99high"></span><span id="wispacelatencyhigh"></span>
 
@@ -60,6 +61,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 | LlmUnpricedTokens            | warning  | Add pricing for the bounded `model` label before using cost reports or quota forecasts.                                                                                                                                                                                                               |
 | LlmMissingTokens             | warning  | Inspect provider response usage fields and adapter versions; do not infer cost from raw text.                                                                                                                                                                                                         |
 | LlmInjectionBlockedRise      | warning  | Review abuse telemetry and the source label; use sanitized excerpts/hashes only, never raw learner text.                                                                                                                                                                                              |
+| LlmPromptCanaryDetected      | critical | Page through existing critical routing. Treat the hit as a possible provider, prompt, or model integrity failure; inspect only bounded operational signals and redacted logs. Never expose canary text, raw replies, or learner identities.                                                                                     |
 | ChatIdentityStaleDetected    | warning  | Inspect link-state freshness and queue revalidation failures before replaying messages.                                                                                                                                                                                                               |
 | ChatFlushRecovery            | warning  | Investigate Redis/DB leases for `abandoned` or `fenced_stale` outcomes; verify no duplicate outbound send.                                                                                                                                                                                            |
 | StudyReminderLockSkipped     | warning  | Confirm per-platform advisory lock ids and rolling-deploy overlap; a skip must not become the normal schedule.                                                                                                                                                                                        |
@@ -69,6 +71,17 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 | LlmErrorRateHigh             | warning  | Correlate failed rounds with provider/circuit and tool-policy telemetry.                                                                                                                                                                                                                              |
 | EventLoopLagP99High          | warning  | Inspect synchronous CPU work, event-loop lag p99, GC, and queue depth.                                                                                                                                                                                                                                |
 | WispaceLatencyHigh           | warning  | Check WISPACE p95 by service/operation, retry volume, and upstream availability.                                                                                                                                                                                                                      |
+
+### LlmPromptCanaryDetected response
+
+`LlmPromptCanaryDetected` fires immediately when the five-minute counter increase is positive; the rule has no `for` delay. Existing `severity: critical` routing sends it to Discord critical, Pushover emergency, and Telegram.
+
+1. Identify `job` and `platform`; compare recent deploy, prompt, provider, and model configuration changes.
+2. Review bounded telemetry and sanitized operational logs.
+3. Roll back or disable suspect configuration only after preserving redacted evidence.
+4. Confirm the counter stops increasing after mitigation.
+
+Privacy boundary: the metric carries only `job` and `platform`. Canary text, raw model replies, and learner identities must not enter labels, annotations, logs, tickets, or ad hoc queries. Use approved redacted evidence only.
 
 ### Scheduled report-wave capacity (#1363)
 
@@ -239,6 +252,7 @@ All custom families emitted by `BotMetricsService` are classified below. The
 | `llm_unpriced_model_tokens_total`                                                              | LlmUnpricedTokens            |
 | `llm_missing_tokens_total`                                                                     | LlmMissingTokens             |
 | `llm_injection_blocked_total`                                                                  | LlmInjectionBlockedRise      |
+| `llm_prompt_canary_hit_total`                                                                  | LlmPromptCanaryDetected     |
 | `wispace_call_duration_seconds`                                                                | WispaceLatencyHigh           |
 | `chat_identity_stale_detected_total`                                                           | ChatIdentityStaleDetected    |
 | `chat_flush_recovery_total`                                                                    | ChatFlushRecovery            |

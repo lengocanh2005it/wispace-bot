@@ -333,6 +333,15 @@ groups:
           description: '{{ $labels.job }} blocked at least five injection attempts in 15 minutes (source={{ $labels.source }}); review abuse telemetry without logging raw text.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llminjectionblockedrise'
 
+      - alert: LlmPromptCanaryDetected
+        expr: sum by (job, platform) (increase({__name__=~"(messenger|discord|zalo)_llm_prompt_canary_hit_total"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'LLM prompt canary detected'
+          description: 'The safety pipeline detected prompt canary text in an LLM response. Inspect provider, prompt, and model configuration without exposing canary text, raw replies, or learner identities.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmpromptcanarydetected'
+
       - alert: ChatIdentityStaleDetected
         expr: |
           sum by (job, platform) (

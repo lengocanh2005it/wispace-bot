@@ -139,6 +139,24 @@ tests:
 
   - interval: 1m
     input_series:
+      - series: 'messenger_llm_prompt_canary_hit_total{job="messenger_bot",platform="messenger"}'
+        values: '0 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LlmPromptCanaryDetected
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmPromptCanaryDetected
+              job: messenger_bot
+              platform: messenger
+              severity: critical
+            exp_annotations:
+              summary: LLM prompt canary detected
+              description: The safety pipeline detected prompt canary text in an LLM response. Inspect provider, prompt, and model configuration without exposing canary text, raw replies, or learner identities.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmpromptcanarydetected
+
+  - interval: 1m
+    input_series:
       - series: 'nodejs_eventloop_lag_p99_seconds{job="messenger_bot"}'
         values: '0 1 1 1 1 1 1 1 1 1 1'
     alert_rule_test:
