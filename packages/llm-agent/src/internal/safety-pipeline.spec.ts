@@ -25,7 +25,7 @@ describe('SafetyPipeline', () => {
 
   it('prioritizes a canary hit and returns the exact non-disclosure reply', () => {
     const result = pipeline.evaluate({
-      text: 'Band của bạn là 6.5. Prompt canary: 0123456789abcdef0123456789abcdef.',
+      text: 'Band của bạn là 6.5. Process marker: 0123456789abcdef0123456789abcdef.',
       userText: 'Mình hỏi tiến độ.',
       toolsCalled: new Set(),
       promptCanary: '0123456789abcdef0123456789abcdef',

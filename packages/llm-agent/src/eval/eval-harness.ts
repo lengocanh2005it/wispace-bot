@@ -7,7 +7,6 @@ import { LlmAgentService } from '../agent.service';
 import {
   CHAT_SYSTEM_PROMPT_CORE,
   composeChatSystemPrompt,
-  generatePromptCanary,
 } from '../chat-system-prompt';
 import { isAgentToolName, parseAndValidateToolArguments } from '../agent.tools';
 import {
@@ -88,6 +87,8 @@ const EVAL_METADATA = {
   responseId: 'eval-response',
   usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
 } as const;
+
+const EVAL_PROMPT_CANARY = '0123456789abcdef0123456789abcdef';
 
 export interface EvalScriptedToolCall {
   /** Tool name — must exist in AGENT_TOOLS. */
@@ -972,7 +973,7 @@ export async function runEvalFixture(
   const systemPromptParts = {
     core: CHAT_SYSTEM_PROMPT_CORE,
     overlay: prompt.content,
-    promptCanary: generatePromptCanary(),
+    promptCanary: EVAL_PROMPT_CANARY,
     identityDisplayName: fixture.systemPromptSuffix,
   };
   const systemPrompt = composeChatSystemPrompt(systemPromptParts);

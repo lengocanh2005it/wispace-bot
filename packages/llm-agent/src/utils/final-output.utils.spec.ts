@@ -18,7 +18,7 @@ describe('checkPromptCanarySafety', () => {
   it('reports the canary when a static prompt marker appears too', () => {
     expect(
       checkPromptCanarySafety(
-        'You are the WISPACE assistant. Prompt canary: 0123456789abcdef0123456789abcdef.',
+        'You are the WISPACE assistant. Process marker: 0123456789abcdef0123456789abcdef.',
         '0123456789abcdef0123456789abcdef',
       ),
     ).toEqual({ unsafe: true, reason: 'prompt_canary_hit' });

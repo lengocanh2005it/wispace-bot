@@ -727,7 +727,7 @@ Instructions sent as the `system` message. Files live in each app's `src/shared/
 _Avoid_: prompt file, AI instructions — use "system prompt"
 
 **prompt core / overlay**:
-The free-form chat prompt is composed, not stored in one file: `CHAT_SYSTEM_PROMPT_CORE` (`packages/llm-agent/src/chat-system-prompt.ts`) holds every universal rule and is shared by all three bots; each bot's `<platform>-chat.system.txt` is the **overlay**, carrying only what is platform-specific. `composeChatSystemPrompt()` joins core → overlay → suffix. A rule stated in the core is never copied into an overlay (`prompt-overlay-dedup.spec.ts`). The core has a size budget asserted in `chat-system-prompt.spec.ts`.
+The free-form chat prompt is composed, not stored in one file: `CHAT_SYSTEM_PROMPT_CORE` (`packages/llm-agent/src/chat-system-prompt.ts`) holds every universal rule and is shared by all three bots; each bot's `<platform>-chat.system.txt` is the **overlay**, carrying only what is platform-specific. `composeChatSystemPrompt()` joins core → overlay → data-only `Process marker: <value>` → suffix. A rule stated in the core is never copied into an overlay (`prompt-overlay-dedup.spec.ts`). The core has a size budget asserted in `chat-system-prompt.spec.ts`.
 _Avoid_: "the chat prompt file" — there is no single file
 
 **posture**:
@@ -849,6 +849,10 @@ _Avoid_: allowlist entry, production false-positive rate
 **non-disclosure**:
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
 _Avoid_: secrecy, confidentiality
+
+**prompt canary**:
+A secret value included in the composed chat system prompt as a data-only `Process marker: <value>` part so its appearance in an assistant reply signals prompt disclosure. A canary hit follows the non-disclosure posture; the value itself is never exposed to the learner, logs, history, events, metrics, or alerts.
+_Avoid_: prompt marker — fixed public markers are not canaries
 
 **behavior-affecting change**:
 A change to the chat prompt core or overlay, agent thresholds, or tool schemas that can alter assistant behavior and therefore requires fixture behavior re-validation.

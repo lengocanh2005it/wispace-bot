@@ -27,6 +27,14 @@ Read `.claude/rules/prompts.md` before editing.
 5. **Keep evaluator hash rewrites separate (#1238)**: do not run write-mode `npm run eval:rehash` in a behavior PR. Land the prompt/agent change first, allow the read-only guardrail battery to show the expected stale-hash red state, then rebase main and open a hash-only rehash PR with `Rehashes: #<behavior-pr>` in the body. A combined behavior plus hash PR needs the exact `eval-rehash-approved` label and a fresh current-head APPROVED review from a trusted OWNER or MEMBER who is not the author.
 6. Test: bot preview menu or `POST /messenger/send-reports` with `{ "psid": "..." }` (ops key).
 
+## Prompt canary (#1285)
+
+- Runtime chat composition order is `core → overlay → data-only Process marker: <value> → suffix`.
+- `generatePromptCanary` is a core API; new production imports use `@wispace/llm-agent/core`, not the root compatibility façade.
+- The process marker is the only narrow no-secrets exception for model context. Keep it out of logs, history, safety events, metrics, alerts, configuration, and DB. Masked external IDs may follow the existing logging policy; external IDs must not enter metrics, alerts, or events.
+- Existing core non-disclosure text supplies behavior. Do not add a canary rule to `CHAT_SYSTEM_PROMPT_CORE`, change its hash, or add report/reminder canaries.
+- Eval uses a fixed test-only 32-hex marker; do not use runtime entropy in eval fixtures.
+
 ## Do not
 
 - Inline long prompts into `*.service.ts`.

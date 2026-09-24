@@ -9,7 +9,6 @@ import {
   ToolExecutorPort,
   composeChatSystemPrompt,
   createEnvLlmExecutionPort,
-  generatePromptCanary,
   type LlmExecutionPort,
   type LlmProviderAdapter,
   type LlmAgentPromptParts,
@@ -41,6 +40,7 @@ import {
   type ClassifierOutcomeLabel,
   buildLlmExecutionConfig,
 } from '@wispace/llm-agent';
+import { generatePromptCanary } from '@wispace/llm-agent/core';
 import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
@@ -1158,21 +1158,21 @@ export class PlatformAgentService {
     // invariant (#632) applies at this single consumption point, so every
     // current and future suffix builder inherits it.
     const suffix = await this.options.systemPromptSuffix?.(input);
-    const systemPromptParts: LlmAgentPromptParts =
-      typeof suffix === 'string'
-        ? {
-            core: CHAT_SYSTEM_PROMPT_CORE,
-            overlay,
-            promptCanary: this.promptCanary,
-            identityDisplayName: redactPromptPart(suffix),
-          }
-        : {
-            core: CHAT_SYSTEM_PROMPT_CORE,
-            overlay,
-            promptCanary: this.promptCanary,
-            identityDisplayName: redactPromptPart(suffix?.identityDisplayName),
-            learnerProfile: redactPromptPart(suffix?.learnerProfile),
-          };
+    const systemPromptParts: LlmAgentPromptParts = {
+      core: CHAT_SYSTEM_PROMPT_CORE,
+      overlay,
+      promptCanary: this.promptCanary,
+    };
+    if (typeof suffix === 'string') {
+      systemPromptParts.identityDisplayName = redactPromptPart(suffix);
+    } else {
+      systemPromptParts.identityDisplayName = redactPromptPart(
+        suffix?.identityDisplayName,
+      );
+      systemPromptParts.learnerProfile = redactPromptPart(
+        suffix?.learnerProfile,
+      );
+    }
     return {
       systemPrompt: composeChatSystemPrompt(systemPromptParts),
       systemPromptParts,

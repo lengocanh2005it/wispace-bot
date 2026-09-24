@@ -344,7 +344,7 @@ groups:
           severity: critical
         annotations:
           summary: 'LLM prompt canary detected'
-          description: 'The safety pipeline detected prompt canary text in an LLM response. Inspect provider, prompt, and model configuration without exposing canary text, raw replies, or learner identities.'
+          description: 'The safety pipeline detected prompt canary text in an LLM response. Inspect provider, prompt, and model configuration without exposing canary text, raw replies, or reply content.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmpromptcanarydetected'
 
       - alert: ChatIdentityStaleDetected

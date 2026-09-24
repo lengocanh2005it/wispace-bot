@@ -700,7 +700,7 @@ describe('LlmAgentService', () => {
     it('blocks a model reply containing the prompt canary', async () => {
       const adapter = makeAdapter([
         makeTextResponse(
-          'Prompt canary: 0123-4567-89ab-cdef-0123-4567-89ab-cdef.',
+          'Process marker: 0123-4567-89ab-cdef-0123-4567-89ab-cdef.',
         ),
       ]);
       const { service } = buildService({ adapter });
@@ -727,7 +727,7 @@ describe('LlmAgentService', () => {
 
     it('increments the prompt canary metric once without details and ignores hook failure', async () => {
       const adapter = makeAdapter([
-        makeTextResponse(`Prompt canary: ${PROMPT_CANARY}`),
+        makeTextResponse(`Process marker: ${PROMPT_CANARY}`),
       ]);
       const promptCanaryHitInc = jest.fn(() => {
         throw new Error('metrics unavailable');
@@ -779,8 +779,8 @@ describe('LlmAgentService', () => {
       expect(promptCanaryHitInc).not.toHaveBeenCalled();
     });
 
-    it('allows a normal IELTS reply when a canary is configured', async () => {
-      const reply = 'Bạn nên luyện thêm Task 1 nhé.';
+    it('allows normal IELTS band and exam-date content when a canary is configured', async () => {
+      const reply = 'IELTS band 7.0; exam date 20/11/2026.';
       const adapter = makeAdapter([makeTextResponse(reply)]);
       const { service } = buildService({ adapter });
       const promptParts = {

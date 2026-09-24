@@ -61,7 +61,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 | LlmUnpricedTokens            | warning  | Add pricing for the bounded `model` label before using cost reports or quota forecasts.                                                                                                                                                                                                               |
 | LlmMissingTokens             | warning  | Inspect provider response usage fields and adapter versions; do not infer cost from raw text.                                                                                                                                                                                                         |
 | LlmInjectionBlockedRise      | warning  | Review abuse telemetry and the source label; use sanitized excerpts/hashes only, never raw learner text.                                                                                                                                                                                              |
-| LlmPromptCanaryDetected      | critical | Page through existing critical routing. Treat the hit as a possible provider, prompt, or model integrity failure; inspect only bounded operational signals and redacted logs. Never expose canary text, raw replies, or learner identities.                                                                                     |
+| LlmPromptCanaryDetected      | critical | Page through existing critical routing. Treat the hit as a possible provider, prompt, or model integrity failure; inspect only bounded operational signals and redacted logs. Never expose canary text, raw replies, or reply content. Masked external IDs may follow the existing logging policy; external IDs must not enter metrics, alerts, or events.                                                                                     |
 | ChatIdentityStaleDetected    | warning  | Inspect link-state freshness and queue revalidation failures before replaying messages.                                                                                                                                                                                                               |
 | ChatFlushRecovery            | warning  | Investigate Redis/DB leases for `abandoned` or `fenced_stale` outcomes; verify no duplicate outbound send.                                                                                                                                                                                            |
 | StudyReminderLockSkipped     | warning  | Confirm per-platform advisory lock ids and rolling-deploy overlap; a skip must not become the normal schedule.                                                                                                                                                                                        |
@@ -74,14 +74,14 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 
 ### LlmPromptCanaryDetected response
 
-`LlmPromptCanaryDetected` fires immediately when the five-minute window contains a positive canary-hit counter. `increase` detects later hits; `max_over_time` covers a first observed hit before two counter samples exist. The rule has no `for` delay. Existing `severity: critical` routing sends it to Discord critical, Pushover emergency, and Telegram.
+`LlmPromptCanaryDetected` fires immediately when the five-minute window contains a positive canary-hit counter. `increase` detects ordinary `0 -> 1` increments; `max_over_time` covers a first observed `1 1` sample before two counter samples exist. The rule has no `for` delay. Existing `severity: critical` routing sends it to Discord critical, Pushover emergency, and Telegram.
 
 1. Identify `job` and `platform`; compare recent deploy, prompt, provider, and model configuration changes.
 2. Review bounded telemetry and sanitized operational logs.
 3. Roll back or disable suspect configuration only after preserving redacted evidence.
 4. Confirm the counter stops increasing after mitigation.
 
-Privacy boundary: the metric carries only `job` and `platform`. Canary text, raw model replies, and learner identities must not enter labels, annotations, logs, tickets, or ad hoc queries. Use approved redacted evidence only.
+Privacy boundary: the metric carries only `job` and `platform`. Canary text, raw model replies, and raw reply content must not enter labels, annotations, logs, tickets, or ad hoc queries. Masked external IDs may follow the existing logging policy; external IDs must not enter metrics, alerts, or events. Use approved redacted evidence only.
 
 ### Scheduled report-wave capacity (#1363)
 
