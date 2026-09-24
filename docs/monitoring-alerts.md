@@ -74,7 +74,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 
 ### LlmPromptCanaryDetected response
 
-`LlmPromptCanaryDetected` fires immediately when the five-minute counter increase is positive; the rule has no `for` delay. Existing `severity: critical` routing sends it to Discord critical, Pushover emergency, and Telegram.
+`LlmPromptCanaryDetected` fires immediately when the five-minute window contains a positive canary-hit counter. `increase` detects later hits; `max_over_time` covers a first observed hit before two counter samples exist. The rule has no `for` delay. Existing `severity: critical` routing sends it to Discord critical, Pushover emergency, and Telegram.
 
 1. Identify `job` and `platform`; compare recent deploy, prompt, provider, and model configuration changes.
 2. Review bounded telemetry and sanitized operational logs.

@@ -140,7 +140,7 @@ tests:
   - interval: 1m
     input_series:
       - series: 'messenger_llm_prompt_canary_hit_total{job="messenger_bot",platform="messenger"}'
-        values: '0 1'
+        values: '1 1'
     alert_rule_test:
       - eval_time: 1m
         alertname: LlmPromptCanaryDetected

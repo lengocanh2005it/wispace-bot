@@ -334,7 +334,12 @@ groups:
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llminjectionblockedrise'
 
       - alert: LlmPromptCanaryDetected
-        expr: sum by (job, platform) (increase({__name__=~"(messenger|discord|zalo)_llm_prompt_canary_hit_total"}[5m])) > 0
+        expr: |
+          sum by (job, platform) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_prompt_canary_hit_total"}[5m]) > 0
+            or
+            max_over_time({__name__=~"(messenger|discord|zalo)_llm_prompt_canary_hit_total"}[5m]) > 0
+          ) > 0
         labels:
           severity: critical
         annotations:
