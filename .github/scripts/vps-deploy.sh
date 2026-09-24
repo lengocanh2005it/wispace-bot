@@ -517,7 +517,8 @@ install_host_scripts() {
   local manifest_file="$target_dir/.installed-manifest.json"
 
   if [ ! -d "$scripts_dir" ]; then
-    return 0
+    echo "ERROR: deploy scripts bundle missing at $scripts_dir" >&2
+    return 1
   fi
 
   if ! mkdir -p "$target_dir" || ! chmod 750 "$target_dir"; then
@@ -559,6 +560,18 @@ install_host_scripts() {
 
     local file_sha
     file_sha=$(sha256sum "$dst" | cut -d' ' -f1)
+
+    local spec_key=""
+    case "$script_name" in
+      "postgres-backup.sh") spec_key="backup_runner" ;;
+      "postgres-offsite-sync.sh") spec_key="offsite_sync" ;;
+      "postgres-restore-verify.sh") spec_key="restore_verifier" ;;
+      "backup-monitor.sh") spec_key="health_monitor" ;;
+      "vps-hardening-check.sh") spec_key="hardening_checker" ;;
+    esac
+    if [ -n "$spec_key" ]; then
+      sha_entries+=("\"$spec_key\": \"$file_sha\"")
+    fi
     sha_entries+=("\"$script_name\": \"$file_sha\"")
   done
 

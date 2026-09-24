@@ -16,6 +16,9 @@
 
 set -uo pipefail
 
+# Immediate startup banner so executions always leave an observable signal (#1325).
+echo "[$(date -Is)] [vps-hardening-check] Starting VPS hardening check..."
+
 EVIDENCE_DIR="${EVIDENCE_DIR:-/home/ngoc_anh/vps-hardening/evidence}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TODAY=$(date -u +"%Y-%m-%d")

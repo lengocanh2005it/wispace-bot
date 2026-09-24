@@ -267,6 +267,30 @@ run_monitor >/dev/null 2>&1 && fail "incomplete manifest must exit non-zero" || 
 grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" || fail "incomplete manifest must fire drift alert"
 pass "incomplete manifest (<5 scripts) fires drift alert"
 
+# --- 13. Canonical spec keys manifest schema passes drift check (#1325 spec) ----
+rm -f "$TEST_ROOT/curl.log"
+s1=$(sha256sum "$SCRIPTS_DIR/postgres-backup.sh" | cut -d' ' -f1)
+s2=$(sha256sum "$SCRIPTS_DIR/postgres-offsite-sync.sh" | cut -d' ' -f1)
+s3=$(sha256sum "$SCRIPTS_DIR/postgres-restore-verify.sh" | cut -d' ' -f1)
+s4=$(sha256sum "$SCRIPTS_DIR/backup-monitor.sh" | cut -d' ' -f1)
+s5=$(sha256sum "$SCRIPTS_DIR/vps-hardening-check.sh" | cut -d' ' -f1)
+cat > "$SCRIPTS_DIR/.installed-manifest.json" <<MANIFEST
+{
+  "commit_sha": "testsha002",
+  "installed_at": "2026-09-08T03:00:00Z",
+  "scripts": {
+    "backup_runner": "$s1",
+    "offsite_sync": "$s2",
+    "restore_verifier": "$s3",
+    "health_monitor": "$s4",
+    "hardening_checker": "$s5"
+  }
+}
+MANIFEST
+run_monitor >/dev/null 2>&1 || fail "canonical spec schema manifest must pass drift check"
+grep -q 'host_scripts_drift_detected' "$TEST_ROOT/curl.log" && grep -q '"endsAt"' "$TEST_ROOT/curl.log" || fail "canonical spec schema must keep drift alert resolved"
+pass "canonical spec keys manifest schema passes drift check"
+
 write_manifest # restore for clean finish
 
 if [ "$FAILED" -ne 0 ]; then

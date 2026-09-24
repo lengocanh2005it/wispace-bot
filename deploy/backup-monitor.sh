@@ -28,7 +28,6 @@ RESTORE_VERIFY_SCRIPT="${RESTORE_VERIFY_SCRIPT:-/home/ngoc_anh/scripts/postgres-
 HOST_SCRIPTS_DIR="${HOST_SCRIPTS_DIR:-/home/ngoc_anh/scripts}"
 MANIFEST_FILE="${HOST_MANIFEST_FILE:-$HOST_SCRIPTS_DIR/.installed-manifest.json}"
 DRIFT_ALERT="host_scripts_drift_detected"
-CHECK_SCRIPT_DRIFT="${CHECK_SCRIPT_DRIFT:-1}"
 
 TMP_DIR=""
 RCLONE_CONF=""
@@ -72,7 +71,6 @@ post_alert() { # alertname summary description [ends_at]
 on_monitor_error() {
   local exit_code="$1" line="$2"
   echo "ERROR [$(date -Is)]: backup-monitor failed at line $line with exit code $exit_code" >&2
-  post_alert "backup_monitor_failed" "Backup monitor crashed" "Script error at line $line with exit code $exit_code" 2>/dev/null || true
 }
 trap 'on_monitor_error $? $LINENO' ERR
 
@@ -242,83 +240,115 @@ download_and_verify_remote() {
     --target disposable
 }
 
-verify_host_scripts_drift() {
-  if [ "$CHECK_SCRIPT_DRIFT" != "1" ]; then
-    return 0
-  fi
+MANAGED_HOST_SCRIPTS=(
+  "postgres-backup.sh"
+  "postgres-offsite-sync.sh"
+  "postgres-restore-verify.sh"
+  "backup-monitor.sh"
+  "vps-hardening-check.sh"
+)
 
+resolve_script_name() {
+  case "$1" in
+    backup_runner|postgres-backup.sh) echo "postgres-backup.sh" ;;
+    offsite_sync|postgres-offsite-sync.sh) echo "postgres-offsite-sync.sh" ;;
+    restore_verifier|postgres-restore-verify.sh) echo "postgres-restore-verify.sh" ;;
+    health_monitor|backup-monitor.sh) echo "backup-monitor.sh" ;;
+    hardening_checker|vps-hardening-check.sh) echo "vps-hardening-check.sh" ;;
+    *.sh) echo "$(basename "$1")" ;;
+    *) echo "" ;;
+  esac
+}
+
+parse_manifest_scripts() {
+  local manifest="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.scripts | to_entries[] | "\(.key) \(.value)"' "$manifest" 2>/dev/null || true
+  else
+    # Fallback when jq is not installed (e.g. minimal Windows/CI test environment)
+    sed -n '/"scripts"[[:space:]]*:[[:space:]]*{/,/}/p' "$manifest" \
+      | grep -E '"[a-zA-Z0-9_.-]+"[[:space:]]*:[[:space:]]*"[0-9a-f]{64}"' \
+      | sed -E 's/^[[:space:]]*"([a-zA-Z0-9_.-]+)"[[:space:]]*:[[:space:]]*"([0-9a-f]{64})".*/\1 \2/' || true
+  fi
+}
+
+verify_host_scripts_drift() {
   if [ ! -s "$MANIFEST_FILE" ]; then
     echo "ERROR: host script manifest missing or empty at $MANIFEST_FILE" >&2
     post_alert "$DRIFT_ALERT" "Host scripts drift detected" "Host script manifest is missing or empty at $MANIFEST_FILE"
     return 1
   fi
 
+  local required_count="${#MANAGED_HOST_SCRIPTS[@]}"
+  local verified_scripts=()
   local drift_found=0
   local drift_reason=""
-  local verified_count=0
 
-  local in_scripts=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ "$line" =~ \"scripts\":[[:space:]]*\{ ]]; then
-      in_scripts=1
+  while IFS=' ' read -r script_key expected_sha || [ -n "$script_key" ]; do
+    [ -n "$script_key" ] || continue
+    [ -n "$expected_sha" ] || continue
+
+    # Prevent path traversal and malformed inputs (#1325 review)
+    if ! [[ "$script_key" =~ ^[a-zA-Z0-9_.-]+$ ]] || [[ "$script_key" == *"/"* ]] || [[ "$script_key" == *".."* ]]; then
+      echo "ERROR: invalid script name in manifest: $script_key" >&2
+      drift_found=1
+      drift_reason="Invalid script name in manifest: $script_key"
+      break
+    fi
+
+    if ! [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "ERROR: invalid sha256 checksum in manifest for $script_key" >&2
+      drift_found=1
+      drift_reason="Invalid sha256 in manifest for $script_key"
+      break
+    fi
+
+    local script_name
+    script_name=$(resolve_script_name "$script_key")
+    if [ -z "$script_name" ]; then
       continue
     fi
-    if [ "$in_scripts" -eq 1 ]; then
-      if [[ "$line" =~ \} ]]; then
-        in_scripts=0
+
+    local script_path="$HOST_SCRIPTS_DIR/$script_name"
+
+    if [ ! -f "$script_path" ]; then
+      echo "ERROR: host script missing: $script_path" >&2
+      drift_found=1
+      drift_reason="Missing script: $script_name"
+      break
+    fi
+
+    if [ ! -x "$script_path" ]; then
+      echo "ERROR: host script is not executable: $script_path" >&2
+      drift_found=1
+      drift_reason="Script not executable: $script_name"
+      break
+    fi
+
+    local actual_sha
+    actual_sha=$(sha256sum "$script_path" | cut -d' ' -f1)
+    if [ "$actual_sha" != "$expected_sha" ]; then
+      echo "ERROR: host script checksum mismatch for $script_name (expected $expected_sha, got $actual_sha)" >&2
+      drift_found=1
+      drift_reason="Checksum mismatch for $script_name"
+      break
+    fi
+
+    local already_counted=0
+    for v in "${verified_scripts[@]}"; do
+      if [ "$v" = "$script_name" ]; then
+        already_counted=1
         break
       fi
-      if [[ "$line" =~ \"([^\"]+)\":[[:space:]]*\"([^\"]+)\" ]]; then
-        local script_name="${BASH_REMATCH[1]}"
-        local expected_sha="${BASH_REMATCH[2]}"
-
-        # Prevent path traversal and malformed inputs (#1325 review)
-        if ! [[ "$script_name" =~ ^[a-zA-Z0-9_.-]+$ ]] || [[ "$script_name" == *"/"* ]] || [[ "$script_name" == *".."* ]]; then
-          echo "ERROR: invalid script name in manifest: $script_name" >&2
-          drift_found=1
-          drift_reason="Invalid script name in manifest: $script_name"
-          break
-        fi
-
-        if ! [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]; then
-          echo "ERROR: invalid sha256 checksum in manifest for $script_name" >&2
-          drift_found=1
-          drift_reason="Invalid sha256 in manifest for $script_name"
-          break
-        fi
-
-        local script_path="$HOST_SCRIPTS_DIR/$script_name"
-
-        if [ ! -f "$script_path" ]; then
-          echo "ERROR: host script missing: $script_path" >&2
-          drift_found=1
-          drift_reason="Missing script: $script_name"
-          break
-        fi
-
-        if [ ! -x "$script_path" ]; then
-          echo "ERROR: host script is not executable: $script_path" >&2
-          drift_found=1
-          drift_reason="Script not executable: $script_name"
-          break
-        fi
-
-        local actual_sha
-        actual_sha=$(sha256sum "$script_path" | cut -d' ' -f1)
-        if [ "$actual_sha" != "$expected_sha" ]; then
-          echo "ERROR: host script checksum mismatch for $script_name (expected $expected_sha, got $actual_sha)" >&2
-          drift_found=1
-          drift_reason="Checksum mismatch for $script_name"
-          break
-        fi
-
-        verified_count=$((verified_count + 1))
-      fi
+    done
+    if [ "$already_counted" -eq 0 ]; then
+      verified_scripts+=("$script_name")
     fi
-  done < "$MANIFEST_FILE"
+  done < <(parse_manifest_scripts "$MANIFEST_FILE")
 
-  if [ "$drift_found" -ne 0 ] || [ "$verified_count" -lt 5 ]; then
-    local reason="${drift_reason:-Manifest incomplete: only $verified_count/5 scripts verified}"
+  local verified_count="${#verified_scripts[@]}"
+  if [ "$drift_found" -ne 0 ] || [ "$verified_count" -lt "$required_count" ]; then
+    local reason="${drift_reason:-Manifest incomplete: only $verified_count/$required_count scripts verified}"
     post_alert "$DRIFT_ALERT" "Host scripts drift detected" "$reason"
     return 1
   fi

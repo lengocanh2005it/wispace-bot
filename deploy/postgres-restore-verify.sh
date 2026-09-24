@@ -35,7 +35,8 @@ set -euo pipefail
 #
 # Install on the VPS:
 #   cp deploy/postgres-restore-verify.sh /home/ngoc_anh/scripts/
-#   chmod +x /home/ngoc_anh/scripts/postgres-restore-verify.sh
+# Immediate startup banner so executions always leave an observable signal (#1325).
+echo "[$(date -Is)] [postgres-restore-verify] Starting PostgreSQL restore verification..."
 
 usage() {
   cat >&2 <<'USAGE'
@@ -162,7 +163,7 @@ trap cleanup EXIT INT TERM
 require_file() { [ -s "$1" ] || die "missing or empty file: $2"; }
 
 env_value() { # NAME FILE
-  grep -E "^$1=" "$2" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'"
+  grep -E "^$1=" "$2" 2>/dev/null | tail -1 | cut -d= -f2- | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//' || true
 }
 
 # Extract one JSON array from the sidecar as newline-separated entries. The

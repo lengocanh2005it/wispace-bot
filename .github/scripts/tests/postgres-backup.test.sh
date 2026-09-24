@@ -16,11 +16,19 @@ FAKE_BIN="$TMP_DIR/bin"
 mkdir -p "$FAKE_BIN"
 cat > "$FAKE_BIN/curl" <<'FAKE'
 #!/usr/bin/env bash
+echo "curl $*" >> "${CURL_LOG:-/dev/null}"
 exit 0
 FAKE
 cat > "$FAKE_BIN/rclone" <<'FAKE'
 #!/usr/bin/env bash
 exit 0
+FAKE
+cat > "$FAKE_BIN/chmod" <<'FAKE'
+#!/usr/bin/env bash
+if [ -n "${FAIL_CHMOD:-}" ]; then
+  exit 77
+fi
+/usr/bin/chmod "$@" 2>/dev/null || /bin/chmod "$@" 2>/dev/null || exit 0
 FAKE
 chmod +x "$FAKE_BIN"/*
 export PATH="$FAKE_BIN:$PATH"
@@ -115,5 +123,47 @@ if ! grep -E -q "ERROR.*missing env file: $TMP_DIR/does_not_exist.env" "$ERR_FIL
   exit 1
 fi
 echo "  ok: offsite sync prints banner and explicit error"
+
+# Test 4: Unexpected unhandled command failure triggers ERR trap & Alertmanager alert
+OUT_FILE="$TMP_DIR/test4.stdout"
+ERR_FILE="$TMP_DIR/test4.stderr"
+CURL_LOG="$TMP_DIR/test4.curl.log"
+ENV_VALID="$TMP_DIR/valid.env"
+cat > "$ENV_VALID" <<'ENV'
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=ai_chat_bot_db
+DB_USER=test_user
+DB_PASSWORD=test_pw
+BACKUP_ENCRYPTION_PASSPHRASE=secretpass
+ENV
+
+set +e
+FAIL_CHMOD=1 CURL_LOG="$CURL_LOG" ENV_FILE="$ENV_VALID" BACKUP_DIR="$TMP_DIR/backups4" bash "$BACKUP_SCRIPT" >"$OUT_FILE" 2>"$ERR_FILE"
+EXIT_CODE=$?
+set -e
+
+if [ "$EXIT_CODE" -eq 0 ]; then
+  echo "FAIL: Expected script to fail with ERR trap, but got exit code 0" >&2
+  exit 1
+fi
+
+if ! grep -Eq 'ERROR.*postgres-backup failed at line [0-9]+ with exit code 77' "$ERR_FILE"; then
+  echo "FAIL: ERR trap error message missing from stderr. stderr was:" >&2
+  cat "$ERR_FILE" >&2
+  exit 1
+fi
+
+if ! grep -q 'postgres_backup_failed' "$CURL_LOG"; then
+  echo "FAIL: Alertmanager alert was not dispatched on ERR trap. curl log was:" >&2
+  cat "$CURL_LOG" 2>/dev/null || true
+  exit 1
+fi
+
+if [ ! -f "$TMP_DIR/backups4/.last-backup-failed" ]; then
+  echo "FAIL: Failure marker was not created by ERR trap" >&2
+  exit 1
+fi
+echo "  ok: unexpected runtime error triggers ERR trap, logs line/code, writes failure marker, and alerts Alertmanager"
 
 echo "ALL POSTGRES-BACKUP TESTS PASSED"

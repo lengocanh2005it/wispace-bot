@@ -175,8 +175,12 @@ FAKE
 
 make_env() { # name -> creates dirs + fakes; prints dir
   local dir="$TEST_ROOT/$1"
-  mkdir -p "$dir/deploy" "$dir/upstreams" "$dir/bin" "$dir/tmp"
+  mkdir -p "$dir/deploy/scripts" "$dir/host_scripts" "$dir/upstreams" "$dir/bin" "$dir/tmp"
   make_fake_bin "$dir/bin"
+  for s in postgres-backup.sh postgres-offsite-sync.sh postgres-restore-verify.sh backup-monitor.sh vps-hardening-check.sh; do
+    echo "#!/bin/bash" > "$dir/deploy/scripts/$s"
+    chmod +x "$dir/deploy/scripts/$s"
+  done
   echo "$dir"
 }
 
@@ -191,6 +195,7 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
       MIGRATION_PREFLIGHT_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight' \
       MIGRATION_STATUS_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show' \
       BACKUP_ENV_FILE="$dir/deploy/backup.env" \
+      HOST_SCRIPTS_DIR="$dir/host_scripts" \
       DOCKER_LOG="$dir/docker.log" CURL_LOG="$dir/curl.log" SUDO_LOG="$dir/sudo.log" \
       PATH="$dir/bin:$PATH"
     for extra in "$@"; do export "$extra"; done
@@ -247,8 +252,21 @@ make_recording_mv() { # dir
   real_mv=$(command -v mv)
   cat > "$dir/bin/mv" <<FAKE
 #!/usr/bin/env bash
-printf '%s\n' "\$1 -> \$2" >> "\${FAKE_MV_LOG:?}"
-stat -c '%a' "\$1" >> "\${FAKE_MV_MODE_LOG:?}"
+target=""
+src=""
+prev=""
+for arg in "\$@"; do
+  if [ "\$arg" = ".env" ] || [[ "\$arg" =~ \/\.env\$ ]]; then
+    target="\$arg"
+    src="\$prev"
+    break
+  fi
+  prev="\$arg"
+done
+if [ -n "\$target" ] && [ -n "\$src" ]; then
+  printf '%s\n' "\$src -> \$target" >> "\${FAKE_MV_LOG:?}"
+  stat -c '%a' "\$src" >> "\${FAKE_MV_MODE_LOG:?}"
+fi
 exec "$real_mv" "\$@"
 FAKE
   chmod +x "$dir/bin/mv"
@@ -834,6 +852,7 @@ for s in postgres-backup.sh postgres-offsite-sync.sh postgres-restore-verify.sh 
 done
 [ -f "$fake_scripts_dir/.installed-manifest.json" ] || fail "manifest file was not generated"
 grep -q '"commit_sha": "testsha123"' "$fake_scripts_dir/.installed-manifest.json" || fail "manifest missing commit_sha"
+grep -q '"backup_runner":' "$fake_scripts_dir/.installed-manifest.json" || fail "manifest missing canonical spec key backup_runner"
 grep -q '"postgres-backup.sh":' "$fake_scripts_dir/.installed-manifest.json" || fail "manifest missing script checksum"
 pass "host scripts installed, manifest created, retired script purged"
 
@@ -854,6 +873,20 @@ code=$(run_script "$dir" APP_NAME="discord-bot" FAKE_EXISTING="discord-bot-old" 
 [ ! -f "$fake_scripts_dir/postgres-backup.sh" ] || fail "non-messenger deploy must not install host scripts"
 [ ! -f "$fake_scripts_dir/.installed-manifest.json" ] || fail "non-messenger deploy must not create manifest"
 pass "non-messenger deploy skips host scripts distribution"
+
+echo "Test 40: messenger deploy with missing scripts dir fails closed (#1325 review)"
+dir=$(make_env messenger-missing-scripts)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+printf 'upstream messenger_backend {\n    server 127.0.0.1:%s;\n}\n' 5007 > "$dir/upstreams/messenger-bot.conf"
+rm -rf "$dir/deploy/scripts"
+fake_scripts_dir="$dir/host_scripts"
+mkdir -p "$fake_scripts_dir"
+
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" HOST_SCRIPTS_DIR="$fake_scripts_dir")
+[ "$code" -ne 0 ] || fail "expected non-zero exit for missing scripts bundle, got 0"
+grep -q "deploy scripts bundle missing" "$dir/run.out" || fail "expected missing scripts error in run.out: $(cat "$dir/run.out")"
+pass "messenger deploy fails closed when scripts bundle is missing"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
