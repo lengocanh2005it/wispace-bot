@@ -157,6 +157,7 @@ function isTargetedHarassmentCandidate(candidate: string): boolean {
 export interface FinalOutputSafetyResult {
   unsafe: boolean;
   reason?:
+    | 'prompt_canary_hit'
     | 'prompt_leak'
     | 'credential_leak'
     | 'vendor_leak'
@@ -170,9 +171,24 @@ export function isHarmfulOutputSafetyReason(
 }
 
 function compactCanonicalText(text: string): string {
-  // ponytail: compact only long allowlisted markers; add short-token spacing
-  // rules only after a reproduced bypass to avoid false positives.
   return text.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+export function checkPromptCanarySafety(
+  text: string,
+  promptCanary: string,
+): FinalOutputSafetyResult {
+  const canary = compactCanonicalText(promptCanary).toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(canary)) {
+    return { unsafe: false };
+  }
+
+  const containsCanary = buildSafetyScanCandidates(text).some((candidate) =>
+    compactCanonicalText(candidate).toLowerCase().includes(canary),
+  );
+  return containsCanary
+    ? { unsafe: true, reason: 'prompt_canary_hit' }
+    : { unsafe: false };
 }
 
 function containsPromptLeakMarker(outputCandidates: string[]): boolean {

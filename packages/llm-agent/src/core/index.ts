@@ -17,6 +17,7 @@ export {
 export {
   CHAT_SYSTEM_PROMPT_CORE,
   composeChatSystemPrompt,
+  generatePromptCanary,
 } from '../chat-system-prompt';
 export type {
   ChatHistoryMessage,
@@ -154,6 +155,7 @@ export type {
 export {
   SYSTEM_PROMPT_LEAK_MARKERS,
   checkFinalOutputSafety,
+  checkPromptCanarySafety,
   isHarmfulOutputSafetyReason,
 } from '../utils/final-output.utils';
 export type {

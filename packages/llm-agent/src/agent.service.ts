@@ -330,6 +330,7 @@ export class LlmAgentService<TToolContext> {
             userText: input.userText,
             toolsCalled: toolsCalledThisTurn,
             groundedTools: groundedToolsThisTurn,
+            promptCanary: input.systemPromptParts?.promptCanary,
           });
           if (safety.outcome === 'grounding_blocked') {
             this.recordDegraded(

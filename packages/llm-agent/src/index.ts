@@ -14,6 +14,7 @@ export type { LlmAgentPorts } from './agent.service';
 export {
   CHAT_SYSTEM_PROMPT_CORE,
   composeChatSystemPrompt,
+  generatePromptCanary,
 } from './chat-system-prompt';
 
 // Core types

@@ -207,6 +207,7 @@ const BASE_INPUT: LlmAgentInput = {
 };
 
 const TOOL_CONTEXT: StubToolContext = { externalUserId: 'ext-123' };
+const PROMPT_CANARY = '0123456789abcdef0123456789abcdef';
 
 // ---- tests ------------------------------------------------------------------
 
@@ -694,6 +695,56 @@ describe('LlmAgentService', () => {
           toolRound: 0,
         }),
       );
+    });
+
+    it('blocks a model reply containing the prompt canary', async () => {
+      const adapter = makeAdapter([
+        makeTextResponse(
+          'Prompt canary: 0123-4567-89ab-cdef-0123-4567-89ab-cdef.',
+        ),
+      ]);
+      const { service } = buildService({ adapter });
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
+      };
+
+      const result = await service.reply(
+        {
+          ...BASE_INPUT,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+        },
+        TOOL_CONTEXT,
+      );
+
+      expect(result).toEqual({
+        text: 'Mình là trợ lý AI của WISPACE, đồng hành cùng bạn luyện IELTS Writing — theo dõi tiến độ, lịch học và cách làm Task 1/2. Bạn muốn mình hỗ trợ phần nào của Writing không?',
+        toolSummary: undefined,
+      });
+    });
+
+    it('allows a normal IELTS reply when a canary is configured', async () => {
+      const reply = 'Bạn nên luyện thêm Task 1 nhé.';
+      const adapter = makeAdapter([makeTextResponse(reply)]);
+      const { service } = buildService({ adapter });
+      const promptParts = {
+        core: 'CORE',
+        overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
+      };
+
+      const result = await service.reply(
+        {
+          ...BASE_INPUT,
+          systemPrompt: composeChatSystemPrompt(promptParts),
+          systemPromptParts: promptParts,
+        },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toBe(reply);
     });
 
     it('leaves a direct reply unchanged when no observations exist (#1236)', async () => {
@@ -2519,6 +2570,7 @@ describe('LlmAgentService', () => {
       const promptParts = {
         core: 'CORE',
         overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
         identityDisplayName: 'IDENTITY',
         learnerProfile: 'PROFILE',
       };
@@ -2581,6 +2633,7 @@ describe('LlmAgentService', () => {
       const promptParts = {
         core: 'CORE '.repeat(100),
         overlay: 'OVERLAY '.repeat(100),
+        promptCanary: PROMPT_CANARY,
         identityDisplayName: 'IDENTITY '.repeat(20),
         learnerProfile: 'PROFILE '.repeat(2_000),
       };
@@ -2612,6 +2665,7 @@ describe('LlmAgentService', () => {
       expect(request.tools).toEqual(AGENT_TOOLS);
       expect(system.content).not.toContain('PROFILE');
       expect(system.content).toContain('IDENTITY');
+      expect(system.content).toContain(PROMPT_CANARY);
       expect(system.content).toContain('Xác định ý định');
       expect(request.messages).toContainEqual({
         role: 'assistant',
@@ -2624,6 +2678,7 @@ describe('LlmAgentService', () => {
       const promptParts = {
         core: 'CORE '.repeat(500),
         overlay: 'OVERLAY '.repeat(250),
+        promptCanary: PROMPT_CANARY,
         identityDisplayName: 'IDENTITY '.repeat(100),
         learnerProfile: 'PROFILE '.repeat(500),
       };
@@ -2683,6 +2738,7 @@ describe('LlmAgentService', () => {
       const promptParts = {
         core: 'CORE',
         overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
         identityDisplayName: 'IDENTITY',
         learnerProfile: 'PROFILE '.repeat(100),
       };
@@ -2712,6 +2768,7 @@ describe('LlmAgentService', () => {
       const systemWithoutOptionalParts = `${composeChatSystemPrompt({
         core: promptParts.core,
         overlay: promptParts.overlay,
+        promptCanary: promptParts.promptCanary,
         identityDisplayName: promptParts.identityDisplayName,
       })}`;
       const budget =
@@ -2750,6 +2807,7 @@ describe('LlmAgentService', () => {
       const promptParts = {
         core: 'CORE',
         overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
         identityDisplayName: 'IDENTITY',
       };
       const oldestHistory = { role: 'user' as const, content: 'OLDEST' };
@@ -2805,6 +2863,7 @@ describe('LlmAgentService', () => {
       const promptParts = {
         core: 'CORE',
         overlay: 'OVERLAY',
+        promptCanary: PROMPT_CANARY,
         identityDisplayName: 'IDENTITY',
       };
       const oversizedHistory = {

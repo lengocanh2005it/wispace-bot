@@ -1,6 +1,7 @@
 import { checkLlmGrounding } from '../utils/llm-grounding.utils';
 import {
   checkFinalOutputSafety,
+  checkPromptCanarySafety,
   isHarmfulOutputSafetyReason,
 } from '../utils/final-output.utils';
 import {
@@ -17,6 +18,7 @@ export interface SafetyEvaluationInput {
   userText: string;
   toolsCalled: ReadonlySet<string>;
   groundedTools?: ReadonlySet<string>;
+  promptCanary?: string;
 }
 
 export interface SafetyEvaluation {
@@ -34,6 +36,21 @@ export class SafetyPipeline {
       input.toolsCalled.size > 0
         ? `[Đã tra cứu: ${[...input.toolsCalled].join('; ')}]`
         : undefined;
+    if (input.promptCanary) {
+      const canarySafety = checkPromptCanarySafety(
+        input.text,
+        input.promptCanary,
+      );
+      if (canarySafety.unsafe) {
+        return {
+          outcome: 'final_blocked',
+          text: buildNonDisclosureReply(),
+          reason: canarySafety.reason ?? 'unknown',
+          toolSummary,
+        };
+      }
+    }
+
     const grounding = checkLlmGrounding(
       input.text,
       input.groundedTools ?? input.toolsCalled,

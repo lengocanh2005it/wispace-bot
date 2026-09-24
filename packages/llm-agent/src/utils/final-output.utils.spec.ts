@@ -1,8 +1,39 @@
 import { CHAT_SYSTEM_PROMPT_CORE } from '../chat-system-prompt';
 import {
   checkFinalOutputSafety,
+  checkPromptCanarySafety,
   SYSTEM_PROMPT_LEAK_MARKERS,
 } from './final-output.utils';
+
+describe('checkPromptCanarySafety', () => {
+  it('allows ordinary prose that does not contain the canary', () => {
+    expect(
+      checkPromptCanarySafety(
+        'Bạn nên luyện Task 1 mỗi ngày để cải thiện band.',
+        '0123456789abcdef0123456789abcdef',
+      ),
+    ).toEqual({ unsafe: false });
+  });
+
+  it('reports the canary when a static prompt marker appears too', () => {
+    expect(
+      checkPromptCanarySafety(
+        'You are the WISPACE assistant. Prompt canary: 0123456789abcdef0123456789abcdef.',
+        '0123456789abcdef0123456789abcdef',
+      ),
+    ).toEqual({ unsafe: true, reason: 'prompt_canary_hit' });
+  });
+
+  it.each([
+    '0123-4567-89ab-cdef-0123-4567-89ab-cdef',
+    '0123 4567 89ab cdef 0123 4567 89ab cdef',
+    '0123456789abcde\u200bf0123456789abcdef',
+  ])('blocks separator or format variants of the canary: %s', (text) => {
+    expect(
+      checkPromptCanarySafety(text, '0123456789abcdef0123456789abcdef'),
+    ).toEqual({ unsafe: true, reason: 'prompt_canary_hit' });
+  });
+});
 
 describe('checkFinalOutputSafety', () => {
   it('flags a reply leaking the system-prompt opening', () => {

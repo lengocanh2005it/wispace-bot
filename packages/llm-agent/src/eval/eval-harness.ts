@@ -7,6 +7,7 @@ import { LlmAgentService } from '../agent.service';
 import {
   CHAT_SYSTEM_PROMPT_CORE,
   composeChatSystemPrompt,
+  generatePromptCanary,
 } from '../chat-system-prompt';
 import { isAgentToolName, parseAndValidateToolArguments } from '../agent.tools';
 import {
@@ -971,6 +972,7 @@ export async function runEvalFixture(
   const systemPromptParts = {
     core: CHAT_SYSTEM_PROMPT_CORE,
     overlay: prompt.content,
+    promptCanary: generatePromptCanary(),
     identityDisplayName: fixture.systemPromptSuffix,
   };
   const systemPrompt = composeChatSystemPrompt(systemPromptParts);

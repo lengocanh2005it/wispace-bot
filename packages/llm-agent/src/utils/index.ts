@@ -72,6 +72,7 @@ export type {
 export {
   SYSTEM_PROMPT_LEAK_MARKERS,
   checkFinalOutputSafety,
+  checkPromptCanarySafety,
   isHarmfulOutputSafetyReason,
   type FinalOutputSafetyResult,
   type HarmfulOutputSafetyReason,

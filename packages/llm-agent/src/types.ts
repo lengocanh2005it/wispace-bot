@@ -45,6 +45,7 @@ export interface LlmAgentConfig {
 export interface LlmAgentPromptParts {
   core: string;
   overlay: string;
+  promptCanary: string;
   identityDisplayName?: string | null;
   learnerProfile?: string | null;
 }

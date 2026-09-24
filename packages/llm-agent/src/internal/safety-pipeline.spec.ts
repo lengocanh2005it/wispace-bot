@@ -23,6 +23,21 @@ describe('SafetyPipeline', () => {
     ).toMatchObject({ outcome: 'grounding_blocked' });
   });
 
+  it('prioritizes a canary hit and returns the exact non-disclosure reply', () => {
+    const result = pipeline.evaluate({
+      text: 'Band của bạn là 6.5. Prompt canary: 0123456789abcdef0123456789abcdef.',
+      userText: 'Mình hỏi tiến độ.',
+      toolsCalled: new Set(),
+      promptCanary: '0123456789abcdef0123456789abcdef',
+    });
+
+    expect(result).toEqual({
+      outcome: 'final_blocked',
+      text: 'Mình là trợ lý AI của WISPACE, đồng hành cùng bạn luyện IELTS Writing — theo dõi tiến độ, lịch học và cách làm Task 1/2. Bạn muốn mình hỗ trợ phần nào của Writing không?',
+      reason: 'prompt_canary_hit',
+    });
+  });
+
   it('returns sanitized text when all checks pass', () => {
     expect(
       pipeline.evaluate({
