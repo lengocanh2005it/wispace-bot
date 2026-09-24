@@ -345,6 +345,7 @@ test('affected packages publish explicit core/adapter entrypoints', () => {
     'student-report': ['./core', './adapters'],
     'chat-metering': ['./core', './adapters'],
     'scheduler-core': ['./core', './adapters'],
+    'reschedule-confirm': ['./adapters'],
     'study-reminder-shared': ['./core', './adapters'],
     'ops-health': ['./core', './adapters'],
     'account-link-core': ['./core', './adapters'],
@@ -368,6 +369,104 @@ test('affected packages publish explicit core/adapter entrypoints', () => {
       assert.equal(entry.require, `${distPath}/index.js`);
       assert.equal(entry.types, `${distPath}/index.d.ts`);
     }
+  }
+});
+
+test('the database package cannot import or depend on domain policy packages', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/database/src/services/report.service.ts',
+      "import { ReportScheduleService } from '@wispace/scheduler-core';\nexport const service = ReportScheduleService;\n",
+    );
+    f.write(
+      'packages/database/src/services/report-export.ts',
+      "export { ReportScheduleService } from '@wispace/scheduler-core';\n",
+    );
+    f.write(
+      'packages/database/src/services/reschedule.spec.ts',
+      "import type { RescheduleStorePort } from '@wispace/reschedule-confirm';\nexport type Store = RescheduleStorePort;\n",
+    );
+    f.write(
+      'packages/database/src/services/metrics.ts',
+      "export async function load() { return import('@wispace/bot-metrics'); }\n",
+    );
+    f.write(
+      'packages/database/package.json',
+      JSON.stringify({
+        dependencies: {
+          '@wispace/reschedule-confirm': '*',
+          '@wispace/scheduler-core': '*',
+          '@wispace/bot-metrics': '*',
+        },
+      }),
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 7);
+    assert.ok(
+      result.violations.every(
+        (violation) => violation.rule === 'database-no-domain-dependency',
+      ),
+    );
+    assert.deepEqual(
+      result.violations.map((violation) => violation.imported).sort(),
+      [
+        '@wispace/bot-metrics',
+        '@wispace/bot-metrics',
+        '@wispace/reschedule-confirm',
+        '@wispace/reschedule-confirm',
+        '@wispace/scheduler-core',
+        '@wispace/scheduler-core',
+        '@wispace/scheduler-core',
+      ],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('the database workspace lockfile cannot retain domain policy dependencies', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'package-lock.json',
+      JSON.stringify({
+        packages: {
+          'packages/database': {
+            dependencies: {
+              '@wispace/bot-metrics': '*',
+              '@wispace/reschedule-confirm': '*',
+              '@wispace/scheduler-core': '*',
+            },
+          },
+        },
+      }),
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 3);
+    assert.ok(
+      result.violations.every(
+        (violation) =>
+          violation.rule === 'database-no-domain-dependency' &&
+          violation.package === 'packages/database' &&
+          violation.file === 'package-lock.json' &&
+          violation.line === 0,
+      ),
+    );
+    assert.deepEqual(
+      result.violations.map((violation) => violation.imported).sort(),
+      [
+        '@wispace/bot-metrics',
+        '@wispace/reschedule-confirm',
+        '@wispace/scheduler-core',
+      ],
+    );
+  } finally {
+    f.close();
   }
 });
 

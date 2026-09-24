@@ -35,7 +35,9 @@ import {
   ReportSendJobEntity,
   WebActivityEntity,
   PrivacyCleanupJobStore,
+  DB_CIRCUIT_BREAKER_METRICS,
 } from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 export function buildTypeOrmOptions(config: ConfigService) {
   const entities = [
@@ -110,6 +112,10 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
   ],
   providers: [
     DbCircuitBreakerService,
+    {
+      provide: DB_CIRCUIT_BREAKER_METRICS,
+      useExisting: BotMetricsService,
+    },
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,

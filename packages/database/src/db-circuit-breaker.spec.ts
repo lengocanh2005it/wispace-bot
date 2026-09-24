@@ -1,5 +1,4 @@
 import { DataSource } from 'typeorm';
-import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   readDbCircuitBreakerOptions,
   attachDbCircuitBreaker,
@@ -164,10 +163,7 @@ describe('Database Circuit Breaker', () => {
       const breaker = attachDbCircuitBreaker(ds);
       const metrics = { registerDbCircuitBreaker: jest.fn() };
 
-      const service = new DbCircuitBreakerService(
-        ds,
-        metrics as unknown as BotMetricsService,
-      );
+      const service = new DbCircuitBreakerService(ds, metrics);
       service.onModuleInit();
 
       expect(metrics.registerDbCircuitBreaker).toHaveBeenCalledWith(breaker);

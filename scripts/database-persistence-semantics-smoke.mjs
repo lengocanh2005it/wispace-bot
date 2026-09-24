@@ -52,12 +52,13 @@ const {
   PlatformLinkAuditEventEntity,
   PrivacyCleanupJobEntity,
   PrivacyDataService,
-  PlatformReportClaimRepository,
   RescheduleConfirmationEntity,
-  TypeormRescheduleStore,
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
 } = require('@wispace/database');
+const {
+  PlatformReportClaimRepository,
+} = require('@wispace/scheduler-core/adapters');
 const {
   TypeormStudyReminderJobRepository,
   StudyReminderJobEntity,
@@ -65,6 +66,9 @@ const {
 const {
   RescheduleConfirmationService,
 } = require('@wispace/reschedule-confirm');
+const {
+  TypeormRescheduleStore,
+} = require('@wispace/reschedule-confirm/adapters');
 const {
   PlatformWebhookInboundEventService,
 } = require('@wispace/webhook-inbound');

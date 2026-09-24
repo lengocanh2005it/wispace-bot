@@ -132,7 +132,7 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
       {
-        reportDate: expect.any(String),
+        reportDate: JOB.firstAttemptDate,
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-20',
         attempt: 'retry',

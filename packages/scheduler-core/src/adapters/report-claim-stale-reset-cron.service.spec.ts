@@ -1,17 +1,9 @@
-import { ConfigService } from '@nestjs/config';
 import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
-import {
-  DEFAULT_REPORT_CLAIM_LEASE_MS,
-  ReportClaimStaleResetCronService,
-  readReportClaimLeaseMs,
-} from './report-claim-stale-reset-cron.service';
+import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
+import { ReportClaimStaleResetCronService } from './report-claim-stale-reset-cron.service';
 
 describe('ReportClaimStaleResetCronService', () => {
-  const buildService = (configValue?: string, lockResult: unknown = 3) => {
-    const configService = {
-      get: jest.fn().mockReturnValue(configValue),
-    } as unknown as ConfigService;
+  const buildService = (claimLeaseMs?: number, lockResult: unknown = 3) => {
     const releaseExpiredScheduledReportClaims = jest.fn().mockResolvedValue(3);
     const claimRepository = {
       releaseExpiredScheduledReportClaims,
@@ -23,9 +15,13 @@ describe('ReportClaimStaleResetCronService', () => {
           lockResult === null ? null : fn(),
       );
     const service = new ReportClaimStaleResetCronService(
-      configService,
       claimRepository,
       { withLock } as unknown as PgAdvisoryLockService,
+      {
+        getOutboxSettings: jest
+          .fn()
+          .mockReturnValue({ claimLeaseMs: claimLeaseMs ?? 7_200_000 }),
+      } as never,
       { platform: 'discord', lockId: 884_200_935 },
     );
     return { service, releaseExpiredScheduledReportClaims, withLock };
@@ -33,7 +29,7 @@ describe('ReportClaimStaleResetCronService', () => {
 
   it('releases expired claims under the platform advisory lock', async () => {
     const { service, releaseExpiredScheduledReportClaims, withLock } =
-      buildService('120000');
+      buildService(120000);
 
     await service.handleStaleReset();
 
@@ -56,15 +52,5 @@ describe('ReportClaimStaleResetCronService', () => {
     await service.handleStaleReset();
 
     expect(releaseExpiredScheduledReportClaims).not.toHaveBeenCalled();
-  });
-
-  it('uses the two-hour default for missing or invalid configuration', () => {
-    const configService = {
-      get: jest.fn().mockReturnValue('invalid'),
-    } as unknown as ConfigService;
-
-    expect(readReportClaimLeaseMs(configService)).toBe(
-      DEFAULT_REPORT_CLAIM_LEASE_MS,
-    );
   });
 });

@@ -1,11 +1,12 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
-import { todayReportDate } from '@wispace/scheduler-core';
-import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
-import { LearnerScheduledReportClaimEntity } from '../entities/learner-scheduled-report-claim.entity';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
+import {
+  LearnerScheduledReportClaimEntity,
+  ScheduledReportClaimEntity,
+} from '@wispace/database';
+import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
 import { listUserIdsWithSentReport } from './list-user-ids-with-sent-report';
 
 /**
@@ -24,11 +25,11 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     private readonly learnerClaimRepo?: Repository<LearnerScheduledReportClaimEntity>,
   ) {}
 
-  async hasSentScheduledReportToday(
+  async hasSentScheduledReportOn(
     externalUserId: string,
+    reportDate: string,
     userId?: number,
   ): Promise<boolean> {
-    const reportDate = todayReportDate();
     if (this.learnerClaimRepo) {
       const learnerClaim = await this.learnerClaimRepo.findOne({
         where: {
@@ -71,7 +72,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     return !!claim;
   }
 
-  async hasAnyPlatformSentReportToday(
+  async hasAnyPlatformSentReportOn(
     userId: number,
     reportDate: string,
   ): Promise<boolean> {
@@ -86,7 +87,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     return !!learnerClaim;
   }
 
-  async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
+  async listUserIdsWithSentReportOn(reportDate: string): Promise<number[]> {
     const ids = await listUserIdsWithSentReport(this.claimRepo, reportDate);
     if (!this.learnerClaimRepo) return ids;
     const learnerClaims = await this.learnerClaimRepo.find({

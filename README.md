@@ -20,11 +20,11 @@ packages/chat-queue-core/       Per-user debounce/merge state machine
 packages/chat-pipeline/         Platform-agnostic chat pipeline (reserve → history → agent → send)
 packages/learner-profile/       Server-derived per-learner facts with freshness rules
 packages/study-reminder-shared/ Study reminder dispatch/sync/worker services
-packages/scheduler-core/        Report cron scheduling + leader election
+packages/scheduler-core/        Report scheduling policy + TypeORM adapters for claims/send jobs
 packages/bot-metrics/           Prometheus metrics (prom-client)
 packages/cleanup-cron/          Advisory-lock cleanup cron service
 packages/ops-health/            Ops health snapshot + alerts
-packages/reschedule-confirm/    Generic reschedule confirmation service
+packages/reschedule-confirm/    Reschedule confirmation policy + TypeORM store/recovery adapters
 packages/bot-common/            Shared NestJS infrastructure: ops API guard, advisory locks, Vault bootstrap
 packages/database/              Shared TypeORM entities + migrations
 packages/webhook-inbound/       Durable webhook inbox ingestion/retry/retention workflow
@@ -47,7 +47,7 @@ packages/date-utils/            Timezone-aware date helpers (date-fns)
 
 ## Architecture
 
-Each app is a NestJS Clean Architecture service; every shared package is framework-agnostic (no NestJS/TypeORM imports) and is wired into an app through ports at the composition root.
+Each app is a NestJS Clean Architecture service. Shared package policy/core paths are framework-agnostic; TypeORM and NestJS implementations are exposed only from explicit `/adapters` entrypoints and wired into apps at composition roots.
 
 **Layers inside `apps/*/src/modules/<feature>/`:**
 
@@ -75,9 +75,9 @@ platform inbound (webhook / gateway)
   → outbound send                       platform-specific, then refund on failure
 ```
 
-**Scheduled flow:** `scheduler-core` (cron + leader election) → `student-report` / `study-reminder-shared` → outbox tables (`report_send_jobs`, `study_reminder_jobs`) → retry dispatch → outbound send.
+**Scheduled flow:** `scheduler-core` policy and `/adapters` (claims, send jobs, cron/leader election) → `student-report` / `study-reminder-shared` → outbox tables (`report_send_jobs`, `study_reminder_jobs`) → retry dispatch → outbound send. `database` owns entities, migrations, and database primitives; domain-owned packages import those entities only from their adapter subpaths.
 
-**Package rules:** shared packages hold logic common to all bots; anything platform-specific (prompt overlays, menus, OAuth flows, identity headers) stays in the app. Each app implements the package's ports with real NestJS services. Full boundary rules per package: `.claude/rules/clean-architecture.md`.
+**Package rules:** shared packages hold logic common to all bots; anything platform-specific (prompt overlays, menus, OAuth flows, identity headers) stays in the app. Each app implements package ports with real NestJS services. The database package must not import scheduler, reschedule, or metrics packages; scheduler and reschedule TypeORM implementations live under their owning `/adapters` entrypoints. Full boundary rules: `.claude/rules/clean-architecture.md`.
 
 Full diagram, module map, and DB tables: [docs/project-overview.md § Architecture](docs/project-overview.md#2-architecture).
 

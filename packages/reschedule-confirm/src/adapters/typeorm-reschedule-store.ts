@@ -3,13 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { extractQueryRows } from '@wispace/bot-common/utils';
+import { RescheduleConfirmationEntity } from '@wispace/database';
 import type {
   PendingRescheduleRecord,
   RescheduleCancellationOutcome,
   ReschedulePendingState,
   RescheduleStorePort,
-} from '@wispace/reschedule-confirm';
-import { RescheduleConfirmationEntity } from '../entities/reschedule-confirmation.entity';
+} from '../reschedule-store.port';
 
 /**
  * DB-backed reschedule confirmation store — pending confirmations survive
@@ -85,7 +85,7 @@ export class TypeormRescheduleStore<
   async takeValid(
     externalId: TExternalId,
     userId?: number,
-    binding?: import('@wispace/reschedule-confirm').RescheduleApprovalBinding,
+    binding?: import('../reschedule-store.port').RescheduleApprovalBinding,
   ): Promise<PendingRescheduleRecord<TExternalId> | null> {
     const key = this.key(externalId);
     const leaseToken = randomUUID();

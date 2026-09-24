@@ -1,11 +1,13 @@
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Provider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import {
   PlatformReportClaimRepository,
   PlatformReportSendJobRepository,
-  ReportSendJobEntity,
-} from '@wispace/database';
+  ReportClaimStaleResetCronService,
+} from '@wispace/scheduler-core/adapters';
+import { ReportSendJobEntity } from '@wispace/database';
 import {
   REPORT_CLAIM_REPOSITORY,
   REPORT_SEND_JOB_REPOSITORY,
@@ -44,6 +46,23 @@ function findFactoryProvider(
 }
 
 describe('Messenger report persistence wiring', () => {
+  it('resolves stale-claim recovery from the owner adapter entrypoint', () => {
+    const binding = findFactoryProvider(
+      SchedulerModule,
+      ReportClaimStaleResetCronService,
+    );
+
+    expect(binding).toBeDefined();
+    const recovery = binding!.useFactory?.(
+      {},
+      {},
+      { getOutboxSettings: jest.fn() },
+      { registerCron: jest.fn() },
+    );
+
+    expect(recovery).toBeInstanceOf(ReportClaimStaleResetCronService);
+  });
+
   it('resolves the shared claim adapter at the Messenger composition root', async () => {
     const binding = findFactoryProvider(
       MessengerOutboundModule,
@@ -117,6 +136,10 @@ describe('Messenger report persistence wiring', () => {
         {
           provide: getRepositoryToken(LearnerScheduledReportClaimEntity),
           useValue: {},
+        },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn() },
         },
       ],
     }).compile();

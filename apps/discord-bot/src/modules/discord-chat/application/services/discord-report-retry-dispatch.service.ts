@@ -6,7 +6,6 @@ import {
   ReportCronLeaderService,
   type ReportSendJobRepositoryPort,
   type ReportMapping,
-  todayReportDate,
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
@@ -127,6 +126,7 @@ export class DiscordReportRetryDispatchService {
         claimedLeaseToken = leaseToken;
         claimedRetryCount = claimed.retryCount;
         claimedMaxRetries = claimed.maxRetries;
+        const reportDate = claimed.firstAttemptDate;
 
         const link = await this.accountLinkReader.findLinkStateByExternalUserId(
           job.externalUserId,
@@ -169,7 +169,6 @@ export class DiscordReportRetryDispatchService {
           status: 'ACTIVE',
         };
 
-        const reportDate = todayReportDate();
         const result = await this.orchestrationService.claimAndSend(mapping, {
           reportDate,
           skipAlreadySentToday: true,

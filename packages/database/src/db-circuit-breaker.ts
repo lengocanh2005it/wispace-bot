@@ -8,7 +8,6 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   readEnv,
   readMigrationLockId,
@@ -26,6 +25,12 @@ export interface DbCircuitBreakerOptions {
 
 export interface CircuitBreakerProtectedDataSource extends DataSource {
   _dbCircuitBreaker?: CircuitBreaker;
+}
+
+export const DB_CIRCUIT_BREAKER_METRICS = Symbol('DB_CIRCUIT_BREAKER_METRICS');
+
+export interface DbCircuitBreakerMetricsPort {
+  registerDbCircuitBreaker(breaker: CircuitBreaker): void;
 }
 
 const logger = new Logger('DbCircuitBreaker');
@@ -170,15 +175,15 @@ export function createCircuitBreakerDataSourceFactory(source?: EnvSource) {
 
 /**
  * Shared lifecycle service that registers the database circuit breaker with
- * BotMetricsService on boot when both are present in the NestJS context.
+ * an optional metrics recorder on boot.
  */
 @Injectable()
 export class DbCircuitBreakerService implements OnModuleInit {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Optional()
-    @Inject(BotMetricsService)
-    private readonly metrics?: BotMetricsService,
+    @Inject(DB_CIRCUIT_BREAKER_METRICS)
+    private readonly metrics?: DbCircuitBreakerMetricsPort,
   ) {}
 
   onModuleInit(): void {

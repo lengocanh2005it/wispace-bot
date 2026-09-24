@@ -15,6 +15,11 @@ const MIXED_PACKAGE =
 const CONCRETE_OUTER_SYMBOL =
   /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore)$/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
+const DATABASE_FORBIDDEN_DEPENDENCIES = [
+  '@wispace/reschedule-confirm',
+  '@wispace/scheduler-core',
+  '@wispace/bot-metrics',
+];
 const OUTER_PATH =
   /(?:^|\/)(?:infrastructure|persistence|presentation|adapters|database)(?:\/|$)/;
 const DOMAIN_OUTER_PATH =
@@ -50,7 +55,7 @@ const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core|ReportOrchestrationService',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/student-report|isStudentReportRetryableError,PlatformStudentReportService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportCronLeaderService,ReportSendJobRepositoryPort,ReportMapping,todayReportDate',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportCronLeaderService,ReportSendJobRepositoryPort,ReportMapping',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService,ADVISORY_LOCKS',
   'apps/discord-bot/src/modules/discord-chat/application/utils/discord-outbound-guard.ts|discord.js|MessageMentionOptions',
   'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@nestjs/typeorm|InjectRepository',
@@ -87,9 +92,8 @@ const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@wispace/chat-metering|LlmSafetyCore,LlmSafetyEventEntity,LlmSafetyEventRepository',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/scheduler-core|ReportCronLeaderService,ReportCronLockService,ReportScheduleService,todayReportDate,runBatched,SendScheduledReportsOptions,SendScheduledReportsResult,ClaimAndSendResult',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/database|readReportClaimLeaseMs',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/scheduler-core|REPORT_CLAIM_REPOSITORY,ReportClaimRepositoryPort,REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportSendScheduleService,ClaimAndSendResult',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService,todayReportDate',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
   'apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts|../../infrastructure/wispace/task-score-average-api.service|TaskScoreAverageApiService',
   'apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
@@ -295,6 +299,28 @@ function sourceFiles(rootDir) {
   return files;
 }
 
+function databaseTypeScriptFiles(rootDir) {
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && entry.name !== 'dist') {
+          visit(fullPath);
+        }
+        continue;
+      }
+      if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+        files.push(fullPath);
+      }
+    }
+  };
+
+  const sourceRoot = path.join(rootDir, 'packages', 'database', 'src');
+  if (existsSync(sourceRoot)) visit(sourceRoot);
+  return files;
+}
+
 function importedModules(fileName, sourceText) {
   const sourceFile = ts.createSourceFile(
     fileName,
@@ -339,6 +365,97 @@ function importedModules(fileName, sourceText) {
   };
   ts.forEachChild(sourceFile, visit);
   return imports;
+}
+
+function isDatabaseForbiddenDependency(specifier) {
+  return DATABASE_FORBIDDEN_DEPENDENCIES.some(
+    (dependency) =>
+      specifier === dependency || specifier.startsWith(`${dependency}/`),
+  );
+}
+
+function databaseDependencyViolation(relativePath, imported) {
+  if (
+    !relativePath.startsWith('packages/database/') ||
+    !isDatabaseForbiddenDependency(imported.imported)
+  ) {
+    return undefined;
+  }
+  return {
+    rule: 'database-no-domain-dependency',
+    package: 'packages/database',
+    file: relativePath,
+    line: imported.line,
+    imported: imported.imported,
+    symbols: imported.symbols,
+    message:
+      'the database package must not import or depend on domain policy packages',
+  };
+}
+
+function databaseManifestViolation(rootDir) {
+  const manifestPath = path.join(
+    rootDir,
+    'packages',
+    'database',
+    'package.json',
+  );
+  if (!existsSync(manifestPath)) return [];
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const dependencyGroups = [
+    manifest.dependencies,
+    manifest.devDependencies,
+    manifest.peerDependencies,
+    manifest.optionalDependencies,
+  ];
+  const names = new Set(
+    dependencyGroups.flatMap((group) =>
+      group && typeof group === 'object' ? Object.keys(group) : [],
+    ),
+  );
+  return DATABASE_FORBIDDEN_DEPENDENCIES.filter((dependency) =>
+    names.has(dependency),
+  ).map((dependency) => ({
+    rule: 'database-no-domain-dependency',
+    package: 'packages/database',
+    file: 'packages/database/package.json',
+    line: 0,
+    imported: dependency,
+    symbols: ['manifest'],
+    message:
+      'the database package must not import or depend on domain policy packages',
+  }));
+}
+
+function databaseLockfileViolation(rootDir) {
+  const lockfilePath = path.join(rootDir, 'package-lock.json');
+  if (!existsSync(lockfilePath)) return [];
+  const lockfile = JSON.parse(readFileSync(lockfilePath, 'utf8'));
+  const databasePackage = lockfile.packages?.['packages/database'];
+  if (!databasePackage) return [];
+  const dependencyGroups = [
+    databasePackage.dependencies,
+    databasePackage.devDependencies,
+    databasePackage.peerDependencies,
+    databasePackage.optionalDependencies,
+  ];
+  const names = new Set(
+    dependencyGroups.flatMap((group) =>
+      group && typeof group === 'object' ? Object.keys(group) : [],
+    ),
+  );
+  return DATABASE_FORBIDDEN_DEPENDENCIES.filter((dependency) =>
+    names.has(dependency),
+  ).map((dependency) => ({
+    rule: 'database-no-domain-dependency',
+    package: 'packages/database',
+    file: 'package-lock.json',
+    line: 0,
+    imported: dependency,
+    symbols: ['lockfile'],
+    message:
+      'the database package must not import or depend on domain policy packages',
+  }));
 }
 
 function importedSymbols(node) {
@@ -560,6 +677,19 @@ export function checkArchitecture(rootDir) {
       }
     }
   }
+
+  for (const file of databaseTypeScriptFiles(absoluteRoot)) {
+    const relativePath = path
+      .relative(absoluteRoot, file)
+      .replaceAll(path.sep, '/');
+    const source = readFileSync(file, 'utf8');
+    for (const imported of importedModules(file, source)) {
+      const violation = databaseDependencyViolation(relativePath, imported);
+      if (violation) violations.push(violation);
+    }
+  }
+  violations.push(...databaseManifestViolation(absoluteRoot));
+  violations.push(...databaseLockfileViolation(absoluteRoot));
 
   return { scannedFiles, violations };
 }

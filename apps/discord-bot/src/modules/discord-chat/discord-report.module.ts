@@ -31,12 +31,14 @@ import {
   LearnerScheduledReportClaimEntity,
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,
-  PlatformReportClaimRepository,
-  PlatformReportSendJobRepository,
   CronLeaderLeaseEntity,
   CronLeaderLeaseService,
-  ReportClaimStaleResetCronService,
 } from '@wispace/database';
+import {
+  PlatformReportClaimRepository,
+  PlatformReportSendJobRepository,
+  ReportClaimStaleResetCronService,
+} from '@wispace/scheduler-core/adapters';
 import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,
@@ -123,15 +125,15 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     {
       provide: ReportClaimStaleResetCronService,
       useFactory: (
-        configService: ConfigService,
         claimRepository: ReportClaimRepositoryPort,
         pgLock: PgAdvisoryLockService,
+        reportSendScheduleService: ReportSendScheduleService,
         metrics: BotMetricsService,
       ) =>
         new ReportClaimStaleResetCronService(
-          configService,
           claimRepository,
           pgLock,
+          reportSendScheduleService,
           {
             platform: 'discord',
             lockId: DISCORD_REPORT_CLAIM_STALE_RESET_LOCK,
@@ -139,9 +141,9 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
           },
         ),
       inject: [
-        ConfigService,
         REPORT_CLAIM_REPOSITORY,
         PgAdvisoryLockService,
+        ReportSendScheduleService,
         BotMetricsService,
       ],
     },

@@ -17,6 +17,10 @@ export interface LockedTickMetricsPort {
   recordCronSuccess(name: string): void;
 }
 
+export interface CronHeartbeatMetricsPort extends LockedTickMetricsPort {
+  registerCron(name: string, expectedIntervalMs: number): void;
+}
+
 export interface LockedTickLoggerPort {
   debug(message: string): void;
 }

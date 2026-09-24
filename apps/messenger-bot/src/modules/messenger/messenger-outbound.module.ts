@@ -8,10 +8,8 @@ import {
   UserPlatformMappingEntity,
   WebhookDeadLetterEntity,
 } from '../../infrastructure/database/entities';
-import {
-  PlatformDeadLetterService,
-  PlatformReportClaimRepository,
-} from '@wispace/database';
+import { PlatformDeadLetterService } from '@wispace/database';
+import { PlatformReportClaimRepository } from '@wispace/scheduler-core/adapters';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from './domain/repositories/messenger-message-log.repository.port';

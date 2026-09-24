@@ -42,9 +42,11 @@ import {
 import {
   LearnerProfileEntity,
   RescheduleConfirmationEntity,
+} from '@wispace/database';
+import {
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
-} from '@wispace/database';
+} from '@wispace/reschedule-confirm/adapters';
 import {
   LEARNER_PROFILE_STORE,
   TypeOrmLearnerProfileStore,

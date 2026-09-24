@@ -9,6 +9,10 @@ import type {
   LlmProviderPolicy,
 } from '@wispace/llm-agent';
 import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  RescheduleRecoveryCronService,
+  TypeormRescheduleStore,
+} from '@wispace/reschedule-confirm/adapters';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatModule } from './discord-chat.module';
 
@@ -18,7 +22,51 @@ const TEST_POLICY: LlmProviderPolicy = {
   allowedModels: ['openai:gpt-5.4', 'openai-compatible:openai/gpt-4o-mini'],
 };
 
+function findFactoryProvider(module: object, token: unknown) {
+  const providers = (Reflect.getMetadata('providers', module) ??
+    []) as Array<unknown>;
+  return providers.find(
+    (
+      provider,
+    ): provider is {
+      provide: unknown;
+      useFactory: (...args: unknown[]) => unknown;
+    } =>
+      typeof provider === 'object' &&
+      provider !== null &&
+      'provide' in provider &&
+      provider.provide === token &&
+      'useFactory' in provider &&
+      typeof provider.useFactory === 'function',
+  );
+}
+
 describe('Discord chat module — LLM provider factory', () => {
+  it('wires reschedule persistence from the owning adapter entrypoint', () => {
+    const storeBinding = findFactoryProvider(
+      DiscordChatModule,
+      TypeormRescheduleStore,
+    );
+    const recoveryBinding = findFactoryProvider(
+      DiscordChatModule,
+      RescheduleRecoveryCronService,
+    );
+
+    expect(storeBinding).toBeDefined();
+    expect(recoveryBinding).toBeDefined();
+
+    const store = storeBinding!.useFactory({});
+    const recovery = recoveryBinding!.useFactory(
+      store,
+      { registerCron: jest.fn() },
+      {},
+    );
+
+    expect(store).toBeInstanceOf(TypeormRescheduleStore);
+    expect((store as { platform: string }).platform).toBe('discord');
+    expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+  });
+
   it('registers one shared coordinator with feature-local execution ports', () => {
     const providers = (Reflect.getMetadata('providers', DiscordSharedModule) ??
       []) as Array<{ provide?: unknown }>;

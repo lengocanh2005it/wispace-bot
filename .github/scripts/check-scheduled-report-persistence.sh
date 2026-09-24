@@ -17,7 +17,7 @@ for path in \
   apps/discord-bot/src/modules/discord-chat/infrastructure/persistence/discord-report-send-job.repository.ts
 do
   if [ -e "$path" ]; then
-    fail "$path: deleted local send-job repository still exists — use @wispace/database"
+    fail "$path: deleted local send-job repository still exists — use @wispace/scheduler-core/adapters"
   fi
 done
 
@@ -50,8 +50,8 @@ fi
 
 if [ "$FAILED" -ne 0 ]; then
   echo >&2
-  echo 'Scheduled-report claim transitions belong to the shared platform adapter,' >&2
-  echo 'and Messenger/Discord send jobs belong to PlatformReportSendJobRepository.' >&2
+  echo 'Scheduled-report claim and send-job adapters belong to' >&2
+  echo '@wispace/scheduler-core/adapters and must be wired by application roots.' >&2
   exit 1
 fi
 echo 'ok: scheduled-report persistence has no deleted local adapter references'

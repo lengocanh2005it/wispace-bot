@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
+import { ScheduledReportClaimEntity } from '@wispace/database';
 
 /**
  * All userIds with a 'sent' claim for the date — lets report crons skip the

@@ -6,9 +6,12 @@ import {
   errorMessage,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
+import {
+  runLockedTick,
+  type CronHeartbeatMetricsPort,
+  type LockedTickItem,
+} from '@wispace/bot-common/cron';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import { runLockedTick } from '@wispace/bot-common/cron';
-import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import type { WebhookDeadLetterEntry } from '../entities/webhook-dead-letter.entity';
@@ -45,11 +48,6 @@ interface DeadLetterRetrySettings {
  */
 export const DEAD_LETTER_RETRY_CRON = '*/5 * * * *';
 export const DEAD_LETTER_RETRY_EXPECTED_INTERVAL_MS = 5 * 60 * 1000;
-
-export interface CronHeartbeatMetricsPort {
-  registerCron(name: string, expectedIntervalMs: number): void;
-  recordCronSuccess(name: string): void;
-}
 
 export interface DeadLetterCronOptions {
   /** Advisory lock id — only one pod retries the dead letter per tick. */

@@ -1,8 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { readReportClaimLeaseMs } from '@wispace/database';
 import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
@@ -68,7 +66,6 @@ export class ReportSendOrchestrationService {
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
     private readonly reportSendScheduleService: ReportSendScheduleService,
-    private readonly configService: ConfigService,
     /** Report-delivery SLO outcomes (#829). */
     @Optional() private readonly metrics?: BotMetricsService,
   ) {}
@@ -134,8 +131,9 @@ export class ReportSendOrchestrationService {
 
     if (skipAlreadySentToday) {
       const alreadySentToday =
-        await this.reportSentReader.hasSentScheduledReportToday(
+        await this.reportSentReader.hasSentScheduledReportOn(
           mapping.psid,
+          reportDate,
           mapping.userId,
         );
       if (alreadySentToday) {
@@ -168,7 +166,7 @@ export class ReportSendOrchestrationService {
           userId: mapping.userId,
           reportDate,
         },
-        readReportClaimLeaseMs(this.configService),
+        this.reportSendScheduleService.getOutboxSettings().claimLeaseMs,
       );
       if (!claimed.claimed || !claimed.leaseToken) {
         this.logger.log(

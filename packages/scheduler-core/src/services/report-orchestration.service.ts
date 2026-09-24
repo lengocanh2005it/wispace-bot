@@ -1,5 +1,4 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
 import type {
@@ -19,17 +18,6 @@ import type {
   ReportRetryCause,
 } from '../types/report-send-job.types';
 import { ReportSendScheduleService } from './report-send-schedule.service';
-
-const DEFAULT_REPORT_CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
-
-// ponytail: inlined from @wispace/database to break circular dependency
-function readReportClaimLeaseMs(configService: ConfigService): number {
-  const raw = configService.get<string>('REPORT_CLAIM_STALE_RESET_MS');
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0
-    ? Math.floor(parsed)
-    : DEFAULT_REPORT_CLAIM_LEASE_MS;
-}
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,
@@ -69,7 +57,6 @@ export class ReportOrchestrationService {
     @Optional()
     private readonly jobRepo: ReportSendJobRepositoryPort | null,
     private readonly reportSendScheduleService: ReportSendScheduleService,
-    private readonly configService: ConfigService,
     /** Report-delivery SLO outcomes (#829) — optional to keep tests light. */
     @Optional()
     @Inject(REPORT_DELIVERY_METRICS)
@@ -116,8 +103,9 @@ export class ReportOrchestrationService {
 
     // ── Step 1: has-sent-today guard ────────────────────────────────────
     if (skipAlreadySentToday) {
-      const alreadySent = await this.claimRepo.hasSentScheduledReportToday(
+      const alreadySent = await this.claimRepo.hasSentScheduledReportOn(
         mapping.externalUserId,
+        reportDate,
         mapping.userId,
       );
       if (alreadySent) {
@@ -131,7 +119,7 @@ export class ReportOrchestrationService {
       }
 
       if (mapping.userId) {
-        const anySent = await this.claimRepo.hasAnyPlatformSentReportToday(
+        const anySent = await this.claimRepo.hasAnyPlatformSentReportOn(
           mapping.userId,
           reportDate,
         );
@@ -152,7 +140,7 @@ export class ReportOrchestrationService {
           userId: mapping.userId,
           reportDate,
         },
-        readReportClaimLeaseMs(this.configService),
+        this.reportSendScheduleService.getOutboxSettings().claimLeaseMs,
       );
       if (!claimed.claimed || !claimed.leaseToken) {
         return { ...ZERO, claimSkipped: 1 };

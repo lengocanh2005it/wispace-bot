@@ -29,7 +29,9 @@ import {
   ReportSendJobEntity,
   WebActivityEntity,
   PrivacyCleanupJobStore,
+  DB_CIRCUIT_BREAKER_METRICS,
 } from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
 import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
@@ -107,6 +109,10 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
   ],
   providers: [
     DbCircuitBreakerService,
+    {
+      provide: DB_CIRCUIT_BREAKER_METRICS,
+      useExisting: BotMetricsService,
+    },
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,

@@ -18,14 +18,16 @@ import {
 } from '@wispace/scheduler-core';
 import {
   ReportSendJobEntity,
-  PlatformReportSendJobRepository,
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
-  ReportClaimStaleResetCronService,
   PrivacyCleanupReconciler,
   PrivacyCleanupJobStore,
   PRIVACY_CLEANUP_STORES,
 } from '@wispace/database';
+import {
+  PlatformReportSendJobRepository,
+  ReportClaimStaleResetCronService,
+} from '@wispace/scheduler-core/adapters';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
@@ -122,15 +124,15 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
     {
       provide: ReportClaimStaleResetCronService,
       useFactory: (
-        configService: ConfigService,
         claimRepository: ReportClaimRepositoryPort,
         pgLock: PgAdvisoryLockService,
+        reportSendScheduleService: ReportSendScheduleService,
         metrics: BotMetricsService,
       ) =>
         new ReportClaimStaleResetCronService(
-          configService,
           claimRepository,
           pgLock,
+          reportSendScheduleService,
           {
             platform: 'messenger',
             lockId: ADVISORY_LOCK.REPORT_CLAIM_STALE_RESET,
@@ -138,9 +140,9 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
           },
         ),
       inject: [
-        ConfigService,
         REPORT_CLAIM_REPOSITORY,
         PgAdvisoryLockService,
+        ReportSendScheduleService,
         BotMetricsService,
       ],
     },

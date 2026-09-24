@@ -18,7 +18,9 @@ import {
   LearnerProfileEntity,
   LearnerScheduledReportClaimEntity as CanonicalLearnerScheduledReportClaimEntity,
   PrivacyCleanupJobStore,
+  DB_CIRCUIT_BREAKER_METRICS,
 } from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -87,6 +89,10 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
   ],
   providers: [
     DbCircuitBreakerService,
+    {
+      provide: DB_CIRCUIT_BREAKER_METRICS,
+      useExisting: BotMetricsService,
+    },
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,

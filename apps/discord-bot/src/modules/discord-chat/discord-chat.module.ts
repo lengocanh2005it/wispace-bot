@@ -95,10 +95,12 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
-  RescheduleRecoveryCronService,
   LearnerProfileEntity,
-  TypeormRescheduleStore,
 } from '@wispace/database';
+import {
+  RescheduleRecoveryCronService,
+  TypeormRescheduleStore,
+} from '@wispace/reschedule-confirm/adapters';
 import {
   LEARNER_PROFILE_STORE,
   TypeOrmLearnerProfileStore,

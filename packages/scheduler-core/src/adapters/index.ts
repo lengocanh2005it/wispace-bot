@@ -12,3 +12,8 @@ export {
   type CronLeaderHeartbeatMetricsPort,
 } from '../services/cron-leader-heartbeat.service';
 export { ReportCronLockService } from '../services/report-cron-lock.service';
+
+export { PlatformReportClaimRepository } from './platform-report-claim.repository';
+export { PlatformReportSendJobRepository } from './platform-report-send-job.repository';
+export { ReportClaimStaleResetCronService } from './report-claim-stale-reset-cron.service';
+export type { ReportClaimStaleResetCronOptions } from './report-claim-stale-reset-cron.service';

@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { TypeormRescheduleStore } from './typeorm-reschedule-store';
+import {
+  runLockedTick,
+  type CronHeartbeatMetricsPort,
+} from '@wispace/bot-common/cron';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import { runLockedTick } from '@wispace/bot-common/cron';
-import type { CronHeartbeatMetricsPort } from './platform-dead-letter-cron.service';
 
 const STALE_AFTER_MS = 5 * 60_000;
 

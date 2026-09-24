@@ -1,4 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -6,8 +7,8 @@ import {
   MessageLogEntity,
 } from '@messenger/infrastructure/database/entities';
 import {
-  startOfReportDay,
-  todayReportDate,
+  startOfNextReportDate,
+  startOfReportDate,
 } from '@wispace/scheduler-core/core';
 import type { MessengerReportSentReaderPort } from '../../domain/repositories/messenger-report-sent-reader.port';
 
@@ -23,13 +24,15 @@ export class MessengerReportSentReader implements MessengerReportSentReaderPort 
   constructor(
     @InjectRepository(MessageLogEntity)
     private readonly logRepo: Repository<MessageLogEntity>,
+    private readonly configService: ConfigService,
     @Optional()
     @InjectRepository(LearnerScheduledReportClaimEntity)
     private readonly learnerClaimRepo?: Repository<LearnerScheduledReportClaimEntity>,
   ) {}
 
-  async hasSentScheduledReportToday(
+  async hasSentScheduledReportOn(
     externalUserId: string,
+    reportDate: string,
     userId?: number,
   ): Promise<boolean> {
     if (this.learnerClaimRepo) {
@@ -38,7 +41,7 @@ export class MessengerReportSentReader implements MessengerReportSentReaderPort 
           ...(userId !== undefined
             ? { userId }
             : { platform: PLATFORM, externalUserId }),
-          reportDate: todayReportDate(),
+          reportDate,
           reportType: 'scheduled',
           status: 'sent',
         },
@@ -46,8 +49,11 @@ export class MessengerReportSentReader implements MessengerReportSentReaderPort 
       if (learnerClaim) return true;
     }
 
-    // Use the ICT report-day boundary rather than process-local midnight.
-    const startOfDay = startOfReportDay();
+    const timezone =
+      this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ||
+      'Asia/Ho_Chi_Minh';
+    const startOfDay = startOfReportDate(reportDate, timezone);
+    const endOfDay = startOfNextReportDate(reportDate, timezone);
     const count = await this.logRepo
       .createQueryBuilder('log')
       .where('log.platform = :platform', { platform: PLATFORM })
@@ -72,6 +78,7 @@ export class MessengerReportSentReader implements MessengerReportSentReaderPort 
         userId !== undefined ? { userId } : {},
       )
       .andWhere('log.created_at >= :startOfDay', { startOfDay })
+      .andWhere('log.created_at < :endOfDay', { endOfDay })
       .getCount();
 
     return count > 0;

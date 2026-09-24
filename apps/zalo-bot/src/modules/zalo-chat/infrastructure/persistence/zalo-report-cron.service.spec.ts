@@ -40,7 +40,7 @@ const link = {
 
 function buildService(overrides: {
   orchestrationClaimAndSend?: jest.Mock;
-  listUserIdsWithSentReportToday?: jest.Mock;
+  listUserIdsWithSentReportOn?: jest.Mock;
   pages?: unknown[][];
   evaluateExamWindow?: { skip: boolean };
   canonicalService?: unknown;
@@ -62,11 +62,11 @@ function buildService(overrides: {
     update: jest.fn().mockResolvedValue(undefined),
   } as unknown as Repository<ZaloAccountLinkEntity>;
 
-  const listUserIdsWithSentReportToday =
-    overrides.listUserIdsWithSentReportToday ?? jest.fn().mockResolvedValue([]);
+  const listUserIdsWithSentReportOn =
+    overrides.listUserIdsWithSentReportOn ?? jest.fn().mockResolvedValue([]);
 
   const claimRepo = {
-    listUserIdsWithSentReportToday,
+    listUserIdsWithSentReportOn,
     tryClaimScheduledReport: jest.fn(),
     markScheduledReportClaimSent: jest.fn(),
     releaseScheduledReportClaim: jest.fn(),
@@ -106,7 +106,7 @@ function buildService(overrides: {
 
   return {
     service,
-    listUserIdsWithSentReportToday,
+    listUserIdsWithSentReportOn,
     orchestrationClaimAndSend,
   };
 }
@@ -130,17 +130,14 @@ describe('ZaloReportCronService', () => {
   });
 
   it('skips user already sent on another platform', async () => {
-    const {
-      service,
-      listUserIdsWithSentReportToday,
-      orchestrationClaimAndSend,
-    } = buildService({
-      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([42]),
-    });
+    const { service, listUserIdsWithSentReportOn, orchestrationClaimAndSend } =
+      buildService({
+        listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([42]),
+      });
 
     await service.sendDailyReports();
 
-    expect(listUserIdsWithSentReportToday).toHaveBeenCalledWith(reportDate);
+    expect(listUserIdsWithSentReportOn).toHaveBeenCalledWith(reportDate);
     expect(orchestrationClaimAndSend).not.toHaveBeenCalled();
   });
 
@@ -219,7 +216,7 @@ describe('ZaloReportCronService', () => {
       update: jest.fn().mockResolvedValue(undefined),
     };
     const claimRepo = {
-      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+      listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([]),
     };
 
     const service = new ZaloReportCronService(
@@ -263,7 +260,7 @@ describe('ZaloReportCronService', () => {
       update: jest.fn().mockResolvedValue(undefined),
     };
     const claimRepo = {
-      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+      listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([]),
     };
 
     const service = new ZaloReportCronService(
@@ -309,7 +306,7 @@ describe('ZaloReportCronService', () => {
         .mockResolvedValue(new Map([[42, 'discord']])),
     };
     const claimRepo = {
-      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+      listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([]),
     };
     const orchestration = { claimAndSend: jest.fn() };
     const reportService = { generateReport: jest.fn() };
@@ -394,7 +391,7 @@ describe('ZaloReportCronService', () => {
       }),
     };
     const claimRepo = {
-      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+      listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([]),
     };
     const orchestration = {
       claimAndSend: jest.fn().mockResolvedValue({
@@ -493,7 +490,7 @@ describe('ZaloReportCronService', () => {
       update: jest.fn().mockResolvedValue(undefined),
     };
     const claimRepo = {
-      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+      listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([]),
     };
     const orchestration = {
       claimAndSend: jest.fn().mockResolvedValue({

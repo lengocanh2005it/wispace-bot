@@ -1,4 +1,9 @@
-import { startOfReportDay, todayReportDate } from './report-date.utils';
+import {
+  startOfNextReportDate,
+  startOfReportDate,
+  startOfReportDay,
+  todayReportDate,
+} from './report-date.utils';
 
 describe('report-date.utils', () => {
   describe('todayReportDate', () => {
@@ -82,6 +87,43 @@ describe('report-date.utils', () => {
         new Date('2026-10-25T12:00:00Z'),
       );
       expect(result.toISOString()).toBe('2026-10-24T22:00:00.000Z');
+    });
+  });
+
+  describe('startOfReportDate', () => {
+    it('derives a named report day in the provided timezone', () => {
+      expect(
+        startOfReportDate('2026-07-29', 'Asia/Ho_Chi_Minh').toISOString(),
+      ).toBe('2026-07-28T17:00:00.000Z');
+    });
+
+    it('does not depend on the current instant', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2030-01-01T00:00:00Z'));
+      try {
+        expect(
+          startOfReportDate('2026-07-29', 'America/New_York').toISOString(),
+        ).toBe('2026-07-29T04:00:00.000Z');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('starts at the first valid instant when local midnight is skipped', () => {
+      expect(
+        startOfReportDate('2026-09-06', 'America/Santiago').toISOString(),
+      ).toBe('2026-09-06T04:00:00.000Z');
+      expect(
+        startOfNextReportDate('2026-09-06', 'America/Santiago').toISOString(),
+      ).toBe('2026-09-07T03:00:00.000Z');
+    });
+
+    it('keeps the next day boundary DST-aware', () => {
+      expect(
+        startOfNextReportDate('2026-03-29', 'Europe/Berlin').toISOString(),
+      ).toBe('2026-03-29T22:00:00.000Z');
+      expect(
+        startOfNextReportDate('2026-10-25', 'Europe/Berlin').toISOString(),
+      ).toBe('2026-10-25T23:00:00.000Z');
     });
   });
 });

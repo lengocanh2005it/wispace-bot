@@ -1,6 +1,8 @@
 import { Repository } from 'typeorm';
-import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
-import { LearnerScheduledReportClaimEntity } from '../entities/learner-scheduled-report-claim.entity';
+import {
+  LearnerScheduledReportClaimEntity,
+  ScheduledReportClaimEntity,
+} from '@wispace/database';
 import type { Platform } from '@wispace/contracts';
 import { PlatformReportClaimRepository } from './platform-report-claim.repository';
 
@@ -230,7 +232,7 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
     );
 
     await expect(
-      linkedRepository.hasSentScheduledReportToday('zalo-1', 143),
+      linkedRepository.hasSentScheduledReportOn('zalo-1', '2026-08-14', 143),
     ).resolves.toBe(true);
 
     expect(learnerFindOne).toHaveBeenCalledWith({

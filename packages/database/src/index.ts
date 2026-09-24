@@ -30,11 +30,13 @@ export {
 } from './migration-data-source';
 export {
   attachDbCircuitBreaker,
+  DB_CIRCUIT_BREAKER_METRICS,
   getDbCircuitBreaker,
   readDbCircuitBreakerOptions,
   createCircuitBreakerDataSourceFactory,
   DbCircuitBreakerService,
   type DbCircuitBreakerOptions,
+  type DbCircuitBreakerMetricsPort,
   type CircuitBreakerProtectedDataSource,
 } from './db-circuit-breaker';
 
@@ -59,24 +61,12 @@ export { PlatformDeadLetterService } from './services/platform-dead-letter.servi
 export {
   PlatformDeadLetterCronService,
   type DeadLetterCronOptions,
-  type CronHeartbeatMetricsPort,
 } from './services/platform-dead-letter-cron.service';
 export {
   DeliveryLogService,
   type MessageLogRow,
 } from './services/delivery-log.service';
-export { PlatformReportClaimRepository } from './services/platform-report-claim.repository';
-export { PlatformReportSendJobRepository } from './services/platform-report-send-job.repository';
-export {
-  DEFAULT_REPORT_CLAIM_LEASE_MS,
-  ReportClaimStaleResetCronService,
-  readReportClaimLeaseMs,
-  type ReportClaimStaleResetCronOptions,
-} from './services/report-claim-stale-reset-cron.service';
-export { TypeormRescheduleStore } from './services/typeorm-reschedule-store';
-export { RescheduleRecoveryCronService } from './services/reschedule-recovery-cron.service';
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
-export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
 export {
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,

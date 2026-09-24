@@ -6,6 +6,20 @@
   "license": "UNLICENSED",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./adapters": {
+      "import": "./dist/adapters/index.js",
+      "types": "./dist/adapters/index.d.ts",
+      "require": "./dist/adapters/index.js",
+      "default": "./dist/adapters/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:types": "tsc -p tsconfig.build.json --noEmit",
@@ -19,9 +33,13 @@
   "dependencies": {
     "@nestjs/cli": "^12.0.0",
     "@nestjs/common": "^12.0.1",
+    "@nestjs/schedule": "^12.0.1",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
+    "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
+    "@wispace/database": "*",
+    "typeorm": "^1.1.1",
     "@wispace/wispace-client": "*"
   },
   "devDependencies": {

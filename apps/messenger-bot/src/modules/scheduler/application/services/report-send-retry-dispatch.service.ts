@@ -6,7 +6,6 @@ import {
   ReportCronLeaderService,
   ReportScheduleService,
   ReportSendScheduleService,
-  todayReportDate,
 } from '@wispace/scheduler-core';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
@@ -93,7 +92,6 @@ export class ReportSendRetryDispatchService {
   }> {
     const settings = this.reportSendScheduleService.getOutboxSettings();
     const now = new Date();
-    const reportDate = todayReportDate(settings.timezone, now);
 
     const resetStuck =
       await this.reportSendJobRepository.resetStuckProcessingJobs(
@@ -164,6 +162,7 @@ export class ReportSendRetryDispatchService {
         claimedLeaseToken = leaseToken;
         claimedRetryCount = claimedJob.retryCount;
         claimedMaxRetries = claimedJob.maxRetries;
+        const reportDate = claimedJob.firstAttemptDate;
 
         const mapping = await this.messengerRepository.findActiveMappingByPsid(
           claimedJob.externalUserId,

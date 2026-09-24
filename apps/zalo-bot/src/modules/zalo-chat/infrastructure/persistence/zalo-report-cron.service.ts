@@ -116,7 +116,7 @@ export class ZaloReportCronService {
     const forceSend = opts.forceSend === true;
 
     const sentUserIds = new Set(
-      await this.claimRepo.listUserIdsWithSentReportToday(reportDate),
+      await this.claimRepo.listUserIdsWithSentReportOn(reportDate),
     );
 
     this.logger.log(

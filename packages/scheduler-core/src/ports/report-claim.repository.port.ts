@@ -3,16 +3,17 @@ import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 export const REPORT_CLAIM_REPOSITORY = Symbol('REPORT_CLAIM_REPOSITORY');
 
 export interface ReportClaimRepositoryPort {
-  hasSentScheduledReportToday(
+  hasSentScheduledReportOn(
     externalUserId: string,
+    reportDate: string,
     userId?: number,
   ): Promise<boolean>;
-  hasAnyPlatformSentReportToday(
+  hasAnyPlatformSentReportOn(
     userId: number,
     reportDate: string,
   ): Promise<boolean>;
   /** All userIds with a 'sent' claim for the date — lets crons skip per-user checks. */
-  listUserIdsWithSentReportToday(reportDate: string): Promise<number[]>;
+  listUserIdsWithSentReportOn(reportDate: string): Promise<number[]>;
   tryClaimScheduledReport(
     params: {
       externalUserId: string;

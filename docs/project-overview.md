@@ -10,6 +10,13 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 
 Shared packages (`packages/`): `contracts`, `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `learner-profile`, `study-reminder-shared`, `scheduler-core`, `account-link-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `webhook-inbound`, `date-utils`.
 
+Persistence ownership follows the same direction as the rest of the monorepo:
+`database` owns entities, migrations, and database primitives; scheduled-report
+TypeORM adapters live under `@wispace/scheduler-core/adapters`; reschedule store
+and recovery live under `@wispace/reschedule-confirm/adapters`; application
+composition roots wire both. `database` has no dependency on scheduler,
+reschedule, or metrics packages.
+
 This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_chat_bot_db`) + WISPACE HTTP API, not yet separated into a standalone microservice.
 
 ---

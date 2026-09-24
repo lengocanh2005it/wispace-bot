@@ -24,7 +24,15 @@ describe('MessengerReportSentReader', () => {
     } as unknown as Repository<LearnerScheduledReportClaimEntity>;
 
     return {
-      reader: new MessengerReportSentReader(logRepo, learnerClaimRepo),
+      reader: new MessengerReportSentReader(
+        logRepo,
+        {
+          get: jest.fn((key: string) =>
+            key === 'CHAT_USAGE_TIMEZONE' ? 'America/New_York' : undefined,
+          ),
+        } as never,
+        learnerClaimRepo,
+      ),
       builder,
       logRepo,
       learnerClaimRepo,
@@ -35,12 +43,11 @@ describe('MessengerReportSentReader', () => {
     jest.useRealTimers();
   });
 
-  it('uses the canonical learner id so a relinked PSID sees the same report date', async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-08-14T06:30:00.000Z'));
+  it('uses the canonical learner id and caller report date', async () => {
     const { reader, learnerClaimRepo, logRepo } = buildReader(0, {});
 
     await expect(
-      reader.hasSentScheduledReportToday('psid-1', 143),
+      reader.hasSentScheduledReportOn('psid-1', '2026-08-14', 143),
     ).resolves.toBe(true);
 
     expect(learnerClaimRepo.findOne).toHaveBeenCalledWith({
@@ -54,32 +61,35 @@ describe('MessengerReportSentReader', () => {
     expect(logRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
-  it('keeps the message-log fallback on the ICT midnight boundary (#968)', async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T23:30:00.000Z'));
+  it('keeps the message-log fallback on the named report day in the configured timezone', async () => {
     const { reader, builder } = buildReader(1);
 
     await expect(
-      reader.hasSentScheduledReportToday('psid-1', 143),
+      reader.hasSentScheduledReportOn('psid-1', '2026-07-29', 143),
     ).resolves.toBe(true);
 
     expect(builder.andWhere).toHaveBeenCalledWith(
       'log.created_at >= :startOfDay',
-      { startOfDay: new Date('2026-08-13T17:00:00.000Z') },
+      { startOfDay: new Date('2026-07-29T04:00:00.000Z') },
+    );
+    expect(builder.andWhere).toHaveBeenCalledWith(
+      'log.created_at < :endOfDay',
+      { endOfDay: new Date('2026-07-30T04:00:00.000Z') },
     );
   });
 
   it('checks the external identity when no learner id is available', async () => {
     const { reader, learnerClaimRepo, builder } = buildReader(0);
 
-    await expect(reader.hasSentScheduledReportToday('psid-1')).resolves.toBe(
-      false,
-    );
+    await expect(
+      reader.hasSentScheduledReportOn('psid-1', '2026-08-14'),
+    ).resolves.toBe(false);
 
     expect(learnerClaimRepo.findOne).toHaveBeenCalledWith({
       where: {
         platform: 'messenger',
         externalUserId: 'psid-1',
-        reportDate: expect.any(String),
+        reportDate: '2026-08-14',
         reportType: 'scheduled',
         status: 'sent',
       },

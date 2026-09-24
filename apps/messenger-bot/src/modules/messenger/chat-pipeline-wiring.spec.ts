@@ -1,7 +1,55 @@
 import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  RescheduleRecoveryCronService,
+  TypeormRescheduleStore,
+} from '@wispace/reschedule-confirm/adapters';
 import { ChatPipelineModule } from './chat-pipeline.module';
 
+function findFactoryProvider(module: object, token: unknown) {
+  const providers = (Reflect.getMetadata('providers', module) ??
+    []) as Array<unknown>;
+  return providers.find(
+    (
+      provider,
+    ): provider is {
+      provide: unknown;
+      useFactory: (...args: unknown[]) => unknown;
+    } =>
+      typeof provider === 'object' &&
+      provider !== null &&
+      'provide' in provider &&
+      provider.provide === token &&
+      'useFactory' in provider &&
+      typeof provider.useFactory === 'function',
+  );
+}
+
 describe('Messenger ChatPipelineModule wiring', () => {
+  it('wires reschedule persistence from the owning adapter entrypoint', () => {
+    const storeBinding = findFactoryProvider(
+      ChatPipelineModule,
+      TypeormRescheduleStore,
+    );
+    const recoveryBinding = findFactoryProvider(
+      ChatPipelineModule,
+      RescheduleRecoveryCronService,
+    );
+
+    expect(storeBinding).toBeDefined();
+    expect(recoveryBinding).toBeDefined();
+
+    const store = storeBinding!.useFactory({});
+    const recovery = recoveryBinding!.useFactory(
+      store,
+      { registerCron: jest.fn() },
+      {},
+    );
+
+    expect(store).toBeInstanceOf(TypeormRescheduleStore);
+    expect((store as { platform: string }).platform).toBe('messenger');
+    expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+  });
+
   it('wires PlatformAgentService with LlmContentClassifier in ChatPipelineModule (#864, #868)', () => {
     const providers = (Reflect.getMetadata('providers', ChatPipelineModule) ??
       []) as Array<unknown>;

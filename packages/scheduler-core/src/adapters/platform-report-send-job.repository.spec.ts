@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import { PlatformReportSendJobRepository } from './platform-report-send-job.repository';
-import { ReportSendJobEntity } from '../entities/report-send-job.entity';
+import { ReportSendJobEntity } from '@wispace/database';
 
 const PLATFORMS = ['messenger', 'discord'] as const;
 

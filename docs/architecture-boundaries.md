@@ -58,15 +58,26 @@ The affected shared packages expose explicit public subpaths:
 | `student-report`        | `@wispace/student-report/core`        | `@wispace/student-report/adapters`                               |
 | `chat-metering`         | `@wispace/chat-metering/core`         | `@wispace/chat-metering/adapters`                                |
 | `scheduler-core`        | `@wispace/scheduler-core/core`        | `@wispace/scheduler-core/adapters`                               |
+| `reschedule-confirm`    | `@wispace/reschedule-confirm`         | `@wispace/reschedule-confirm/adapters`                           |
 | `study-reminder-shared` | `@wispace/study-reminder-shared/core` | `@wispace/study-reminder-shared/adapters`                        |
 | `ops-health`            | `@wispace/ops-health/core`            | `@wispace/ops-health/adapters`                                   |
 | `account-link-core`     | `@wispace/account-link-core/core`     | `@wispace/account-link-core/adapters`                            |
 | `cleanup-cron`          | —                                     | `@wispace/cleanup-cron/adapters` (intentionally framework-bound) |
 
-The package root remains a backward-compatible migration façade. New code
-should import the explicit subpath: core/application code uses `/core`, while
-composition roots and NestJS/TypeORM/Redis wiring use `/adapters`. Existing
-root imports remain supported until consumers are migrated in later issues.
+New code should use the narrowest published entrypoint. Core/application code
+uses `/core` where one exists; composition roots and NestJS/TypeORM/Redis wiring
+use `/adapters`. Runtime services that are already part of a package's root API
+may remain there. TypeORM implementations moved out of `database` are available
+only from their owner adapter subpaths and are not re-exported by `database`.
+
+The database package owns TypeORM entities, migrations, connection/circuit
+breaker primitives, and persistence-only state. It must not import
+`@wispace/scheduler-core`, `@wispace/reschedule-confirm`, or
+`@wispace/bot-metrics`. Scheduled-report adapters live in
+`@wispace/scheduler-core/adapters`; reschedule store/recovery live in
+`@wispace/reschedule-confirm/adapters`. Messenger, Discord, and Zalo bind the
+real metrics service to `DB_CIRCUIT_BREAKER_METRICS` in their local database
+composition roots, preserving telemetry without an upward package dependency.
 
 ## Enforced core scopes
 

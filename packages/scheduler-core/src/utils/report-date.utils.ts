@@ -1,4 +1,8 @@
-import { getDatePartsInTimezone, todayInTimezone } from '@wispace/date-utils';
+import {
+  getDatePartsInTimezone,
+  todayInTimezone,
+  tomorrowInTimezone,
+} from '@wispace/date-utils';
 
 /** ICT calendar date for scheduled report idempotency (R4). */
 export function todayReportDate(
@@ -22,14 +26,46 @@ export function startOfReportDay(
   now = new Date(),
 ): Date {
   const { year, month, day } = getDatePartsInTimezone(now, timezone);
+  return startOfReportDate(
+    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    timezone,
+  );
+}
+
+/** Absolute instant at which a named report day starts in `timezone`. */
+export function startOfReportDate(
+  reportDate: string,
+  timezone = 'Asia/Ho_Chi_Minh',
+): Date {
+  const [year, month, day] = reportDate.split('-').map(Number);
   const midnightAsIfUtc = Date.UTC(year, month - 1, day);
-  // Two passes: the offset is probed at the candidate instant, so a zone whose
-  // DST transition falls between local midnight and the first probe still
-  // resolves to the correct instant.
-  const firstPass =
-    midnightAsIfUtc - timezoneOffsetMs(timezone, new Date(midnightAsIfUtc));
-  return new Date(
-    midnightAsIfUtc - timezoneOffsetMs(timezone, new Date(firstPass)),
+  // Probe both candidate offsets and keep the earliest instant that actually
+  // starts on the requested date when a DST gap skips local midnight.
+  const firstPass = new Date(
+    midnightAsIfUtc - timezoneOffsetMs(timezone, new Date(midnightAsIfUtc)),
+  );
+  const secondPass = new Date(
+    midnightAsIfUtc - timezoneOffsetMs(timezone, firstPass),
+  );
+  const firstStartsOnReportDate =
+    todayInTimezone(timezone, firstPass) === reportDate;
+  const secondStartsOnReportDate =
+    todayInTimezone(timezone, secondPass) === reportDate;
+
+  return firstStartsOnReportDate &&
+    (!secondStartsOnReportDate || firstPass <= secondPass)
+    ? firstPass
+    : secondPass;
+}
+
+/** Absolute instant at which the day after a named report day starts. */
+export function startOfNextReportDate(
+  reportDate: string,
+  timezone = 'Asia/Ho_Chi_Minh',
+): Date {
+  return startOfReportDate(
+    tomorrowInTimezone(timezone, startOfReportDate(reportDate, timezone)),
+    timezone,
   );
 }
 

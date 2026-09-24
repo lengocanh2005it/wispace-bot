@@ -1,6 +1,7 @@
 export {
   runLockedTick,
   summarizeLockedTick,
+  type CronHeartbeatMetricsPort,
   type LockedTickItem,
   type LockedTickLoggerPort,
   type LockedTickMetricsPort,

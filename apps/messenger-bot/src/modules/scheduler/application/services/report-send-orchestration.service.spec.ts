@@ -28,7 +28,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     sendError?: Error;
   }) => {
     const messengerRepository = {
-      hasSentScheduledReportToday: jest
+      hasSentScheduledReportOn: jest
         .fn()
         .mockResolvedValue(overrides?.alreadySent ?? false),
       tryClaimScheduledReport: jest
@@ -65,6 +65,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       getOutboxSettings: jest.fn().mockReturnValue({
         maxRetries: 3,
         retryBackoffMinutes: 15,
+        claimLeaseMs: 7_200_000,
       }),
     };
 
@@ -74,7 +75,6 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       messengerReportDeliveryService as never,
       reportSendJobRepository as never,
       reportSendScheduleService as never,
-      { get: jest.fn() } as never,
     );
 
     return {
@@ -98,9 +98,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     );
 
     expect(result.skipped).toBe(1);
-    expect(
-      messengerRepository.hasSentScheduledReportToday,
-    ).not.toHaveBeenCalled();
+    expect(messengerRepository.hasSentScheduledReportOn).not.toHaveBeenCalled();
     expect(messengerRepository.tryClaimScheduledReport).not.toHaveBeenCalled();
     expect(
       messengerReportDeliveryService.sendReportForMapping,
@@ -128,7 +126,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
         userId: 10,
         reportDate: '2026-07-11',
       },
-      expect.any(Number),
+      7_200_000,
     );
     expect(
       messengerRepository.markScheduledReportClaimSent,
@@ -145,9 +143,10 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
   });
 
   it('already sent today → skip', async () => {
-    const { service, messengerReportDeliveryService } = buildService({
-      alreadySent: true,
-    });
+    const { service, messengerRepository, messengerReportDeliveryService } =
+      buildService({
+        alreadySent: true,
+      });
 
     const result = await service.claimAndSend(mapping, {
       reportDate: '2026-07-11',
@@ -157,6 +156,11 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
 
     expect(result.skipped).toBe(1);
     expect(result.sent).toBe(0);
+    expect(messengerRepository.hasSentScheduledReportOn).toHaveBeenCalledWith(
+      'psid-1',
+      '2026-07-11',
+      10,
+    );
     expect(
       messengerReportDeliveryService.sendReportForMapping,
     ).not.toHaveBeenCalled();

@@ -27,10 +27,7 @@
     "@nestjs/testing": "^12.0.1",
     "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
-    "@wispace/bot-metrics": "*",
     "@wispace/contracts": "*",
-    "@wispace/reschedule-confirm": "*",
-    "@wispace/scheduler-core": "*",
     "date-fns": "^4.4.0",
     "typeorm": "^1.1.1"
   },

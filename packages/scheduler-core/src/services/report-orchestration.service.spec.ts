@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-import { ConfigService } from '@nestjs/config';
 import { ReportOrchestrationService } from './report-orchestration.service';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
 import type { ReportDeliveryPort } from '../ports/report-delivery.port';
@@ -15,22 +14,10 @@ const MAPPING = {
   status: 'ACTIVE',
 };
 
-function buildConfig(overrides: Record<string, string> = {}) {
-  return {
-    get: jest.fn(
-      (key: string) =>
-        ({
-          REPORT_CLAIM_STALE_RESET_MS: undefined,
-          ...overrides,
-        })[key],
-    ),
-  } as unknown as ConfigService;
-}
-
 function buildClaimRepo(overrides: Partial<ReportClaimRepositoryPort> = {}) {
   return {
-    hasSentScheduledReportToday: jest.fn().mockResolvedValue(false),
-    hasAnyPlatformSentReportToday: jest.fn().mockResolvedValue(false),
+    hasSentScheduledReportOn: jest.fn().mockResolvedValue(false),
+    hasAnyPlatformSentReportOn: jest.fn().mockResolvedValue(false),
     tryClaimScheduledReport: jest.fn().mockResolvedValue({
       claimed: true,
       leaseToken: 'token-1',
@@ -38,7 +25,7 @@ function buildClaimRepo(overrides: Partial<ReportClaimRepositoryPort> = {}) {
     }),
     markScheduledReportClaimSent: jest.fn().mockResolvedValue(undefined),
     releaseScheduledReportClaim: jest.fn().mockResolvedValue(undefined),
-    listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+    listUserIdsWithSentReportOn: jest.fn().mockResolvedValue([]),
     ...overrides,
   } as unknown as ReportClaimRepositoryPort;
 }
@@ -62,6 +49,7 @@ function buildScheduleService() {
     getOutboxSettings: () => ({
       retryBackoffMinutes: 15,
       maxRetries: 3,
+      claimLeaseMs: 7_200_000,
     }),
   } as unknown as ReportSendScheduleService;
 }
@@ -75,7 +63,6 @@ describe('ReportOrchestrationService', () => {
       delivery,
       buildJobRepo(),
       buildScheduleService(),
-      buildConfig(),
       metrics,
     );
 
@@ -114,7 +101,6 @@ describe('ReportOrchestrationService', () => {
       delivery,
       buildJobRepo(),
       buildScheduleService(),
-      buildConfig(),
     );
     const opts = {
       reportDate: '2026-08-07',
@@ -151,7 +137,6 @@ describe('ReportOrchestrationService', () => {
       delivery,
       buildJobRepo(),
       buildScheduleService(),
-      buildConfig(),
     );
 
     const result = await service.claimAndSend(
@@ -165,7 +150,7 @@ describe('ReportOrchestrationService', () => {
     );
 
     expect(result).toEqual(expect.objectContaining({ skipped: 1 }));
-    expect(claimRepo.hasSentScheduledReportToday).not.toHaveBeenCalled();
+    expect(claimRepo.hasSentScheduledReportOn).not.toHaveBeenCalled();
     expect(claimRepo.tryClaimScheduledReport).not.toHaveBeenCalled();
     expect(generateReport).not.toHaveBeenCalled();
     expect(delivery.sendReport).not.toHaveBeenCalled();
@@ -179,7 +164,6 @@ describe('ReportOrchestrationService', () => {
       delivery,
       buildJobRepo(),
       buildScheduleService(),
-      buildConfig(),
     );
 
     const result = await service.claimAndSend(
@@ -193,8 +177,9 @@ describe('ReportOrchestrationService', () => {
     );
 
     expect(result.sent).toBe(1);
-    expect(claimRepo.hasSentScheduledReportToday).toHaveBeenCalledWith(
+    expect(claimRepo.hasSentScheduledReportOn).toHaveBeenCalledWith(
       'discord-1',
+      '2026-08-07',
       undefined,
     );
     expect(claimRepo.tryClaimScheduledReport).toHaveBeenCalledWith(
@@ -220,7 +205,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         jobRepo,
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -252,7 +236,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         jobRepo,
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -283,7 +266,6 @@ describe('ReportOrchestrationService', () => {
         buildDelivery(true),
         jobRepo,
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -316,7 +298,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         jobRepo,
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -345,7 +326,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         buildJobRepo(),
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -376,7 +356,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         buildJobRepo(),
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -407,7 +386,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         jobRepo,
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -444,7 +422,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         buildJobRepo(),
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {
@@ -465,7 +442,6 @@ describe('ReportOrchestrationService', () => {
         delivery,
         null,
         buildScheduleService(),
-        buildConfig(),
       );
 
       const result = await service.claimAndSend(MAPPING, {

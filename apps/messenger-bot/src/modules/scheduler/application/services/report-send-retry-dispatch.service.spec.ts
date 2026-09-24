@@ -31,6 +31,7 @@ const SETTINGS = {
   retryBackoffMinutes: 15,
   retryPollCronMinutes: 15,
   leaseMs: 600_000,
+  claimLeaseMs: 7_200_000,
   timezone: 'Asia/Ho_Chi_Minh',
 };
 
@@ -132,6 +133,12 @@ describe('ReportSendRetryDispatchService', () => {
     expect(built.reportSendJobRepository.markSent).toHaveBeenCalledWith(
       JOB.id,
       JOB.leaseToken,
+    );
+    expect(
+      built.reportSendOrchestrationService.claimAndSend,
+    ).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ reportDate: JOB.firstAttemptDate }),
     );
   });
 

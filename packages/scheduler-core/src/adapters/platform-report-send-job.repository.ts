@@ -4,13 +4,13 @@ import { In, Repository } from 'typeorm';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { Platform } from '@wispace/contracts';
+import { ReportSendJobEntity } from '@wispace/database';
 import type {
   ReportSendJob,
   ReportSendJobCreateParams,
-  ReportSendJobRepositoryPort,
   ReportSendJobUpdateParams,
-} from '@wispace/scheduler-core/core';
-import { ReportSendJobEntity } from '../entities/report-send-job.entity';
+} from '../types/report-send-job.types';
+import type { ReportSendJobRepositoryPort } from '../ports/report-send-job.repository.port';
 
 /** Platform-parameterized TypeORM persistence for the report-send outbox. */
 @Injectable()

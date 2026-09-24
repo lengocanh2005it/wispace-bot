@@ -39,9 +39,11 @@ import {
   LearnerScheduledReportClaimEntity,
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,
+} from '@wispace/database';
+import {
   PlatformReportClaimRepository,
   ReportClaimStaleResetCronService,
-} from '@wispace/database';
+} from '@wispace/scheduler-core/adapters';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
@@ -150,15 +152,15 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     {
       provide: ReportClaimStaleResetCronService,
       useFactory: (
-        configService: ConfigService,
         claimRepository: ReportClaimRepositoryPort,
         pgLock: PgAdvisoryLockService,
+        reportSendScheduleService: ReportSendScheduleService,
         metrics: BotMetricsService,
       ) =>
         new ReportClaimStaleResetCronService(
-          configService,
           claimRepository,
           pgLock,
+          reportSendScheduleService,
           {
             platform: 'zalo',
             lockId: ZALO_REPORT_CLAIM_STALE_RESET_LOCK,
@@ -166,9 +168,9 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
           },
         ),
       inject: [
-        ConfigService,
         REPORT_CLAIM_REPOSITORY,
         PgAdvisoryLockService,
+        ReportSendScheduleService,
         BotMetricsService,
       ],
     },
