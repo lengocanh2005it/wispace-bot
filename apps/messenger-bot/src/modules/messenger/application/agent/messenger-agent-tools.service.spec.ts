@@ -333,8 +333,41 @@ describe('MessengerAgentToolsService', () => {
           }),
         ],
       });
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('Phạm vi dữ liệu');
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('chưa rõ toàn bộ');
     });
 
+    it('reports capped upcoming sessions and returns only the effective slice', async () => {
+      const sessions = Array.from({ length: 12 }, (_, index) => ({
+        sessionKey: `key-${index + 1}`,
+        topic: 'IELTS Writing',
+        scheduledAt: new Date('2026-07-15T08:00:00Z'),
+      }));
+      const { service, ctx } = createService({
+        getUpcomingSessions: jest.fn().mockResolvedValue(sessions),
+      });
+
+      const result = await service.execute(
+        'get_upcoming_study_sessions',
+        '{"limit": 15}',
+        ctx,
+      );
+
+      expect(result).toMatchObject({
+        timeRange: 'upcoming',
+        count: 10,
+        requestedLimit: 15,
+        effectiveLimit: 10,
+        capped: true,
+        completeness: 'incomplete',
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ sessionKey: 'key-1' }),
+        ]),
+      });
+      expect(ctx.richFollowUps).toHaveLength(1);
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('10 mục');
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('không trọn lịch');
+    });
     it('returns empty when no sessions', async () => {
       const { service, ctx } = createService({
         getUpcomingSessions: jest.fn().mockResolvedValue([]),
@@ -351,6 +384,32 @@ describe('MessengerAgentToolsService', () => {
         sessions: [],
         reminderNotice: undefined,
       });
+      expect(ctx.richFollowUps).toHaveLength(0);
+    });
+
+    it('keeps capped disclosure for an empty upcoming result', async () => {
+      const { service, ctx } = createService({
+        getUpcomingSessions: jest.fn().mockResolvedValue([]),
+      });
+
+      const result = await service.execute(
+        'get_upcoming_study_sessions',
+        '{"limit":15}',
+        ctx,
+      );
+
+      expect(result).toMatchObject({
+        count: 0,
+        requestedLimit: 15,
+        effectiveLimit: 10,
+        capped: true,
+        completeness: 'incomplete',
+        sessions: [],
+      });
+      expect(ctx.richFollowUps).toHaveLength(1);
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('0 mục');
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('lịch sắp tới');
+      expect(JSON.stringify(ctx.richFollowUps)).toContain('không trọn lịch');
     });
   });
 
@@ -388,6 +447,94 @@ describe('MessengerAgentToolsService', () => {
         reminderNotice: expect.any(String),
       });
     });
+  });
+
+  it('keeps capped disclosure for an empty calendar result', async () => {
+    const { service, ctx } = createService({
+      listEntries: jest.fn().mockResolvedValue({
+        entries: [],
+        timeRange: 'past',
+      }),
+    });
+
+    const result = await service.execute(
+      'list_study_calendar_entries',
+      '{"timeRange":"past","limit":15,"pastDays":9999}',
+      ctx,
+    );
+
+    expect(result).toMatchObject({
+      count: 0,
+      requestedLimit: 15,
+      effectiveLimit: 10,
+      requestedPastDays: 9999,
+      effectivePastDays: 365,
+      capped: true,
+      completeness: 'incomplete',
+      entries: [],
+    });
+    expect(ctx.richFollowUps).toHaveLength(1);
+    expect(JSON.stringify(ctx.richFollowUps)).toContain('0 mục');
+    expect(JSON.stringify(ctx.richFollowUps)).toContain('lịch đã qua');
+    expect(JSON.stringify(ctx.richFollowUps)).toContain('không trọn lịch');
+  });
+
+  it('reports capped past-day requests and keeps the returned count bounded', async () => {
+    const entries = Array.from({ length: 12 }, (_, index) => ({
+      calendarId: index + 1,
+      scheduledTimeLabel: `Buổi ${index + 1}`,
+      ownerUserId: 42,
+    }));
+    const listEntries = jest.fn().mockResolvedValue({
+      entries,
+      timeRange: 'past',
+    });
+    const { service, ctx } = createService({ listEntries });
+
+    const result = await service.execute(
+      'list_study_calendar_entries',
+      '{"timeRange":"past","limit":15,"pastDays":9999}',
+      ctx,
+    );
+
+    expect(listEntries).toHaveBeenCalledWith('psid-123', 42, {
+      timeRange: 'past',
+      limit: 10,
+      pastDays: 365,
+    });
+    expect(result).toMatchObject({
+      timeRange: 'past',
+      count: 10,
+      requestedLimit: 15,
+      effectiveLimit: 10,
+      requestedPastDays: 9999,
+      effectivePastDays: 365,
+      capped: true,
+      completeness: 'incomplete',
+      entries: expect.arrayContaining([
+        expect.objectContaining({ calendarId: 1 }),
+      ]),
+    });
+  });
+
+  it('rejects an invalid calendarId before identity or ownership lookup', async () => {
+    const currentIdentityProvider = jest.fn();
+    const listEntries = jest.fn();
+    const { service, ctx } = createService({
+      currentIdentityProvider,
+      listEntries,
+    });
+    ctx.userText = 'mình muốn đổi lịch học';
+
+    const result = await service.execute(
+      'reschedule_study_session',
+      '{"calendarId": -1, "schedulingMode": "explicit"}',
+      ctx,
+    );
+
+    expect(result).toEqual({ error: 'Invalid tool argument: calendarId' });
+    expect(currentIdentityProvider).not.toHaveBeenCalled();
+    expect(listEntries).not.toHaveBeenCalled();
   });
 
   describe('reschedule_study_session', () => {

@@ -2,6 +2,7 @@ import {
   deriveAgentToolMap,
   isAgentToolName,
   type AgentToolMap,
+  type BoundedToolDisclosure,
 } from './agent.tools';
 
 export const CHAT_FAILURE_FALLBACK_MESSAGE =
@@ -63,6 +64,33 @@ export function buildGroundingBlockedMessage(): string {
     'Mình cần tra cứu dữ liệu để trả lời chính xác hơn. ' +
     'Bạn vui lòng thử lại nhé.'
   );
+}
+
+export function buildCappedResultMessage(
+  disclosure: BoundedToolDisclosure,
+  calendarLabelOverride?: string,
+): string {
+  const bounds = [
+    `giới hạn ${disclosure.limit} mục`,
+    ...(disclosure.pastDays === undefined
+      ? []
+      : [`${disclosure.pastDays} ngày gần nhất`]),
+  ].join(' và ');
+  const calendarLabel =
+    calendarLabelOverride ??
+    (disclosure.timeRange === 'past'
+      ? 'lịch đã qua'
+      : disclosure.timeRange === 'upcoming'
+        ? 'lịch sắp tới'
+        : 'lịch');
+  const scope =
+    disclosure.count === undefined
+      ? `Mình chỉ lấy được dữ liệu trong ${bounds} của ${calendarLabel}`
+      : `Mình đã lấy ${disclosure.count} mục trong ${bounds} của ${calendarLabel}`;
+  const completeness = disclosure.capped
+    ? 'đây không phải toàn bộ lịch.'
+    : 'mình chưa thể xác nhận đây là toàn bộ lịch.';
+  return `${scope}; ${completeness} Bạn có thể hỏi theo khoảng thời gian cụ thể để mình kiểm tra tiếp.`;
 }
 
 export function buildClarificationMessage(): string {

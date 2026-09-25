@@ -99,6 +99,8 @@ export interface EvalScriptedToolCall {
   result?: unknown;
   /** When set, the fake tool executor throws this error instead. */
   fail?: string;
+  /** The production parser must reject these arguments before execution. */
+  expectInvalidArgs?: boolean;
 }
 
 export interface EvalScriptRound {
@@ -264,6 +266,16 @@ function validateToolArgs(
   }
 }
 
+function validateInvalidToolArgs(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+  errors: string[],
+): void {
+  if (parseAndValidateToolArguments(toolName, JSON.stringify(args ?? {})).ok) {
+    errors.push(`tool "${toolName}" was expected to reject its arguments`);
+  }
+}
+
 function validateRound(
   round: unknown,
   index: number,
@@ -314,12 +326,22 @@ function validateRound(
     } else {
       if (call.args !== undefined && !isRecord(call.args)) {
         errors.push(`script[${index}].toolCalls[${j}].args must be an object`);
+      } else if (call.expectInvalidArgs === true) {
+        validateInvalidToolArgs(call.name, call.args, errors);
       } else {
         validateToolArgs(call.name, call.args, errors);
       }
     }
     if (call.fail !== undefined && typeof call.fail !== 'string') {
       errors.push(`script[${index}].toolCalls[${j}].fail must be a string`);
+    }
+    if (
+      call.expectInvalidArgs !== undefined &&
+      typeof call.expectInvalidArgs !== 'boolean'
+    ) {
+      errors.push(
+        `script[${index}].toolCalls[${j}].expectInvalidArgs must be a boolean`,
+      );
     }
   }
 }

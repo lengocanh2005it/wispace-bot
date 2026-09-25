@@ -3,13 +3,14 @@ import {
   type GetUpcomingStudySessionsArgs,
   type ListStudyCalendarEntriesArgs,
   type RescheduleStudySessionArgs,
+  buildBoundedToolResultMetadata,
+  readPositiveInteger,
   readPositiveLimit,
   readPastDays,
-  readPositiveInteger,
   readValidatedDate,
   readValidatedTime,
   sanitizeUntrustedTextForLlm,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import {
   errorMessage,
   maskExternalId,
@@ -58,16 +59,18 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         get_learning_progress_report: ({ ctx, signal }) =>
           this.getLearningProgressReport(ctx, signal),
         get_user_goals: ({ ctx, signal }) => this.getUserGoals(ctx, signal),
-        get_upcoming_study_sessions: ({ args, ctx, signal }) =>
+        get_upcoming_study_sessions: ({ args, requestedArgs, ctx, signal }) =>
           this.getUpcomingStudySessions(
             ctx,
             args as GetUpcomingStudySessionsArgs,
+            requestedArgs,
             signal,
           ),
-        list_study_calendar_entries: ({ args, ctx, signal }) =>
+        list_study_calendar_entries: ({ args, requestedArgs, ctx, signal }) =>
           this.listStudyCalendarEntries(
             ctx,
             args as ListStudyCalendarEntriesArgs,
+            requestedArgs,
             signal,
           ),
         preview_next_study_reminder: ({ ctx, signal }) =>
@@ -146,11 +149,13 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private async getUpcomingStudySessions(
     ctx: PlatformAgentToolContext,
     args: GetUpcomingStudySessionsArgs,
+    requestedArgs?: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<unknown> {
     return this.withLinkedAccount(ctx, async () => {
       ctx.privateDataFetched = true;
       const sessionLimit = readPositiveLimit(args.limit, 5);
+      const requestedLimit = readPositiveInteger(requestedArgs?.limit);
       const sessions = await this.calendarPort.getCalendarSessions(
         this.options.wispaceExternalId(ctx),
         {
@@ -160,9 +165,15 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           signal,
         },
       );
+      const limitedSessions = sessions.slice(0, sessionLimit);
       return {
-        count: sessions.length,
-        sessions: this.mapSessions(sessions),
+        timeRange: 'upcoming',
+        count: limitedSessions.length,
+        ...buildBoundedToolResultMetadata({
+          requestedLimit,
+          effectiveLimit: sessionLimit,
+        }),
+        sessions: this.mapSessions(limitedSessions),
       };
     });
   }
@@ -170,22 +181,40 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private async listStudyCalendarEntries(
     ctx: PlatformAgentToolContext,
     args: ListStudyCalendarEntriesArgs,
+    requestedArgs?: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<unknown> {
     return this.withLinkedAccount(ctx, async () => {
       ctx.privateDataFetched = true;
       const { timeRange = 'upcoming', limit, pastDays } = args;
+      const requestedLimit = readPositiveInteger(requestedArgs?.limit);
+      const requestedPastDays = readPositiveInteger(requestedArgs?.pastDays);
+      const effectiveLimit = readPositiveLimit(limit, 10);
+      const pastDaysApplies = timeRange === 'past' || timeRange === 'all';
+      const effectivePastDays = pastDaysApplies
+        ? readPastDays(pastDays)
+        : undefined;
       const sessions = await this.calendarPort.getCalendarSessions(
         this.options.wispaceExternalId(ctx),
         {
           timeRange,
-          limit: readPositiveLimit(limit, 10),
-          pastDays: readPastDays(pastDays),
+          limit: effectiveLimit,
+          pastDays: effectivePastDays,
           userId: ctx.userId,
           signal,
         },
       );
-      return { timeRange, entries: this.mapSessions(sessions) };
+      const limitedSessions = sessions.slice(0, effectiveLimit);
+      return {
+        timeRange,
+        count: limitedSessions.length,
+        ...buildBoundedToolResultMetadata({
+          requestedLimit,
+          effectiveLimit,
+          ...(pastDaysApplies ? { requestedPastDays, effectivePastDays } : {}),
+        }),
+        entries: this.mapSessions(limitedSessions),
+      };
     });
   }
 

@@ -423,7 +423,11 @@ describe('PlatformAgentToolsService', () => {
         { timeRange: 'upcoming', limit: 5, userId: 143 },
       );
       expect(result).toEqual({
+        timeRange: 'upcoming',
         count: 1,
+        effectiveLimit: 5,
+        capped: false,
+        completeness: 'unknown',
         sessions: [
           {
             sessionKey: 'calendar:1',
@@ -434,6 +438,63 @@ describe('PlatformAgentToolsService', () => {
       });
     });
 
+    it('reports a capped upcoming-session request and returned count', async () => {
+      calendarService.getCalendarSessions.mockResolvedValue(
+        Array.from({ length: 12 }, (_, index) => ({
+          sessionKey: `calendar:${index + 1}`,
+          scheduledAt: new Date('2026-08-01T07:00:00Z'),
+          topic: 'IELTS Writing',
+        })),
+      );
+
+      const result = await service.execute(
+        'get_upcoming_study_sessions',
+        JSON.stringify({ limit: 15 }),
+        { externalUserId: 'discord-1', userId: 143 },
+      );
+
+      expect(calendarService.getCalendarSessions).toHaveBeenCalledWith(
+        'discord-1',
+        { timeRange: 'upcoming', limit: 10, userId: 143 },
+      );
+      expect(result).toMatchObject({
+        timeRange: 'upcoming',
+        count: 10,
+        requestedLimit: 15,
+        effectiveLimit: 10,
+        capped: true,
+        completeness: 'incomplete',
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ sessionKey: 'calendar:1' }),
+        ]),
+      });
+    });
+
+    it('reports a capped past-days request without claiming completeness', async () => {
+      calendarService.getCalendarSessions.mockResolvedValue([]);
+
+      const result = await service.execute(
+        'list_study_calendar_entries',
+        JSON.stringify({ timeRange: 'past', limit: 3, pastDays: 9999 }),
+        { externalUserId: 'discord-1', userId: 143 },
+      );
+
+      expect(calendarService.getCalendarSessions).toHaveBeenCalledWith(
+        'discord-1',
+        { timeRange: 'past', limit: 3, pastDays: 365, userId: 143 },
+      );
+      expect(result).toMatchObject({
+        timeRange: 'past',
+        count: 0,
+        requestedLimit: 3,
+        effectiveLimit: 3,
+        requestedPastDays: 9999,
+        effectivePastDays: 365,
+        capped: true,
+        completeness: 'incomplete',
+        entries: [],
+      });
+    });
     it('list_study_calendar_entries passes timeRange/limit/pastDays through when linked', async () => {
       calendarService.getCalendarSessions.mockResolvedValue([]);
 
@@ -498,6 +559,42 @@ describe('PlatformAgentToolsService', () => {
       expect(result).toMatchObject({ available: false });
     });
 
+    it('rejects invalid bounded calendar arguments before identity or upstream calls', async () => {
+      const identity = jest.fn();
+      service = new PlatformAgentToolsService(
+        goalsService,
+        calendarService,
+        stagePort,
+        {
+          ...buildDiscordOptions(confirmSender),
+          currentIdentityProvider: identity,
+        },
+        exerciseClient,
+      );
+      const cases: Array<[string, Record<string, unknown>]> = [
+        ['get_upcoming_study_sessions', { limit: true }],
+        ['get_upcoming_study_sessions', { limit: '5' }],
+        ['get_upcoming_study_sessions', { limit: 1.5 }],
+        ['get_upcoming_study_sessions', { limit: 0 }],
+        ['get_upcoming_study_sessions', { limit: -1 }],
+        ['list_study_calendar_entries', { timeRange: 'past', pastDays: true }],
+        ['list_study_calendar_entries', { timeRange: 'past', pastDays: '90' }],
+        ['list_study_calendar_entries', { timeRange: 'past', pastDays: 1.5 }],
+        ['list_study_calendar_entries', { timeRange: 'past', pastDays: 0 }],
+        ['list_study_calendar_entries', { timeRange: 'past', pastDays: -1 }],
+      ];
+
+      for (const [toolName, args] of cases) {
+        await expect(
+          service.execute(toolName, JSON.stringify(args), {
+            externalUserId: 'discord-1',
+          }),
+        ).resolves.toMatchObject({ error: expect.any(String) });
+      }
+      expect(identity).not.toHaveBeenCalled();
+      expect(calendarService.getCalendarSessions).not.toHaveBeenCalled();
+    });
+
     describe('reschedule_study_session (discord validation)', () => {
       it('errors when calendarId is missing', async () => {
         const result = await service.execute(
@@ -510,6 +607,20 @@ describe('PlatformAgentToolsService', () => {
         expect(stagePort.stage).not.toHaveBeenCalled();
       });
 
+      it('rejects invalid calendarId before identity or ownership lookup', async () => {
+        for (const calendarId of [-1, 12.7]) {
+          const result = await service.execute(
+            'reschedule_study_session',
+            JSON.stringify({ calendarId, schedulingMode: 'explicit' }),
+            { externalUserId: 'discord-1', userId: 143 },
+          );
+
+          expect(result).toEqual({
+            error: 'Invalid tool argument: calendarId',
+          });
+        }
+        expect(stagePort.stage).not.toHaveBeenCalled();
+      });
       it('errors when schedulingMode is invalid', async () => {
         const result = await service.execute(
           'reschedule_study_session',

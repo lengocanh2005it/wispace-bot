@@ -1,0 +1,59 @@
+{
+  "name": "invalid-tool-args-blocked",
+  "description": "Invalid numeric arguments are rejected by the production parser before execution.",
+  "tier": "must-block",
+  "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1507).",
+  "userText": "cho mình xem lịch học sắp tới",
+  "externalUserId": "eval-931-invalid-args",
+  "userId": 1507,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": true },
+          "expectInvalidArgs": true
+        },
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": "5" },
+          "expectInvalidArgs": true
+        },
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 1.5 },
+          "expectInvalidArgs": true
+        },
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 0 },
+          "expectInvalidArgs": true
+        }
+      ]
+    },
+    {
+      "text": "Mình cần tra cứu dữ liệu để trả lời chính xác hơn."
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "planRemainder": 4,
+    "replyTextContains": ["Mình cần tra cứu dữ liệu"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]",
+    "groundingWarnings": 0,
+    "requestContracts": [
+      {
+        "round": 1,
+        "messageContentContains": ["Invalid tool argument: limit"]
+      }
+    ]
+  }
+}

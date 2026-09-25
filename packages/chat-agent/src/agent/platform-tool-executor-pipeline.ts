@@ -30,6 +30,7 @@ import type {
 
 export interface PlatformToolHandlerInput {
   args: Record<string, unknown>;
+  requestedArgs?: Record<string, unknown>;
   canonicalArgs: string;
   ctx: PlatformAgentToolContext;
   signal?: AbortSignal;
@@ -227,6 +228,7 @@ export class PlatformToolExecutorPipeline {
       throwIfToolAborted(signal);
       const handlerResult = await this.handlers[toolName]({
         args: parsed.args,
+        requestedArgs: parsed.requestedArgs,
         canonicalArgs: parsed.canonicalArgs,
         ctx,
         signal,

@@ -73,8 +73,8 @@ export interface LoopTrimResult {
   droppedToolNames: string[];
 }
 
-const CONTEXT_TOOL_DEFINITIONS = AGENT_TOOLS.map(
-  ({ metadata: _metadata, ...tool }) => tool,
+export const CONTEXT_TOOL_DEFINITIONS = AGENT_TOOLS.map(
+  ({ name, description, parameters }) => ({ name, description, parameters }),
 );
 
 export function estimateContextTokens(messages: LlmMessage[]): number {

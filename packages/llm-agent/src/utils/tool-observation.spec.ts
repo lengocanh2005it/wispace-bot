@@ -22,6 +22,130 @@ describe('tool observation handling', () => {
     });
   });
 
+  it('preserves bounded-result metadata for calendar tools', () => {
+    expect(
+      projectToolObservation('get_upcoming_study_sessions', {
+        timeRange: 'upcoming',
+        count: 10,
+        requestedLimit: 15,
+        effectiveLimit: 10,
+        capped: true,
+        completeness: 'incomplete',
+        sessions: [],
+      }),
+    ).toEqual({
+      timeRange: 'upcoming',
+      count: 10,
+      requestedLimit: 15,
+      effectiveLimit: 10,
+      capped: true,
+      completeness: 'incomplete',
+      sessions: [],
+    });
+  });
+  it('omits unsupported hasMore claims from calendar observations', () => {
+    const reduced = reduceToolObservation({
+      toolName: 'list_study_calendar_entries',
+      ok: true,
+      result: {
+        count: 0,
+        effectiveLimit: 10,
+        capped: false,
+        completeness: 'unknown',
+        hasMore: false,
+        entries: [],
+      },
+      maxChars: 700,
+    });
+
+    expect(reduced.content).not.toContain('hasMore');
+  });
+
+  it('preserves time range with compact calendar metadata', () => {
+    const fitted = fitToolObservation(
+      JSON.stringify({
+        ok: true,
+        data: {
+          timeRange: 'past',
+          count: 0,
+          effectiveLimit: 10,
+          effectivePastDays: 365,
+          capped: true,
+          completeness: 'incomplete',
+          entries: [{ topic: 'x'.repeat(500) }],
+        },
+      }),
+      160,
+    );
+
+    expect(fitted.content).toContain('"timeRange":"past"');
+    expect(fitted.content).toContain('"effectiveLimit":10');
+    expect(fitted.content).toContain('"count":0');
+  });
+
+  it('keeps completeness ahead of scope when both fit', () => {
+    const fitted = fitToolObservation(
+      JSON.stringify({
+        ok: true,
+        data: {
+          timeRange: 'past',
+          count: 10,
+          capped: true,
+          completeness: 'incomplete',
+        },
+      }),
+      86,
+    );
+
+    expect(fitted.content).toContain('"capped":true');
+    expect(fitted.content).toContain('"completeness":"incomplete"');
+    expect(fitted.content).toContain('"timeRange":"past"');
+    expect(fitted.content).toContain('"count":10');
+  });
+
+  it('keeps cap metadata when a calendar observation must be fitted', () => {
+    const fitted = fitToolObservation(
+      JSON.stringify({
+        ok: true,
+        data: {
+          timeRange: 'past',
+          count: 10,
+          requestedLimit: 15,
+          effectiveLimit: 10,
+          requestedPastDays: 9999,
+          effectivePastDays: 365,
+          capped: true,
+          completeness: 'incomplete',
+          entries: Array.from({ length: 30 }, (_, index) => ({
+            topic: 'x'.repeat(500),
+            scheduledAtIso: '2026-09-01T08:00:00.000Z',
+            index,
+          })),
+        },
+      }),
+      120,
+    );
+
+    expect(fitted.content).toContain('"effectiveLimit":10');
+    expect(fitted.content).toContain('"count":10');
+    expect(fitted.content).toContain('"capped":true');
+    expect(fitted.content).toContain('"completeness":"incomplete"');
+    expect(fitted.content).not.toContain('hasMore');
+  });
+
+  it('preserves an existing truncation marker when refitting', () => {
+    const fitted = fitToolObservation(
+      JSON.stringify({
+        ok: true,
+        _observation: 'truncated',
+        data: { entries: [{ topic: 'IELTS Writing' }] },
+      }),
+      700,
+    );
+
+    expect(fitted.content).toContain('"_observation":"truncated"');
+  });
+
   it('marks a known payload when projection omits fields', () => {
     const reduced = reduceToolObservation({
       toolName: 'get_user_goals',

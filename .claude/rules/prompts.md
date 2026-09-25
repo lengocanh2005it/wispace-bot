@@ -80,6 +80,10 @@ The tool schema (name + `description` + parameters in `packages/llm-agent/src/ag
 3. **Platform-specific tool behavior → the platform overlay** (buttons vs keywords, DM privacy), never the core.
 4. A new rule in the core must also be reflected in `packages/llm-agent/src/chat-system-prompt.spec.ts` (section-presence guards).
 
+## Bounded calendar tool results (#931)
+
+Calendar `limit`, `pastDays`, and `calendarId` use positive-integer validation. Valid over-maximum limits clamp to the tool maximum; invalid types, fractions, and non-positive identifiers fail before identity or upstream calls. A bounded result reports `requestedLimit`/`effectiveLimit`, `requestedPastDays`/`effectivePastDays` when applicable, `capped`, `completeness`, and returned `count`. Do not claim `hasMore` or completeness without upstream proof. Cap metadata stays in the tool observation and bounded summary; independent same-tool query scopes stay separate; final output and Messenger rich cards disclose when a result is limited.
+
 ## After modifying a prompt
 
 ```bash

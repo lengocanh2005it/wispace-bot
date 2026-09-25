@@ -2,8 +2,10 @@ import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import {
   AGENT_TOOLS,
   isAgentToolName,
+  mergeBoundedToolDisclosures,
   parseAndValidateToolArguments,
   type AgentToolName,
+  type BoundedToolDisclosure,
 } from './agent.tools';
 import {
   buildJointScanView,
@@ -247,6 +249,10 @@ export class LlmAgentService<TToolContext> {
 
     const toolsCalledThisTurn = new Set<AgentToolName>();
     const groundedToolsThisTurn = new Set<AgentToolName>();
+    const boundedToolDisclosuresThisTurn = new Map<
+      string,
+      BoundedToolDisclosure
+    >();
     const toolObservations: ToolSummaryObservation[] = [];
     const toolRunsPerName = new Map<AgentToolName, number>();
     let toolExecutionsThisTurn = 0;
@@ -330,6 +336,7 @@ export class LlmAgentService<TToolContext> {
             userText: input.userText,
             toolsCalled: toolsCalledThisTurn,
             groundedTools: groundedToolsThisTurn,
+            boundedToolDisclosures: boundedToolDisclosuresThisTurn,
             promptCanary: input.systemPromptParts?.promptCanary,
           });
           if (safety.outcome === 'grounding_blocked') {
@@ -537,12 +544,46 @@ export class LlmAgentService<TToolContext> {
         );
         toolExecutionsThisTurn += toolExecution.executedCount;
         const toolResults = toolExecution.results;
+        for (const [
+          disclosureKey,
+          disclosure,
+        ] of toolExecution.boundedToolDisclosures) {
+          boundedToolDisclosuresThisTurn.set(
+            disclosureKey,
+            mergeBoundedToolDisclosures(
+              boundedToolDisclosuresThisTurn.get(disclosureKey),
+              disclosure,
+            ),
+          );
+        }
+        for (const toolName of toolExecution.successfulToolNames) {
+          const prefix = `${toolName}:`;
+          const hasCurrentDisclosure = [
+            ...boundedToolDisclosuresThisTurn.keys(),
+          ].some((key) => key.startsWith(prefix));
+          if (hasCurrentDisclosure) continue;
+          const hasCappedDisclosure = [
+            ...boundedToolDisclosuresThisTurn.entries(),
+          ].some(
+            ([key, disclosure]) => key.startsWith(prefix) && disclosure.capped,
+          );
+          if (!hasCappedDisclosure) {
+            for (const key of boundedToolDisclosuresThisTurn.keys()) {
+              if (key.startsWith(prefix)) {
+                boundedToolDisclosuresThisTurn.delete(key);
+              }
+            }
+          }
+        }
         toolObservations.push(
-          ...toolResults.map(({ toolName, content, succeeded }) => ({
-            toolName,
-            content,
-            succeeded,
-          })),
+          ...toolResults.map(
+            ({ toolName, content, succeeded, boundedDisclosure }) => ({
+              toolName,
+              content,
+              succeeded,
+              ...(boundedDisclosure ? { boundedDisclosure } : {}),
+            }),
+          ),
         );
 
         previousRoundFailed = toolResults.some((result) => !result.succeeded);
@@ -637,8 +678,16 @@ export class LlmAgentService<TToolContext> {
       [...toolsCalledThisTurn],
       toolObservations,
     );
-    return {
+    const exhaustionSafety = this.safetyPipeline.evaluate({
       text: buildExhaustionPartialAnswer([...groundedToolsThisTurn]),
+      userText: input.userText,
+      toolsCalled: toolsCalledThisTurn,
+      groundedTools: groundedToolsThisTurn,
+      boundedToolDisclosures: boundedToolDisclosuresThisTurn,
+      includeBoundedDisclosures: true,
+    });
+    return {
+      text: exhaustionSafety.text,
       exhausted: true,
       toolSummary,
     };

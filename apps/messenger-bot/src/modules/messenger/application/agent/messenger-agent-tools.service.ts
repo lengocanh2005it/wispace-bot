@@ -17,15 +17,17 @@ import {
 } from '@wispace/reschedule-confirm';
 import {
   type AgentToolName,
+  type BoundedToolDisclosure,
   type GetUpcomingStudySessionsArgs,
   type ListStudyCalendarEntriesArgs,
   type RescheduleStudySessionArgs,
+  buildBoundedToolResultMetadata,
   readPastDays,
   readPositiveInteger,
   readPositiveLimit,
   readValidatedDate,
   readValidatedTime,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import {
   MessengerLinkContext,
   getPocAlreadySubscribedMessage,
@@ -137,15 +139,17 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         get_learning_progress_report: ({ ctx, signal }) =>
           this.getLearningProgressReport(ctx.externalUserId, signal),
         get_user_goals: ({ ctx }) => this.getUserGoals(ctx),
-        get_upcoming_study_sessions: ({ args, ctx }) =>
+        get_upcoming_study_sessions: ({ args, requestedArgs, ctx }) =>
           this.getUpcomingStudySessions(
             ctx,
             args as GetUpcomingStudySessionsArgs,
+            requestedArgs,
           ),
-        list_study_calendar_entries: ({ args, ctx }) =>
+        list_study_calendar_entries: ({ args, requestedArgs, ctx }) =>
           this.listStudyCalendarEntries(
             ctx,
             args as ListStudyCalendarEntriesArgs,
+            requestedArgs,
           ),
         preview_next_study_reminder: ({ ctx }) =>
           this.previewNextStudyReminder(ctx),
@@ -333,40 +337,71 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   private async listStudyCalendarEntries(
     ctx: PlatformAgentToolContext,
     args: ListStudyCalendarEntriesArgs,
+    requestedArgs?: Record<string, unknown>,
   ): Promise<unknown> {
     const timeRange = args.timeRange ?? 'upcoming';
+    const effectiveLimit = readPositiveLimit(args.limit, 10);
+    const requestedLimit = readPositiveInteger(requestedArgs?.limit);
+    const requestedPastDays = readPositiveInteger(requestedArgs?.pastDays);
+    const pastDaysApplies = timeRange === 'past' || timeRange === 'all';
+    const effectivePastDays = pastDaysApplies
+      ? readPastDays(args.pastDays)
+      : undefined;
     const list = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
       {
         timeRange,
-        limit: readPositiveLimit(args.limit, 10),
-        pastDays: readPastDays(args.pastDays),
+        limit: effectiveLimit,
+        pastDays: effectivePastDays,
       },
     );
-    const entries = list.entries.map(
-      ({ ownerUserId: _ownerUserId, ...entry }) => entry,
-    );
+    const entries = list.entries
+      .slice(0, effectiveLimit)
+      .map(({ ownerUserId: _ownerUserId, ...entry }) => entry);
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
+
+    const metadata = buildBoundedToolResultMetadata({
+      requestedLimit,
+      effectiveLimit,
+      ...(pastDaysApplies ? { requestedPastDays, effectivePastDays } : {}),
+    });
+    const disclosure: BoundedToolDisclosure = {
+      timeRange,
+      limit: effectiveLimit,
+      ...(effectivePastDays === undefined
+        ? {}
+        : { pastDays: effectivePastDays }),
+      count: entries.length,
+      capped: metadata.capped,
+      completeness: metadata.completeness,
+    };
 
     return withPlatformToolDecoration(
       {
-        ...list,
+        timeRange,
+        count: entries.length,
+        ...metadata,
         entries,
         reminderNotice:
-          list.timeRange === 'upcoming' && entries.length > 0
+          timeRange === 'upcoming' && entries.length > 0
             ? getStudyReminderLeadTimeNotice(minutesBefore)
             : undefined,
       },
-      buildCalendarEntriesRichFollowUp(entries),
+      buildCalendarEntriesRichFollowUp(
+        entries,
+        metadata.capped || entries.length > 0 ? disclosure : undefined,
+      ),
     );
   }
 
   private async getUpcomingStudySessions(
     ctx: PlatformAgentToolContext,
     args: GetUpcomingStudySessionsArgs,
+    requestedArgs?: Record<string, unknown>,
   ): Promise<unknown> {
     const limit = readPositiveLimit(args.limit, 5);
+    const requestedLimit = readPositiveInteger(requestedArgs?.limit);
     const sessions = await this.studyPort.getUpcomingSessions({
       psid: ctx.externalUserId,
       userId: ctx.userId,
@@ -383,16 +418,33 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
 
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
 
+    const metadata = buildBoundedToolResultMetadata({
+      requestedLimit,
+      effectiveLimit: limit,
+    });
+    const disclosure: BoundedToolDisclosure = {
+      timeRange: 'upcoming',
+      limit,
+      count: mapped.length,
+      capped: metadata.capped,
+      completeness: metadata.completeness,
+    };
+
     return withPlatformToolDecoration(
       {
-        count: sessions.length,
+        timeRange: 'upcoming',
+        count: mapped.length,
+        ...metadata,
         sessions: mapped,
         reminderNotice:
           mapped.length > 0
             ? getStudyReminderLeadTimeNotice(minutesBefore)
             : undefined,
       },
-      buildStudySessionsRichFollowUps(mapped),
+      buildStudySessionsRichFollowUps(
+        mapped,
+        metadata.capped || mapped.length > 0 ? disclosure : undefined,
+      ),
     );
   }
 

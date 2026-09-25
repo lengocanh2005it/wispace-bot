@@ -12,7 +12,10 @@ import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmMessage, LlmToolChatResponse } from './provider/types';
 import { LlmOverloadError } from './execution/bounded-admission';
 import { composeChatSystemPrompt } from './chat-system-prompt';
-import { REASONING_INSTRUCTION } from './internal/context-manager';
+import {
+  CONTEXT_TOOL_DEFINITIONS,
+  REASONING_INSTRUCTION,
+} from './internal/context-manager';
 import { estimateTokens } from './internal/agent-limits';
 
 // ---- helpers ----------------------------------------------------------------
@@ -899,6 +902,94 @@ describe('LlmAgentService', () => {
       expect(result.toolSummary).toContain('get_learning_progress_report');
     });
 
+    it('blocks a completeness claim from a capped tool result', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse(
+          'get_upcoming_study_sessions',
+          JSON.stringify({ limit: 15 }),
+        ),
+        makeTextResponse('Đây là toàn bộ lịch học của bạn.'),
+      ]);
+      const execute = jest.fn().mockResolvedValue({
+        count: 10,
+        requestedLimit: 15,
+        effectiveLimit: 10,
+        capped: true,
+        completeness: 'incomplete',
+        sessions: [],
+      });
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toContain('10');
+      expect(result.text).not.toBe('Đây là toàn bộ lịch học của bạn.');
+      expect(result.toolSummary).toContain('capped=true');
+      const secondRequest = (adapter.chatWithTools as jest.Mock).mock
+        .calls[1][0];
+      const toolMessage = secondRequest.messages.find(
+        (message: { role: string }) => message.role === 'tool',
+      );
+      expect(toolMessage.content).toContain('"effectiveLimit":10');
+    });
+
+    it('keeps independent calendar scopes separate in disclosures and summaries', async () => {
+      const adapter = makeAdapter([
+        makeMultiToolCallResponse([
+          {
+            name: 'list_study_calendar_entries',
+            argsJson: JSON.stringify({ timeRange: 'past', pastDays: 9999 }),
+          },
+          {
+            name: 'list_study_calendar_entries',
+            argsJson: JSON.stringify({ timeRange: 'upcoming', limit: 15 }),
+          },
+        ]),
+        makeTextResponse('Đây là toàn bộ lịch học của bạn.'),
+      ]);
+      const execute = jest
+        .fn()
+        .mockImplementation((_toolName: string, argsJson: string) => {
+          const args = JSON.parse(argsJson) as {
+            timeRange?: string;
+            pastDays?: number;
+          };
+          return Promise.resolve(
+            args.timeRange === 'past'
+              ? {
+                  timeRange: 'past',
+                  count: 8,
+                  requestedPastDays: 9999,
+                  effectiveLimit: 10,
+                  effectivePastDays: 365,
+                  capped: true,
+                  completeness: 'incomplete',
+                  entries: [],
+                }
+              : {
+                  timeRange: 'upcoming',
+                  count: 3,
+                  requestedLimit: 15,
+                  effectiveLimit: 10,
+                  capped: true,
+                  completeness: 'incomplete',
+                  entries: [],
+                },
+          );
+        });
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toContain('365 ngày gần nhất');
+      expect(result.text).toContain('10 mục');
+      expect(result.toolSummary).toContain('requestedPastDays=9999');
+      expect(result.toolSummary).toContain('requestedLimit=15');
+      expect(result.toolSummary).not.toContain(
+        'requestedPastDays=9999; effectivePastDays=365; capped=true; completeness=incomplete; requestedLimit=15',
+      );
+    });
+
     it('enriches toolSummary with deterministic result lines and identifiers', async () => {
       const adapter = makeAdapter([
         makeMultiToolCallResponse([
@@ -1161,7 +1252,7 @@ describe('LlmAgentService', () => {
           .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
       };
       const service = new LlmAgentService<StubToolContext>(
-        { maxInputTokens: 8_500 },
+        { maxInputTokens: 9_500 },
         {
           llmExecution,
           usageRecorder,
@@ -1513,7 +1604,7 @@ describe('LlmAgentService', () => {
       });
       const observationOutcomeInc = jest.fn();
       const boundedService = new LlmAgentService<StubToolContext>(
-        { maxInputTokens: 8_200 },
+        { maxInputTokens: 12_000 },
         {
           llmExecution: {
             run: jest
@@ -1546,7 +1637,7 @@ describe('LlmAgentService', () => {
             ),
           0,
         ),
-      ).toBeLessThanOrEqual(700);
+      ).toBeLessThanOrEqual(6_000);
       const toolMessages = secondRequest.filter(
         (message) => message.role === 'tool',
       );
@@ -1621,7 +1712,7 @@ describe('LlmAgentService', () => {
         logger: { warn: jest.fn(), debug: jest.fn() },
       };
       const service = new LlmAgentService<StubToolContext>(
-        { maxInputTokens: 8_200, maxToolRounds: 3 },
+        { maxInputTokens: 5_500, maxToolRounds: 3 },
         ports,
       );
 
@@ -1728,7 +1819,7 @@ describe('LlmAgentService', () => {
       };
       const execute = jest.fn().mockResolvedValue({ entries: [] });
       const service = new LlmAgentService<StubToolContext>(
-        { maxInputTokens: 8_200 },
+        { maxInputTokens: 5_000 },
         {
           llmExecution: {
             run: jest
@@ -1759,7 +1850,7 @@ describe('LlmAgentService', () => {
           ) ?? 0),
         0,
       );
-      expect(totalChars).toBeLessThanOrEqual(650);
+      expect(totalChars).toBeLessThanOrEqual(700);
       // The oversized-argument group was evicted whole (with its results).
       expect(
         secondRequest.some(
@@ -1926,7 +2017,7 @@ describe('LlmAgentService', () => {
       const { service } = buildService(
         { adapter, execute },
         {
-          maxInputTokens: 8_500,
+          maxInputTokens: 6_500,
           maxToolRounds: 3,
           maxToolExecutionsPerTurn: 2,
           maxToolRunsPerNamePerTurn: 2,
@@ -2087,7 +2178,20 @@ describe('LlmAgentService', () => {
         makeToolCallResponse('get_user_goals'),
         makeToolCallResponse('get_upcoming_study_sessions'),
       ]);
-      const execute = jest.fn().mockResolvedValue({ goals: [] });
+      const execute = jest.fn().mockImplementation((toolName: string) =>
+        Promise.resolve(
+          toolName === 'get_upcoming_study_sessions'
+            ? {
+                count: 10,
+                requestedLimit: 15,
+                effectiveLimit: 10,
+                capped: true,
+                completeness: 'incomplete',
+                sessions: [],
+              }
+            : { goals: [] },
+        ),
+      );
 
       const ports: LlmAgentPorts<StubToolContext> = {
         llmExecution: {
@@ -2122,6 +2226,7 @@ describe('LlmAgentService', () => {
       expect(result.text).toContain('Đã lấy được dữ liệu');
       expect(result.text).toContain('mục tiêu band và ngày thi');
       expect(result.text).toContain('lịch học sắp tới');
+      expect(result.text).toContain('Mình đã lấy 10 mục');
       expect(result.text).not.toContain('get_user_goals');
     });
 
@@ -2744,9 +2849,7 @@ describe('LlmAgentService', () => {
       const newestHistory = { role: 'assistant' as const, content: 'newest' };
       const userMessage = { role: 'user' as const, content: 'current' };
       const toolTokens = estimateTokens(
-        JSON.stringify(
-          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
-        ),
+        JSON.stringify(CONTEXT_TOOL_DEFINITIONS),
       );
       const budgetWithReasoning =
         estimateTokens(
@@ -2815,9 +2918,7 @@ describe('LlmAgentService', () => {
       };
       const userMessage = { role: 'user' as const, content: 'current' };
       const toolTokens = estimateTokens(
-        JSON.stringify(
-          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
-        ),
+        JSON.stringify(CONTEXT_TOOL_DEFINITIONS),
       );
       const systemWithoutOptionalParts = `${composeChatSystemPrompt({
         core: promptParts.core,
@@ -2875,9 +2976,7 @@ describe('LlmAgentService', () => {
       const newestHistory = { role: 'user' as const, content: 'NEWEST' };
       const userMessage = { role: 'user' as const, content: 'current' };
       const toolTokens = estimateTokens(
-        JSON.stringify(
-          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
-        ),
+        JSON.stringify(CONTEXT_TOOL_DEFINITIONS),
       );
       const system = `${composeChatSystemPrompt(promptParts)}\n\n${REASONING_INSTRUCTION}`;
       const budget =
@@ -2930,9 +3029,7 @@ describe('LlmAgentService', () => {
       const newestHistory = { role: 'user' as const, content: 'NEWEST' };
       const userMessage = { role: 'user' as const, content: 'current' };
       const toolTokens = estimateTokens(
-        JSON.stringify(
-          AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
-        ),
+        JSON.stringify(CONTEXT_TOOL_DEFINITIONS),
       );
       const system = `${composeChatSystemPrompt(promptParts)}\n\n${REASONING_INSTRUCTION}`;
       const budget =

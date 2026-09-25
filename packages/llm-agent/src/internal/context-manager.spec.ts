@@ -1,8 +1,7 @@
-import { AGENT_TOOLS } from '../agent.tools';
 import type { LlmMessage } from '../provider/types';
 import type { LlmAgentInput } from '../types';
 import { AgentLimits, estimateTokens } from './agent-limits';
-import { ContextManager } from './context-manager';
+import { CONTEXT_TOOL_DEFINITIONS, ContextManager } from './context-manager';
 
 const input: LlmAgentInput = {
   externalUserId: 'test-user',
@@ -41,9 +40,7 @@ describe('ContextManager', () => {
 
   it('counts serialized tools and fixed messages in the budget', () => {
     const toolsTokens = estimateTokens(
-      JSON.stringify(
-        AGENT_TOOLS.map(({ metadata: _metadata, ...tool }) => tool),
-      ),
+      JSON.stringify(CONTEXT_TOOL_DEFINITIONS),
     );
     const manager = new ContextManager(
       new AgentLimits({

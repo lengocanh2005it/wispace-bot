@@ -107,12 +107,25 @@ function exposeCapabilityVocabulary(
 
 const noArgs = z.object({}).strict();
 
+const MAX_UPCOMING_LIMIT = 10;
+const MAX_PAST_DAYS = 365;
+
+function boundedPositiveInteger(max: number, description: string) {
+  return z.preprocess(
+    (value) =>
+      typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+        ? Math.min(value, max)
+        : value,
+    z.int().min(1).max(max).describe(description).optional(),
+  );
+}
+
 const getUpcomingStudySessionsArgs = z
   .object({
-    limit: z
-      .number()
-      .describe('Số buổi tối đa trả về (mặc định 5).')
-      .optional(),
+    limit: boundedPositiveInteger(
+      MAX_UPCOMING_LIMIT,
+      'Số buổi tối đa trả về (mặc định 5).',
+    ),
   })
   .strict();
 
@@ -122,20 +135,22 @@ const listStudyCalendarEntriesArgs = z
       .enum(['upcoming', 'past', 'all'])
       .describe('upcoming = sắp tới (mặc định); past = đã qua; all = cả hai.')
       .optional(),
-    limit: z.number().describe('Số buổi tối đa (mặc định 10).').optional(),
-    pastDays: z
-      .number()
-      .describe(
-        'Với past/all: chỉ lấy buổi trong N ngày gần đây (mặc định 90).',
-      )
-      .optional(),
+    limit: boundedPositiveInteger(
+      MAX_UPCOMING_LIMIT,
+      'Số buổi tối đa (mặc định 10).',
+    ),
+    pastDays: boundedPositiveInteger(
+      MAX_PAST_DAYS,
+      'Với past/all: chỉ lấy buổi trong N ngày gần đây (mặc định 90).',
+    ),
   })
   .strict();
 
 const rescheduleStudySessionArgs = z
   .object({
     calendarId: z
-      .number()
+      .int()
+      .min(1)
       .describe('Id buổi học cần dời (từ list_study_calendar_entries).'),
     schedulingMode: z
       .enum(['default_next_day_same_time', 'explicit'])
@@ -164,6 +179,169 @@ export type ListStudyCalendarEntriesArgs = z.infer<
 export type RescheduleStudySessionArgs = z.infer<
   typeof rescheduleStudySessionArgs
 >;
+
+export type ToolResultCompleteness = 'incomplete' | 'unknown';
+
+export interface BoundedToolResultMetadata {
+  requestedLimit?: number;
+  effectiveLimit: number;
+  requestedPastDays?: number;
+  effectivePastDays?: number;
+  capped: boolean;
+  completeness: ToolResultCompleteness;
+}
+
+export function buildBoundedToolResultMetadata(input: {
+  requestedLimit?: number;
+  effectiveLimit: number;
+  requestedPastDays?: number;
+  effectivePastDays?: number;
+}): BoundedToolResultMetadata {
+  const capped =
+    (input.requestedLimit !== undefined &&
+      input.requestedLimit > input.effectiveLimit) ||
+    (input.requestedPastDays !== undefined &&
+      input.effectivePastDays !== undefined &&
+      input.requestedPastDays > input.effectivePastDays);
+
+  return {
+    ...(input.requestedLimit === undefined
+      ? {}
+      : { requestedLimit: input.requestedLimit }),
+    effectiveLimit: input.effectiveLimit,
+    ...(input.requestedPastDays === undefined
+      ? {}
+      : { requestedPastDays: input.requestedPastDays }),
+    ...(input.effectivePastDays === undefined
+      ? {}
+      : { effectivePastDays: input.effectivePastDays }),
+    capped,
+    completeness: capped ? 'incomplete' : 'unknown',
+  };
+}
+
+export type CalendarTimeRange = 'upcoming' | 'past' | 'all';
+
+export interface BoundedToolDisclosure {
+  timeRange?: CalendarTimeRange;
+  limit: number;
+  pastDays?: number;
+  requestedLimit?: number;
+  requestedPastDays?: number;
+  count?: number;
+  capped: boolean;
+  completeness: ToolResultCompleteness;
+}
+
+const boundedToolDisclosureSchema = z
+  .object({
+    timeRange: z.enum(['upcoming', 'past', 'all']).optional(),
+    requestedLimit: z.int().min(1).optional(),
+    effectiveLimit: z.int().min(1),
+    requestedPastDays: z.int().min(1).optional(),
+    effectivePastDays: z.int().min(1).optional(),
+    count: z.int().min(0).optional(),
+    capped: z.boolean(),
+    completeness: z.enum(['incomplete', 'unknown']),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.capped && value.completeness !== 'incomplete') ||
+      (!value.capped && value.completeness !== 'unknown')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Invalid bounded result completeness',
+      });
+    }
+  });
+
+function sameBoundedToolScope(
+  current: BoundedToolDisclosure,
+  next: BoundedToolDisclosure,
+): boolean {
+  return (
+    current.timeRange === next.timeRange &&
+    current.limit === next.limit &&
+    current.pastDays === next.pastDays &&
+    current.requestedLimit === next.requestedLimit &&
+    current.requestedPastDays === next.requestedPastDays
+  );
+}
+
+export function mergeBoundedToolDisclosures(
+  current: BoundedToolDisclosure | undefined,
+  next: BoundedToolDisclosure,
+): BoundedToolDisclosure {
+  if (!current) return next;
+  if (!sameBoundedToolScope(current, next)) {
+    return current.capped ? current : next;
+  }
+  if (current.capped !== next.capped) {
+    if (!current.capped) return next;
+    return {
+      ...(current.timeRange === undefined
+        ? {}
+        : { timeRange: current.timeRange }),
+      limit: current.limit,
+      ...(current.pastDays === undefined ? {} : { pastDays: current.pastDays }),
+      ...(current.requestedLimit === undefined
+        ? {}
+        : { requestedLimit: current.requestedLimit }),
+      ...(current.requestedPastDays === undefined
+        ? {}
+        : { requestedPastDays: current.requestedPastDays }),
+      capped: true,
+      completeness: 'incomplete',
+    };
+  }
+  if (!current.capped) return next;
+  return {
+    ...(current.timeRange === undefined
+      ? {}
+      : { timeRange: current.timeRange }),
+    limit: current.limit,
+    ...(current.pastDays === undefined ? {} : { pastDays: current.pastDays }),
+    ...(current.requestedLimit === undefined
+      ? {}
+      : { requestedLimit: current.requestedLimit }),
+    ...(current.requestedPastDays === undefined
+      ? {}
+      : { requestedPastDays: current.requestedPastDays }),
+    ...(current.count === next.count && current.count !== undefined
+      ? { count: current.count }
+      : {}),
+    capped: true,
+    completeness: 'incomplete',
+  };
+}
+
+export function readBoundedToolDisclosure(
+  value: unknown,
+): BoundedToolDisclosure | undefined {
+  const parsed = boundedToolDisclosureSchema.safeParse(value);
+  if (!parsed.success) return undefined;
+  const {
+    timeRange,
+    requestedLimit,
+    effectiveLimit,
+    requestedPastDays,
+    effectivePastDays,
+    count,
+    capped,
+    completeness,
+  } = parsed.data;
+  return {
+    ...(timeRange === undefined ? {} : { timeRange }),
+    limit: effectiveLimit,
+    ...(effectivePastDays === undefined ? {} : { pastDays: effectivePastDays }),
+    ...(requestedLimit === undefined ? {} : { requestedLimit }),
+    ...(requestedPastDays === undefined ? {} : { requestedPastDays }),
+    ...(count === undefined ? {} : { count }),
+    capped,
+    completeness,
+  };
+}
 
 export const COMMON_TOOL_OBSERVATION_FIELDS = [
   'available',
@@ -216,7 +394,14 @@ const agentToolSpecs = [
     capability: READ_ONLY_CAPABILITY,
     metadata: {
       observationFields: [
+        'timeRange',
         'count',
+        'requestedLimit',
+        'effectiveLimit',
+        'requestedPastDays',
+        'effectivePastDays',
+        'capped',
+        'completeness',
         'sessions',
         'reminderNotice',
         ...COMMON_TOOL_OBSERVATION_FIELDS,
@@ -236,6 +421,12 @@ const agentToolSpecs = [
       observationFields: [
         'timeRange',
         'count',
+        'requestedLimit',
+        'effectiveLimit',
+        'requestedPastDays',
+        'effectivePastDays',
+        'capped',
+        'completeness',
         'entries',
         'reminderNotice',
         ...COMMON_TOOL_OBSERVATION_FIELDS,
@@ -548,7 +739,12 @@ export function deriveAgentToolMap<Value>(
 }
 
 export type ToolArgumentValidationResult =
-  | { ok: true; args: Record<string, unknown>; canonicalArgs: string }
+  | {
+      ok: true;
+      args: Record<string, unknown>;
+      requestedArgs?: Record<string, unknown>;
+      canonicalArgs: string;
+    }
   | { ok: false; error: string };
 
 /** Stable JSON used for dedupe and approval binding. */
@@ -594,10 +790,16 @@ export function parseAndValidateToolArguments(
   const schema = options.allowMissingRequired ? tool.args.partial() : tool.args;
   const result = schema.safeParse(value);
   if (result.success) {
+    const args = result.data as Record<string, unknown>;
+    const canonicalArgs = canonicalizeToolArguments(value);
+    const normalizedCanonicalArgs = canonicalizeToolArguments(args);
     return {
       ok: true,
-      args: value,
-      canonicalArgs: canonicalizeToolArguments(value),
+      args,
+      ...(normalizedCanonicalArgs === canonicalArgs
+        ? {}
+        : { requestedArgs: value }),
+      canonicalArgs,
     };
   }
   return {
@@ -647,22 +849,31 @@ function hasArgValue(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+function assertPositiveInteger(
+  value: unknown,
+  name: string,
+): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`Invalid tool argument: ${name}`);
+  }
+}
+
 export function readPositiveLimit(value: unknown, fallback: number): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.min(Math.floor(parsed), 10);
+  if (value === undefined) return fallback;
+  assertPositiveInteger(value, 'limit');
+  return Math.min(value, MAX_UPCOMING_LIMIT);
 }
 
 export function readPastDays(value: unknown): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 90;
-  return Math.min(Math.floor(parsed), 365);
+  if (value === undefined) return 90;
+  assertPositiveInteger(value, 'pastDays');
+  return Math.min(value, MAX_PAST_DAYS);
 }
 
 export function readPositiveInteger(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-  return Math.floor(parsed);
+  if (value === undefined) return undefined;
+  assertPositiveInteger(value, 'calendarId');
+  return value;
 }
 
 function readOptionalString(value: unknown): string | undefined {

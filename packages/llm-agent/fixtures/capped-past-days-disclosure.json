@@ -1,0 +1,60 @@
+{
+  "name": "capped-past-days-disclosure",
+  "description": "An over-limit historical window is clamped and the model receives an explicit bounded-window disclosure.",
+  "tier": "must-block",
+  "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "b58b9e35aabb8838a1899435ce42aa75afbcacc7b6dcb2732c4510bf577799c7"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1507).",
+  "userText": "cho mình xem toàn bộ lịch học trong nhiều năm qua",
+  "externalUserId": "eval-931-cap-past",
+  "userId": 1507,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "list_study_calendar_entries",
+          "args": { "timeRange": "past", "pastDays": 9999 },
+          "result": {
+            "timeRange": "past",
+            "count": 0,
+            "effectiveLimit": 10,
+            "requestedPastDays": 9999,
+            "effectivePastDays": 365,
+            "capped": true,
+            "completeness": "incomplete",
+            "entries": []
+          }
+        }
+      ]
+    },
+    {
+      "text": "Đây là toàn bộ lịch học trong suốt nhiều năm qua."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["list_study_calendar_entries"],
+    "replyTextContains": [
+      "Mình đã lấy 0 mục trong giới hạn 10 mục và 365 ngày gần nhất"
+    ],
+    "replyTextNotContains": [
+      "Đây là toàn bộ lịch học trong suốt nhiều năm qua."
+    ],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: list_study_calendar_entries]\n[Kết quả]\nlist_study_calendar_entries: timeRange=past; count=0; effectiveLimit=10; requestedPastDays=9999; effectivePastDays=365; capped=true; completeness=incomplete",
+    "groundingWarnings": 1,
+    "requestContracts": [
+      {
+        "round": 1,
+        "messageContentContains": [
+          "\"effectivePastDays\":365",
+          "\"capped\":true"
+        ]
+      }
+    ]
+  }
+}

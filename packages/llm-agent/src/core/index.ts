@@ -36,6 +36,7 @@ export {
   readPositiveLimit,
   readPastDays,
   readPositiveInteger,
+  buildBoundedToolResultMetadata,
   readValidatedDate,
   readValidatedTime,
   getAgentToolDefinition,
@@ -63,6 +64,10 @@ export type {
   AgentToolGroundingClaim,
   AgentToolBudgetClassification,
   ToolArgumentValidationResult,
+  BoundedToolResultMetadata,
+  CalendarTimeRange,
+  ToolResultCompleteness,
+  BoundedToolDisclosure,
 } from '../agent.tools';
 
 export type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
@@ -97,6 +102,7 @@ export {
   buildStopAcknowledgedMessage,
   buildClarificationUnavailableMessage,
   buildGroundingBlockedMessage,
+  buildCappedResultMessage,
   buildPrecreateExerciseUnavailableMessage,
   buildWriteToolDailyBudgetMessage,
   buildWriteToolPerMessageBudgetMessage,

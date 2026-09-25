@@ -1,12 +1,17 @@
 import {
+  canonicalizeToolArguments,
   getAgentToolDefinition,
   isAgentToolName,
+  mergeBoundedToolDisclosures,
   parseAndValidateToolArguments,
+  readBoundedToolDisclosure,
   type AgentToolName,
+  type BoundedToolDisclosure,
 } from '../agent.tools';
 import type { AgentMetricsPort, ToolExecutorPort } from '../ports';
 import {
   fitToolObservation,
+  minimumToolObservationLength,
   observationMarker,
   reduceToolObservation,
   type ToolObservationOutcome,
@@ -20,6 +25,30 @@ import {
 } from '@wispace/bot-common/masking';
 import type { LlmAgentInput } from '../types';
 import { AgentLimits } from './agent-limits';
+
+function observationMarkerWithinBudget(
+  kind: 'reused' | 'truncated' | 'fallback',
+  ok: boolean,
+  maxChars: number,
+): string {
+  const marker = observationMarker(kind, ok);
+  if (marker.length <= maxChars) return marker;
+  const compact = JSON.stringify({ ok });
+  return compact.length <= maxChars ? compact : '';
+}
+
+function fitObservationWithinBudget(
+  content: string,
+  maxChars: number,
+  ok: boolean,
+): { content: string; wasTruncated: boolean } {
+  const fitted = fitToolObservation(content, maxChars);
+  if (fitted.content.length <= maxChars) return fitted;
+  return {
+    content: observationMarkerWithinBudget('truncated', ok, maxChars),
+    wasTruncated: true,
+  };
+}
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -62,6 +91,7 @@ export interface ToolRoundResult {
   toolName: string;
   content: string;
   succeeded: boolean;
+  boundedDisclosure?: BoundedToolDisclosure;
 }
 
 export interface ToolRoundExecution {
@@ -70,6 +100,7 @@ export interface ToolRoundExecution {
   executedCount: number;
   /** One entry per successful deduplicated execution, preserving tool-name multiplicity. */
   successfulToolNames: AgentToolName[];
+  boundedToolDisclosures: Map<string, BoundedToolDisclosure>;
 }
 
 /** Executes one model tool round while preserving provider message pairing. */
@@ -115,6 +146,7 @@ export class ToolRoundExecutor<TToolContext> {
     >();
     let executedInRound = 0;
     let executedCount = 0;
+    const boundedToolDisclosures = new Map<string, BoundedToolDisclosure>();
 
     const executeCall = async (toolCall: (typeof uniqueCalls)[number]) => {
       const toolName = toolCall.name;
@@ -198,6 +230,16 @@ export class ToolRoundExecutor<TToolContext> {
           `Tool ${toolName}`,
           () => controller.abort(),
         );
+        const boundedToolDisclosure = readBoundedToolDisclosure(result);
+        if (boundedToolDisclosure !== undefined) {
+          boundedToolDisclosures.set(
+            key,
+            mergeBoundedToolDisclosures(
+              boundedToolDisclosures.get(key),
+              boundedToolDisclosure,
+            ),
+          );
+        }
         resultsByKey.set(key, {
           observation: reduceToolObservation({
             toolName,
@@ -284,18 +326,29 @@ export class ToolRoundExecutor<TToolContext> {
       }
     }
 
-    const minimumMarkerBudget = toolCalls.reduce((sum, call) => {
-      const execution = resultsByKey.get(this.toolCallKey(call));
-      return (
-        sum +
-        observationMarker('truncated', execution?.succeeded ?? false).length
-      );
-    }, 0);
-    let extraBudget = Math.max(0, observationBudget - minimumMarkerBudget);
+    let remainingObservationBudget = Math.max(0, observationBudget);
     let remainingUnique = uniqueCalls.length;
     const emittedObservationKeys = new Set<string>();
     const allocatedByKey = new Map<string, string>();
     const outcomesByKey = new Map<string, ToolObservationOutcome>();
+    const minimumByKey = new Map(
+      uniqueCalls.map((call) => {
+        const callKey = this.toolCallKey(call);
+        const execution = resultsByKey.get(callKey);
+        const full = fullByKey.get(callKey);
+        return [
+          callKey,
+          full
+            ? minimumToolObservationLength(
+                full.content,
+                execution?.succeeded ?? false,
+                call.name,
+              )
+            : observationMarker('truncated', false).length,
+        ];
+      }),
+    );
+    const pendingUniqueKeys = new Set(minimumByKey.keys());
 
     for (const call of toolCalls) {
       const callKey = this.toolCallKey(call);
@@ -310,29 +363,59 @@ export class ToolRoundExecutor<TToolContext> {
       const resultKey = `${call.id}:${callKey}`;
 
       if (emittedObservationKeys.has(observationKey)) {
-        allocatedByKey.set(
-          resultKey,
-          observationMarker('reused', execution.succeeded),
+        const marker = observationMarkerWithinBudget(
+          'reused',
+          execution.succeeded,
+          remainingObservationBudget,
         );
+        allocatedByKey.set(resultKey, marker);
         outcomesByKey.set(resultKey, 'deduped');
+        remainingObservationBudget = Math.max(
+          0,
+          remainingObservationBudget - marker.length,
+        );
         continue;
       }
       emittedObservationKeys.add(observationKey);
+      pendingUniqueKeys.delete(callKey);
       remainingUnique = Math.max(1, remainingUnique);
-      const markerLength = observationMarker(
-        'truncated',
-        execution.succeeded,
-      ).length;
+      const markerLength = full
+        ? minimumToolObservationLength(
+            full.content,
+            execution.succeeded,
+            call.name,
+          )
+        : observationMarker('truncated', execution.succeeded).length;
+      const fairShare = Math.max(
+        1,
+        Math.floor(remainingObservationBudget / remainingUnique),
+      );
+      const reserveForRemaining = [...pendingUniqueKeys].reduce(
+        (total, key) => total + (minimumByKey.get(key) ?? 0),
+        0,
+      );
+      const availableAfterReserve = Math.max(
+        0,
+        remainingObservationBudget - reserveForRemaining,
+      );
       const allocation = Math.max(
-        markerLength,
-        markerLength + Math.floor(extraBudget / remainingUnique),
+        1,
+        Math.min(
+          remainingObservationBudget,
+          Math.max(markerLength, Math.min(fairShare, availableAfterReserve)),
+        ),
       );
       const fitted = full
-        ? fitToolObservation(full.content, allocation)
+        ? fitObservationWithinBudget(
+            full.content,
+            allocation,
+            execution.succeeded,
+          )
         : {
-            content: observationMarker(
+            content: observationMarkerWithinBudget(
               execution.succeeded ? 'truncated' : 'fallback',
               execution.succeeded,
+              allocation,
             ),
             wasTruncated: true,
           };
@@ -345,9 +428,9 @@ export class ToolRoundExecutor<TToolContext> {
             ? 'truncated'
             : 'kept',
       );
-      extraBudget = Math.max(
+      remainingObservationBudget = Math.max(
         0,
-        extraBudget - Math.max(0, fitted.content.length - markerLength),
+        remainingObservationBudget - fitted.content.length,
       );
       remainingUnique -= 1;
     }
@@ -371,10 +454,18 @@ export class ToolRoundExecutor<TToolContext> {
           allocatedByKey.get(resultKey) ??
           observationMarker('fallback', result.succeeded),
         succeeded: result.succeeded,
+        ...(boundedToolDisclosures.has(key)
+          ? { boundedDisclosure: boundedToolDisclosures.get(key) }
+          : {}),
       };
     });
 
-    return { results, executedCount, successfulToolNames };
+    return {
+      results,
+      executedCount,
+      successfulToolNames,
+      boundedToolDisclosures,
+    };
   }
 
   private toolCallKey(call: { name: string; arguments: string }): string {
@@ -382,7 +473,11 @@ export class ToolRoundExecutor<TToolContext> {
       call.name,
       call.arguments || '{}',
     );
-    return `${call.name}:${validated.ok ? validated.canonicalArgs : call.arguments || '{}'}`;
+    return `${call.name}:${
+      validated.ok
+        ? canonicalizeToolArguments(validated.requestedArgs ?? validated.args)
+        : call.arguments || '{}'
+    }`;
   }
 
   private missingObservation(

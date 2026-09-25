@@ -12,7 +12,9 @@ exports[`agent tool provider-facing JSON Schema (ADR 0010) matches the committed
     "properties": {
       "limit": {
         "description": "Số buổi tối đa trả về (mặc định 5).",
-        "type": "number",
+        "maximum": 10,
+        "minimum": 1,
+        "type": "integer",
       },
     },
     "type": "object",
@@ -27,11 +29,15 @@ exports[`agent tool provider-facing JSON Schema (ADR 0010) matches the committed
     "properties": {
       "limit": {
         "description": "Số buổi tối đa (mặc định 10).",
-        "type": "number",
+        "maximum": 10,
+        "minimum": 1,
+        "type": "integer",
       },
       "pastDays": {
         "description": "Với past/all: chỉ lấy buổi trong N ngày gần đây (mặc định 90).",
-        "type": "number",
+        "maximum": 365,
+        "minimum": 1,
+        "type": "integer",
       },
       "timeRange": {
         "description": "upcoming = sắp tới (mặc định); past = đã qua; all = cả hai.",
@@ -65,7 +71,9 @@ exports[`agent tool provider-facing JSON Schema (ADR 0010) matches the committed
     "properties": {
       "calendarId": {
         "description": "Id buổi học cần dời (từ list_study_calendar_entries).",
-        "type": "number",
+        "maximum": 9007199254740991,
+        "minimum": 1,
+        "type": "integer",
       },
       "newLocalDate": {
         "description": "Ngày mới theo lịch VN, định dạng YYYY-MM-DD. Chỉ dùng khi schedulingMode=explicit.",

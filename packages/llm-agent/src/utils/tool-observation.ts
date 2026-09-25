@@ -53,6 +53,39 @@ const SESSION_FIELDS = [
   'reminderNotice',
 ] as const;
 
+const MINIMUM_BOUNDED_METADATA_FIELDS = ['capped'] as const;
+const COUNT_CAP_BOUNDED_METADATA_FIELDS = ['capped', 'count'] as const;
+const CAP_STATE_BOUNDED_METADATA_FIELDS = ['capped', 'completeness'] as const;
+const SCOPED_BOUNDED_METADATA_FIELDS = ['capped', 'timeRange'] as const;
+const SCOPED_COUNT_BOUNDED_METADATA_FIELDS = [
+  'capped',
+  'timeRange',
+  'count',
+] as const;
+const SCOPED_CAP_COUNT_BOUNDED_METADATA_FIELDS = [
+  'capped',
+  'completeness',
+  'timeRange',
+  'count',
+] as const;
+const SCOPED_CAP_STATE_BOUNDED_METADATA_FIELDS = [
+  'capped',
+  'completeness',
+  'timeRange',
+] as const;
+const PAST_WINDOW_BOUNDED_METADATA_FIELDS = [
+  'capped',
+  'timeRange',
+  'effectivePastDays',
+  'count',
+] as const;
+const CORE_BOUNDED_METADATA_FIELDS = [
+  'capped',
+  'completeness',
+  'timeRange',
+  'effectiveLimit',
+  'count',
+] as const;
 const TOOL_FIELDS: AgentToolMap<readonly string[]> = deriveAgentToolMap(
   (tool) => tool.metadata.observationFields,
 );
@@ -111,6 +144,195 @@ function pickSessionList(value: unknown): {
 interface ProjectedToolObservation {
   value: unknown;
   omittedCount: number;
+}
+
+function boundedMetadataFields(
+  value: Record<string, unknown>,
+): readonly string[] {
+  const fields = ['capped', 'completeness'];
+  if (typeof value.timeRange === 'string') fields.push('timeRange');
+  fields.push('effectiveLimit', 'count');
+  if (value.effectivePastDays !== undefined) {
+    fields.push('effectivePastDays');
+  }
+  if (value.requestedLimit !== undefined) fields.push('requestedLimit');
+  if (value.requestedPastDays !== undefined) fields.push('requestedPastDays');
+  return fields;
+}
+
+function prioritizeBoundedMetadata(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const prioritized: Record<string, unknown> = {};
+  for (const field of boundedMetadataFields(value)) {
+    if (Object.prototype.hasOwnProperty.call(value, field)) {
+      prioritized[field] = value[field];
+    }
+  }
+  return Object.keys(prioritized).length > 0
+    ? { ...prioritized, ...value }
+    : value;
+}
+
+function compactBoundedMetadata(
+  value: unknown,
+  ok: boolean,
+  maxChars: number,
+  fields?: readonly string[],
+  includeObservationMarker = true,
+  includeOk = true,
+): string | undefined {
+  if (!ok || !isRecord(value)) return undefined;
+  const hasCapped = value.capped === true || value.capped === false;
+  const hasCompleteness =
+    value.completeness === 'incomplete' || value.completeness === 'unknown';
+  if (!hasCapped && !hasCompleteness) return undefined;
+  const availableFields = fields ?? boundedMetadataFields(value);
+  const serialize = (
+    selectedFields: readonly string[],
+    withMarker: boolean,
+    withOk = true,
+  ): string => {
+    const data: Record<string, unknown> = {};
+    for (const field of selectedFields) {
+      const fieldValue = value[field];
+      const safe =
+        (field === 'capped' && typeof fieldValue === 'boolean') ||
+        (field === 'completeness' &&
+          (fieldValue === 'incomplete' || fieldValue === 'unknown')) ||
+        (field === 'timeRange' &&
+          (fieldValue === 'upcoming' ||
+            fieldValue === 'past' ||
+            fieldValue === 'all')) ||
+        (field !== 'capped' &&
+          field !== 'completeness' &&
+          field !== 'timeRange' &&
+          typeof fieldValue === 'number' &&
+          Number.isSafeInteger(fieldValue) &&
+          fieldValue >= 0);
+      if (safe) data[field] = fieldValue;
+    }
+    return JSON.stringify({
+      ...(withOk ? { ok: true } : {}),
+      data,
+      ...(withMarker ? { _observation: 'truncated' } : {}),
+    });
+  };
+
+  const fullContent = serialize(
+    availableFields,
+    includeObservationMarker,
+    includeOk,
+  );
+  if (fullContent.length <= maxChars) return fullContent;
+  if (includeObservationMarker) {
+    const coreContent = serialize(
+      CORE_BOUNDED_METADATA_FIELDS,
+      false,
+      includeOk,
+    );
+    if (coreContent.length <= maxChars) return coreContent;
+    if (
+      (value.timeRange === 'past' || value.timeRange === 'all') &&
+      typeof value.effectivePastDays === 'number' &&
+      Number.isSafeInteger(value.effectivePastDays) &&
+      value.effectivePastDays > 0
+    ) {
+      const pastWindowContent = serialize(
+        PAST_WINDOW_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      );
+      if (pastWindowContent.length <= maxChars) return pastWindowContent;
+    }
+    if (typeof value.timeRange === 'string') {
+      const scopedCapCountContent = serialize(
+        SCOPED_CAP_COUNT_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      );
+      if (scopedCapCountContent.length <= maxChars) {
+        return scopedCapCountContent;
+      }
+      const scopedContent = serialize(
+        SCOPED_CAP_STATE_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      );
+      if (scopedContent.length <= maxChars) return scopedContent;
+      const scopedCountContent = serialize(
+        SCOPED_COUNT_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      );
+      if (scopedCountContent.length <= maxChars) return scopedCountContent;
+    }
+  }
+  for (let length = availableFields.length; length > 0; length -= 1) {
+    if (
+      length === 1 &&
+      hasCapped &&
+      hasCompleteness &&
+      availableFields.includes('capped') &&
+      availableFields.includes('completeness')
+    ) {
+      continue;
+    }
+    const content = serialize(
+      availableFields.slice(0, length),
+      includeObservationMarker,
+      includeOk,
+    );
+    if (content.length <= maxChars) return content;
+  }
+  if (includeObservationMarker) {
+    const scopedContent =
+      typeof value.timeRange === 'string'
+        ? compactBoundedMetadata(
+            value,
+            ok,
+            maxChars,
+            SCOPED_BOUNDED_METADATA_FIELDS,
+            false,
+            false,
+          )
+        : undefined;
+    return (
+      compactBoundedMetadata(
+        value,
+        ok,
+        maxChars,
+        SCOPED_CAP_STATE_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      ) ??
+      compactBoundedMetadata(
+        value,
+        ok,
+        maxChars,
+        COUNT_CAP_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      ) ??
+      scopedContent ??
+      compactBoundedMetadata(
+        value,
+        ok,
+        maxChars,
+        CAP_STATE_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      ) ??
+      compactBoundedMetadata(
+        value,
+        ok,
+        maxChars,
+        MINIMUM_BOUNDED_METADATA_FIELDS,
+        false,
+        false,
+      )
+    );
+  }
+  return undefined;
 }
 
 function projectKnownToolObservation(
@@ -365,6 +587,40 @@ function fallbackObservation(ok: boolean, error?: string): string {
   });
 }
 
+export function minimumToolObservationLength(
+  content: string,
+  ok: boolean,
+  toolName?: string,
+): number {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (isRecord(parsed) && isRecord(parsed.data)) {
+      const data = parsed.data;
+      const fields =
+        (data.timeRange === 'past' || data.timeRange === 'all') &&
+        typeof data.effectivePastDays === 'number'
+          ? PAST_WINDOW_BOUNDED_METADATA_FIELDS
+          : toolName === 'get_upcoming_study_sessions'
+            ? COUNT_CAP_BOUNDED_METADATA_FIELDS
+            : typeof data.timeRange === 'string'
+              ? SCOPED_COUNT_BOUNDED_METADATA_FIELDS
+              : MINIMUM_BOUNDED_METADATA_FIELDS;
+      const compact = compactBoundedMetadata(
+        data,
+        parsed.ok === true,
+        Number.MAX_SAFE_INTEGER,
+        fields,
+        false,
+        false,
+      );
+      if (compact) return compact.length;
+    }
+  } catch {
+    return observationMarker('truncated', ok).length;
+  }
+  return observationMarker('truncated', ok).length;
+}
+
 export function observationMarker(
   marker: 'reused' | 'truncated' | 'fallback',
   ok = true,
@@ -474,14 +730,48 @@ function reduceBoundedObservation(
     Math.min(input.maxChars, MAX_TOOL_OBSERVATION_CHARS),
   );
   let outcome: ReducedToolObservation['outcome'] = 'kept';
+  const projected = prioritizeBoundedMetadata(input.projected);
 
+  const metadataKeyCount = isRecord(projected)
+    ? boundedMetadataFields(projected).length
+    : 0;
   const attempts: BoundOptions[] = [
-    { depth: 0, maxStringChars: 2_000, maxKeys: MAX_KEYS, maxItems: MAX_ITEMS },
-    { depth: 0, maxStringChars: 1_000, maxKeys: 20, maxItems: 10 },
-    { depth: 0, maxStringChars: 500, maxKeys: 12, maxItems: 5 },
-    { depth: 0, maxStringChars: 200, maxKeys: 8, maxItems: 3 },
-    { depth: 0, maxStringChars: 80, maxKeys: 6, maxItems: 2 },
-    { depth: 0, maxStringChars: 40, maxKeys: 4, maxItems: 1 },
+    {
+      depth: 0,
+      maxStringChars: 2_000,
+      maxKeys: Math.max(MAX_KEYS, metadataKeyCount),
+      maxItems: MAX_ITEMS,
+    },
+    {
+      depth: 0,
+      maxStringChars: 1_000,
+      maxKeys: Math.max(20, metadataKeyCount),
+      maxItems: 10,
+    },
+    {
+      depth: 0,
+      maxStringChars: 500,
+      maxKeys: Math.max(12, metadataKeyCount),
+      maxItems: 5,
+    },
+    {
+      depth: 0,
+      maxStringChars: 200,
+      maxKeys: Math.max(8, metadataKeyCount),
+      maxItems: 3,
+    },
+    {
+      depth: 0,
+      maxStringChars: 80,
+      maxKeys: Math.max(6, metadataKeyCount),
+      maxItems: 2,
+    },
+    {
+      depth: 0,
+      maxStringChars: 40,
+      maxKeys: Math.max(4, metadataKeyCount),
+      maxItems: 1,
+    },
   ];
 
   // An injection hit is a property of the payload, not of which truncation
@@ -492,7 +782,7 @@ function reduceBoundedObservation(
   for (const options of attempts) {
     const candidate = serializeEnvelope(
       input.ok,
-      input.projected,
+      projected,
       input.error,
       options,
     );
@@ -507,6 +797,11 @@ function reduceBoundedObservation(
       wasTruncated,
       injection,
     );
+  }
+
+  const compact = compactBoundedMetadata(projected, input.ok, maxChars);
+  if (compact) {
+    return buildReducedObservation(compact, 'truncated', true, injection);
   }
 
   return buildReducedObservation(
@@ -528,12 +823,24 @@ export function fitToolObservation(
 
   try {
     const parsed = JSON.parse(content) as Record<string, unknown>;
-    const ok = parsed.ok === true;
+    const compactBounded =
+      parsed.ok === undefined &&
+      isRecord(parsed.data) &&
+      typeof parsed.data.capped === 'boolean' &&
+      (parsed.data.timeRange === 'upcoming' ||
+        parsed.data.timeRange === 'past' ||
+        parsed.data.timeRange === 'all' ||
+        (typeof parsed.data.count === 'number' &&
+          Number.isSafeInteger(parsed.data.count) &&
+          parsed.data.count >= 0));
+    const ok = parsed.ok === true || compactBounded;
     const reduced = reduceBoundedObservation({
       projected: ok ? parsed.data : undefined,
       error: ok ? undefined : String(parsed.error ?? 'tool execution failed'),
       ok,
       maxChars,
+      projectionWasTruncated:
+        parsed._observation === 'truncated' || compactBounded,
     });
     return { content: reduced.content, wasTruncated: true };
   } catch {
