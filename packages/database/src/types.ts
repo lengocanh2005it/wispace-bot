@@ -34,3 +34,13 @@ export type WebhookInboundEventStatus =
   | 'completed'
   | 'failed'
   | 'abandoned';
+
+/** Privacy erasure operation a durable cleanup job performs. */
+export type PrivacyCleanupOperation = 'unlink' | 'delete';
+
+/** Durable privacy cleanup job status. */
+export type PrivacyCleanupJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'stale';

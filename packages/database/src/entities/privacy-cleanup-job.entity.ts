@@ -6,12 +6,11 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Platform } from '@wispace/contracts';
+import type { Platform, PrivacyCleanupStore } from '@wispace/contracts';
 import type {
-  PrivacyCleanupOperation,
   PrivacyCleanupJobStatus,
-  PrivacyCleanupStore,
-} from '../services/metering-and-operations/privacy-cleanup-job.service';
+  PrivacyCleanupOperation,
+} from '../types';
 
 /** Durable, own-platform work item for state stores outside the DB transaction. */
 @Entity('privacy_cleanup_jobs')

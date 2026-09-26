@@ -8,15 +8,16 @@ import {
   type PrivacyCleanupStore,
 } from '@wispace/contracts';
 import { extractQueryRows, jitteredDelayMs } from '@wispace/bot-common/utils';
+import type {
+  PrivacyCleanupJobStatus,
+  PrivacyCleanupOperation,
+} from '../../types';
 
 export { PRIVACY_CLEANUP_STORES };
 export type { PrivacyCleanupStore };
-export type PrivacyCleanupOperation = 'unlink' | 'delete';
-export type PrivacyCleanupJobStatus =
-  | 'pending'
-  | 'processing'
-  | 'completed'
-  | 'stale';
+// Defined in ../../types so entities can name the persisted state without
+// depending on a service. Re-exported here to keep the public surface stable.
+export type { PrivacyCleanupOperation, PrivacyCleanupJobStatus };
 
 export const PRIVACY_CLEANUP_REQUEST_ATTEMPTS = 3;
 export const PRIVACY_CLEANUP_WORKER_BATCH_SIZE = 100;
