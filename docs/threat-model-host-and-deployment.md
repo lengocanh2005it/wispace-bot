@@ -211,17 +211,28 @@ A third lens, orthogonal to STRIDE: how well does the system resist the three cl
 
 ### SQL injection — no exploitable path found
 
-The repository contains exactly **three** string interpolations into SQL, and all three sit in *identifier* position, where Postgres placeholders are not available. They interpolate because they must, not through carelessness.
+The repository contains **27 SQL statement templates** in runtime code that interpolate a value into the statement text — roughly 40 interpolation points across 8 files — plus 15 further statements in migrations. Every one sits in *identifier* or *literal-clause* position, where Postgres placeholders are not available. They interpolate because they must, not through carelessness.
 
-| Site | Interpolates | What constrains it |
-|---|---|---|
-| `packages/database/src/services/metering-and-operations/privacy-data.service.ts:1252` | `table`, `column` | `VERIFY_INTENT_TABLES` is a `Record<Platform,string>` with three hardcoded entries; `if (!table) return` runs first |
-| `packages/study-reminder-shared/src/infrastructure/typeorm-study-reminder-job.repository.ts:419` | `timeoutMs` | `Math.max(1, Math.min(Math.trunc(x ?? 5000), 10000))` |
-| `packages/database/src/migrations/1786933000000-*.ts:121` | index name | Migration; developer-controlled |
+**None is reachable by learner-supplied input.** Each interpolates a value *selected from a literal* — never parsed from a webhook payload, HTTP body, query string, or environment variable. The three learning-adjacent values that do flow in (`externalUserId`, `userId`, `mappingGeneration`) are bound as `$1`…`$n` and only ever appear in value position, never inside interpolated text.
 
-User-supplied values always travel as bound parameters. At the first site `externalUserId` — the only attacker-reachable input — is `$1`; an unrecognised `platform` makes the table lookup `undefined` and the function returns before a query is built. Everything else goes through TypeORM, behind a global `ValidationPipe({whitelist, forbidNonWhitelisted})`, with zod at the WISPACE boundary.
+The sites fall into six constraint mechanisms. The mechanism — not the line number — is the thing to review.
 
-One structural weakness, not a security one: at the first site the thing protecting the `column` interpolation is the *table* lookup. The safety is emergent rather than declared, so someone removing the `!table` guard, or adding a branch that skips the lookup, would open a hole without realising what they had removed. Tracked in #1168.
+| Mechanism | Statements | Sites | What constrains it |
+|---|---|---|---|
+| **A.** Hardcoded `Platform` → identifier map | 10 | `privacy-data.service.ts:132, 413, 1252`; `platform-link-state.service.ts:72, 114, 139, 212, 251, 372`; `typeorm-study-reminder-job.repository.ts:438` | `Record<Platform,string>` with three literal entries; an unknown key throws or returns before a query is built |
+| **B.** Composition-root literal in a constructor or private-method argument | 3 | `typeorm-mapping-reader.ts:59`; `platform-cleanup-cron.service.ts:280, 287` | A string literal written in the app's `*.module.ts` or at a same-file call site — never from a request |
+| **C.** Static catalog plus a quote-escaping helper | 8 | all of `typeorm-data-quality.repository.ts` | Literal object arrays in `data-quality.catalog.ts`, sole importer, no runtime extension path; `identifier()` doubles `"` |
+| **D.** Private method with a TypeScript union-literal parameter | 1 | `notification-preference.service.ts:54` | `column: 'report_enabled' \| 'reminder_enabled'`; two literal call sites |
+| **E.** Escaped config value, or a numeric clamp | 2 | `migration-data-source.ts:79`; `typeorm-study-reminder-job.repository.ts:419` | `quoteIdentifier()` over a TypeORM option no wiring in this repo sets; `Math.trunc` plus a `1`–`10 000` clamp |
+| **F.** Two-literal ternary, or a pure function over literals | 3 | `chat-rate-limit.repository.ts:486, 511`; `typeorm-ops-health.repository.ts:216` | Literals, or a function whose only inputs are literals |
+
+Migrations account for 15 statements / 22 interpolation lines across four files, every value taken from a literal array in the migration source. `deploy/` and `.github/` interpolate none.
+
+The most-referenced single site, and the one the rest of this section discusses, is `privacy-data.service.ts:1252`: it interpolates `table` and `column` from `VERIFY_INTENT_TABLES`, a `Record<Platform,string>` with three hardcoded entries, guarded by `if (!table) return`. `externalUserId` — the only attacker-reachable input — is `$1`. An unrecognised `platform` makes the table lookup `undefined` and the function returns before a query is built. Everything else goes through TypeORM, behind a global `ValidationPipe({whitelist, forbidNonWhitelisted})`, with zod at the WISPACE boundary.
+
+One structural weakness, not a security one: at that site the thing protecting the `column` interpolation is the *table* lookup. The safety is emergent rather than declared, so someone removing the `!table` guard, or adding a branch that skips the lookup, would open a hole without realising what they had removed. Tracked in #1168.
+
+**The count is a snapshot, not an invariant.** An earlier revision of this document claimed "exactly three" and had been wrong for some time. Re-derive the inventory by scanning for identifier-position interpolations (`"${…}"`, and `${…}` directly after `FROM | JOIN | INTO | UPDATE | TABLE | INDEX | ON | SET`) in `apps/*/src` and `packages/*/src`, then classify each hit against the six mechanisms above. A count that silently drifts is worse than no count.
 
 ### Credential theft — well layered, with one registry that has drifted
 
