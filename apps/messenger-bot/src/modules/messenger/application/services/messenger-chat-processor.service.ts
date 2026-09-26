@@ -4,7 +4,6 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import { ConfigService } from '@nestjs/config';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import type {
   PipelineContext,
@@ -15,7 +14,6 @@ import {
   isConfirmationResponse,
   isCancellationResponse,
 } from '@wispace/llm-agent/core';
-import { PrivacyStateService } from '@wispace/llm-agent/adapters';
 import type { PrivacyIntent } from '@wispace/llm-agent/core';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
@@ -30,7 +28,7 @@ import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.por
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
-import { MessengerAgentService } from '../agent/messenger-agent.service';
+import { AGENT_REPLY, type AgentReplyPort } from '../ports/agent-reply.port';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import {
   buildChatDeliveryErrorMessage,
@@ -46,16 +44,19 @@ import {
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
 import {
+  CHAT_HISTORY,
+  CHAT_FLUSH_SETTINGS,
+  PRIVACY_DATA,
+  PRIVACY_STATE,
   PRIVACY_CLEANUP_STORES,
-  PrivacyDataService,
+  type ChatFlushSettings,
+  type ChatHistoryPort,
+  type PrivacyDataPort,
   type PrivacyExpectedMapping,
-} from '@wispace/database';
-import { createMessengerChatPipelineAdapters } from '../../infrastructure/adapters/messenger-chat-pipeline-adapters';
-import {
-  PlatformChatHistoryService,
-  readChatFlushRetrySettings,
-  ChatRuntimeConfig,
-} from '@wispace/chat-agent';
+  type PrivacyStatePort,
+} from '../chat-processing-seams.port';
+import { MESSENGER_CHAT_PIPELINE_PORTS } from '../ports/messenger-chat-pipeline-ports.port';
+import type { MessengerChatPipelinePorts } from '../ports/messenger-chat-pipeline-ports.port';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { isValidApprovalToken } from '@wispace/reschedule-confirm/core';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
@@ -86,44 +87,43 @@ export class MessengerChatProcessorService {
   private readonly logger = new Logger(MessengerChatProcessorService.name);
   private readonly pipeline: ChatPipeline;
   private queueClearer?: (psid: string) => Promise<void>;
-  private readonly retryEnabled: boolean;
-  private readonly retryDelayMs: number;
-  private readonly runtimeConfig: ChatRuntimeConfig;
   private readonly fallbackSentThisCycle = new Set<string>();
   private readonly rateLimitedThisCycle = new Set<string>();
 
   constructor(
     private readonly outbound: MessengerOutboundService,
-    private readonly messengerAgentService: MessengerAgentService,
+    @Inject(AGENT_REPLY)
+    private readonly messengerAgentService: AgentReplyPort,
     private readonly chatRateLimitService: ChatRateLimitService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,
     private readonly metrics: BotMetricsService,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    private readonly historyService: PlatformChatHistoryService,
-    configService: ConfigService,
+    @Inject(CHAT_HISTORY)
+    private readonly historyService: ChatHistoryPort,
+    @Inject(MESSENGER_CHAT_PIPELINE_PORTS)
+    pipelinePorts: MessengerChatPipelinePorts,
+    @Inject(CHAT_FLUSH_SETTINGS)
+    private readonly flushSettings: ChatFlushSettings,
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
-    private readonly privacyState?: PrivacyStateService,
-    private readonly privacyService?: PrivacyDataService,
+    @Optional()
+    @Inject(PRIVACY_STATE)
+    private readonly privacyState?: PrivacyStatePort,
+    @Optional()
+    @Inject(PRIVACY_DATA)
+    private readonly privacyService?: PrivacyDataPort,
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository?: MessengerMappingRepositoryPort,
     private readonly displayNameCache?: RedisUserDisplayNameCache,
-    @Optional() runtimeConfig?: ChatRuntimeConfig,
   ) {
-    this.runtimeConfig = runtimeConfig ?? new ChatRuntimeConfig(configService);
-    const retrySettings = readChatFlushRetrySettings(configService);
-    this.retryEnabled = retrySettings.enabled;
-    this.retryDelayMs = retrySettings.delayMs;
-
-    const adapters = createMessengerChatPipelineAdapters(
-      chatRateLimitService,
-      historyService,
-      messengerAgentService,
-      outbound,
-      configService,
-    );
+    const {
+      rateLimiter,
+      history,
+      agent,
+      outbound: outboundPort,
+    } = pipelinePorts;
 
     const hooks: ChatPipelineHooks = {
       onStep: async (step: string, ctx: PipelineContext) => {
@@ -196,7 +196,7 @@ export class MessengerChatProcessorService {
           psid: ctx.externalUserId,
           userId: ctx.userId,
           richFollowUps: (ctx.reply?.richFollowUps ?? []) as Awaited<
-            ReturnType<MessengerAgentService['reply']>
+            ReturnType<AgentReplyPort['reply']>
           >['richFollowUps'],
         });
       },
@@ -207,10 +207,10 @@ export class MessengerChatProcessorService {
     };
 
     this.pipeline = new ChatPipeline(
-      adapters.rateLimiter,
-      adapters.history,
-      adapters.agent,
-      adapters.outbound,
+      rateLimiter,
+      history,
+      agent,
+      outboundPort,
       hooks,
       pipelineConfig,
     );
@@ -244,7 +244,7 @@ export class MessengerChatProcessorService {
     const snapshot = await this.getChatQueueStore().claimReadyBuffer(
       psid,
       this.getDebounceMs(),
-      this.runtimeConfig.processingStuckMs,
+      this.flushSettings.processingStuckMs,
     );
 
     if (!snapshot || snapshot.texts.length === 0) {
@@ -332,16 +332,16 @@ export class MessengerChatProcessorService {
         this.rateLimitedThisCycle.has(psid)
       ) {
         shouldComplete = true;
-      } else if (this.retryEnabled) {
+      } else if (this.flushSettings.retryEnabled) {
         try {
           retryScheduled = await this.getChatQueueStore().scheduleRetryFlush(
             psid,
-            this.retryDelayMs,
+            this.flushSettings.retryDelayMs,
             snapshot.leaseToken,
           );
           if (retryScheduled) {
             this.logger.log(
-              `Chat flush retry scheduled for psid=${maskExternalId(psid)} after ${this.retryDelayMs}ms`,
+              `Chat flush retry scheduled for psid=${maskExternalId(psid)} after ${this.flushSettings.retryDelayMs}ms`,
             );
           }
         } catch (retryError) {
@@ -356,16 +356,16 @@ export class MessengerChatProcessorService {
       const fallbackWasSent = this.fallbackSentThisCycle.has(psid);
       if (fallbackWasSent) {
         shouldComplete = true;
-      } else if (this.retryEnabled) {
+      } else if (this.flushSettings.retryEnabled) {
         try {
           retryScheduled = await this.getChatQueueStore().scheduleRetryFlush(
             psid,
-            this.retryDelayMs,
+            this.flushSettings.retryDelayMs,
             snapshot.leaseToken,
           );
           if (retryScheduled) {
             this.logger.log(
-              `Chat flush retry scheduled for psid=${maskExternalId(psid)} after ${this.retryDelayMs}ms`,
+              `Chat flush retry scheduled for psid=${maskExternalId(psid)} after ${this.flushSettings.retryDelayMs}ms`,
             );
           }
         } catch (retryError) {
@@ -777,7 +777,7 @@ export class MessengerChatProcessorService {
 
   private async clearClarificationState(psid: string): Promise<void> {
     const clearer = (
-      this.messengerAgentService as MessengerAgentService & {
+      this.messengerAgentService as AgentReplyPort & {
         clearClarificationState?: (externalUserId: string) => Promise<void>;
       }
     ).clearClarificationState;
@@ -805,7 +805,7 @@ export class MessengerChatProcessorService {
     psid: string;
     userId?: number;
     richFollowUps: Awaited<
-      ReturnType<MessengerAgentService['reply']>
+      ReturnType<AgentReplyPort['reply']>
     >['richFollowUps'];
   }): Promise<void> {
     for (const [index, followUp] of params.richFollowUps.entries()) {
@@ -940,11 +940,11 @@ export class MessengerChatProcessorService {
     psid: string,
     leaseToken: string,
   ): Promise<void> {
-    if (!this.retryEnabled) return;
+    if (!this.flushSettings.retryEnabled) return;
     try {
       const scheduled = await this.getChatQueueStore().scheduleRetryFlush(
         psid,
-        this.retryDelayMs,
+        this.flushSettings.retryDelayMs,
         leaseToken,
       );
       if (scheduled) {
@@ -968,6 +968,6 @@ export class MessengerChatProcessorService {
   }
 
   private getDebounceMs(): number {
-    return this.runtimeConfig.debounceMs;
+    return this.flushSettings.debounceMs;
   }
 }

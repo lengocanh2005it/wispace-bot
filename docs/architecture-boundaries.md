@@ -19,6 +19,27 @@ presentation -> application -> domain <- infrastructure
 - Composition roots (`*.module.ts`, app bootstrap) may import both sides to bind an implementation to a port.
 - Shared packages must never import app aliases (`@messenger/*`, `@discord/*`, `@zalo/*`).
 
+## Database dependency roles (#1088)
+
+`@wispace/database` is an outer persistence dependency, not a general-purpose
+application service package. In apps, its imports belong in infrastructure,
+persistence, adapter, or database source paths and composition roots (`*.module.ts`,
+`main.ts`, `app.module.ts`). Domain/application rules still reject database
+dependencies there, and presentation code must not reach the database directly.
+Shared packages may import it only from their `src/adapters/**` subtree; keep
+database-owned code in `packages/database` and shared contracts in
+`packages/contracts`.
+
+JavaScript operational scripts are scanned alongside TypeScript source,
+including static imports/exports, type queries, dynamic imports, and CommonJS
+`require` forms. Direct database imports are allowed only in
+`scripts/database-bootstrap-smoke.mjs`,
+`scripts/database-persistence-semantics-smoke.mjs`,
+`scripts/database-privacy-smoke.mjs`, `scripts/study-reminder-delivery-smoke.mjs`,
+and `scripts/privacy-erasure-drill.mjs`. The checker fails closed when a
+required scan root is missing or the production TypeScript scan is empty.
+There are no legacy application-import exceptions.
+
 ## Messenger ↔ Study Reminder boundary (#435)
 
 The two features communicate through capability ports, not each other's concrete
@@ -68,8 +89,8 @@ Bare package-root imports are forbidden for packages in this table; there is no
 root compatibility facade. Domain and application code use `/core` where it
 exists, while infrastructure and composition roots import `/adapters`. The
 adapter-only `cleanup-cron` package has no `/core` surface. #1126 owns the
-specifier migration; #1088 owns removing existing application adapter edges,
-and the migration must not add legacy exceptions. TypeORM implementations moved
+specifier migration; #1088 removed existing application adapter edges and
+their legacy exceptions. TypeORM implementations moved
 out of `database` are available only from their owner adapter subpaths and are
 not re-exported by `database`.
 
@@ -102,7 +123,7 @@ composition roots, preserving telemetry without an upward package dependency.
 
 Tests/specs, generated output, `dist`, and `node_modules` are excluded. Test code may import adapters to assemble a harness, but production code cannot hide a forbidden edge there.
 
-The current application migration debt is recorded as exact file/module/symbol triplets in `LEGACY_APPLICATION_IMPORTS`. This is a ratchet, not a blanket exemption: adding a new edge or changing the imported symbol set fails CI. #1126 may update specifiers for the same existing edges; #1088 owns removing those edges and emptying the set.
+Application and domain scopes have no legacy import exemptions. Every concrete outer-layer edge fails the architecture check; add a narrow inner-layer port when application policy needs an outer adapter.
 
 ## Explicit outer adapters
 
@@ -118,7 +139,7 @@ framework-bound.
 
 The other mixed packages are enforced by selecting only their framework-neutral core paths; their runtime services are outside those scopes, not hidden behind a package-wide exemption. `cleanup-cron` is intentionally framework-bound and is not labelled as a core package.
 
-Do not widen an adapter pattern merely to make CI green. A new entry needs an owner, a linked issue, and the narrowest file/path pattern that describes the adapter. The explicit core-entrypoint rule rejects framework, infrastructure, and adapter imports in every `/core` barrel; #429 owns the remaining application/account-link migration debt.
+Do not widen an adapter pattern merely to make CI green. A new entry needs an owner, a linked issue, and the narrowest file/path pattern that describes the adapter. The explicit core-entrypoint rule rejects framework, infrastructure, and adapter imports in every `/core` barrel.
 
 ## Commands and CI
 

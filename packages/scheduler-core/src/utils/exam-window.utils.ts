@@ -1,7 +1,5 @@
-import type {
-  ExamWindowResult,
-  ReportScheduleService,
-} from '../services/report-schedule.service';
+import type { ExamWindowResult } from '../services/report-schedule.service';
+import type { ReportSchedulePort } from '../ports/report-cron-seams.port';
 
 /**
  * Resolves the exam window for a user, or null when the exam schedule cannot
@@ -10,7 +8,7 @@ import type {
  */
 export async function resolveExamWindow(
   externalUserId: string,
-  reportScheduleService: ReportScheduleService,
+  reportScheduleService: ReportSchedulePort,
 ): Promise<ExamWindowResult | null> {
   try {
     return await reportScheduleService.shouldSendReportToday(externalUserId);
@@ -28,7 +26,7 @@ export async function resolveExamWindow(
  */
 export async function evaluateExamWindow(
   externalUserId: string,
-  reportScheduleService: ReportScheduleService,
+  reportScheduleService: ReportSchedulePort,
   forceSend: boolean,
 ): Promise<{ examDate: string | undefined; skip: boolean }> {
   const schedule = await resolveExamWindow(

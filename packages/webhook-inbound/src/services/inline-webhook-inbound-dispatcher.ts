@@ -8,7 +8,7 @@ import type { Platform } from '@wispace/contracts';
 import type {
   PlatformWebhookInboundEventService,
   InboundRetryConfig,
-} from './platform-webhook-inbound-event.service';
+} from '../adapters/platform-webhook-inbound-event.service';
 
 const webhookInboundInlineAttemptsTotal = new Counter({
   name: 'webhook_inbound_inline_attempts_total',

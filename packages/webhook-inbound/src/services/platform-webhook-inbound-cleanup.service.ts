@@ -3,7 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { subDays } from 'date-fns';
-import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
+import { PlatformWebhookInboundEventService } from '../adapters/platform-webhook-inbound-event.service';
 
 const DEFAULT_RETENTION_DAYS = 30;
 

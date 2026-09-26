@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloLinkCompletionService } from './application/services/zalo-link-completion.service';
-import { ZaloLinkReconcileCronService } from './application/services/zalo-link-reconcile-cron.service';
+import { ZaloLinkReconcileCronService } from './infrastructure/cron/zalo-link-reconcile-cron.service';
 import { ZaloRelinkNotifier } from './application/services/zalo-relink-notifier.service';
 import { ZaloOauthController } from './presentation/controllers/zalo-oauth.controller';
 import { ZaloOauthModule } from './zalo-oauth.module';

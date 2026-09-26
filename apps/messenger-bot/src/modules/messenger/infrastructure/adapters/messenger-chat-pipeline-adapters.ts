@@ -11,7 +11,7 @@ import type {
 } from '@wispace/chat-pipeline';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
-import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
+import { AgentReplyPort } from '@messenger/modules/messenger/application/ports/agent-reply.port';
 import {
   MessengerOutboundService,
   isMessengerAmbiguousDeliveryError,
@@ -33,7 +33,7 @@ import type { MessengerLinkContext } from '@messenger/shared/config/poc.constant
 export function createMessengerChatPipelineAdapters(
   chatRateLimitService: ChatRateLimitService,
   historyService: PlatformChatHistoryService,
-  agentService: MessengerAgentService,
+  agentService: AgentReplyPort,
   outboundService: MessengerOutboundService,
   configService: ConfigService,
 ) {

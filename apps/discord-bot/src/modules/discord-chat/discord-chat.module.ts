@@ -81,12 +81,14 @@ import {
 } from '@wispace/study-reminder-shared/adapters';
 import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
 import { DiscordMenuService } from './application/services/discord-menu.service';
+import { DISCORD_MENU_READS } from './application/ports/discord-menu-reads.port';
+import { DiscordMenuReadsAdapter } from './infrastructure/adapters/discord-menu-reads.adapter';
 import { DiscordConsentService } from './application/services/discord-consent.service';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
-import { DiscordPlatformConnectivityService } from './application/services/discord-platform-connectivity.service';
+import { DiscordPlatformConnectivityService } from './infrastructure/adapters/discord-platform-connectivity.service';
 import {
   PLATFORM_CONNECTIVITY,
   PlatformConnectivityState,
@@ -645,6 +647,11 @@ const REGISTER_REPORT_MESSAGE =
       ],
     },
     DiscordMenuService,
+    DiscordMenuReadsAdapter,
+    {
+      provide: DISCORD_MENU_READS,
+      useExisting: DiscordMenuReadsAdapter,
+    },
     CleanupCronService,
     {
       provide: PlatformLinkAuditCleanupService,

@@ -6,7 +6,12 @@ import {
   WispaceTokenVerifyService,
 } from '@wispace/wispace-client/adapters';
 import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
+import { PLATFORM_LINK_STATE } from '@wispace/account-link-core/core';
 import { PlatformLinkStateService } from '@wispace/database';
+import { DISCORD_TOKEN_VERIFY } from './application/ports/discord-token-verify.port';
+import { LINK_STATE_OBSERVATION } from './application/ports/link-state-observation.port';
+import { WispaceDiscordTokenVerifyAdapter } from './infrastructure/adapters/wispace-discord-token-verify.adapter';
+import { TypeormLinkStateObservationAdapter } from './infrastructure/persistence/typeorm-link-state-observation.adapter';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
@@ -20,7 +25,7 @@ import { DiscordWelcomeRecordEntity } from '../../infrastructure/database/entiti
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordLinkCompletionService } from './application/services/discord-link-completion.service';
-import { DiscordLinkReconcileCronService } from './application/services/discord-link-reconcile-cron.service';
+import { DiscordLinkReconcileCronService } from './infrastructure/cron/discord-link-reconcile-cron.service';
 import { DiscordRelinkNotifier } from './application/services/discord-relink-notifier.service';
 import { DiscordWelcomeService } from './application/services/discord-welcome.service';
 import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
@@ -64,6 +69,20 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     DiscordLinkCompletionService,
     DiscordLinkReconcileCronService,
     PlatformLinkStateService,
+    WispaceDiscordTokenVerifyAdapter,
+    {
+      provide: DISCORD_TOKEN_VERIFY,
+      useExisting: WispaceDiscordTokenVerifyAdapter,
+    },
+    TypeormLinkStateObservationAdapter,
+    {
+      provide: LINK_STATE_OBSERVATION,
+      useExisting: TypeormLinkStateObservationAdapter,
+    },
+    {
+      provide: PLATFORM_LINK_STATE,
+      useExisting: PlatformLinkStateService,
+    },
     {
       provide: WispaceLinkStatusClient,
       useFactory: (

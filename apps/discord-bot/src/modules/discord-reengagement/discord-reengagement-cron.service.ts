@@ -16,7 +16,10 @@ import {
 } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { NotificationPreferenceService } from '@wispace/database';
+import {
+  NOTIFICATION_PREFERENCE,
+  type NotificationPreferencePort,
+} from '@wispace/contracts';
 import { ReengagementApiClient } from '@wispace/wispace-client/core';
 import type { ReengagementCandidate } from '@wispace/wispace-client/core';
 import { DiscordReengagementService } from './discord-reengagement.service';
@@ -55,7 +58,8 @@ export class DiscordReengagementCronService
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly reengagementClient: ReengagementApiClient,
     private readonly orchestrator: DiscordReengagementService,
-    private readonly preferences: NotificationPreferenceService,
+    @Inject(NOTIFICATION_PREFERENCE)
+    private readonly preferences: NotificationPreferencePort,
     private readonly pgLock: PgAdvisoryLockService,
     @Optional()
     @Inject(BotMetricsService)

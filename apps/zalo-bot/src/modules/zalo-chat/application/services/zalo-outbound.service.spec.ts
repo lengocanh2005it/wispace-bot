@@ -11,6 +11,16 @@ const deliveryLog = {
   logDelivery: jest.fn().mockResolvedValue(undefined),
 };
 
+function buildJournal(saveDeadLetter?: jest.Mock): {
+  logDelivery: jest.Mock;
+  saveDeadLetter: jest.Mock;
+} {
+  return {
+    logDelivery: deliveryLog.logDelivery,
+    saveDeadLetter: saveDeadLetter ?? jest.fn().mockResolvedValue(false),
+  };
+}
+
 function successResult(): ZaloOutboundTransportResult {
   return {
     ok: true,
@@ -76,8 +86,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       tokenService,
       transport,
-      deliveryLog as never,
-      undefined,
+      buildJournal() as never,
       undefined,
       limiter as never,
     );
@@ -95,7 +104,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       tokenService,
       buildTransport(sendText),
-      deliveryLog as never,
+      buildJournal() as never,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).resolves.toBe('sent');
@@ -118,7 +127,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       transport,
-      deliveryLog as never,
+      buildJournal() as never,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
@@ -136,8 +145,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(jest.fn().mockRejectedValue(new Error('network down'))),
-      deliveryLog as never,
-      deadLetter as never,
+      buildJournal(deadLetter.save) as never,
     );
 
     const error = await service
@@ -163,7 +171,7 @@ describe('ZaloOutboundService', () => {
             failureResult(200, { error: 4001, message: 'Invalid user id' }),
           ),
       ),
-      deliveryLog as never,
+      buildJournal() as never,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toMatchObject({
@@ -184,8 +192,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(sendText),
-      deliveryLog as never,
-      undefined,
+      buildJournal() as never,
       metrics,
     );
 
@@ -205,7 +212,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(sendText),
-      deliveryLog as never,
+      buildJournal() as never,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
@@ -222,8 +229,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(sendText),
-      deliveryLog as never,
-      deadLetter as never,
+      buildJournal(deadLetter.save) as never,
     );
 
     await expect(
@@ -243,8 +249,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(sendText),
-      deliveryLog as never,
-      undefined,
+      buildJournal() as never,
       metrics,
     );
 
@@ -261,8 +266,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(sendText),
-      deliveryLog as never,
-      deadLetter as never,
+      buildJournal(deadLetter.save) as never,
     );
 
     await expect(
@@ -286,8 +290,7 @@ describe('ZaloOutboundService', () => {
             failureResult(400, { error: 4001, message: 'Invalid user id' }),
           ),
       ),
-      deliveryLog as never,
-      deadLetter as never,
+      buildJournal(deadLetter.save) as never,
     );
 
     await expect(
@@ -313,8 +316,7 @@ describe('ZaloOutboundService', () => {
     const service = new ZaloOutboundService(
       buildTokenService(),
       buildTransport(sendText),
-      deliveryLog as never,
-      undefined,
+      buildJournal() as never,
       metrics,
     );
 

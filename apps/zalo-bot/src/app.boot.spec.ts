@@ -5,7 +5,7 @@ import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
 import { CanonicalPlatformService } from '@wispace/database';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
-import { ZaloAccountLinkService } from './modules/zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from './modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';
 import { ZaloLinkCompletionService } from './modules/zalo-oauth/application/services/zalo-link-completion.service';
 import { ZaloOauthStateService } from './modules/zalo-oauth/application/services/zalo-oauth-state.service';
 import { ZaloTokenService } from './modules/zalo-oauth/application/services/zalo-token.service';

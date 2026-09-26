@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from '../../infrastructure/persistence/zalo-account-link.service';
 import { ZaloLinkCompletionService } from '../../application/services/zalo-link-completion.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
 import { ZaloOauthController } from './zalo-oauth.controller';

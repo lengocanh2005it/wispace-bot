@@ -1,0 +1,1 @@
+export const DISCORD_PRIVACY_DATA = Symbol('DISCORD_PRIVACY_DATA');

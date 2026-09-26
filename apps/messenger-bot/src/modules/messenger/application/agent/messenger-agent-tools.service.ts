@@ -46,9 +46,11 @@ import { MessengerMappingService } from '../services/messenger-mapping.service';
 import { STUDY_REMINDER_OPERATIONS_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import {
-  MemoizedWispaceGoalsService,
-  PrecreateExerciseApiClient,
-} from '@wispace/wispace-client/core';
+  AGENT_EXERCISE_CREATE,
+  AGENT_GOALS_READ,
+  type AgentExerciseCreatePort,
+  type AgentGoalsReadPort,
+} from './agent-tool-edges.port';
 import { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import {
   buildCalendarEntriesRichFollowUp,
@@ -104,11 +106,13 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     @Inject(MESSENGER_REPOSITORY)
     private readonly repository: MessengerMappingRepositoryPort,
     private readonly studentReportService: StudentReportService,
-    private readonly memoizedGoals: MemoizedWispaceGoalsService,
+    @Inject(AGENT_GOALS_READ)
+    private readonly memoizedGoals: AgentGoalsReadPort,
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)
     private readonly studyPort: StudyReminderOperationsPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
-    private readonly exerciseClient: PrecreateExerciseApiClient,
+    @Inject(AGENT_EXERCISE_CREATE)
+    private readonly exerciseClient: AgentExerciseCreatePort,
     private readonly mappingService: MessengerMappingService,
     @Optional()
     @Inject(MESSENGER_TOOL_IDENTITY_PROVIDER)

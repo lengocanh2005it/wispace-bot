@@ -1,8 +1,18 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Inject,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { WebActivityService } from '@wispace/database';
 import { RecordWebActivityBody } from '../dto/web-activity.dto';
+import {
+  WEB_ACTIVITY_WRITER,
+  type WebActivityWriterPort,
+} from '../../domain/web-activity-writer.port';
 
 /**
  * WISPACE pushes here on each learner web-app visit. Auth reuses the ops
@@ -14,7 +24,8 @@ import { RecordWebActivityBody } from '../dto/web-activity.dto';
 @UseGuards(InternalApiKeyGuard)
 export class WebActivityController {
   constructor(
-    private readonly webActivityService: WebActivityService,
+    @Inject(WEB_ACTIVITY_WRITER)
+    private readonly webActivityService: WebActivityWriterPort,
     private readonly metrics: BotMetricsService,
   ) {}
 

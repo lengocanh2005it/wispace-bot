@@ -1,14 +1,31 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-import { TextChannel } from 'discord.js';
-import type { Client } from 'discord.js';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordOutboundService } from './discord-outbound.service';
+import type { DiscordTransportPort } from '../ports/discord-transport.port';
 
-function buildClientStub(fetch: jest.Mock, channelFetch?: jest.Mock): Client {
+function buildTransportStub(
+  fetch: jest.Mock,
+  channelFetch?: jest.Mock,
+): DiscordTransportPort {
   return {
-    users: { fetch },
-    channels: { fetch: channelFetch ?? jest.fn() },
-  } as unknown as Client;
+    sendDirectMessage: async (userId, message) =>
+      fetch(userId).then((user: { send: (m: unknown) => Promise<unknown> }) =>
+        user.send(message),
+      ) as never,
+    sendDirectMessageButtons: async (userId, message, buttons) =>
+      fetch(userId).then((user: { send: (m: unknown) => Promise<unknown> }) =>
+        user.send({ ...message, buttons }),
+      ) as never,
+    sendTypingIndicator: async (userId) => {
+      await fetch(userId);
+    },
+    sendChannelMessage: async (channelId, message) => {
+      const channel = await (channelFetch ?? jest.fn())(channelId);
+      if (!channel) return false;
+      await channel.send(message);
+      return true;
+    },
+  };
 }
 
 function buildMetricsStub(): BotMetricsService {
@@ -16,6 +33,13 @@ function buildMetricsStub(): BotMetricsService {
     incDmDeliveryFailure: jest.fn(),
     incOutboundActionNeutralized: jest.fn(),
   } as unknown as BotMetricsService;
+}
+
+function buildJournal(
+  logDelivery: jest.Mock = jest.fn().mockResolvedValue(undefined),
+  saveDeadLetter: jest.Mock = jest.fn().mockResolvedValue(false),
+) {
+  return { logDelivery, saveDeadLetter };
 }
 
 type DiscordTextPayload = {
@@ -51,8 +75,8 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     const deliveryLog = buildDeliveryLogStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      deliveryLog as never,
+      buildTransportStub(fetch),
+      buildJournal(deliveryLog.logDelivery) as never,
     );
     const result = await service.sendProactivePayload('discord-1', {
       embeds: [{ title: 'Báo cáo học tập' }],
@@ -90,9 +114,8 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      deliveryLog as never,
-      undefined,
+      buildTransportStub(fetch),
+      buildJournal(deliveryLog.logDelivery) as never,
       metrics,
     );
 
@@ -121,7 +144,7 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
       );
     const fetch = jest.fn().mockResolvedValue({ send });
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
       service.sendProactivePayload('discord-1', { embeds: [] }),
@@ -140,7 +163,7 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
       );
     const fetch = jest.fn().mockResolvedValue({ send });
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
       service.sendProactivePayload('discord-1', { embeds: [] }),
@@ -161,8 +184,8 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     };
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      deliveryLog as never,
+      buildTransportStub(fetch),
+      buildJournal(deliveryLog.logDelivery) as never,
     );
 
     await expect(
@@ -182,8 +205,8 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     };
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      deliveryLog as never,
+      buildTransportStub(fetch),
+      buildJournal(deliveryLog.logDelivery) as never,
     );
 
     await expect(
@@ -201,8 +224,7 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -226,8 +248,7 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     };
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       undefined,
       limiter as never,
@@ -247,8 +268,7 @@ describe('DiscordOutboundService.sendProactivePayload', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -280,8 +300,7 @@ describe('DiscordOutboundService', () => {
     };
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       undefined,
       limiter as never,
@@ -299,7 +318,7 @@ describe('DiscordOutboundService', () => {
       .mockResolvedValue({ channelId: 'dm-1' });
     const fetch = jest.fn().mockResolvedValue({ send });
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
     await service.sendText('discord-1', 'hello');
 
     expect(fetch).toHaveBeenCalledWith('discord-1');
@@ -323,8 +342,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -356,7 +374,7 @@ describe('DiscordOutboundService', () => {
   it('throws when the DM fails to send after retries', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(service.sendText('discord-1', 'hello')).rejects.toThrow(
       'Discord DM delivery failed',
@@ -366,7 +384,7 @@ describe('DiscordOutboundService', () => {
   it('redacts the raw discord id from thrown delivery errors', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     const err = await service
       .sendText('discord-1', 'hello')
@@ -379,12 +397,12 @@ describe('DiscordOutboundService', () => {
     const send = jest
       .fn<
         Promise<void>,
-        [{ content: string; components: unknown[]; allowedMentions: unknown }]
+        [{ content: string; buttons: unknown[]; allowedMentions: unknown }]
       >()
       .mockResolvedValue(undefined);
     const fetch = jest.fn().mockResolvedValue({ send });
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
     await service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?');
 
     expect(fetch).toHaveBeenCalledWith('discord-1');
@@ -397,19 +415,19 @@ describe('DiscordOutboundService', () => {
       users: [],
       repliedUser: false,
     });
-    expect(send.mock.calls[0][0].components).toHaveLength(1);
+    expect(send.mock.calls[0][0].buttons).toHaveLength(2);
   });
 
   it('#232: sendMenuButtons returns true when Discord acknowledges the send', async () => {
     const send = jest
       .fn<
         Promise<{ channelId: string }>,
-        [{ content?: string; components: unknown[]; allowedMentions: unknown }]
+        [{ content?: string; buttons: unknown[]; allowedMentions: unknown }]
       >()
       .mockResolvedValue({ channelId: 'dm-1' });
     const fetch = jest.fn().mockResolvedValue({ send });
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
     const sent = await service.sendMenuButtons('discord-1', 'Chào bạn!');
 
     expect(fetch).toHaveBeenCalledWith('discord-1');
@@ -422,19 +440,17 @@ describe('DiscordOutboundService', () => {
       users: [],
       repliedUser: false,
     });
-    expect(send.mock.calls[0][0].components).toHaveLength(1);
+    expect(send.mock.calls[0][0].buttons).toHaveLength(2);
     expect(sent).toBe(true);
   });
 
   it('neutralizes channel content while allowing only the trusted welcome user', async () => {
     const send = jest.fn().mockResolvedValue(undefined);
-    const channel = Object.create(TextChannel.prototype) as TextChannel;
-    channel.send = send;
+    const channelFetch = jest.fn().mockResolvedValue({ send });
     const fetch = jest.fn().mockResolvedValue({ send: jest.fn() });
-    const channelFetch = jest.fn().mockResolvedValue(channel);
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch, channelFetch),
+      buildTransportStub(fetch, channelFetch),
     );
     await service.sendToChannel('channel-1', 'Chào <@123> @everyone', {
       externalUserId: '123',
@@ -455,7 +471,7 @@ describe('DiscordOutboundService', () => {
   it('#232: sendMenuButtons returns false (no throw) when the DM fails', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
       service.sendMenuButtons('discord-1', 'Chào bạn!'),
@@ -465,7 +481,7 @@ describe('DiscordOutboundService', () => {
   it('reports errors when the reschedule confirmation DM fails to send', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
       service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?'),
@@ -477,8 +493,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -505,8 +520,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -528,8 +542,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -548,7 +561,7 @@ describe('DiscordOutboundService', () => {
         Object.assign(new Error('Internal Server Error'), { status: 500 }),
       );
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
       service.sendText('discord-1', 'report', { retryOn: 'none' }),
@@ -561,8 +574,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -581,7 +593,7 @@ describe('DiscordOutboundService', () => {
       .mockResolvedValueOnce({ channelId: 'dm-1' });
     const fetch = jest.fn().mockResolvedValue({ send });
 
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
     await service.sendText('discord-1', 'hello');
 
     const firstPayload = send.mock.calls[0][0];
@@ -600,8 +612,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -630,9 +641,8 @@ describe('DiscordOutboundService', () => {
     const deadLetter = { save: jest.fn().mockResolvedValue(true) };
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
-      deadLetter as never,
+      buildTransportStub(fetch),
+      buildJournal(undefined, deadLetter.save) as never,
     );
 
     await expect(
@@ -657,7 +667,7 @@ describe('DiscordOutboundService', () => {
       .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()
       .mockResolvedValue({ channelId: 'dm-1' });
     const fetch = jest.fn().mockResolvedValue({ send });
-    const service = new DiscordOutboundService(buildClientStub(fetch));
+    const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
       service.sendTextForRetry(
@@ -675,8 +685,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );
@@ -696,8 +705,7 @@ describe('DiscordOutboundService', () => {
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
-      buildClientStub(fetch),
-      undefined,
+      buildTransportStub(fetch),
       undefined,
       metrics,
     );

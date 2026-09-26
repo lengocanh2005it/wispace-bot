@@ -9,10 +9,10 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
-import { PrivacyDataService } from '@wispace/database';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
+import { DISCORD_PRIVACY_DATA } from './application/ports/privacy-data.port';
 import { DiscordOpsController } from './discord-ops.controller';
 
 describe('Discord privacy HTTP contract', () => {
@@ -45,7 +45,7 @@ describe('Discord privacy HTTP contract', () => {
           useValue: { syncUpcomingSessions: jest.fn() },
         },
         { provide: WispaceCalendarService, useValue: {} },
-        { provide: PrivacyDataService, useValue: privacyService },
+        { provide: DISCORD_PRIVACY_DATA, useValue: privacyService },
         {
           provide: PlatformAgentService,
           useValue: { clearClarificationState: jest.fn() },

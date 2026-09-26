@@ -42,8 +42,12 @@ import {
   StudyReminderLlmInput,
   StudyReminderLlmOutput,
 } from '../../domain/entities/study-schedule.types';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
 import { StudySessionSourceService } from './study-session-source.service';
+import { getMinutesUntilSession } from '@wispace/study-reminder-shared/core';
+import {
+  STUDY_REMINDER_TIME_FORMATTER,
+  type StudyReminderTimeFormatterPort,
+} from '../../domain/ports/study-reminder-operations.port';
 import {
   STUDY_REMINDER_DISPLAY_NAME_PORT,
   type StudyReminderDisplayNamePort,
@@ -62,7 +66,8 @@ export class StudyReminderService {
 
   constructor(
     private readonly studySessionSourceService: StudySessionSourceService,
-    private readonly studyReminderScheduleService: StudyReminderScheduleService,
+    @Inject(STUDY_REMINDER_TIME_FORMATTER)
+    private readonly timeFormatter: StudyReminderTimeFormatterPort,
     @Inject(REMINDER_STUDENT_DATA_PORT)
     private readonly studentData: ReminderStudentDataPort,
     @Inject(STUDY_REMINDER_DISPLAY_NAME_PORT)
@@ -134,14 +139,10 @@ export class StudyReminderService {
     session: NormalizedStudySession,
     displayName: string,
   ): Promise<StudyReminderLlmInput> {
-    const minutesUntil =
-      this.studyReminderScheduleService.getMinutesUntilSession(
-        session.scheduledAt,
-      );
-    const scheduledTimeLabel =
-      this.studyReminderScheduleService.formatScheduledTimeLabel(
-        session.scheduledAt,
-      );
+    const minutesUntil = getMinutesUntilSession(session.scheduledAt);
+    const scheduledTimeLabel = this.timeFormatter.formatScheduledTimeLabel(
+      session.scheduledAt,
+    );
     const topic = this.sanitizeSessionTopic(session.topic, psid);
 
     const input: StudyReminderLlmInput = {

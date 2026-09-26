@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NOTIFICATION_PREFERENCE } from '@wispace/contracts';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -115,6 +116,10 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
     },
     CanonicalPlatformService,
     NotificationPreferenceService,
+    {
+      provide: NOTIFICATION_PREFERENCE,
+      useExisting: NotificationPreferenceService,
+    },
     WebActivityService,
     {
       provide: PrivacyCleanupJobStore,
@@ -140,6 +145,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
     TypeOrmModule,
     CanonicalPlatformService,
     NotificationPreferenceService,
+    NOTIFICATION_PREFERENCE,
     WebActivityService,
     PrivacyCleanupJobStore,
     PrivacyDataService,

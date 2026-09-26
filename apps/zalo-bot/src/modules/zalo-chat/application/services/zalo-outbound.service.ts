@@ -11,12 +11,12 @@ import {
   type ZaloOaAccessTokenPort,
 } from '@zalo/modules/zalo-oauth/application/ports/zalo-oa-token-store.port';
 import {
-  DeliveryLogService,
-  PlatformDeadLetterService,
-} from '@wispace/database';
+  OUTBOUND_DELIVERY_JOURNAL,
+  type OutboundDeliveryJournalPort,
+  type OutboundDeliveryOutcome,
+} from '@wispace/contracts';
 import { withRetry } from '@wispace/wispace-client/core';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
-import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import {
   ZALO_OUTBOUND_TRANSPORT,
   type ZaloOutboundTransportPort,
@@ -105,10 +105,8 @@ export class ZaloOutboundService implements ZaloOutboundPort {
     private readonly tokenService: ZaloOaAccessTokenPort,
     @Inject(ZALO_OUTBOUND_TRANSPORT)
     private readonly transport: ZaloOutboundTransportPort,
-    private readonly deliveryLogService: DeliveryLogService,
-    @Optional()
-    @Inject(PlatformDeadLetterService)
-    private readonly deadLetter?: PlatformDeadLetterService,
+    @Inject(OUTBOUND_DELIVERY_JOURNAL)
+    private readonly deliveryJournal: OutboundDeliveryJournalPort,
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
@@ -165,7 +163,7 @@ export class ZaloOutboundService implements ZaloOutboundPort {
           },
         },
       );
-      await this.deliveryLogService.logDelivery({
+      await this.deliveryJournal.logDelivery({
         externalUserId: zaloUserId,
         status: 'SENT',
         messageType: 'chat',
@@ -192,7 +190,7 @@ export class ZaloOutboundService implements ZaloOutboundPort {
       ) {
         this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
       }
-      await this.deliveryLogService.logDelivery({
+      await this.deliveryJournal.logDelivery({
         externalUserId: zaloUserId,
         status: 'FAILED',
         messageType: 'chat',
@@ -208,7 +206,7 @@ export class ZaloOutboundService implements ZaloOutboundPort {
             : options?.skipDeadLetter !== true &&
               (options?.clarification !== true || !ambiguous);
       if (shouldPersistDeadLetter) {
-        const persisted = await this.deadLetter?.save({
+        const persisted = await this.deliveryJournal.saveDeadLetter({
           externalUserId: zaloUserId,
           rawPayload: { zaloUserId, text },
           errorMessage: errorMsg,
@@ -255,7 +253,7 @@ export class ZaloOutboundService implements ZaloOutboundPort {
           );
         },
       });
-      await this.deliveryLogService.logDelivery({
+      await this.deliveryJournal.logDelivery({
         externalUserId: zaloUserId,
         status: 'SENT',
         messageType: 'chat',
@@ -266,7 +264,7 @@ export class ZaloOutboundService implements ZaloOutboundPort {
         return ambiguousDeliveryRecorded ? 'ambiguous' : 'rate_limited';
       }
       const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
-      await this.deliveryLogService.logDelivery({
+      await this.deliveryJournal.logDelivery({
         externalUserId: zaloUserId,
         status: 'FAILED',
         messageType: 'chat',

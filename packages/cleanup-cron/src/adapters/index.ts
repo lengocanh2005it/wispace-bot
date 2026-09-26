@@ -15,7 +15,7 @@ export {
   PlatformCleanupCronService,
   type CleanupCronMetricsPort,
   type CleanupCronJobsConfig,
-} from '../platform-cleanup-cron.service';
+} from './platform-cleanup-cron.service';
 export {
   PlatformLinkAuditCleanupService,
   type PlatformLinkAuditCleanupOptions,

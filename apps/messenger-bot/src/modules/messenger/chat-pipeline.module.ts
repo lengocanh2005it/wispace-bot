@@ -17,8 +17,9 @@ import {
   RedisChatQueueWorkerService,
   CLARIFICATION_STATE_STORE,
   LlmContentClassifier,
+  readChatFlushRetrySettings,
+  type ClarificationStateStore,
 } from '@wispace/chat-agent';
-import type { ClarificationStateStore } from '@wispace/chat-agent';
 import {
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
@@ -42,6 +43,7 @@ import { WispaceConfigService } from '@wispace/wispace-client/adapters';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
 import {
   LearnerProfileEntity,
+  PrivacyDataService,
   RescheduleConfirmationEntity,
 } from '@wispace/database';
 import {
@@ -77,7 +79,29 @@ import {
   MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
   MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
 } from './application/agent/messenger-agent-tools.service';
-import { MessengerAgentService } from './application/agent/messenger-agent.service';
+import { AgentReplyAdapter } from './infrastructure/adapters/agent-reply.adapter';
+import { MessengerOutboundService } from './application/services/messenger-outbound.service';
+import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
+import type { AgentReplyPort } from './application/ports/agent-reply.port';
+import {
+  AgentExerciseCreateAdapter,
+  AgentGoalsReadAdapter,
+} from './infrastructure/adapters/agent-tool-edges.adapter';
+import { AGENT_REPLY } from './application/ports/agent-reply.port';
+import { MESSENGER_CHAT_PIPELINE_PORTS } from './application/ports/messenger-chat-pipeline-ports.port';
+import type { MessengerChatPipelinePorts } from './application/ports/messenger-chat-pipeline-ports.port';
+import { createMessengerChatPipelineAdapters } from './infrastructure/adapters/messenger-chat-pipeline-adapters';
+import {
+  CHAT_FLUSH_SETTINGS,
+  CHAT_HISTORY,
+  PRIVACY_DATA,
+  PRIVACY_STATE,
+  type ChatFlushSettings,
+} from './application/chat-processing-seams.port';
+import {
+  AGENT_EXERCISE_CREATE,
+  AGENT_GOALS_READ,
+} from './application/agent/agent-tool-edges.port';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';
 import {
@@ -86,7 +110,7 @@ import {
 } from './classifier-config';
 import { MessengerChatProcessorService } from './application/services/messenger-chat-processor.service';
 import { MessengerRescheduleConfirmationService } from './application/services/messenger-reschedule-confirmation.service';
-import { ChatHistoryStoreStartupService } from './application/services/chat-history-store-startup.service';
+import { ChatHistoryStoreStartupService } from './infrastructure/persistence/chat-history-store-startup.service';
 import { ChatQueueStoreStartupService } from './application/services/chat-queue-store-startup.service';
 import { CHAT_QUEUE_STORE } from './domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from './domain/repositories/chat-queue.store.port';
@@ -207,6 +231,62 @@ import {
         ConfigService,
         ChatRuntimeConfig,
         { token: REDIS_CLIENT, optional: true },
+      ],
+    },
+    {
+      // #1088: the chat processor depends on narrow seams; the concrete
+      // history/privacy services stay bound to the same singletons.
+      provide: CHAT_HISTORY,
+      useExisting: PlatformChatHistoryService,
+    },
+    {
+      provide: PRIVACY_DATA,
+      useExisting: PrivacyDataService,
+    },
+    {
+      provide: PRIVACY_STATE,
+      useExisting: PrivacyStateService,
+    },
+    {
+      // One module owns env resolution so the queue worker and the processor
+      // cannot drift on the debounce/stuck/retry numbers.
+      provide: CHAT_FLUSH_SETTINGS,
+      useFactory: (
+        configService: ConfigService,
+        runtimeConfig: ChatRuntimeConfig,
+      ): ChatFlushSettings => {
+        const retry = readChatFlushRetrySettings(configService);
+        return {
+          debounceMs: runtimeConfig.debounceMs,
+          processingStuckMs: runtimeConfig.processingStuckMs,
+          retryEnabled: retry.enabled,
+          retryDelayMs: retry.delayMs,
+        };
+      },
+      inject: [ConfigService, ChatRuntimeConfig],
+    },
+    {
+      provide: MESSENGER_CHAT_PIPELINE_PORTS,
+      useFactory: (
+        chatRateLimitService: ChatRateLimitService,
+        historyService: PlatformChatHistoryService,
+        agentService: AgentReplyPort,
+        outboundService: MessengerOutboundService,
+        configService: ConfigService,
+      ): MessengerChatPipelinePorts =>
+        createMessengerChatPipelineAdapters(
+          chatRateLimitService,
+          historyService,
+          agentService,
+          outboundService,
+          configService,
+        ),
+      inject: [
+        ChatRateLimitService,
+        PlatformChatHistoryService,
+        AGENT_REPLY,
+        MessengerOutboundService,
+        ConfigService,
       ],
     },
     {
@@ -500,7 +580,21 @@ import {
         PgAdvisoryLockService,
       ],
     },
-    MessengerAgentService,
+    AgentReplyAdapter,
+    {
+      provide: AGENT_REPLY,
+      useExisting: AgentReplyAdapter,
+    },
+    AgentGoalsReadAdapter,
+    {
+      provide: AGENT_GOALS_READ,
+      useExisting: AgentGoalsReadAdapter,
+    },
+    AgentExerciseCreateAdapter,
+    {
+      provide: AGENT_EXERCISE_CREATE,
+      useExisting: AgentExerciseCreateAdapter,
+    },
     MessengerAgentToolsService,
     {
       provide: MESSENGER_WRITE_TOOL_BUDGET,
@@ -588,11 +682,14 @@ import {
   ],
   exports: [
     MessengerChatEnqueueService,
-    MessengerAgentService,
+    AGENT_REPLY,
+    AGENT_GOALS_READ,
+    AGENT_EXERCISE_CREATE,
     MessengerAgentToolsService,
     MessengerRescheduleConfirmationService,
     MessengerChatSharedConfigService,
     PlatformChatHistoryService,
+    PRIVACY_DATA,
   ],
 })
 export class ChatPipelineModule {}

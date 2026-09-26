@@ -9,8 +9,9 @@ import type {
   ReportClaimRepositoryPort,
   ReportSendJobRepositoryPort,
   ClaimAndSendResult,
+  ReportSendSchedulePort,
 } from '@wispace/scheduler-core/core';
-import { ReportSendScheduleService } from '@wispace/scheduler-core/adapters';
+import { REPORT_SEND_SCHEDULE } from '../../domain/ports/report-cron-seams.port';
 import {
   MESSENGER_REPORT_SENT_READER,
   type MessengerReportSentReaderPort,
@@ -67,7 +68,8 @@ export class ReportSendOrchestrationService {
     private readonly messengerReportDeliveryService: MessengerReportDeliveryService,
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
-    private readonly reportSendScheduleService: ReportSendScheduleService,
+    @Inject(REPORT_SEND_SCHEDULE)
+    private readonly reportSendScheduleService: ReportSendSchedulePort,
     /** Report-delivery SLO outcomes (#829). */
     @Optional() private readonly metrics?: BotMetricsService,
   ) {}

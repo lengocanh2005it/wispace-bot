@@ -12,7 +12,7 @@ export { createLearnerProfileSuffix } from './suffix';
 export type { LearnerProfileSuffixInput } from './suffix';
 export type { LearnerProfileStorePort } from './learner-profile.store.port';
 export { LEARNER_PROFILE_STORE } from './learner-profile.store.port';
-export { TypeOrmLearnerProfileStore } from './typeorm-learner-profile.store';
+export { TypeOrmLearnerProfileStore } from './adapters';
 export type {
   LearnerFacts,
   LearnerIdentity,

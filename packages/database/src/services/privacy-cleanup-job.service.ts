@@ -2,17 +2,15 @@ import { createHash, randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
-import type { Platform } from '@wispace/contracts';
+import {
+  PRIVACY_CLEANUP_STORES,
+  type Platform,
+  type PrivacyCleanupStore,
+} from '@wispace/contracts';
 import { extractQueryRows, jitteredDelayMs } from '@wispace/bot-common/utils';
 
-export const PRIVACY_CLEANUP_STORES = [
-  'chat_history',
-  'chat_queue',
-  'clarification_state',
-  'display_name_cache',
-] as const;
-
-export type PrivacyCleanupStore = (typeof PRIVACY_CLEANUP_STORES)[number];
+export { PRIVACY_CLEANUP_STORES };
+export type { PrivacyCleanupStore };
 export type PrivacyCleanupOperation = 'unlink' | 'delete';
 export type PrivacyCleanupJobStatus =
   | 'pending'

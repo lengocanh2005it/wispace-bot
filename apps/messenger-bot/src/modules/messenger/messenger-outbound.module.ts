@@ -9,6 +9,10 @@ import {
   WebhookDeadLetterEntity,
 } from '../../infrastructure/database/entities';
 import { PlatformDeadLetterService } from '@wispace/database';
+import {
+  OUTBOUND_DEAD_LETTER,
+  type OutboundDeadLetterPort,
+} from '@wispace/contracts';
 import { PlatformReportClaimRepository } from '@wispace/scheduler-core/adapters';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
@@ -24,6 +28,8 @@ import {
 } from '@wispace/bot-common/health';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerPlatformConnectivityService } from './infrastructure/meta/messenger-platform-connectivity.service';
+import { MessengerConnectivitySignalAdapter } from './infrastructure/meta/connectivity-signal.adapter';
+import { PLATFORM_CONNECTIVITY_SIGNAL } from './application/ports/platform-connectivity-signal.port';
 
 @Module({
   imports: [
@@ -49,6 +55,11 @@ import { MessengerPlatformConnectivityService } from './infrastructure/meta/mess
       useExisting: PlatformConnectivityState,
     },
     MessengerPlatformConnectivityService,
+    MessengerConnectivitySignalAdapter,
+    {
+      provide: PLATFORM_CONNECTIVITY_SIGNAL,
+      useExisting: MessengerConnectivitySignalAdapter,
+    },
     MessengerRepository,
     MessengerReportSentReader,
     MessengerOutboundService,
@@ -57,6 +68,15 @@ import { MessengerPlatformConnectivityService } from './infrastructure/meta/mess
       useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
         new PlatformDeadLetterService('messenger', repo),
       inject: [getRepositoryToken(WebhookDeadLetterEntity)],
+    },
+    {
+      provide: OUTBOUND_DEAD_LETTER,
+      useFactory: (
+        deadLetter: PlatformDeadLetterService,
+      ): OutboundDeadLetterPort => ({
+        saveDeadLetter: (input) => deadLetter.save(input),
+      }),
+      inject: [PlatformDeadLetterService],
     },
     {
       provide: MESSENGER_REPOSITORY,
@@ -89,6 +109,7 @@ import { MessengerPlatformConnectivityService } from './infrastructure/meta/mess
     MessengerPlatformConnectivityService,
     MessengerOutboundService,
     PlatformDeadLetterService,
+    OUTBOUND_DEAD_LETTER,
     MessengerRepository,
     MESSENGER_REPOSITORY,
     MESSENGER_MESSAGE_LOG_REPOSITORY,

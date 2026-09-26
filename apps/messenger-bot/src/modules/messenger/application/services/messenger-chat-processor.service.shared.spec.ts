@@ -3,6 +3,48 @@ import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.st
 import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
+import type { MessengerChatPipelinePorts } from '../ports/messenger-chat-pipeline-ports.port';
+import type { ChatFlushSettings } from '../chat-processing-seams.port';
+
+function inertPipelinePorts(
+  overrides: Partial<MessengerChatPipelinePorts> = {},
+): MessengerChatPipelinePorts {
+  const noop = () => Promise.resolve();
+  return {
+    rateLimiter: {
+      reserve: () => Promise.resolve({ allowed: true, usageDate: 'x' }),
+      refund: noop,
+      markCompleted: noop,
+      markDelivered: noop,
+    },
+    history: {
+      getHistory: () => Promise.resolve([]),
+      appendTurn: noop,
+    },
+    agent: { reply: () => Promise.resolve({ text: '' }) },
+    outbound: {
+      isAmbiguousDeliveryError: () => false,
+      sendText: () => Promise.resolve({ delivered: true }),
+    },
+    ...overrides,
+  };
+}
+
+// The processor now takes the four ChatPipeline ports and the resolved flush
+// numbers as injected seams (the module builds both in production). These
+// tests exercise flush/retry bookkeeping, so the pipeline ports are inert and
+// the flush numbers are spelled out per test.
+function flushSettings(
+  overrides: Partial<ChatFlushSettings> = {},
+): ChatFlushSettings {
+  return {
+    debounceMs: 0,
+    processingStuckMs: 300_000,
+    retryEnabled: false,
+    retryDelayMs: 5_000,
+    ...overrides,
+  };
+}
 
 describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
   it('claims ready buffer and processes batch', async () => {
@@ -45,11 +87,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
 
     const service = new MessengerChatProcessorService(
       { sendSenderActionOptional, sendTextBubblesViaPsid } as never,
-      {
-        reply: jest.fn(() =>
-          Promise.resolve({ text: 'Bot reply', richFollowUps: [] }),
-        ),
-      } as never,
+      { reply: jest.fn(() => Promise.resolve({ text: 'Bot reply' })) } as never,
       {
         reserveFreeFormSlot: jest.fn(() =>
           Promise.resolve({
@@ -83,7 +121,8 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         appendTurn: jest.fn(() => Promise.resolve()),
         appendToolSummary: jest.fn(() => Promise.resolve()),
       } as never,
-      { get: () => '0' } as never,
+      inertPipelinePorts(),
+      flushSettings(),
       chatQueueStore,
     );
 
@@ -175,13 +214,8 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         appendTurn: jest.fn(() => Promise.resolve()),
         appendToolSummary: jest.fn(() => Promise.resolve()),
       } as never,
-      {
-        get: (key: string) =>
-          ({
-            CHAT_FLUSH_RETRY_ENABLED: 'true',
-            CHAT_FLUSH_RETRY_DELAY_MS: '5000',
-          })[key],
-      } as never,
+      inertPipelinePorts({ agent: { reply } }),
+      flushSettings({ retryEnabled: true, retryDelayMs: 5000 }),
       chatQueueStore,
     );
 
@@ -269,13 +303,8 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         appendTurn: jest.fn(() => Promise.resolve()),
         appendToolSummary: jest.fn(() => Promise.resolve()),
       } as never,
-      {
-        get: (key: string) =>
-          ({
-            CHAT_FLUSH_RETRY_ENABLED: 'true',
-            CHAT_FLUSH_RETRY_DELAY_MS: '5000',
-          })[key],
-      } as never,
+      inertPipelinePorts(),
+      flushSettings({ retryEnabled: true, retryDelayMs: 5000 }),
       chatQueueStore,
     );
 
@@ -377,7 +406,8 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         appendTurn: jest.fn(() => Promise.resolve()),
         appendToolSummary: jest.fn(() => Promise.resolve()),
       } as never,
-      { get: () => '0' } as never,
+      inertPipelinePorts(),
+      flushSettings(),
       chatQueueStore,
     );
 
@@ -475,7 +505,8 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         appendTurn: jest.fn(() => Promise.resolve()),
         appendToolSummary: jest.fn(() => Promise.resolve()),
       } as never,
-      { get: () => '0' } as never,
+      inertPipelinePorts(),
+      flushSettings(),
       chatQueueStore,
       undefined, // privacyState
       undefined, // privacyService
@@ -575,7 +606,10 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         appendTurn: jest.fn(() => Promise.resolve()),
         appendToolSummary: jest.fn(() => Promise.resolve()),
       } as never,
-      { get: () => '0' } as never,
+      inertPipelinePorts({
+        agent: { reply: () => Promise.resolve({ text: 'Bot reply' }) },
+      }),
+      flushSettings(),
       chatQueueStore,
     );
 

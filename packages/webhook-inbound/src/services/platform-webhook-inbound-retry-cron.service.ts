@@ -15,7 +15,7 @@ import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
   type InboundEventRow,
-} from './platform-webhook-inbound-event.service';
+} from '../adapters/platform-webhook-inbound-event.service';
 import { webhookInboundDispatchLagSeconds } from './inline-webhook-inbound-dispatcher';
 
 const DEFAULT_RETRY_LIMIT = 20;

@@ -12,7 +12,12 @@ import type {
 } from '@wispace/account-link-core/core';
 import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
+import {
+  ZALO_LINK_STATE,
+  ZALO_TOKEN_VERIFY,
+  type ZaloLinkStatePort,
+  type ZaloTokenVerifyPort,
+} from '../../domain/ports/zalo-link-state.port';
 import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
@@ -21,12 +26,14 @@ import {
   ZALO_LINK_VERIFY_RECORD_REPOSITORY,
   type ZaloLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/zalo-link-verify-record.repository.port';
-import { ZaloAccountLinkService } from './zalo-account-link.service';
+import {
+  ZALO_ACCOUNT_LINK,
+  type ZaloAccountLinkPort,
+} from '../../domain/ports/zalo-account-link.port';
 import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
-import { PlatformLinkStateService } from '@wispace/database';
 import { ZaloRelinkNotifier } from './zalo-relink-notifier.service';
 import { ZaloWelcomeService } from './zalo-welcome.service';
 
@@ -50,15 +57,19 @@ export class ZaloLinkCompletionService {
   private readonly logger = new Logger(ZaloLinkCompletionService.name);
 
   constructor(
-    private readonly accountLinkService: ZaloAccountLinkService,
-    private readonly tokenVerifyService: WispaceTokenVerifyService,
+    @Inject(ZALO_ACCOUNT_LINK)
+    private readonly accountLinkService: ZaloAccountLinkPort,
+    @Inject(ZALO_TOKEN_VERIFY)
+    private readonly tokenVerifyService: ZaloTokenVerifyPort,
     @Inject(ZALO_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: ZaloLinkVerifyRecordRepositoryPort,
     @Inject(ZALO_OUTBOUND)
     private readonly outboundService: ZaloOutboundPort,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
-    @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Optional()
+    @Inject(ZALO_LINK_STATE)
+    private readonly linkState?: ZaloLinkStatePort,
     @Optional() private readonly welcomeService?: ZaloWelcomeService,
     @Optional() private readonly relinkNotifier?: ZaloRelinkNotifier,
   ) {}
@@ -85,12 +96,7 @@ export class ZaloLinkCompletionService {
         if (!this.linkState) {
           throw new Error('Zalo link state service is required');
         }
-        const state = await this.linkState.getLink('zalo', externalUserId);
-        return !state
-          ? { kind: 'absent' }
-          : state.state === 'locally-unlinked' && state.userId === undefined
-            ? { kind: 'absent', generation: state.generation }
-            : { kind: 'present', generation: state.generation };
+        return this.linkState.getMappingObservation(externalUserId);
       },
       recordVerify: (externalUserId, userId, mappingObservation) =>
         this.verifyRecordService.recordVerify(

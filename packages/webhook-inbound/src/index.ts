@@ -13,7 +13,7 @@ export {
   type IngestInboundEventResult,
   type InboundEventRow,
   type InboundRetryConfig,
-} from './services/platform-webhook-inbound-event.service';
+} from './adapters/platform-webhook-inbound-event.service';
 export {
   InlineWebhookInboundDispatcher,
   processClaimedInboundRow,

@@ -5,9 +5,6 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
-import { UserEntity } from '@messenger/infrastructure/database/entities/user.entity';
 import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
@@ -15,14 +12,18 @@ import {
   USER_DISPLAY_NAME_CACHE,
   type UserDisplayNameCachePort,
 } from '../domain/user-display-name-cache.port';
+import {
+  USER_DISPLAY_NAME_READER,
+  type UserDisplayNameReaderPort,
+} from '../domain/user-display-name-reader.port';
 
 @Injectable()
 export class UserDisplayNameService implements OnModuleInit {
   private readonly logger = new Logger(UserDisplayNameService.name);
 
   constructor(
-    @InjectRepository(UserEntity)
-    private readonly userRepo: Repository<UserEntity>,
+    @Inject(USER_DISPLAY_NAME_READER)
+    private readonly userReader: UserDisplayNameReaderPort,
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerMappingRepositoryPort,
     @Optional()
@@ -48,10 +49,7 @@ export class UserDisplayNameService implements OnModuleInit {
 
     if (!toFetch.length) return;
 
-    const users = await this.userRepo.find({
-      where: { id: In(toFetch) },
-      select: { id: true, displayName: true, username: true },
-    });
+    const users = await this.userReader.findByIds(toFetch);
 
     if (this.displayNameCache?.isAvailable()) {
       await Promise.all(
@@ -94,7 +92,7 @@ export class UserDisplayNameService implements OnModuleInit {
       }
     }
 
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await this.userReader.findById(userId);
     const displayName = user?.displayName ?? null;
     const username = user?.username ?? null;
 

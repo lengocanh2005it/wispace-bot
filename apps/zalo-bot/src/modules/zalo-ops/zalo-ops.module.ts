@@ -12,10 +12,12 @@ import {
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import {
-  PRIVACY_CLEANUP_STORES,
   PrivacyCleanupJobStore,
   PrivacyCleanupReconciler,
+  PrivacyDataService,
 } from '@wispace/database';
+import { PRIVACY_CLEANUP_STORES } from '@wispace/contracts';
+import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ZaloReportModule } from '../zalo-chat/zalo-report.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
@@ -35,6 +37,7 @@ import { ZaloOpsController } from './zalo-ops.controller';
   ],
   controllers: [ZaloOpsController],
   providers: [
+    { provide: ZALO_PRIVACY_DATA, useExisting: PrivacyDataService },
     {
       provide: PrivacyCleanupReconciler,
       useFactory: (

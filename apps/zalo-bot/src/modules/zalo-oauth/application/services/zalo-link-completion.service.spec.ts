@@ -3,7 +3,7 @@ import {
   ZaloLinkCompletionService,
   ZaloLinkTokenRejectedError,
 } from './zalo-link-completion.service';
-import type { ZaloAccountLinkService } from './zalo-account-link.service';
+import type { ZaloAccountLinkService } from '../../infrastructure/persistence/zalo-account-link.service';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import type { ClarificationStateStore } from '@wispace/chat-agent';
@@ -55,7 +55,16 @@ describe('ZaloLinkCompletionService', () => {
         overrides.clearClarificationState ?? jest.fn().mockResolvedValue(true),
     } as unknown as ClarificationStateStore;
     const linkState = {
-      getLink: jest.fn().mockResolvedValue(overrides.mappingState ?? null),
+      getMappingObservation: jest.fn(async () => {
+        const state = overrides.mappingState as
+          | { state?: string; userId?: number; generation?: string }
+          | null
+          | undefined;
+        if (!state) return { kind: 'absent' };
+        return state.state === 'locally-unlinked' && state.userId === undefined
+          ? { kind: 'absent', generation: state.generation }
+          : { kind: 'present', generation: state.generation as string };
+      }),
     };
 
     const service = new ZaloLinkCompletionService(
@@ -153,7 +162,9 @@ describe('ZaloLinkCompletionService', () => {
       verifyRecordService,
       { sendText: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
-      { getLink: jest.fn().mockResolvedValue(null) } as never,
+      {
+        getMappingObservation: jest.fn().mockResolvedValue({ kind: 'absent' }),
+      } as never,
     );
 
     await service.completeLink('code-1', 'verifier-1', 'token');
@@ -186,7 +197,9 @@ describe('ZaloLinkCompletionService', () => {
       } as never,
       { sendText: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
-      { getLink: jest.fn().mockResolvedValue(null) } as never,
+      {
+        getMappingObservation: jest.fn().mockResolvedValue({ kind: 'absent' }),
+      } as never,
       welcomeService as never,
       relinkNotifier as never,
     );

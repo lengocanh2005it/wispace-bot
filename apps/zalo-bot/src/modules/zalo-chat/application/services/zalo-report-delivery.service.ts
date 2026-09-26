@@ -14,7 +14,10 @@ import {
   type ZaloOutboundPort,
 } from '../ports/zalo-outbound.port';
 import { WispaceApiError } from '@wispace/wispace-client/core';
-import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
+import {
+  ZALO_ACCOUNT_LINK,
+  type ZaloAccountLinkPort,
+} from '@zalo/modules/zalo-oauth/domain/ports/zalo-account-link.port';
 
 /**
  * Zalo implementation of `ReportDeliveryPort` — the report outbox owns
@@ -27,7 +30,8 @@ export class ZaloReportDeliveryService implements ReportDeliveryPort {
   constructor(
     @Inject(ZALO_OUTBOUND)
     private readonly outbound: ZaloOutboundPort,
-    private readonly accountLinkService: ZaloAccountLinkService,
+    @Inject(ZALO_ACCOUNT_LINK)
+    private readonly accountLinkService: ZaloAccountLinkPort,
   ) {}
 
   async sendReport(input: {

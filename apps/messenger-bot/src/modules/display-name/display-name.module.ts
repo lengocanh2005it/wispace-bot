@@ -11,6 +11,8 @@ import { CommonModule } from '../../shared/common/common.module';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { UserDisplayNameService } from './application/user-display-name.service';
 import { USER_DISPLAY_NAME_CACHE } from './domain/user-display-name-cache.port';
+import { USER_DISPLAY_NAME_READER } from './domain/user-display-name-reader.port';
+import { TypeormUserDisplayNameReader } from './infrastructure/persistence/typeorm-user-display-name-reader';
 
 /**
  * Resolves WISPACE user display names from the users table,
@@ -25,6 +27,11 @@ import { USER_DISPLAY_NAME_CACHE } from './domain/user-display-name-cache.port';
   ],
   providers: [
     UserDisplayNameService,
+    TypeormUserDisplayNameReader,
+    {
+      provide: USER_DISPLAY_NAME_READER,
+      useExisting: TypeormUserDisplayNameReader,
+    },
     {
       provide: RedisUserDisplayNameCache,
       useFactory: (

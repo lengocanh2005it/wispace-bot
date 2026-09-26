@@ -1,4 +1,16 @@
-import type { MessageMentionOptions } from 'discord.js';
+/**
+ * Mention allow-list shape sent to Discord. Declared locally so the guard stays
+ * pure policy and does not depend on a vendor SDK type (#1088); the transport
+ * adapter passes it straight through to `MessageCreateOptions`.
+ */
+export interface DiscordMentionAllowList {
+  parse: MessageMentionKind[];
+  roles: string[];
+  users: string[];
+  repliedUser: boolean;
+}
+
+type MessageMentionKind = 'roles' | 'users' | 'everyone';
 
 export type DiscordOutboundActionKind = 'everyone' | 'here' | 'role' | 'user';
 
@@ -9,7 +21,7 @@ export type DiscordOutboundNeutralized = Record<
 
 export interface DiscordOutboundPreparation {
   content: string;
-  allowedMentions: MessageMentionOptions;
+  allowedMentions: DiscordMentionAllowList;
   neutralized: DiscordOutboundNeutralized;
 }
 

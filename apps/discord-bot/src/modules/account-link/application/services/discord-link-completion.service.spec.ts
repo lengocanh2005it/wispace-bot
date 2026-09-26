@@ -71,7 +71,16 @@ function buildHarness(overrides: {
     clear: clearClarificationState,
   };
   const linkState = {
-    getLink: jest.fn().mockResolvedValue(overrides.mappingState ?? null),
+    getMappingObservation: jest.fn(async () => {
+      const state = overrides.mappingState as
+        | { state?: string; userId?: number; generation?: string }
+        | null
+        | undefined;
+      if (!state) return { kind: 'absent' };
+      return state.state === 'locally-unlinked' && state.userId === undefined
+        ? { kind: 'absent', generation: state.generation }
+        : { kind: 'present', generation: state.generation as string };
+    }),
   };
 
   const service = new DiscordLinkCompletionService(

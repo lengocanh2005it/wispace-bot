@@ -14,7 +14,13 @@ import {
 } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { jitteredDelayMs, sleep } from '@wispace/bot-common/utils';
-import type { Platform } from '@wispace/contracts';
+import type {
+  Platform,
+  PrivacyDeleteResult,
+  PrivacyExpectedMapping,
+  PrivacyStateCleanup,
+  PrivacyUnlinkResult,
+} from '@wispace/contracts';
 import {
   PRIVACY_CLEANUP_REQUEST_ATTEMPTS,
   PRIVACY_CLEANUP_STORES,
@@ -24,28 +30,12 @@ import {
 } from './privacy-cleanup-job.service';
 import { PrivacyCleanupJobEntity } from '../entities/privacy-cleanup-job.entity';
 
-/**
- * Per-call Redis/state cleanup callbacks, wired by each app's ops controller.
- * All callbacks are own-platform: a bot only clears Redis keys it owns —
- * cross-platform erasure is achieved by the backend calling each bot's
- * privacy/delete endpoint (#537).
- */
-export interface PrivacyStateCleanup {
-  /** The adapter's platform boundary; cross-platform ids are never accepted. */
-  platform?: Platform;
-  /** Explicitly configured stores. Omitted only for legacy direct callers. */
-  applicableStores?: readonly PrivacyCleanupStore[];
-  clearHistory?: (externalUserId: string) => Promise<void>;
-  clearQueuedWork?: (externalUserId: string) => Promise<void>;
-  clearClarification?: (externalUserId: string) => Promise<void>;
-  /** Clears internal-userId-keyed caches (e.g. display-name cache). */
-  clearUserCache?: (userId: number) => Promise<void>;
-  /** Low-cardinality request/worker telemetry hook. */
-  onAttempt?: (
-    store: PrivacyCleanupStore,
-    outcome: 'success' | 'failure' | 'stale' | 'skipped',
-  ) => void;
-}
+export type {
+  PrivacyDeleteResult,
+  PrivacyExpectedMapping,
+  PrivacyStateCleanup,
+  PrivacyUnlinkResult,
+} from '@wispace/contracts';
 
 /** Entity classes/schemas only; string targets would recreate implicit lookup. */
 export type PrivacyEntityTarget = Exclude<EntityTarget<ObjectLiteral>, string>;
@@ -104,36 +94,6 @@ export interface PrivacyEntityRegistry {
  * Cross-platform Redis erasure happens by calling each bot's privacy
  * endpoints — all paths are idempotent, so re-calls are safe.
  */
-
-export interface PrivacyUnlinkResult {
-  /** Whether a mapping was actually deleted (false = already unlinked). */
-  deleted: boolean;
-  /** Authoritative database mutation boolean for unlink callers. */
-  unlinked?: boolean;
-  /** The WISPACE userId that was unlinked (for logging/audit). */
-  userId?: number;
-  /** True when the mapping changed since it was captured — action refused. */
-  conflict?: boolean;
-  status?: 'complete' | 'incomplete';
-  cleanupId?: string;
-  outstandingStores?: PrivacyCleanupStore[];
-}
-
-export interface PrivacyDeleteResult {
-  deleted: boolean;
-  userId?: number;
-  conflict?: boolean;
-  status: 'complete' | 'incomplete';
-  cleanupId?: string;
-  outstandingStores: PrivacyCleanupStore[];
-}
-
-/** Identity snapshot captured before a chat privacy confirmation. */
-export interface PrivacyExpectedMapping {
-  exists: boolean;
-  userId?: number;
-  mappingGeneration?: string;
-}
 
 export interface PrivacyExportData {
   platform: string;

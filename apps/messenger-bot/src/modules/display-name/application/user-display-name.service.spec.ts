@@ -3,8 +3,9 @@ import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenge
 import type { UserDisplayNameCachePort } from '../domain/user-display-name-cache.port';
 
 describe('UserDisplayNameService', () => {
-  const userRepo = {
-    findOne: jest.fn(),
+  const userReader = {
+    findById: jest.fn(),
+    findByIds: jest.fn().mockResolvedValue([]),
   };
 
   const mappingReader = {
@@ -32,25 +33,25 @@ describe('UserDisplayNameService', () => {
     });
 
     const service = new UserDisplayNameService(
-      userRepo as never,
+      userReader as never,
       mappingReader,
       cache,
     );
 
     await expect(service.resolveDisplayName({ userId: 7 })).resolves.toBe('Hà');
-    expect(userRepo.findOne).not.toHaveBeenCalled();
+    expect(userReader.findById).not.toHaveBeenCalled();
   });
 
   it('loads from postgres on cache miss and writes redis', async () => {
     cacheGet.mockResolvedValue(null);
-    userRepo.findOne.mockResolvedValue({
+    userReader.findById.mockResolvedValue({
       id: 7,
       displayName: 'Minh',
       username: 'minh01',
     });
 
     const service = new UserDisplayNameService(
-      userRepo as never,
+      userReader as never,
       mappingReader,
       cache,
     );
@@ -66,14 +67,14 @@ describe('UserDisplayNameService', () => {
 
   it('falls back to postgres when redis cache unavailable', async () => {
     cacheIsAvailable.mockReturnValue(false);
-    userRepo.findOne.mockResolvedValue({
+    userReader.findById.mockResolvedValue({
       id: 7,
       displayName: 'An',
       username: null,
     });
 
     const service = new UserDisplayNameService(
-      userRepo as never,
+      userReader as never,
       mappingReader,
       cache,
     );
@@ -84,14 +85,14 @@ describe('UserDisplayNameService', () => {
 
   it('uses fallback when display_name is null', async () => {
     cacheGet.mockResolvedValue(null);
-    userRepo.findOne.mockResolvedValue({
+    userReader.findById.mockResolvedValue({
       id: 7,
       displayName: null,
       username: null,
     });
 
     const service = new UserDisplayNameService(
-      userRepo as never,
+      userReader as never,
       mappingReader,
       cache,
     );

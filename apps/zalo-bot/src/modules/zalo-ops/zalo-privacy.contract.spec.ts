@@ -9,10 +9,10 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
-import { PrivacyDataService } from '@wispace/database';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
+import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
 import { ZaloOpsController } from './zalo-ops.controller';
 
 describe('Zalo privacy HTTP contract', () => {
@@ -45,7 +45,7 @@ describe('Zalo privacy HTTP contract', () => {
           useValue: { sendDailyReports: jest.fn() },
         },
         { provide: WispaceCalendarService, useValue: {} },
-        { provide: PrivacyDataService, useValue: privacyService },
+        { provide: ZALO_PRIVACY_DATA, useValue: privacyService },
         {
           provide: PlatformAgentService,
           useValue: { clearClarificationState: jest.fn() },

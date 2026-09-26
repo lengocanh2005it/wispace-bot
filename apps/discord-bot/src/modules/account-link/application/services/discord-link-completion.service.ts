@@ -11,7 +11,14 @@ import type {
   LinkFlowAdapter,
 } from '@wispace/account-link-core/core';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
+import {
+  LINK_STATE_OBSERVATION,
+  type LinkStateObservationPort,
+} from '../ports/link-state-observation.port';
+import {
+  DISCORD_TOKEN_VERIFY,
+  type DiscordTokenVerifyPort,
+} from '../ports/discord-token-verify.port';
 import {
   DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
   type DiscordLinkVerifyRecordRepositoryPort,
@@ -28,7 +35,6 @@ import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
-import { PlatformLinkStateService } from '@wispace/database';
 
 const linkCompletionFailuresTotal = new Counter({
   name: 'discord_link_completion_failures_total',
@@ -49,7 +55,8 @@ export class DiscordLinkCompletionService {
 
   constructor(
     private readonly accountLinkService: DiscordAccountLinkService,
-    private readonly tokenVerifyService: WispaceTokenVerifyService,
+    @Inject(DISCORD_TOKEN_VERIFY)
+    private readonly tokenVerifyService: DiscordTokenVerifyPort,
     @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
     @Inject(DISCORD_GUILD_MEMBERSHIP)
@@ -59,7 +66,9 @@ export class DiscordLinkCompletionService {
     private readonly welcomeService: DiscordWelcomeService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
-    @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Optional()
+    @Inject(LINK_STATE_OBSERVATION)
+    private readonly linkState?: LinkStateObservationPort,
   ) {}
 
   async completeLink(
@@ -75,15 +84,9 @@ export class DiscordLinkCompletionService {
       verifyToken: async (linkToken, externalUserId) =>
         this.tokenVerifyService.verifyToken(linkToken, externalUserId),
       getMappingObservation: async (externalUserId) => {
-        if (!this.linkState) {
+        if (!this.linkState)
           throw new Error('Discord link state service is required');
-        }
-        const state = await this.linkState.getLink('discord', externalUserId);
-        return !state
-          ? { kind: 'absent' }
-          : state.state === 'locally-unlinked' && state.userId === undefined
-            ? { kind: 'absent', generation: state.generation }
-            : { kind: 'present', generation: state.generation };
+        return this.linkState.getMappingObservation(externalUserId);
       },
       recordVerify: (externalUserId, userId, mappingObservation) =>
         this.verifyRecordService.recordVerify(

@@ -6,7 +6,7 @@ issue: 1126
 
 # Shared Package Core and Adapter Entrypoints
 
-Shared packages that separate framework-neutral policy from outer integrations expose explicit `/core` and `/adapters` subpaths; bare roots are not compatibility facades, while adapter-only packages such as `cleanup-cron` expose only `/adapters`. We accept the one-time migration because explicit paths let architecture guards check dependency direction; `reschedule-confirm` gains `/core`, feature exports such as `bot-common` remain outside this rule, and #1126, #1028, and #1088 own entrypoint migration, guard tests, and existing application-edge removal respectively.
+Shared packages that separate framework-neutral policy from outer integrations expose explicit `/core` and `/adapters` subpaths; bare roots are not compatibility facades, while adapter-only packages such as `cleanup-cron` expose only `/adapters`. We accept the one-time migration because explicit paths let architecture guards check dependency direction; `reschedule-confirm` gains `/core`, feature exports such as `bot-common` remain outside this rule, and #1126, #1028, and #1088 handled entrypoint migration, guard tests, and existing application-edge removal respectively.
 
 ## Outcome (#1126)
 
@@ -22,8 +22,9 @@ Consequences for the follow-up work:
   original premise — that subpath imports are "already used across the repo"
   and that guards "block the style nobody uses" — was wrong for eight of the
   ten packages; bare roots dominated. That is no longer the case.
-- #1088 still owns emptying `LEGACY_APPLICATION_IMPORTS`. #1126 renamed the
-  specifiers on the existing edges and recorded four pre-existing edges that
+- #1088 removed `LEGACY_APPLICATION_IMPORTS` after moving the existing edges
+  behind application ports or into infrastructure. #1126 renamed the
+  specifiers and recorded four pre-existing edges that
   the old symbol heuristic never matched (`RedisBurstReconciler`,
   `PrivacyStateService`, `ClassifiedError`, and the
   `study-reminder-ownership` functions). The set grew by five rather than

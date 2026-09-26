@@ -2,7 +2,10 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { StudentReportCore } from '@wispace/student-report/core';
-import type { StudentReportPorts } from '@wispace/student-report/core';
+import type {
+  CapacityDataPort,
+  StudentReportPorts,
+} from '@wispace/student-report/core';
 import type {
   LlmProviderAdapter,
   LlmExecutionAttempt,
@@ -15,7 +18,7 @@ import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';
 import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
 import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
-import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
+import { CAPACITY_DATA } from '../../domain/ports/capacity-data.port';
 
 /**
  * Thin NestJS adapter around the platform-agnostic `@wispace/student-report`
@@ -42,7 +45,8 @@ export class StudentReportService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly taskScoreAverageApi: TaskScoreAverageApiService,
+    @Inject(CAPACITY_DATA)
+    private readonly capacityData: CapacityDataPort,
     private readonly llmUsageRecorder: LlmUsageRecorderService,
     private readonly llmExecution: LlmExecutionService,
     @Inject('LLM_PROVIDER_ADAPTER')
@@ -148,7 +152,7 @@ export class StudentReportService {
       },
       capacityData: {
         getCapacityData: (psid, options) =>
-          this.taskScoreAverageApi.getCapacityData(psid, options),
+          this.capacityData.getCapacityData(psid, options),
       },
       platform: 'messenger',
       degradedMode: (event) => this.metrics?.incLlmDegradedMode(event),

@@ -26,8 +26,10 @@ import {
   CronLeaderLeaseEntity,
   PrivacyCleanupReconciler,
   PrivacyCleanupJobStore,
-  PRIVACY_CLEANUP_STORES,
+  CanonicalPlatformService,
+  WebActivityService,
 } from '@wispace/database';
+import { PRIVACY_CLEANUP_STORES } from '@wispace/contracts';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DataQualityService } from '@wispace/ops-health/core';
@@ -48,16 +50,32 @@ import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
-import { DataQualityCronService } from './application/services/data-quality-cron.service';
+import { DataQualityCronService } from './infrastructure/cron/data-quality-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
 import { ReportCronService } from './application/services/report-cron.service';
 import { ReportSendOrchestrationService } from './application/services/report-send-orchestration.service';
 import { ReportSendRetryDispatchService } from './application/services/report-send-retry-dispatch.service';
-import { LlmSafetyService } from './application/services/llm-safety.service';
+import { LlmSafetyService } from './infrastructure/safety/llm-safety.service';
+import {
+  LLM_SAFETY_METRICS,
+  type LlmSafetyMetricsPort,
+} from './domain/ports/llm-safety-metrics.port';
 import { SchedulerController } from './presentation/controllers/scheduler.controller';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { DisplayNameModule } from '../display-name/display-name.module';
-import { MessengerAgentService } from '../messenger/application/agent/messenger-agent.service';
+import {
+  AGENT_REPLY,
+  type AgentReplyPort,
+} from '../messenger/application/ports/agent-reply.port';
+import {
+  CANONICAL_PLATFORM,
+  ADVISORY_LOCK_PORT,
+  REPORT_CRON_LEADER,
+  REPORT_CRON_LOCK,
+  REPORT_SEND_SCHEDULE,
+  REPORT_SCHEDULE,
+  WEB_ACTIVITY,
+} from './domain/ports/report-cron-seams.port';
 import { MessengerChatEnqueueService } from '../messenger/application/services/messenger-chat-enqueue.service';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
@@ -93,6 +111,10 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
       inject: [MemoizedWispaceGoalsService],
     },
     ReportScheduleService,
+    {
+      provide: REPORT_SCHEDULE,
+      useExisting: ReportScheduleService,
+    },
     CronLeaderLeaseService,
     {
       provide: ReportCronLeaderService,
@@ -102,6 +124,10 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
       ) =>
         new ReportCronLeaderService(configService, leaseService, 'messenger'),
       inject: [ConfigService, CronLeaderLeaseService],
+    },
+    {
+      provide: REPORT_CRON_LEADER,
+      useExisting: ReportCronLeaderService,
     },
     {
       provide: CronLeaderHeartbeatService,
@@ -116,6 +142,26 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
       useFactory: (pgLock: PgAdvisoryLockService) =>
         new ReportCronLockService(pgLock, 'messenger'),
       inject: [PgAdvisoryLockService],
+    },
+    {
+      provide: REPORT_CRON_LOCK,
+      useExisting: ReportCronLockService,
+    },
+    {
+      provide: CANONICAL_PLATFORM,
+      useExisting: CanonicalPlatformService,
+    },
+    {
+      provide: WEB_ACTIVITY,
+      useExisting: WebActivityService,
+    },
+    {
+      provide: REPORT_SEND_SCHEDULE,
+      useExisting: ReportSendScheduleService,
+    },
+    {
+      provide: ADVISORY_LOCK_PORT,
+      useExisting: PgAdvisoryLockService,
     },
     ReportSendOrchestrationService,
     ReportCronService,
@@ -189,13 +235,21 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
     DataQualityCronService,
     LlmSafetyService,
     {
+      provide: LLM_SAFETY_METRICS,
+      useFactory: (service: LlmSafetyService): LlmSafetyMetricsPort => ({
+        countWarnings24h: () => service.countWarnings24h(),
+        readWarningDailyThreshold: () => service.readWarningDailyThreshold(),
+      }),
+      inject: [LlmSafetyService],
+    },
+    {
       provide: PrivacyCleanupReconciler,
       useFactory: (
         dataSource: DataSource,
         pgLock: PgAdvisoryLockService,
         historyService: PlatformChatHistoryService,
         queueService: MessengerChatEnqueueService,
-        clarificationAgent: MessengerAgentService,
+        clarificationAgent: AgentReplyPort,
         displayNameCache: RedisUserDisplayNameCache,
         metrics: BotMetricsService,
         cleanupJobs: PrivacyCleanupJobStore,
@@ -224,7 +278,7 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
         PgAdvisoryLockService,
         PlatformChatHistoryService,
         MessengerChatEnqueueService,
-        MessengerAgentService,
+        AGENT_REPLY,
         RedisUserDisplayNameCache,
         BotMetricsService,
         PrivacyCleanupJobStore,

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Inject,
   Optional,
   Post,
   Res,
@@ -27,12 +28,16 @@ import { MessengerMappingService } from '@messenger/modules/messenger/applicatio
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
 import {
-  PrivacyDataService,
   PRIVACY_CLEANUP_STORES,
+  PRIVACY_DATA,
+  type PrivacyDataPort,
   type PrivacyStateCleanup,
-} from '@wispace/database';
+} from '@messenger/modules/messenger/application/chat-processing-seams.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
+import {
+  AGENT_REPLY,
+  type AgentReplyPort,
+} from '@messenger/modules/messenger/application/ports/agent-reply.port';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
@@ -81,8 +86,10 @@ export class SchedulerController {
     private readonly sessionSourceService: StudySessionSourceService,
     private readonly messengerMappingService: MessengerMappingService,
     private readonly reportSendRetryDispatchService: ReportSendRetryDispatchService,
-    private readonly privacyService: PrivacyDataService,
-    private readonly clarificationAgent: MessengerAgentService,
+    @Inject(PRIVACY_DATA)
+    private readonly privacyService: PrivacyDataPort,
+    @Inject(AGENT_REPLY)
+    private readonly clarificationAgent: AgentReplyPort,
     private readonly historyService: PlatformChatHistoryService,
     private readonly chatEnqueueService: MessengerChatEnqueueService,
     private readonly displayNameCache: RedisUserDisplayNameCache,

@@ -1,19 +1,23 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
 import type {
   ReportMapping,
   ClaimAndSendResult,
+  ClassifiedError,
+  ReportOrchestrationPort,
 } from '@wispace/scheduler-core/core';
-import type { ClassifiedError } from '@wispace/scheduler-core/adapters';
-import { ReportOrchestrationService } from '@wispace/scheduler-core/adapters';
+import { REPORT_ORCHESTRATION } from '../../domain/ports/report-cron-seams.port';
 import { isStudentReportRetryableError } from '@wispace/student-report/core';
-import { PlatformStudentReportService } from '@wispace/student-report/adapters';
 import { LlmOverloadError } from '@wispace/llm-agent/core';
 import type {
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
+import {
+  DISCORD_REPORT_GENERATOR,
+  type DiscordReportGeneratorPort,
+} from '../../domain/ports/discord-report-generator.port';
 
 /**
  * Discord-specific wrapper around the shared ReportOrchestrationService.
@@ -25,8 +29,10 @@ export class DiscordReportOrchestrationService {
   private readonly logger = new Logger(DiscordReportOrchestrationService.name);
 
   constructor(
-    private readonly orchestration: ReportOrchestrationService,
-    private readonly reportService: PlatformStudentReportService,
+    @Inject(REPORT_ORCHESTRATION)
+    private readonly orchestration: ReportOrchestrationPort,
+    @Inject(DISCORD_REPORT_GENERATOR)
+    private readonly reportService: DiscordReportGeneratorPort,
   ) {}
 
   async claimAndSend(

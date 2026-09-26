@@ -28,7 +28,7 @@ import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
-import { MessengerMessageLogCleanupService } from './application/services/messenger-message-log-cleanup.service';
+import { MessengerMessageLogCleanupService } from './infrastructure/cron/messenger-message-log-cleanup.service';
 import { MessengerWebhookStartupService } from './application/services/messenger-webhook-startup.service';
 import { MessengerReminderDeliveryService } from './application/services/messenger-reminder-delivery.service';
 import { WebhookActionExecutorService } from './application/services/webhook-action-executor.service';

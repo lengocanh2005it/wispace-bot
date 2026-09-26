@@ -12,10 +12,12 @@ import {
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import {
-  PRIVACY_CLEANUP_STORES,
   PrivacyCleanupJobStore,
   PrivacyCleanupReconciler,
+  PrivacyDataService,
 } from '@wispace/database';
+import { DISCORD_PRIVACY_DATA } from './application/ports/privacy-data.port';
+import { PRIVACY_CLEANUP_STORES } from '@wispace/contracts';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
@@ -35,6 +37,7 @@ import { DiscordOpsController } from './discord-ops.controller';
   ],
   controllers: [DiscordOpsController],
   providers: [
+    { provide: DISCORD_PRIVACY_DATA, useExisting: PrivacyDataService },
     {
       provide: PrivacyCleanupReconciler,
       useFactory: (

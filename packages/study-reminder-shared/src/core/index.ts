@@ -8,6 +8,10 @@ export {
   isSessionStarted,
 } from '../utils/schedule';
 export {
+  DEFAULT_STUDY_REMINDER_SYNC_HORIZON_HOURS,
+  readSyncHorizonHours,
+} from '../utils/study-reminder-config';
+export {
   studyReminderDispatchPredicateSql,
   studyReminderTerminalFailurePredicateSql,
   studyReminderTerminalRetentionPredicateSql,

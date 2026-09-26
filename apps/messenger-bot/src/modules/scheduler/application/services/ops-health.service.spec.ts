@@ -4,7 +4,7 @@ import { ChatQuotaOpsService } from '@messenger/modules/chat-rate-limit/applicat
 import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { REDIS_CLIENT } from '@wispace/bot-common/redis';
-import { LlmSafetyService } from './llm-safety.service';
+import { LLM_SAFETY_METRICS } from '../../domain/ports/llm-safety-metrics.port';
 import { OpsHealthService } from './ops-health.service';
 
 describe('OpsHealthService', () => {
@@ -67,7 +67,7 @@ describe('OpsHealthService', () => {
           useValue: messageLogRepository,
         },
         {
-          provide: LlmSafetyService,
+          provide: LLM_SAFETY_METRICS,
           useValue: llmSafetyService,
         },
         {

@@ -1,17 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
+import { readSyncHorizonHours } from '@wispace/study-reminder-shared/core';
 import { addHours } from 'date-fns';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
-import { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
+import {
+  STUDY_SESSION_SOURCE,
+  type StudySessionSourcePort,
+} from '../../domain/ports/study-session-source.port';
 
 @Injectable()
 export class StudySessionSourceService {
   private readonly logger = new Logger(StudySessionSourceService.name);
 
   constructor(
-    private readonly userCalendarScheduleService: UserCalendarScheduleService,
-    private readonly studyReminderScheduleService: StudyReminderScheduleService,
+    @Inject(STUDY_SESSION_SOURCE)
+    private readonly sessionSource: StudySessionSourcePort,
+    private readonly configService: ConfigService,
   ) {}
 
   async getUpcomingSessions(params: {
@@ -19,17 +24,21 @@ export class StudySessionSourceService {
     userId?: number;
     horizonEnd?: Date;
   }): Promise<NormalizedStudySession[]> {
-    const { syncHorizonHours } =
-      this.studyReminderScheduleService.getOutboxSettings();
     const horizonEnd =
-      params.horizonEnd ?? addHours(new Date(), syncHorizonHours);
+      params.horizonEnd ??
+      addHours(
+        new Date(),
+        readSyncHorizonHours((key: string) =>
+          this.configService.get<string>(key),
+        ),
+      );
 
     try {
-      return await this.userCalendarScheduleService.getUpcomingSessions(
-        params.psid,
+      return await this.sessionSource.getUpcomingSessions({
+        psid: params.psid,
+        userId: params.userId,
         horizonEnd,
-        params.userId,
-      );
+      });
     } catch (error) {
       this.logger.error(
         `Failed to load study sessions for psid=${maskExternalId(

@@ -4,6 +4,10 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { join } from 'path';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import {
+  OUTBOUND_DELIVERY_JOURNAL,
+  type OutboundDeliveryJournalPort,
+} from '@wispace/contracts';
+import {
   createLlmProviderAdapterFromEnv,
   createEnvLlmExecutionPort,
   createLlmAdmissionCoordinator,
@@ -70,7 +74,7 @@ import { BotCommonModule } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
-import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
@@ -81,6 +85,7 @@ import {
 } from './application/ports/zalo-outbound.port';
 import { ZALO_CLARIFICATION_AGENT } from './application/ports/zalo-clarification-agent.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
+import { ZALO_CHAT_QUEUE } from './application/ports/zalo-chat-queue.port';
 import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import type {
@@ -291,6 +296,17 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
         new PlatformDeadLetterService('zalo', repo),
       inject: [getRepositoryToken(WebhookDeadLetterEntity)],
+    },
+    {
+      provide: OUTBOUND_DELIVERY_JOURNAL,
+      useFactory: (
+        deliveryLog: DeliveryLogService,
+        deadLetter: PlatformDeadLetterService,
+      ): OutboundDeliveryJournalPort => ({
+        logDelivery: (input) => deliveryLog.logDelivery(input),
+        saveDeadLetter: (input) => deadLetter.save(input),
+      }),
+      inject: [DeliveryLogService, PlatformDeadLetterService],
     },
     {
       provide: PlatformChatHistoryService,
@@ -606,6 +622,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ZaloAccountLinkService,
         BotMetricsService,
       ],
+    },
+    {
+      // #1088: the chat service depends on the queue seam, not the concrete
+      // adapter. The queue itself stays available for its own consumers.
+      provide: ZALO_CHAT_QUEUE,
+      useExisting: PlatformChatQueueService,
     },
     {
       provide: PLATFORM_CHAT_QUEUE_STORE,

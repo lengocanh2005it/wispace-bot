@@ -23,6 +23,20 @@ const DATABASE_FORBIDDEN_DEPENDENCIES = [
   '@wispace/scheduler-core',
   '@wispace/bot-metrics',
 ];
+const DATABASE_PACKAGE = '@wispace/database';
+const ALLOWED_DATABASE_TOOLING_FILES = new Set([
+  'scripts/database-bootstrap-smoke.mjs',
+  'scripts/database-persistence-semantics-smoke.mjs',
+  'scripts/database-privacy-smoke.mjs',
+  'scripts/study-reminder-delivery-smoke.mjs',
+  'scripts/privacy-erasure-drill.mjs',
+]);
+const REQUIRED_SCAN_TARGETS = [
+  'apps',
+  'packages',
+  'packages/database/src',
+  'scripts',
+];
 const OUTER_PATH =
   /(?:^|\/)(?:infrastructure|persistence|presentation|adapters|database)(?:\/|$)/;
 const DOMAIN_OUTER_PATH =
@@ -38,87 +52,6 @@ export const FRAMEWORK_BOUND_ADAPTERS = [
   'packages/llm-agent/src/utils/privacy-state.service.ts',
   'packages/student-report/src/platform-student-report.service.ts',
 ];
-
-// Ratchet baseline for existing application edges. #1088 owns emptying this
-// set — its acceptance criterion is that it is empty — and #432 is the
-// umbrella. New edges fail immediately: add a port, never an entry here.
-const LEGACY_APPLICATION_IMPORTS = new Set([
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/wispace-client/adapters|WispaceTokenVerifyService',
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/bot-common/locks|ADVISORY_LOCKS,PgAdvisoryLockService',
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/wispace-client/core|WispaceLinkStatusClient',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-consent.service.ts|@wispace/database|NotificationPreferenceService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-menu.service.ts|@wispace/wispace-client/adapters|WispaceCalendarService,WispaceGoalsService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|discord.js|ActionRowBuilder,ButtonBuilder,ButtonStyle,Client,TextChannel',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|discord.js|MessageCreateOptions',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-platform-connectivity.service.ts|discord.js|Client',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService,ReportCronLockService,ReportScheduleService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core/adapters|ClassifiedError',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core/adapters|ReportOrchestrationService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/student-report/adapters|PlatformStudentReportService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService,ADVISORY_LOCKS',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService',
-  'apps/discord-bot/src/modules/discord-chat/application/utils/discord-outbound-guard.ts|discord.js|MessageMentionOptions',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/chat-metering/adapters|ChatIdempotencyEntity,ChatToolDailyUsageEntity',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|typeorm|Repository',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-consistency-cron.service.ts|@wispace/chat-metering/adapters|RedisBurstReconciler',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-event-cleanup-cron.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-stuck-recovery-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
-  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@messenger/infrastructure/database/entities/user.entity|UserEntity',
-  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|typeorm|In,Repository',
-  'apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution.service.ts|ioredis|Redis',
-  'apps/messenger-bot/src/modules/llm-usage/application/services/llm-usage-cleanup-cron.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
-  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts|@wispace/wispace-client/core|MemoizedWispaceGoalsService,PrecreateExerciseApiClient',
-  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts|@wispace/chat-agent|PlatformAgentService',
-  'apps/messenger-bot/src/modules/messenger/application/services/chat-history-store-startup.service.ts|../../infrastructure/persistence/chat-history.store.resolver|ChatHistoryStoreResolver',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|../../infrastructure/adapters/messenger-chat-pipeline-adapters|createMessengerChatPipelineAdapters',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/chat-agent|PlatformChatHistoryService,readChatFlushRetrySettings,ChatRuntimeConfig',
-  // #995: the chat privacy path owns the durable cleanup request and consumes
-  // the shared persistence contract at this application boundary.
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/database|PRIVACY_CLEANUP_STORES,PrivacyDataService,PrivacyExpectedMapping',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/llm-agent/adapters|PrivacyStateService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-context.service.ts|../../infrastructure/wispace/wispace-messenger-token-verify.service|WispaceMessengerTokenVerifyService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/wispace-client/core|WispaceLinkStatusClient',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-mapping.service.ts|@wispace/database|PlatformLinkStateService,NotificationPreferenceService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-message-log-cleanup.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|../../infrastructure/meta/messenger-platform-connectivity.service|MessengerPlatformConnectivityService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|@wispace/database|PlatformDeadLetterService',
-  'apps/messenger-bot/src/modules/messenger/application/services/webhook-action-executor.service.ts|@wispace/database|NotificationPreferenceService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health/adapters|isDataQualityCronEnabled',
-  'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health/core|DataQualityService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@wispace/chat-metering/adapters|LlmSafetyEventEntity,LlmSafetyEventRepository',
-  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|typeorm|Repository',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService,ReportCronLockService,ReportScheduleService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/scheduler-core/adapters|ReportSendScheduleService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService',
-  'apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts|../../infrastructure/wispace/task-score-average-api.service|TaskScoreAverageApiService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder.service.ts|@wispace/study-reminder-shared/adapters|StudyReminderScheduleService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|../../infrastructure/wispace/user-calendar-schedule.service|UserCalendarScheduleService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|@wispace/study-reminder-shared/adapters|StudyReminderScheduleService',
-  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/chat-agent|PlatformChatQueueService',
-  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/database|NotificationPreferenceService',
-  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@wispace/study-reminder-shared/adapters|cancelStudyReminderJobsForOwnershipChange,nextMappingGenerationAfterTombstone',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@zalo/infrastructure/database/entities/zalo-account-link.entity|ZaloAccountLinkEntity',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|typeorm|Repository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/wispace-client/adapters|WispaceTokenVerifyService',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/wispace-client/core|WispaceLinkStatusClient',
-]);
 
 const CORE_RULES = [
   {
@@ -157,7 +90,6 @@ const CORE_RULES = [
       HARD_OUTER_PACKAGE.test(specifier) ||
       OUTER_PATH.test(specifier) ||
       isConcreteMixedImport(specifier, symbols),
-    allow: isLegacyApplicationImport,
     message:
       'application code must depend on ports, not concrete infrastructure details',
   },
@@ -249,12 +181,6 @@ function isConcreteMixedImport(specifier, symbols) {
   );
 }
 
-function isLegacyApplicationImport(relativePath, imported) {
-  return LEGACY_APPLICATION_IMPORTS.has(
-    `${relativePath}|${imported.imported}|${imported.symbols.join(',')}`,
-  );
-}
-
 function globToRegExp(glob) {
   let source = '';
   for (let i = 0; i < glob.length; i += 1) {
@@ -335,10 +261,10 @@ function importedModules(fileName, sourceText) {
     sourceText,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TS,
+    /\.[cm]?js$/.test(fileName) ? ts.ScriptKind.JS : ts.ScriptKind.TS,
   );
   const imports = [];
-  const add = (node, moduleSpecifier) => {
+  const add = (node, moduleSpecifier, symbols) => {
     if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) return;
     const position = sourceFile.getLineAndCharacterOfPosition(
       node.getStart(sourceFile),
@@ -346,7 +272,7 @@ function importedModules(fileName, sourceText) {
     imports.push({
       imported: moduleSpecifier.text,
       line: position.line + 1,
-      symbols: importedSymbols(node),
+      symbols: symbols ?? importedSymbols(node),
     });
   };
 
@@ -377,6 +303,20 @@ function importedModules(fileName, sourceText) {
       node.expression.kind === ts.SyntaxKind.ImportKeyword
     ) {
       add(node, node.arguments[0]);
+      return;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ((ts.isIdentifier(node.expression) && node.expression.text === 'require') ||
+        (ts.isPropertyAccessExpression(node.expression) &&
+          ((ts.isIdentifier(node.expression.expression) &&
+            node.expression.expression.text === 'module' &&
+            node.expression.name.text === 'require') ||
+            (ts.isIdentifier(node.expression.expression) &&
+              node.expression.expression.text === 'require' &&
+              node.expression.name.text === 'resolve'))))
+    ) {
+      add(node, node.arguments[0], ['require']);
       return;
     }
     ts.forEachChild(node, visit);
@@ -659,14 +599,7 @@ function ownerOf(relativePath) {
   return relativePath.split('/').slice(0, 2).join('/');
 }
 
-// scripts/*.mjs and apps/*/scripts/*.mjs require() built packages, so the AST
-// walk over .ts never sees them. Without this pass a bare root specifier
-// re-enters through the smoke scripts and only fails when a CI job runs it
-// against a live Postgres.
-const SCRIPT_REQUIRE = /(?:module\.)?require\(\s*['"](@wispace\/[^'"]+)['"]\s*\)/g;
-
-function scriptRootEntrypointViolations(rootDir) {
-  const violations = [];
+function toolingFiles(rootDir) {
   const files = [];
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -676,48 +609,172 @@ function scriptRootEntrypointViolations(rootDir) {
         visit(fullPath);
         continue;
       }
-      if (entry.name.endsWith('.mjs') || entry.name.endsWith('.cjs')) {
-        if (entry.name.endsWith('.test.mjs') || entry.name.endsWith('.spec.mjs')) {
-          continue;
-        }
+      if (
+        /\.[cm]?js$/.test(entry.name) &&
+        !/\.(?:test|spec)\.[cm]?js$/.test(entry.name)
+      ) {
         files.push(fullPath);
       }
     }
   };
-  for (const directory of ['scripts', 'apps']) {
-    const fullPath = path.join(rootDir, directory);
-    if (existsSync(fullPath)) visit(fullPath);
+  visit(path.join(rootDir, 'scripts'));
+  const appsRoot = path.join(rootDir, 'apps');
+  for (const app of readdirSync(appsRoot, { withFileTypes: true })) {
+    if (!app.isDirectory()) continue;
+    const scriptsPath = path.join(appsRoot, app.name, 'scripts');
+    if (existsSync(scriptsPath)) visit(scriptsPath);
+  }
+  return files;
+}
+
+function isTestSource(relativePath) {
+  return (
+    /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)/.test(relativePath) ||
+    /\.(?:spec|test)\.[cm]?tsx?$/.test(relativePath)
+  );
+}
+
+function isDatabaseSpecifier(specifier) {
+  return specifier === DATABASE_PACKAGE ||
+    specifier.startsWith(`${DATABASE_PACKAGE}/`);
+}
+
+function databaseRoleViolation(relativePath, imported, sourceKind) {
+  if (!isDatabaseSpecifier(imported.imported) || isTestSource(relativePath)) {
+    return undefined;
   }
 
+  if (sourceKind === 'tooling') {
+    if (ALLOWED_DATABASE_TOOLING_FILES.has(relativePath)) return undefined;
+    return {
+      rule: 'database-tooling-role',
+      package: ownerOf(relativePath),
+      file: relativePath,
+      line: imported.line,
+      imported: imported.imported,
+      symbols: imported.symbols,
+      message:
+        'tooling may import @wispace/database only from the five approved database smoke and drill scripts',
+    };
+  }
+
+  if (relativePath.startsWith('packages/')) {
+    const packageName = relativePath.split('/')[1];
+    if (
+      packageName === 'database' ||
+      relativePath.startsWith(`packages/${packageName}/src/adapters/`) ||
+      relativePath.startsWith('packages/contracts/src/')
+    ) {
+      return undefined;
+    }
+    return {
+      rule: 'shared-package-database-adapter-only',
+      package: ownerOf(relativePath),
+      file: relativePath,
+      line: imported.line,
+      imported: imported.imported,
+      symbols: imported.symbols,
+      message:
+        'shared packages may import @wispace/database only from their canonical src/adapters subtree',
+    };
+  }
+
+  if (relativePath.startsWith('apps/')) {
+    if (
+      /^apps\/[^/]+\/src\/(?:infrastructure|persistence|adapters|database)\//.test(
+        relativePath,
+      ) ||
+      /^apps\/[^/]+\/src\/modules\/[^/]+\/(?:infrastructure|persistence|adapters|database)\//.test(
+        relativePath,
+      ) ||
+      /\/src\/.*\.module\.ts$/.test(relativePath) ||
+      /\/src\/(?:main|app\.module)\.ts$/.test(relativePath) ||
+      /\/src\/modules\/[^/]+\/(?:domain|application)\//.test(relativePath)
+    ) {
+      return undefined;
+    }
+    return {
+      rule: 'app-database-composition-only',
+      package: ownerOf(relativePath),
+      file: relativePath,
+      line: imported.line,
+      imported: imported.imported,
+      symbols: imported.symbols,
+      message:
+        'app database dependencies belong in infrastructure adapters or composition roots, not presentation or feature services',
+    };
+  }
+
+  return undefined;
+}
+
+function scanScopeViolations(rootDir) {
+  const missing = REQUIRED_SCAN_TARGETS.filter(
+    (target) => !existsSync(path.join(rootDir, target)),
+  );
+  return missing.map((target) => ({
+    rule: 'architecture-scan-scope',
+    package: 'repository',
+    file: target,
+    line: 0,
+    imported: target,
+    symbols: [],
+    message: 'required architecture scan target is missing',
+  }));
+}
+
+function scriptImportViolations(rootDir, files) {
+  const violations = [];
   for (const file of files) {
     const relativePath = path
       .relative(rootDir, file)
       .replaceAll(path.sep, '/');
-    readFileSync(file, 'utf8').split('\n').forEach((text, index) => {
-      for (const [, specifier] of text.matchAll(SCRIPT_REQUIRE)) {
-        if (!ROOT_SPECIFIER.test(specifier)) continue;
-        violations.push({
-          rule: 'no-root-package-entrypoint',
-          package: ownerOf(relativePath),
-          file: relativePath,
-          line: index + 1,
-          imported: specifier,
-          symbols: ['require'],
-          message:
-            'shared packages publish explicit /core and /adapters subpaths; require the narrowest subpath instead of the package root',
-        });
-      }
-    });
+    const source = readFileSync(file, 'utf8');
+    for (const imported of importedModules(file, source)) {
+      const entrypointViolation = rootEntrypointViolation(
+        relativePath,
+        imported,
+      );
+      if (entrypointViolation) violations.push(entrypointViolation);
+      const dbViolation = databaseRoleViolation(
+        relativePath,
+        imported,
+        'tooling',
+      );
+      if (dbViolation) violations.push(dbViolation);
+    }
   }
   return violations;
 }
 
 export function checkArchitecture(rootDir) {
   const absoluteRoot = path.resolve(rootDir);
-  const violations = scriptRootEntrypointViolations(absoluteRoot);
+  const violations = scanScopeViolations(absoluteRoot);
+  if (violations.length > 0) return { scannedFiles: 0, violations };
+
+  const files = sourceFiles(absoluteRoot);
+  if (files.length === 0) {
+    return {
+      scannedFiles: 0,
+      violations: [
+        {
+          rule: 'architecture-scan-empty',
+          package: 'repository',
+          file: 'apps,packages',
+          line: 0,
+          imported: '',
+          symbols: [],
+          message: 'architecture scan found no production TypeScript files',
+        },
+      ],
+    };
+  }
+
+  const scripts = toolingFiles(absoluteRoot);
+  violations.push(...scriptImportViolations(absoluteRoot, scripts));
   let scannedFiles = 0;
 
-  for (const file of sourceFiles(absoluteRoot)) {
+  for (const file of files) {
     scannedFiles += 1;
     const relativePath = path
       .relative(absoluteRoot, file)
@@ -726,6 +783,13 @@ export function checkArchitecture(rootDir) {
     const imports = importedModules(file, source);
 
     for (const imported of imports) {
+      const dbViolation = databaseRoleViolation(
+        relativePath,
+        imported,
+        'source',
+      );
+      if (dbViolation) violations.push(dbViolation);
+
       const boundaryViolation = featureBoundaryViolation(
         relativePath,
         imported,

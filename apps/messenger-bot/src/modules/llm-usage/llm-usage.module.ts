@@ -4,7 +4,7 @@ import { CommonModule } from '../../shared/common/common.module';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { LlmUsageEventEntity } from '@wispace/chat-metering/adapters';
 import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
-import { LlmUsageCleanupCronService } from './application/services/llm-usage-cleanup-cron.service';
+import { LlmUsageCleanupCronService } from './infrastructure/cron/llm-usage-cleanup-cron.service';
 import { LlmUsageConfigService } from './application/services/llm-usage-config.service';
 import { LlmUsageQueryService } from './application/services/llm-usage-query.service';
 import { LlmUsageRecorderService } from './application/services/llm-usage-recorder.service';

@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { WispaceApiError } from '@wispace/wispace-client/core';
 import {
-  WispaceCalendarService,
-  WispaceGoalsService,
-} from '@wispace/wispace-client/adapters';
+  DISCORD_MENU_READS,
+  type DiscordMenuReadsPort,
+} from '../ports/discord-menu-reads.port';
 
 const NOT_LINKED =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -22,8 +22,8 @@ const DATE_FMT = new Intl.DateTimeFormat('vi-VN', {
 @Injectable()
 export class DiscordMenuService {
   constructor(
-    private readonly calendarService: WispaceCalendarService,
-    private readonly goalsService: WispaceGoalsService,
+    @Inject(DISCORD_MENU_READS)
+    private readonly reads: DiscordMenuReadsPort,
   ) {}
 
   async getUpcomingSessions(
@@ -32,10 +32,7 @@ export class DiscordMenuService {
   ): Promise<string> {
     if (!userId) return NOT_LINKED;
 
-    const sessions = await this.calendarService.getCalendarSessions(
-      discordUserId,
-      { timeRange: 'upcoming', limit: 5 },
-    );
+    const sessions = await this.reads.getUpcomingSessions(discordUserId, 5);
 
     if (sessions.length === 0) {
       return '📅 Không có buổi học nào sắp tới trong lịch của bạn.';
@@ -53,14 +50,14 @@ export class DiscordMenuService {
   ): Promise<string> {
     if (!userId) return NOT_LINKED;
 
-    let goals: Awaited<ReturnType<WispaceGoalsService['getUserGoals']>>;
+    let goals: Awaited<ReturnType<DiscordMenuReadsPort['getGoals']>>;
     let taskScores: Awaited<
-      ReturnType<WispaceGoalsService['getTaskScoreAverages']>
+      ReturnType<DiscordMenuReadsPort['getTaskScoreAverages']>
     >;
     try {
       [goals, taskScores] = await Promise.all([
-        this.goalsService.getUserGoals(discordUserId),
-        this.goalsService.getTaskScoreAverages(discordUserId),
+        this.reads.getGoals(discordUserId),
+        this.reads.getTaskScoreAverages(discordUserId),
       ]);
     } catch (error) {
       if (

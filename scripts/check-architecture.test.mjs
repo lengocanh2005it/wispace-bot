@@ -14,6 +14,13 @@ import { checkArchitecture } from './check-architecture.mjs';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'wispace-architecture-'));
+  mkdirSync(join(root, 'apps', 'demo', 'src'), { recursive: true });
+  mkdirSync(join(root, 'packages', 'database', 'src'), { recursive: true });
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  writeFileSync(
+    join(root, 'apps', 'demo', 'src', 'scan-sentinel.ts'),
+    'export {};\n',
+  );
   return {
     root,
     write(relativePath, source) {
@@ -108,21 +115,144 @@ test('application services cannot import concrete infrastructure paths', () => {
   }
 });
 
-test('legacy application edges are exact ratchet entries', () => {
+test('former legacy application edges are rejected', () => {
   const f = fixture();
   try {
     f.write(
       'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts',
-      "import { NewWispaceService } from '@wispace/wispace-client/core';\nexport class CompletionService {}\n",
+      "import { PlatformLinkStateService } from '@wispace/database';\nexport class CompletionService {}\n",
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts',
+      "import type { MessageCreateOptions } from 'discord.js';\nexport class OutboundService {}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 2);
+    assert.ok(
+      result.violations.every(
+        (violation) => violation.rule === 'application-no-outer',
+      ),
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('application presentation rejects database import forms', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/presentation/controller.ts',
+      [
+        "import { WebActivityService } from '@wispace/database';",
+        "export { PrivacyDataService } from '@wispace/database/adapters';",
+        "type Entity = import('@wispace/database').UserEntity;",
+        "export type { PlatformLinkState } from '@wispace/database/contracts';",
+      ].join('\n'),
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 4);
+    assert.ok(
+      result.violations.every(
+        (violation) =>
+          violation.rule === 'app-database-composition-only' &&
+          violation.package === 'apps/demo',
+      ),
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('shared package database imports stay in adapters', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/learner-profile/src/types.ts',
+      "import { LearnerProfileEntity } from '@wispace/database';\nexport type Facts = LearnerProfileEntity;\n",
+    );
+    f.write(
+      'packages/learner-profile/src/adapters/typeorm-store.ts',
+      "import { LearnerProfileEntity } from '@wispace/database';\nexport class Store { entity = LearnerProfileEntity; }\n",
     );
 
     const result = checkArchitecture(f.root);
 
     assert.equal(result.violations.length, 1);
-    assert.equal(result.violations[0].rule, 'application-no-outer');
+    assert.equal(
+      result.violations[0].rule,
+      'shared-package-database-adapter-only',
+    );
+    assert.equal(result.violations[0].file, 'packages/learner-profile/src/types.ts');
   } finally {
     f.close();
   }
+});
+
+test('tooling requires database package only from the five approved harnesses', () => {
+  const f = fixture();
+  try {
+    for (const file of [
+      'scripts/database-bootstrap-smoke.mjs',
+      'scripts/database-persistence-semantics-smoke.mjs',
+      'scripts/database-privacy-smoke.mjs',
+      'scripts/study-reminder-delivery-smoke.mjs',
+      'scripts/privacy-erasure-drill.mjs',
+    ]) {
+      f.write(file, "require('@wispace/database');\n");
+    }
+    f.write(
+      'apps/demo/scripts/unapproved.mjs',
+      [
+        "const { DatabaseService } = require('@wispace/database');",
+        "module.require('@wispace/database/adapters');",
+        "await import('@wispace/database/other');",
+      ].join('\n'),
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 3);
+    assert.ok(
+      result.violations.every(
+        (violation) => violation.rule === 'database-tooling-role',
+      ),
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('the checker rejects missing scan targets and empty source scans', () => {
+  const missing = fixture();
+  try {
+    rmSync(join(missing.root, 'packages', 'database', 'src'), {
+      recursive: true,
+      force: true,
+    });
+    const result = checkArchitecture(missing.root);
+    assert.equal(result.violations[0].rule, 'architecture-scan-scope');
+  } finally {
+    missing.close();
+  }
+
+  const empty = fixture();
+  try {
+    rmSync(join(empty.root, 'apps', 'demo', 'src', 'scan-sentinel.ts'));
+    const result = checkArchitecture(empty.root);
+    assert.equal(result.violations[0].rule, 'architecture-scan-empty');
+  } finally {
+    empty.close();
+  }
+});
+
+test('no legacy application exception set remains in the checker', () => {
+  const source = readFileSync(new URL('./check-architecture.mjs', import.meta.url), 'utf8');
+  assert.equal(source.includes('LEGACY_APPLICATION_IMPORTS'), false);
 });
 
 test('domain imports of concrete symbols from mixed packages are reported', () => {
@@ -518,11 +648,6 @@ test('smoke scripts requiring a bare root are reported', () => {
       'scripts/database-bootstrap-smoke.mjs',
       "const { CleanupCronService } = require('@wispace/cleanup-cron');\n",
     );
-    f.write(
-      'apps/messenger-bot/scripts/ops-data-quality.mjs',
-      "const { getPostgresSsl } = require('@wispace/database');\n",
-    );
-
     const result = checkArchitecture(f.root);
 
     assert.equal(result.violations.length, 1);

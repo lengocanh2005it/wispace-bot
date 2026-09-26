@@ -1,16 +1,16 @@
-import { ConfigService } from '@nestjs/config';
 import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
-import type { MessengerAgentService } from '../agent/messenger-agent.service';
+import type { AgentReplyPort } from '../ports/agent-reply.port';
 import {
   buildChatBurstLimitMessage,
   buildChatQuotaDeniedMessage,
   buildChatQuotaRemainingHintMessage,
 } from '../messages/chat-quota.messages';
 import type { MessengerOutboundService } from './messenger-outbound.service';
+import { createMessengerChatPipelineAdapters } from '../../infrastructure/adapters/messenger-chat-pipeline-adapters';
 import {
   MessengerApiError,
   MessengerPartialSendError,
@@ -18,7 +18,6 @@ import {
 import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { BotMetricsService } from '@wispace/bot-metrics';
-import type { PlatformChatHistoryService } from '@wispace/chat-agent';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import type { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { PrivacyStateService } from '@wispace/llm-agent/adapters';
@@ -53,7 +52,14 @@ describe('MessengerChatProcessorService', () => {
   ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
     const sendTextViaPsid = jest.fn(() => Promise.resolve());
-    const sendTextBubblesViaPsid = jest.fn(() => Promise.resolve(1));
+    const sendTextBubblesViaPsid = jest.fn(
+      (_input: {
+        psid: string;
+        userId?: number;
+        text: string;
+        messageType: string;
+      }) => Promise.resolve(1),
+    );
     const sendRichFollowUps = jest.fn(() => Promise.resolve('sent'));
     const outbound = {
       sendSenderActionOptional,
@@ -74,21 +80,41 @@ describe('MessengerChatProcessorService', () => {
       markClarificationDeliveryFailedForEvent,
       clearClarificationState,
       cancelPendingReschedule: jest.fn(() => Promise.resolve('cancelled')),
-    } as unknown as MessengerAgentService;
+    } as unknown as AgentReplyPort;
 
-    const getHistory = jest.fn(() => []);
-    const appendTurn = jest.fn();
-    const appendToolSummary = jest.fn();
+    const getHistory = jest.fn((_externalUserId: string) =>
+      Promise.resolve([]),
+    );
+    const appendTurn = jest.fn(
+      (_externalUserId: string, _userText: string, _assistantText: string) =>
+        Promise.resolve(),
+    );
+    const appendToolSummary = jest.fn(
+      (_externalUserId: string, _summary: string) => Promise.resolve(),
+    );
+    const clearHistory = jest.fn((_externalUserId: string) =>
+      Promise.resolve(),
+    );
     const historyService = {
       getHistory,
       appendTurn,
       appendToolSummary,
-    } as unknown as PlatformChatHistoryService;
+      clear: clearHistory,
+    };
 
-    const reserveFreeFormSlot = jest.fn(() => Promise.resolve(quotaAllowed()));
-    const markDelivered = jest.fn(() => Promise.resolve());
-    const markCompleted = jest.fn(() => Promise.resolve());
-    const refundFreeFormSlot = jest.fn(() => Promise.resolve());
+    const reserveFreeFormSlot = jest.fn((_psid: string, _input?: unknown) =>
+      Promise.resolve(quotaAllowed()),
+    );
+    const markDelivered = jest.fn((_idempotencyKey: string) =>
+      Promise.resolve(),
+    );
+    const markCompleted = jest.fn((_idempotencyKey: string) =>
+      Promise.resolve(),
+    );
+    const refundFreeFormSlot = jest.fn(
+      (_psid: string, _usageDate: string, _idempotencyKey: string) =>
+        Promise.resolve(),
+    );
     const getRemainingQuota = jest.fn(() =>
       Promise.resolve({ remaining: 14, limit: 15 }),
     );
@@ -127,18 +153,6 @@ describe('MessengerChatProcessorService', () => {
       getQueueCleanupIntervalMs: () => 900_000,
     } as unknown as MessengerChatSharedConfigService;
 
-    const configService = {
-      get: (key: string) => {
-        const values: Record<string, string> = {
-          CHAT_DEBOUNCE_MS: '0',
-          CHAT_MAX_BUBBLES: '4',
-          CHAT_BUBBLE_MAX_CHARS: '640',
-          CHAT_MERGED_TEXT_MAX_CHARS: '100',
-        };
-        return values[key];
-      },
-    } as ConfigService;
-
     const metrics = {
       chatStep: { startTimer: jest.fn(() => jest.fn()) },
       timeStep: jest.fn((_step: string, fn: () => Promise<unknown>) => fn()),
@@ -171,13 +185,32 @@ describe('MessengerChatProcessorService', () => {
       messengerRepository,
       sharedConfig,
       historyService,
-      configService,
+      createMessengerChatPipelineAdapters(
+        chatRateLimitService,
+        historyService as never,
+        messengerAgentService,
+        outbound as never,
+        {
+          get: (key: string) =>
+            ({
+              CHAT_DEBOUNCE_MS: '0',
+              CHAT_MAX_BUBBLES: '4',
+              CHAT_BUBBLE_MAX_CHARS: '640',
+              CHAT_MERGED_TEXT_MAX_CHARS: '100',
+            })[key],
+        } as never,
+      ),
+      {
+        debounceMs: options.runtimeConfig?.debounceMs ?? 0,
+        processingStuckMs: options.runtimeConfig?.processingStuckMs ?? 600_000,
+        retryEnabled: false,
+        retryDelayMs: 5_000,
+      },
       options.chatQueueStore,
       privacyState,
       privacyService as never,
       options.mappingRepository as never,
       options.displayNameCache as never,
-      options.runtimeConfig,
     );
 
     return {

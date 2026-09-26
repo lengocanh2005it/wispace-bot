@@ -1,7 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
-import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
 import type { ZaloClarificationAgentPort } from '../ports/zalo-clarification-agent.port';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';

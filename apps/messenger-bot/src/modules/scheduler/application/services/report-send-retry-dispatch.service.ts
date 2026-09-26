@@ -1,17 +1,23 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { REPORT_SEND_JOB_REPOSITORY } from '@wispace/scheduler-core/core';
-import type { ReportSendJobRepositoryPort } from '@wispace/scheduler-core/core';
+import type {
+  ReportSendJobRepositoryPort,
+  AdvisoryLockPort,
+  ReportCronLeaderPort,
+  ReportSchedulePort,
+  ReportSendSchedulePort,
+} from '@wispace/scheduler-core/core';
 import {
-  ReportCronLeaderService,
-  ReportScheduleService,
-  ReportSendScheduleService,
-} from '@wispace/scheduler-core/adapters';
+  ADVISORY_LOCK_PORT,
+  REPORT_CRON_LEADER,
+  REPORT_SCHEDULE,
+  REPORT_SEND_SCHEDULE,
+} from '../../domain/ports/report-cron-seams.port';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { subMilliseconds } from 'date-fns';
@@ -49,11 +55,15 @@ export class ReportSendRetryDispatchService {
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerMappingRepositoryPort,
-    private readonly reportScheduleService: ReportScheduleService,
-    private readonly reportSendScheduleService: ReportSendScheduleService,
-    private readonly reportCronLeaderService: ReportCronLeaderService,
+    @Inject(REPORT_SCHEDULE)
+    private readonly reportScheduleService: ReportSchedulePort,
+    @Inject(REPORT_SEND_SCHEDULE)
+    private readonly reportSendScheduleService: ReportSendSchedulePort,
+    @Inject(REPORT_CRON_LEADER)
+    private readonly reportCronLeaderService: ReportCronLeaderPort,
     private readonly reportSendOrchestrationService: ReportSendOrchestrationService,
-    private readonly pgLock: PgAdvisoryLockService,
+    @Inject(ADVISORY_LOCK_PORT)
+    private readonly pgLock: AdvisoryLockPort,
     @Optional() private readonly metrics?: BotMetricsService,
   ) {
     this.metrics?.registerCron?.(

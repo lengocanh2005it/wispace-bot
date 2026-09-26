@@ -2,19 +2,26 @@ import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import {
-  ReportCronLeaderService,
-  ReportCronLockService,
-  ReportScheduleService,
-} from '@wispace/scheduler-core/adapters';
-import {
   evaluateExamWindow,
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core/core';
+import type {
+  CanonicalPlatformPort,
+  ReportCronLeaderPort,
+  ReportCronLockPort,
+  ReportSchedulePort,
+  WebActivityPort,
+  ReportMapping,
+  ClaimAndSendResult,
+} from '@wispace/scheduler-core/core';
 import {
-  CanonicalPlatformService,
-  WebActivityService,
-} from '@wispace/database';
+  CANONICAL_PLATFORM,
+  REPORT_CRON_LEADER,
+  REPORT_CRON_LOCK,
+  REPORT_SCHEDULE,
+  WEB_ACTIVITY,
+} from '../../domain/ports/report-cron-seams.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import {
@@ -26,10 +33,6 @@ import {
   DISCORD_REPORT_ACCOUNT_READER,
   type DiscordReportAccountPageReaderPort,
 } from '../../domain/ports/discord-report-account-reader.port';
-import type {
-  ReportMapping,
-  ClaimAndSendResult,
-} from '@wispace/scheduler-core/core';
 import type { Platform } from '@wispace/contracts';
 
 const PLATFORM = 'discord' as const;
@@ -54,18 +57,21 @@ export class DiscordReportCronService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly reportCronLeaderService: ReportCronLeaderService,
-    private readonly reportCronLockService: ReportCronLockService,
-    private readonly reportScheduleService: ReportScheduleService,
+    @Inject(REPORT_CRON_LEADER)
+    private readonly reportCronLeaderService: ReportCronLeaderPort,
+    @Inject(REPORT_CRON_LOCK)
+    private readonly reportCronLockService: ReportCronLockPort,
+    @Inject(REPORT_SCHEDULE)
+    private readonly reportScheduleService: ReportSchedulePort,
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @Inject(DISCORD_REPORT_ACCOUNT_READER)
     private readonly accountReader: DiscordReportAccountPageReaderPort,
     @Optional()
-    @Inject(CanonicalPlatformService)
-    private readonly canonicalPlatformService?: CanonicalPlatformService,
+    @Inject(CANONICAL_PLATFORM)
+    private readonly canonicalPlatformService?: CanonicalPlatformPort,
     @Optional()
-    @Inject(WebActivityService)
-    private readonly webActivityService?: WebActivityService,
+    @Inject(WEB_ACTIVITY)
+    private readonly webActivityService?: WebActivityPort,
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,

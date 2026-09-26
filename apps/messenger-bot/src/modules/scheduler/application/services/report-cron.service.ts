@@ -6,20 +6,23 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
-  CanonicalPlatformService,
-  WebActivityService,
-} from '@wispace/database';
+  CANONICAL_PLATFORM,
+  REPORT_CRON_LEADER,
+  REPORT_CRON_LOCK,
+  REPORT_SCHEDULE,
+  WEB_ACTIVITY,
+} from '../../domain/ports/report-cron-seams.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import {
-  ReportCronLeaderService,
-  ReportCronLockService,
-  ReportScheduleService,
-} from '@wispace/scheduler-core/adapters';
 import { todayReportDate, runBatched } from '@wispace/scheduler-core/core';
 import type {
+  CanonicalPlatformPort,
+  ReportCronLeaderPort,
+  ReportCronLockPort,
+  ReportSchedulePort,
+  WebActivityPort,
   SendScheduledReportsOptions,
   SendScheduledReportsResult,
   ClaimAndSendResult,
@@ -47,17 +50,20 @@ export class ReportCronService {
   constructor(
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerMappingRepositoryPort,
-    private readonly reportScheduleService: ReportScheduleService,
-    private readonly reportCronLeaderService: ReportCronLeaderService,
-    private readonly reportCronLockService: ReportCronLockService,
+    @Inject(REPORT_SCHEDULE)
+    private readonly reportScheduleService: ReportSchedulePort,
+    @Inject(REPORT_CRON_LEADER)
+    private readonly reportCronLeaderService: ReportCronLeaderPort,
+    @Inject(REPORT_CRON_LOCK)
+    private readonly reportCronLockService: ReportCronLockPort,
     private readonly configService: ConfigService,
     private readonly reportSendOrchestrationService: ReportSendOrchestrationService,
     @Optional()
-    @Inject(CanonicalPlatformService)
-    private readonly canonicalPlatformService?: CanonicalPlatformService,
+    @Inject(CANONICAL_PLATFORM)
+    private readonly canonicalPlatformService?: CanonicalPlatformPort,
     @Optional()
-    @Inject(WebActivityService)
-    private readonly webActivityService?: WebActivityService,
+    @Inject(WEB_ACTIVITY)
+    private readonly webActivityService?: WebActivityPort,
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,

@@ -9,7 +9,7 @@ import { StudySessionSourceService } from '@messenger/modules/study-reminder/app
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { ReportSendRetryDispatchService } from '@messenger/modules/scheduler/application/services/report-send-retry-dispatch.service';
 import { PrivacyDataService } from '@wispace/database';
-import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
+import { AgentReplyAdapter } from '@messenger/modules/messenger/infrastructure/adapters/agent-reply.adapter';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
@@ -53,7 +53,7 @@ function buildControllerProviders() {
       },
     },
     {
-      provide: MessengerAgentService,
+      provide: AgentReplyAdapter,
       useValue: { clearClarificationState: noop },
     },
     { provide: PlatformChatHistoryService, useValue: { clear: noop } },

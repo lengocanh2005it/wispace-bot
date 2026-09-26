@@ -6,7 +6,13 @@ import {
   WebhookDeadLetterEntity,
   DeliveryLogService,
 } from '@wispace/database';
+import {
+  OUTBOUND_DELIVERY_JOURNAL,
+  type OutboundDeliveryJournalPort,
+} from '@wispace/contracts';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
+import { DISCORD_TRANSPORT } from './application/ports/discord-transport.port';
+import { DiscordSdkTransportAdapter } from './infrastructure/adapters/discord-sdk-transport.adapter';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 
 /**
@@ -35,8 +41,29 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
         new PlatformDeadLetterService('discord', repo),
       inject: [getRepositoryToken(WebhookDeadLetterEntity)],
     },
+    {
+      provide: OUTBOUND_DELIVERY_JOURNAL,
+      useFactory: (
+        deliveryLog: DeliveryLogService,
+        deadLetter: PlatformDeadLetterService,
+      ): OutboundDeliveryJournalPort => ({
+        logDelivery: (input) => deliveryLog.logDelivery(input),
+        saveDeadLetter: (input) => deadLetter.save(input),
+      }),
+      inject: [DeliveryLogService, PlatformDeadLetterService],
+    },
     DiscordOutboundService,
+    DiscordSdkTransportAdapter,
+    {
+      provide: DISCORD_TRANSPORT,
+      useExisting: DiscordSdkTransportAdapter,
+    },
   ],
-  exports: [DiscordOutboundService, PlatformDeadLetterService],
+  exports: [
+    DiscordOutboundService,
+    DISCORD_TRANSPORT,
+    PlatformDeadLetterService,
+    OUTBOUND_DELIVERY_JOURNAL,
+  ],
 })
 export class DiscordOutboundModule {}

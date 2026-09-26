@@ -6,7 +6,10 @@ import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-sha
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
-import { LlmSafetyService } from './llm-safety.service';
+import {
+  LLM_SAFETY_METRICS,
+  type LlmSafetyMetricsPort,
+} from '../../domain/ports/llm-safety-metrics.port';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 import { subHours, subMilliseconds } from 'date-fns';
 import {
@@ -30,7 +33,8 @@ export class OpsHealthService {
     private readonly studyReminderJobRepository: StudyReminderJobRepositoryPort,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messageLogRepository: MessengerMessageLogRepositoryPort,
-    private readonly llmSafetyService: LlmSafetyService,
+    @Inject(LLM_SAFETY_METRICS)
+    private readonly llmSafetyService: LlmSafetyMetricsPort,
     @Inject(REDIS_CLIENT)
     private readonly redisClient: RedisClientPort,
     @Optional()

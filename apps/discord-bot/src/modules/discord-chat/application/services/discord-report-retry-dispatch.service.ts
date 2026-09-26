@@ -5,8 +5,13 @@ import { REPORT_SEND_JOB_REPOSITORY } from '@wispace/scheduler-core/core';
 import type {
   ReportSendJobRepositoryPort,
   ReportMapping,
+  AdvisoryLockPort,
+  ReportCronLeaderPort,
 } from '@wispace/scheduler-core/core';
-import { ReportCronLeaderService } from '@wispace/scheduler-core/adapters';
+import {
+  ADVISORY_LOCK_PORT,
+  REPORT_CRON_LEADER,
+} from '../../domain/ports/report-cron-seams.port';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
   DISCORD_REPORT_ACCOUNT_READER,
@@ -15,10 +20,7 @@ import {
 import { subMilliseconds, addMinutes } from 'date-fns';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import {
-  PgAdvisoryLockService,
-  ADVISORY_LOCKS,
-} from '@wispace/bot-common/locks';
+import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
 import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
@@ -55,8 +57,10 @@ export class DiscordReportRetryDispatchService {
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @Inject(DISCORD_REPORT_ACCOUNT_READER)
     private readonly accountLinkReader: DiscordReportAccountPageReaderPort,
-    private readonly reportCronLeaderService: ReportCronLeaderService,
-    private readonly pgLock: PgAdvisoryLockService,
+    @Inject(REPORT_CRON_LEADER)
+    private readonly reportCronLeaderService: ReportCronLeaderPort,
+    @Inject(ADVISORY_LOCK_PORT)
+    private readonly pgLock: AdvisoryLockPort,
     @Optional() private readonly metrics?: BotMetricsService,
   ) {
     this.metrics?.registerCron?.(

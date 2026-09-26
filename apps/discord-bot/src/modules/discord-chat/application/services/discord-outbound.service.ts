@@ -8,21 +8,18 @@ import {
 import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  Client,
-  TextChannel,
-} from 'discord.js';
-import type { MessageCreateOptions } from 'discord.js';
+  DISCORD_TRANSPORT,
+  type DiscordTransportPort,
+} from '../ports/discord-transport.port';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
   RESCHEDULE_CONFIRM_CUSTOM_ID,
 } from '../constants/discord-reschedule.constants';
 import {
-  DeliveryLogService,
-  PlatformDeadLetterService,
-} from '@wispace/database';
+  OUTBOUND_DELIVERY_JOURNAL,
+  type OutboundDeliveryJournalPort,
+  type OutboundDeliveryOutcome,
+} from '@wispace/contracts';
 import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
@@ -34,7 +31,6 @@ import {
 } from '../utils/discord-outbound-guard';
 import { withRetry } from '@wispace/wispace-client/core';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
-import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
@@ -131,13 +127,11 @@ export class DiscordOutboundService {
   private readonly logger = new Logger(DiscordOutboundService.name);
 
   constructor(
-    private readonly client: Client,
+    @Inject(DISCORD_TRANSPORT)
+    private readonly transport: DiscordTransportPort,
     @Optional()
-    @Inject(DeliveryLogService)
-    private readonly deliveryLog?: DeliveryLogService,
-    @Optional()
-    @Inject(PlatformDeadLetterService)
-    private readonly deadLetter?: PlatformDeadLetterService,
+    @Inject(OUTBOUND_DELIVERY_JOURNAL)
+    private readonly deliveryJournal?: OutboundDeliveryJournalPort,
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
@@ -212,9 +206,7 @@ export class DiscordOutboundService {
   /** Sends a typing indicator to the user's DM channel (fire-and-forget). */
   async sendTyping(discordUserId: string): Promise<void> {
     try {
-      const user = await this.client.users.fetch(discordUserId);
-      const channel = await user.createDM();
-      await channel.sendTyping();
+      await this.transport.sendTypingIndicator(discordUserId);
     } catch {
       // typing indicator is best-effort — swallow errors
     }
@@ -248,10 +240,7 @@ export class DiscordOutboundService {
             units,
           );
           if (!admission) throw new DiscordRateLimitError();
-          const user = await this.client.users.fetch(discordUserId);
-          // Payload structs are backend-owned (validated upstream) — cast
-          // through unknown to MessageCreateOptions instead of re-shaping.
-          const message = {
+          return this.transport.sendDirectMessage(discordUserId, {
             ...(payload.embeds !== undefined ? { embeds: payload.embeds } : {}),
             ...(payload.components !== undefined
               ? { components: payload.components }
@@ -266,8 +255,7 @@ export class DiscordOutboundService {
               users: [],
               repliedUser: false,
             },
-          } as unknown as MessageCreateOptions;
-          return user.send(message);
+          });
         },
         {
           maxRetries: 1,
@@ -292,7 +280,7 @@ export class DiscordOutboundService {
       // delivered message to not_sent (duplicate-DM risk in the batch
       // dispatcher) nor break the never-throws contract of this method.
       try {
-        await this.deliveryLog?.logDelivery({
+        await this.deliveryJournal?.logDelivery({
           externalUserId: discordUserId,
           status: 'SENT',
           messageType: 'chat',
@@ -321,7 +309,7 @@ export class DiscordOutboundService {
         )}: ${errorMsg}`,
       );
       try {
-        await this.deliveryLog?.logDelivery({
+        await this.deliveryJournal?.logDelivery({
           externalUserId: discordUserId,
           status: 'FAILED',
           error: errorMsg,
@@ -375,7 +363,7 @@ export class DiscordOutboundService {
       },
     );
     if (result.ok) {
-      await this.deliveryLog?.logDelivery({
+      await this.deliveryJournal?.logDelivery({
         externalUserId: discordUserId,
         status: 'SENT',
         messageType: 'chat',
@@ -398,7 +386,7 @@ export class DiscordOutboundService {
     } else {
       this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_SEND);
     }
-    await this.deliveryLog?.logDelivery({
+    await this.deliveryJournal?.logDelivery({
       externalUserId: discordUserId,
       status: 'FAILED',
       error: errorMsg,
@@ -408,7 +396,7 @@ export class DiscordOutboundService {
       options?.skipDeadLetter !== true &&
       (options?.clarification !== true || !result.ambiguous)
     ) {
-      const persisted = await this.deadLetter?.save({
+      const persisted = await this.deliveryJournal?.saveDeadLetter({
         externalUserId: discordUserId,
         rawPayload: { discordUserId, text },
         errorMessage: errorMsg,
@@ -451,7 +439,7 @@ export class DiscordOutboundService {
       this.toDiscordNonce(deliveryKey),
     );
     if (result.ok) {
-      await this.deliveryLog?.logDelivery({
+      await this.deliveryJournal?.logDelivery({
         externalUserId: discordUserId,
         status: 'SENT',
         messageType: 'chat',
@@ -466,7 +454,7 @@ export class DiscordOutboundService {
         discordUserId,
       )}: ${result.error}`,
     );
-    await this.deliveryLog?.logDelivery({
+    await this.deliveryJournal?.logDelivery({
       externalUserId: discordUserId,
       status: 'FAILED',
       error: result.error,
@@ -513,8 +501,7 @@ export class DiscordOutboundService {
             );
             if (!admission) throw new DiscordRateLimitError();
           }
-          const user = await this.client.users.fetch(discordUserId);
-          return user.send({
+          return this.transport.sendDirectMessage(discordUserId, {
             ...prepared,
             nonce,
             enforceNonce: true,
@@ -583,25 +570,28 @@ export class DiscordOutboundService {
       if (!(await this.admitOutbound(discordUserId, userId, 1))) {
         return false;
       }
-      const user = await this.client.users.fetch(discordUserId);
       const prepared = this.prepareText(content ?? '', {
         externalUserId: discordUserId,
       });
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(MENU_UPCOMING_SESSIONS_CUSTOM_ID)
-          .setLabel('📅 Lịch học sắp tới')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId(MENU_LEARNING_PROGRESS_CUSTOM_ID)
-          .setLabel('📊 Xem tiến độ')
-          .setStyle(ButtonStyle.Primary),
+      await this.transport.sendDirectMessageButtons(
+        discordUserId,
+        {
+          ...(content !== undefined ? { content: prepared.content } : {}),
+          allowedMentions: prepared.allowedMentions,
+        },
+        [
+          {
+            customId: MENU_UPCOMING_SESSIONS_CUSTOM_ID,
+            label: '📅 Lịch học sắp tới',
+            style: 'primary',
+          },
+          {
+            customId: MENU_LEARNING_PROGRESS_CUSTOM_ID,
+            label: '📊 Xem tiến độ',
+            style: 'primary',
+          },
+        ],
       );
-      await user.send({
-        ...(content !== undefined ? { content: prepared.content } : {}),
-        allowedMentions: prepared.allowedMentions,
-        components: [row],
-      });
       return true;
     } catch (error) {
       this.logger.warn(
@@ -624,15 +614,14 @@ export class DiscordOutboundService {
     },
   ): Promise<void> {
     try {
-      const channel = await this.client.channels.fetch(channelId);
-      if (channel instanceof TextChannel) {
-        await channel.send(
-          this.prepareText(text, {
-            externalUserId: options?.externalUserId,
-            allowedUserIds: options?.allowedUserIds,
-          }),
-        );
-      } else {
+      const sent = await this.transport.sendChannelMessage(
+        channelId,
+        this.prepareText(text, {
+          externalUserId: options?.externalUserId,
+          allowedUserIds: options?.allowedUserIds,
+        }),
+      );
+      if (!sent) {
         this.logger.warn(
           `Channel ${maskExternalId(channelId)} is not a TextChannel — skipping server welcome`,
         );
@@ -657,29 +646,25 @@ export class DiscordOutboundService {
       if (!(await this.admitOutbound(discordUserId, userId, 1))) {
         return 'rate_limited';
       }
-      const user = await this.client.users.fetch(discordUserId);
       const prepared = this.prepareText(summary, {
         externalUserId: discordUserId,
       });
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(
-            confirmationToken
-              ? `${RESCHEDULE_CONFIRM_CUSTOM_ID}:${confirmationToken}`
-              : RESCHEDULE_CONFIRM_CUSTOM_ID,
-          )
-          .setLabel('Xác nhận')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(
-            confirmationToken
-              ? `${RESCHEDULE_CANCEL_CUSTOM_ID}:${confirmationToken}`
-              : RESCHEDULE_CANCEL_CUSTOM_ID,
-          )
-          .setLabel('Hủy')
-          .setStyle(ButtonStyle.Danger),
-      );
-      await user.send({ ...prepared, components: [row] });
+      await this.transport.sendDirectMessageButtons(discordUserId, prepared, [
+        {
+          customId: confirmationToken
+            ? `${RESCHEDULE_CONFIRM_CUSTOM_ID}:${confirmationToken}`
+            : RESCHEDULE_CONFIRM_CUSTOM_ID,
+          label: 'Xác nhận',
+          style: 'success',
+        },
+        {
+          customId: confirmationToken
+            ? `${RESCHEDULE_CANCEL_CUSTOM_ID}:${confirmationToken}`
+            : RESCHEDULE_CANCEL_CUSTOM_ID,
+          label: 'Hủy',
+          style: 'danger',
+        },
+      ]);
     } catch (error) {
       this.logger.warn(
         `Failed to send reschedule confirmation to discordUserId=${maskExternalId(

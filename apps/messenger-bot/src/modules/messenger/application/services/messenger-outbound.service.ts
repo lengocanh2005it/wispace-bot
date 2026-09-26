@@ -29,11 +29,17 @@ import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.util
 import { splitMessengerBubbles } from '@messenger/shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
-import { PlatformDeadLetterService } from '@wispace/database';
+import {
+  OUTBOUND_DEAD_LETTER,
+  type OutboundDeadLetterPort,
+  type OutboundDeliveryOutcome,
+} from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
-import type { OutboundDeliveryOutcome } from '@wispace/contracts';
-import { MessengerPlatformConnectivityService } from '../../infrastructure/meta/messenger-platform-connectivity.service';
+import {
+  PLATFORM_CONNECTIVITY_SIGNAL,
+  type PlatformConnectivitySignalPort,
+} from '../ports/platform-connectivity-signal.port';
 export {
   MessengerApiError,
   MessengerPartialSendError,
@@ -96,8 +102,8 @@ export class MessengerOutboundService {
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly repository: MessengerMessageLogRepositoryPort,
     @Optional()
-    @Inject(PlatformDeadLetterService)
-    private readonly deadLetter?: PlatformDeadLetterService,
+    @Inject(OUTBOUND_DEAD_LETTER)
+    private readonly deadLetter?: OutboundDeadLetterPort,
     @Optional()
     @Inject(OutboundRateLimiter)
     private readonly outboundRateLimiter?: OutboundRateLimiter,
@@ -105,8 +111,8 @@ export class MessengerOutboundService {
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
     @Optional()
-    @Inject(MessengerPlatformConnectivityService)
-    private readonly platformConnectivity?: MessengerPlatformConnectivityService,
+    @Inject(PLATFORM_CONNECTIVITY_SIGNAL)
+    private readonly platformConnectivity?: PlatformConnectivitySignalPort,
   ) {
     const raw = this.configService.get<string>('MESSENGER_SEND_API_TIMEOUT_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -230,7 +236,7 @@ export class MessengerOutboundService {
           params.skipDeadLetter !== true &&
           !isMessengerAmbiguousDeliveryError(apiError)
         ) {
-          const persisted = await this.deadLetter?.save({
+          const persisted = await this.deadLetter?.saveDeadLetter({
             externalUserId: params.psid,
             rawPayload: { psid: params.psid, text: params.text },
             errorMessage: apiError.message,

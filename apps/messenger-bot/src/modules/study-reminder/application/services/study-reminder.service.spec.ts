@@ -5,7 +5,7 @@ import type {
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent/core';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
+import type { StudyReminderTimeFormatterPort } from '../../domain/ports/study-reminder-operations.port';
 import { StudyReminderService } from './study-reminder.service';
 import { StudySessionSourceService } from './study-session-source.service';
 import type { StudyReminderDisplayNamePort } from '../../domain/ports/study-reminder-display-name.port';
@@ -40,9 +40,8 @@ describe('StudyReminderService', () => {
         getUpcomingSessions: jest.fn(),
       } as unknown as StudySessionSourceService,
       {
-        getMinutesUntilSession: jest.fn(() => 60),
         formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
-      } as unknown as StudyReminderScheduleService,
+      } as unknown as StudyReminderTimeFormatterPort,
       {
         getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
         getCapacityData: jest.fn(() =>
@@ -82,9 +81,8 @@ describe('StudyReminderService', () => {
         getUpcomingSessions: jest.fn(),
       } as unknown as StudySessionSourceService,
       {
-        getMinutesUntilSession: jest.fn(() => 60),
         formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
-      } as unknown as StudyReminderScheduleService,
+      } as unknown as StudyReminderTimeFormatterPort,
       {
         getUserGoals: jest.fn(() => Promise.resolve({ targetScore: 7 })),
         getCapacityData: jest.fn(() => Promise.resolve({})),
@@ -187,9 +185,8 @@ describe('StudyReminderService', () => {
         getUpcomingSessions: jest.fn(),
       } as unknown as StudySessionSourceService,
       {
-        getMinutesUntilSession: jest.fn(() => 60),
         formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
-      } as unknown as StudyReminderScheduleService,
+      } as unknown as StudyReminderTimeFormatterPort,
       {
         getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
         getCapacityData: jest.fn(() =>
@@ -228,9 +225,8 @@ describe('StudyReminderService', () => {
         getUpcomingSessions: jest.fn(),
       } as unknown as StudySessionSourceService,
       {
-        getMinutesUntilSession: jest.fn(() => 60),
         formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
-      } as unknown as StudyReminderScheduleService,
+      } as unknown as StudyReminderTimeFormatterPort,
       {
         getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
         getCapacityData: jest.fn(() =>
@@ -280,9 +276,8 @@ describe('StudyReminderService', () => {
         getUpcomingSessions: jest.fn(),
       } as unknown as StudySessionSourceService,
       {
-        getMinutesUntilSession: jest.fn(() => 60),
         formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
-      } as unknown as StudyReminderScheduleService,
+      } as unknown as StudyReminderTimeFormatterPort,
       {
         getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
         getCapacityData: jest.fn(() =>

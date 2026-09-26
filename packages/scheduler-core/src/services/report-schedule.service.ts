@@ -4,6 +4,7 @@ import { rawDaysUntilExam } from '../utils/exam-date.utils';
 import { todayReportDate } from '../utils/report-date.utils';
 import { GOALS_DATA_PORT } from '../ports/goals-data.port';
 import type { GoalsDataPort } from '../ports/goals-data.port';
+import type { ReportSchedulePort } from '../ports/report-cron-seams.port';
 
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
@@ -17,7 +18,7 @@ export interface ExamWindowResult {
 }
 
 @Injectable()
-export class ReportScheduleService {
+export class ReportScheduleService implements ReportSchedulePort {
   constructor(
     private readonly configService: ConfigService,
     @Inject(GOALS_DATA_PORT) private readonly goalsDataPort: GoalsDataPort,

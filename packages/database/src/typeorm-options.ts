@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { isPrivateNetworkHost } from '@wispace/bot-common/utils';
+import { getPostgresSsl as buildPostgresSsl } from '@wispace/bot-common/config';
 import {
   DEFAULT_MIGRATION_LOCK_ID,
   guardDataSourceMigrations,
@@ -48,30 +48,7 @@ export function readEnv(source: EnvSource, key: string): string | undefined {
 export function getPostgresSsl(
   source: EnvSource,
 ): false | { rejectUnauthorized: true; ca?: string } {
-  if (readEnv(source, 'DB_SSL') !== 'true') {
-    const host = readEnv(source, 'DB_HOST')?.trim() ?? '';
-    if (
-      !isPrivateNetworkHost(host) &&
-      !isInsecureHostAllowlisted(source, host)
-    ) {
-      throw new Error(
-        'DB_SSL=true is required for database hosts outside a private/local network (or list the host in DB_ALLOW_INSECURE_HOSTS)',
-      );
-    }
-    return false;
-  }
-
-  const ca = readEnv(source, 'DB_SSL_CA')?.trim();
-  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
-}
-
-function isInsecureHostAllowlisted(source: EnvSource, host: string): boolean {
-  const raw = readEnv(source, 'DB_ALLOW_INSECURE_HOSTS') ?? '';
-  const normalizedHost = host.toLowerCase();
-  return raw
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .some((entry) => entry !== '' && entry === normalizedHost);
+  return buildPostgresSsl((key) => readEnv(source, key));
 }
 
 /** Shared entities used by all bots — import and spread into each bot's entity list. */

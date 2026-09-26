@@ -1,4 +1,4 @@
-import { Controller, Optional, UseGuards } from '@nestjs/common';
+import { Controller, Inject, Optional, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PlatformOpsController } from '@wispace/bot-common/health';
@@ -8,10 +8,10 @@ import {
 } from '@wispace/study-reminder-shared/adapters';
 import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import {
-  PrivacyDataService,
   PRIVACY_CLEANUP_STORES,
+  type PrivacyDataPort,
   type PrivacyStateCleanup,
-} from '@wispace/database';
+} from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 import {
@@ -19,6 +19,7 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
+import { DISCORD_PRIVACY_DATA } from './application/ports/privacy-data.port';
 
 @Controller('discord')
 @UseGuards(InternalApiKeyGuard, ThrottlerGuard)
@@ -27,7 +28,7 @@ export class DiscordOpsController extends PlatformOpsController {
     reportCronService: DiscordReportCronService,
     studyReminderSyncService: StudyReminderSyncService,
     calendarService: WispaceCalendarService,
-    privacyService: PrivacyDataService,
+    @Inject(DISCORD_PRIVACY_DATA) privacyService: PrivacyDataPort,
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,

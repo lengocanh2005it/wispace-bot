@@ -1,7 +1,7 @@
 import type {
   InboundRetryConfig,
   PlatformWebhookInboundEventService,
-} from './platform-webhook-inbound-event.service';
+} from '../adapters/platform-webhook-inbound-event.service';
 import { InlineWebhookInboundDispatcher } from './inline-webhook-inbound-dispatcher';
 
 function buildEventService() {

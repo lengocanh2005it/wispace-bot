@@ -25,9 +25,13 @@ import {
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import {
-  PlatformLinkStateService,
-  NotificationPreferenceService,
-} from '@wispace/database';
+  NOTIFICATION_PREFERENCE,
+  type NotificationPreferencePort,
+} from '@wispace/contracts';
+import {
+  PLATFORM_LINK_STATE,
+  type PlatformLinkStatePort,
+} from '@wispace/account-link-core/core';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
 import {
   MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,
@@ -55,8 +59,11 @@ export class MessengerMappingService {
     private readonly studyReminderSync: StudyReminderSyncPort,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
-    private readonly notificationPreferences: NotificationPreferenceService,
-    @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Inject(NOTIFICATION_PREFERENCE)
+    private readonly notificationPreferences: NotificationPreferencePort,
+    @Optional()
+    @Inject(PLATFORM_LINK_STATE)
+    private readonly linkState?: PlatformLinkStatePort,
     @Optional()
     @Inject(MESSENGER_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordRepository?: MessengerLinkVerifyRecordRepositoryPort,

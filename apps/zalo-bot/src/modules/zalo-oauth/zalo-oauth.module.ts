@@ -13,7 +13,16 @@ import {
   WispaceTokenVerifyService,
 } from '@wispace/wispace-client/adapters';
 import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
+import { PLATFORM_LINK_STATE } from '@wispace/account-link-core/core';
 import { PlatformLinkStateService } from '@wispace/database';
+import {
+  ZALO_LINK_STATE,
+  ZALO_TOKEN_VERIFY,
+} from './domain/ports/zalo-link-state.port';
+import {
+  ZaloLinkStateAdapter,
+  ZaloTokenVerifyAdapter,
+} from './infrastructure/adapters/zalo-link-state.adapter';
 import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
@@ -22,7 +31,8 @@ import { ZaloWelcomeRecordEntity } from '../../infrastructure/database/entities/
 import { ZaloTokenService } from './application/services/zalo-token.service';
 import { ZaloTokenRefreshService } from './application/services/zalo-token-refresh.service';
 import { ZaloOauthStateService } from './application/services/zalo-oauth-state.service';
-import { ZaloAccountLinkService } from './application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from './infrastructure/persistence/zalo-account-link.service';
+import { ZALO_ACCOUNT_LINK } from './domain/ports/zalo-account-link.port';
 import { TypeormZaloLinkVerifyRecordRepository } from './infrastructure/typeorm-zalo-link-verify-record.repository';
 import { TypeormZaloWelcomeRecordRepository } from './infrastructure/typeorm-zalo-welcome-record.repository';
 import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-verify-record.repository.port';
@@ -71,6 +81,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     ZaloTokenRefreshService,
     ZaloOauthStateService,
     ZaloAccountLinkService,
+    {
+      provide: ZALO_ACCOUNT_LINK,
+      useExisting: ZaloAccountLinkService,
+    },
     ZaloOAuthHttpAdapter,
     TypeormZaloOaTokenStoreAdapter,
     TypeormZaloOauthStateStoreAdapter,
@@ -92,6 +106,20 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       useExisting: ZaloTokenService,
     },
     PlatformLinkStateService,
+    ZaloTokenVerifyAdapter,
+    {
+      provide: ZALO_TOKEN_VERIFY,
+      useExisting: ZaloTokenVerifyAdapter,
+    },
+    ZaloLinkStateAdapter,
+    {
+      provide: ZALO_LINK_STATE,
+      useExisting: ZaloLinkStateAdapter,
+    },
+    {
+      provide: PLATFORM_LINK_STATE,
+      useExisting: PlatformLinkStateService,
+    },
     {
       provide: WispaceLinkStatusClient,
       useFactory: (
@@ -143,7 +171,11 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     ZALO_OA_ACCESS_TOKEN,
     ZALO_OAUTH_CLIENT,
     ZaloAccountLinkService,
+    ZALO_ACCOUNT_LINK,
     PlatformLinkStateService,
+    ZALO_LINK_STATE,
+    ZALO_TOKEN_VERIFY,
+    PLATFORM_LINK_STATE,
     ZaloOauthStateService,
     WispaceTokenVerifyService,
     ZALO_LINK_VERIFY_RECORD_REPOSITORY,

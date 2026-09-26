@@ -8,7 +8,7 @@ const {
   TypeormDataQualityRepository,
   readDataQualityConfig,
 } = require('@wispace/ops-health/adapters');
-const { getPostgresSsl } = require('@wispace/database');
+const { getPostgresSsl } = require('@wispace/bot-common/config');
 
 const HELP = `Usage: npm run ops:data-quality -- [options]
 
@@ -108,7 +108,11 @@ function printHuman(result) {
 
 let exitCode = 0;
 try {
-  pool = createPool(process.env, {}, getPostgresSsl(process.env));
+  pool = createPool(
+    process.env,
+    {},
+    getPostgresSsl((key) => process.env[key]),
+  );
   const config = readDataQualityConfig((key) => process.env[key]);
   const database = new PoolDataQualityDatabase(pool);
   const service = new DataQualityService(

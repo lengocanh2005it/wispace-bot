@@ -14,12 +14,13 @@ import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerMappingService } from './application/services/messenger-mapping.service';
 import { MessengerLinkContextService } from './application/services/messenger-link-context.service';
 import { MessengerLinkStartupService } from './application/services/messenger-link-startup.service';
-import { MessengerLinkReconcileCronService } from './application/services/messenger-link-reconcile-cron.service';
+import { MessengerLinkReconcileCronService } from './infrastructure/cron/messenger-link-reconcile-cron.service';
 import { WispaceMessengerTokenVerifyAdapter } from './infrastructure/wispace/wispace-messenger-token-verify.adapter';
 import { MessengerLinkVerifyRecordEntity } from '../../infrastructure/database/entities/messenger-link-verify-record.entity';
 import { TypeormMessengerLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-messenger-link-verify-record.repository';
 import { MESSENGER_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/messenger-link-verify-record.repository.port';
 import { MESSENGER_TOKEN_VERIFY } from './domain/ports/messenger-token-verify.port';
+import { PLATFORM_LINK_STATE } from '@wispace/account-link-core/core';
 import { PlatformLinkStateService } from '@wispace/database';
 import {
   WispaceConfigService,
@@ -58,6 +59,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     },
     MessengerLinkReconcileCronService,
     PlatformLinkStateService,
+    {
+      provide: PLATFORM_LINK_STATE,
+      useExisting: PlatformLinkStateService,
+    },
     {
       provide: WispaceLinkStatusClient,
       useFactory: (

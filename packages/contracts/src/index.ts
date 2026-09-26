@@ -12,6 +12,73 @@
 /** Platform discriminator used across all WISPACE bots. */
 export type Platform = 'messenger' | 'discord' | 'zalo';
 
+export const PRIVACY_CLEANUP_STORES = [
+  'chat_history',
+  'chat_queue',
+  'clarification_state',
+  'display_name_cache',
+] as const;
+
+export type PrivacyCleanupStore = (typeof PRIVACY_CLEANUP_STORES)[number];
+
+export interface PrivacyExpectedMapping {
+  exists: boolean;
+  userId?: number;
+  mappingGeneration?: string;
+}
+
+export interface PrivacyStateCleanup {
+  platform?: Platform;
+  applicableStores?: readonly PrivacyCleanupStore[];
+  clearHistory?: (externalUserId: string) => Promise<void>;
+  clearQueuedWork?: (externalUserId: string) => Promise<void>;
+  clearClarification?: (externalUserId: string) => Promise<void>;
+  clearUserCache?: (userId: number) => Promise<void>;
+  onAttempt?: (
+    store: PrivacyCleanupStore,
+    outcome: 'success' | 'failure' | 'stale' | 'skipped',
+  ) => void;
+}
+
+export interface PrivacyUnlinkResult {
+  deleted: boolean;
+  unlinked?: boolean;
+  userId?: number;
+  conflict?: boolean;
+  status?: 'complete' | 'incomplete';
+  cleanupId?: string;
+  outstandingStores?: PrivacyCleanupStore[];
+}
+
+export interface PrivacyDeleteResult {
+  deleted: boolean;
+  userId?: number;
+  conflict?: boolean;
+  status: 'complete' | 'incomplete';
+  cleanupId?: string;
+  outstandingStores: PrivacyCleanupStore[];
+}
+
+export interface PrivacyDataPort {
+  unlink(
+    platform: Platform,
+    externalUserId: string,
+    cleanup?: PrivacyStateCleanup,
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<PrivacyUnlinkResult>;
+  delete(
+    platform: Platform,
+    externalUserId: string,
+    cleanup?: PrivacyStateCleanup,
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<PrivacyDeleteResult | boolean | void>;
+  export(
+    platform: Platform,
+    externalUserId: string,
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<unknown>;
+}
+
 /** Canonical ownership state of a platform mapping. */
 export type PlatformLinkState =
   | 'active'
@@ -76,3 +143,60 @@ export const MessageType = {
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
+
+export const NOTIFICATION_PREFERENCE = Symbol('NOTIFICATION_PREFERENCE');
+
+/**
+ * Per-feature scheduled-notification consent.
+ *
+ * Defaults are asymmetric and must be preserved by any implementation: a NULL
+ * report flag is opted OUT (reports are opt-in) while a NULL reminder flag is
+ * opted IN (reminders are opt-out).
+ */
+export interface NotificationPreferencePort {
+  setReportEnabled(userId: number, enabled: boolean): Promise<void>;
+  setReminderEnabled(userId: number, enabled: boolean): Promise<void>;
+  findReportOptedInUserIds(userIds: number[]): Promise<Set<number>>;
+}
+
+export const OUTBOUND_DELIVERY_JOURNAL = Symbol('OUTBOUND_DELIVERY_JOURNAL');
+
+/**
+ * Outbound durability journal (Discord and Zalo).
+ *
+ * The two operations deliberately keep their different failure semantics and
+ * are never collapsed into one: `logDelivery` is best effort and never
+ * throws, while `saveDeadLetter` resolves `false` when no durable recovery
+ * record exists so the caller must treat the message as lost. Messenger
+ * persists its audit rows through its own message-log repository port, so it
+ * binds {@link OutboundDeadLetterPort} instead.
+ */
+export interface OutboundDeliveryJournalPort {
+  logDelivery(input: {
+    externalUserId: string;
+    status: 'SENT' | 'FAILED';
+    error?: string;
+    messageType?: string;
+  }): Promise<void>;
+  saveDeadLetter(input: {
+    externalUserId: string;
+    rawPayload: unknown;
+    errorMessage: string;
+    direction?: 'inbound' | 'outbound';
+    deliveryKey?: string;
+  }): Promise<boolean>;
+}
+
+export const OUTBOUND_DEAD_LETTER = Symbol('OUTBOUND_DEAD_LETTER');
+
+/** Dead-letter durability only; the audit log is owned elsewhere. */
+export interface OutboundDeadLetterPort {
+  /** Resolves `false` when no durable recovery record exists. */
+  saveDeadLetter(input: {
+    externalUserId: string;
+    rawPayload: unknown;
+    errorMessage: string;
+    direction?: 'inbound' | 'outbound';
+    deliveryKey?: string;
+  }): Promise<boolean>;
+}

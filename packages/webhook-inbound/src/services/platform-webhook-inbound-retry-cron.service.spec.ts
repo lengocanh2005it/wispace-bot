@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
-import type { InboundEventRow } from './platform-webhook-inbound-event.service';
+import type { InboundEventRow } from '../adapters/platform-webhook-inbound-event.service';
 import {
   PlatformWebhookInboundRetryCronService,
   type WebhookInboundRetryCronOptions,

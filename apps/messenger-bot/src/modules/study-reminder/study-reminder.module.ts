@@ -55,6 +55,8 @@ import { StudyCalendarCommandService } from './infrastructure/adapters/study-cal
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
+import { CalendarStudySessionSourceAdapter } from './infrastructure/wispace/calendar-study-session-source.adapter';
+import { STUDY_SESSION_SOURCE } from './domain/ports/study-session-source.port';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
 import type { ReminderStudentDataPort } from './domain/ports/reminder-student-data.port';
 import { REMINDER_STUDENT_DATA_PORT } from './domain/ports/reminder-student-data.port';
@@ -62,6 +64,7 @@ import { classifyMessengerDispatchFailure } from '../messenger/application/utils
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 import {
   STUDY_REMINDER_OPERATIONS_PORT,
+  STUDY_REMINDER_TIME_FORMATTER,
   type StudyReminderOperationsPort,
 } from './domain/ports/study-reminder-operations.port';
 import {
@@ -191,6 +194,11 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     // ── Messenger-local services (kept) ──────────────────────────────────
     UserCalendarApiService,
     UserCalendarScheduleService,
+    CalendarStudySessionSourceAdapter,
+    {
+      provide: STUDY_SESSION_SOURCE,
+      useExisting: CalendarStudySessionSourceAdapter,
+    },
     {
       provide: REMINDER_STUDENT_DATA_PORT,
       useFactory: (
@@ -221,6 +229,10 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     },
     StudyCalendarCommandService,
     StudySessionSourceService,
+    {
+      provide: STUDY_REMINDER_TIME_FORMATTER,
+      useExisting: StudyReminderScheduleService,
+    },
     StudyReminderService,
 
     {

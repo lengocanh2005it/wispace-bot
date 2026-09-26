@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import type { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
+import type { PlatformWebhookInboundEventService } from '../adapters/platform-webhook-inbound-event.service';
 import { PlatformWebhookInboundCleanupService } from './platform-webhook-inbound-cleanup.service';
 
 describe('PlatformWebhookInboundCleanupService', () => {

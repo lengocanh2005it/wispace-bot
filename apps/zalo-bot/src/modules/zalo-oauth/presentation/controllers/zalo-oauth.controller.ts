@@ -13,7 +13,7 @@ import { LinkPersistenceExhaustedError } from '@wispace/account-link-core/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from '../../infrastructure/persistence/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
 import {
   ZaloLinkCompletionService,

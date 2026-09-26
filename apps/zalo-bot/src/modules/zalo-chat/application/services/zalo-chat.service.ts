@@ -14,12 +14,21 @@ import {
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
-import { NotificationPreferenceService } from '@wispace/database';
+import {
+  NOTIFICATION_PREFERENCE,
+  type NotificationPreferencePort,
+} from '@wispace/contracts';
 import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
 import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
-import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
+import {
+  ZALO_ACCOUNT_LINK,
+  type ZaloAccountLinkPort,
+} from '@zalo/modules/zalo-oauth/domain/ports/zalo-account-link.port';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
-import { PlatformChatQueueService } from '@wispace/chat-agent';
+import {
+  ZALO_CHAT_QUEUE,
+  type ZaloChatQueuePort,
+} from '../ports/zalo-chat-queue.port';
 import {
   isValidApprovalToken,
   RescheduleConfirmationService,
@@ -57,10 +66,13 @@ export class ZaloChatService {
     private readonly configService: ConfigService,
     @Inject(ZALO_OUTBOUND)
     private readonly outboundService: ZaloOutboundPort,
-    private readonly accountLinkService: ZaloAccountLinkService,
-    private readonly chatQueueService: PlatformChatQueueService,
+    @Inject(ZALO_ACCOUNT_LINK)
+    private readonly accountLinkService: ZaloAccountLinkPort,
+    @Inject(ZALO_CHAT_QUEUE)
+    private readonly chatQueueService: ZaloChatQueuePort,
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
-    private readonly notificationPreferences: NotificationPreferenceService,
+    @Inject(NOTIFICATION_PREFERENCE)
+    private readonly notificationPreferences: NotificationPreferencePort,
     @Optional()
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,

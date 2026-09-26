@@ -14,6 +14,13 @@ export type {
 export const STUDY_REMINDER_OPERATIONS_PORT = Symbol(
   'STUDY_REMINDER_OPERATIONS_PORT',
 );
+export const STUDY_REMINDER_TIME_FORMATTER = Symbol(
+  'STUDY_REMINDER_TIME_FORMATTER',
+);
+
+export interface StudyReminderTimeFormatterPort {
+  formatScheduledTimeLabel(scheduledAt: Date, now?: Date): string;
+}
 
 export interface StudyOutboxSettings {
   minutesBefore: number;
@@ -27,7 +34,7 @@ export interface StudyOutboxSettings {
   stuckProcessingMs: number;
 }
 
-export interface StudyReminderOperationsPort {
+export interface StudyReminderOperationsPort extends StudyReminderTimeFormatterPort {
   getUpcomingSessions(params: {
     psid: string;
     userId?: number;
@@ -60,8 +67,6 @@ export interface StudyReminderOperationsPort {
   }>;
 
   getOutboxSettings(): StudyOutboxSettings;
-
-  formatScheduledTimeLabel(scheduledAt: Date, now?: Date): string;
 
   rescheduleSession(params: {
     psid: string;

@@ -26,14 +26,8 @@ import {
   ReportClaimStaleResetCronService,
 } from '@wispace/scheduler-core/adapters';
 import {
-  REPORT_SEND_JOB_REPOSITORY,
-  REPORT_CLAIM_REPOSITORY,
-  REPORT_DELIVERY_METRICS,
-  GOALS_DATA_PORT,
-  parseExamDateToIso,
-  type ReportClaimRepositoryPort,
-} from '@wispace/scheduler-core/core';
-import {
+  CanonicalPlatformService,
+  WebActivityService,
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
@@ -43,6 +37,23 @@ import {
   CronLeaderLeaseService,
 } from '@wispace/database';
 import {
+  CANONICAL_PLATFORM,
+  ADVISORY_LOCK_PORT,
+  REPORT_CRON_LEADER,
+  REPORT_CRON_LOCK,
+  REPORT_ORCHESTRATION,
+  REPORT_SCHEDULE,
+  WEB_ACTIVITY,
+} from './domain/ports/report-cron-seams.port';
+import {
+  REPORT_SEND_JOB_REPOSITORY,
+  REPORT_CLAIM_REPOSITORY,
+  REPORT_DELIVERY_METRICS,
+  GOALS_DATA_PORT,
+  parseExamDateToIso,
+  type ReportClaimRepositoryPort,
+} from '@wispace/scheduler-core/core';
+import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,
 } from '@wispace/wispace-client/core';
@@ -51,6 +62,7 @@ import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';
 import { DISCORD_REPORT_ACCOUNT_READER } from './domain/ports/discord-report-account-reader.port';
+import { DISCORD_REPORT_GENERATOR } from './domain/ports/discord-report-generator.port';
 import { DiscordReportCronService } from './application/services/discord-report-cron.service';
 import { DiscordReportRetryDispatchService } from './application/services/discord-report-retry-dispatch.service';
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
@@ -181,6 +193,12 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         'LLM_REPORT_EXECUTION_PORT',
       ],
     },
+    {
+      // #1088: the orchestration service depends on the generator seam; the
+      // concrete adapter stays available for its other consumers.
+      provide: DISCORD_REPORT_GENERATOR,
+      useExisting: PlatformStudentReportService,
+    },
     ReportScheduleService,
     ReportSendScheduleService,
     CronLeaderLeaseService,
@@ -206,6 +224,13 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         new ReportCronLockService(pgLock, 'discord'),
       inject: [PgAdvisoryLockService],
     },
+    { provide: REPORT_CRON_LEADER, useExisting: ReportCronLeaderService },
+    { provide: REPORT_CRON_LOCK, useExisting: ReportCronLockService },
+    { provide: REPORT_SCHEDULE, useExisting: ReportScheduleService },
+    { provide: CANONICAL_PLATFORM, useExisting: CanonicalPlatformService },
+    { provide: WEB_ACTIVITY, useExisting: WebActivityService },
+    { provide: REPORT_ORCHESTRATION, useExisting: ReportOrchestrationService },
+    { provide: ADVISORY_LOCK_PORT, useExisting: PgAdvisoryLockService },
     ReportOrchestrationService,
     {
       // Report-delivery SLO outcomes (#829) — BotMetricsService satisfies the

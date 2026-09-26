@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Inject,
   Optional,
   Post,
   UseGuards,
@@ -16,10 +17,10 @@ import {
 } from '@wispace/study-reminder-shared/adapters';
 import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import {
-  PrivacyDataService,
   PRIVACY_CLEANUP_STORES,
+  type PrivacyDataPort,
   type PrivacyStateCleanup,
-} from '@wispace/database';
+} from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import {
@@ -27,6 +28,7 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
+import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -47,7 +49,7 @@ export class ZaloOpsController extends PlatformOpsController {
     private readonly studyReminderSyncService: StudyReminderSyncService,
     reportCronService: ZaloReportCronService,
     private readonly calendarService: WispaceCalendarService,
-    privacyService: PrivacyDataService,
+    @Inject(ZALO_PRIVACY_DATA) privacyService: PrivacyDataPort,
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
