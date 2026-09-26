@@ -213,8 +213,12 @@ Data sent to the LLM to generate a report. Includes `exam_date`, `target_band`, 
 _Avoid_: report input, report data
 
 **StudentCapacityReport**:
-Structured output from the LLM: `{ headline, streak, "tinh trang task 1", "tinh trang task 2" }`.
+Final learner report assembled from an LLM-written `headline` and factual fields derived deterministically from source data, including practice counts and task statuses.
 _Avoid_: AI report (that is the formatted message the user sees)
+
+**StudentReportProse**:
+The LLM-authored portion of a student report: one `headline`; factual report fields are derived from source data.
+_Avoid_: report output (that means the complete `StudentCapacityReport`)
 
 **band / targetScore**:
 IELTS score (0–9 scale). `targetScore` is the target band. `task1_band` and `task2_band` are the current averages for Task 1 and Task 2.
@@ -755,7 +759,7 @@ Supplemental prompt-injection scan across boundaries between current `userTextPa
 _Avoid_: conversation-wide scan, multi-turn classifier
 
 *_system prompt / *.system.txt*_:
-Instructions sent as the `system` message. Files live in each app's `src/shared/prompts/` and are copied to `dist/` at build time.
+Instructions sent in the system role. A prompt may be owned by a feature and shared across bots; each bot packages the prompts it uses at build time.
 _Avoid_: prompt file, AI instructions — use "system prompt"
 
 **prompt core / overlay**:

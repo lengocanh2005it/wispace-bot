@@ -7,6 +7,7 @@ export {
 } from '../student-report.service';
 export type { CapacityDataPort } from '../ports';
 export type { StudentCapacityInput, StudentCapacityReport } from '../types';
+export type { StudentReportProse } from '../report-formatter';
 export {
   StudentReportNoScoreDataError,
   StudentReportRetryableError,

@@ -1,14 +1,53 @@
 import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import {
   parseJsonObject,
-  readRequiredStringArrayField,
   readRequiredStringField,
-} from '@messenger/shared/utils/llm-json-output.utils';
-import type {
-  StudyReminderLlmInput,
-  StudyReminderLlmOutput,
-  StudyReminderLlmProse,
+} from '@wispace/llm-agent/core';
+import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';
+import {
+  type StudyReminderLlmInput,
+  type StudyReminderLlmOutput,
+  type StudyReminderLlmProse,
 } from '../entities/study-schedule.types';
+
+interface RequiredStringArrayOptions {
+  minItems?: number;
+  maxItems?: number;
+  maxCharsPerItem?: number;
+}
+
+function readRequiredStringArrayField(
+  value: Record<string, unknown>,
+  key: string,
+  options?: RequiredStringArrayOptions,
+): string[] {
+  const raw = value[key];
+  if (!Array.isArray(raw)) {
+    throw new Error(`LLM JSON output missing string array field: ${key}`);
+  }
+
+  const maxItems = options?.maxItems ?? 8;
+  const items = raw
+    .slice(0, maxItems)
+    .map((entry) =>
+      typeof entry === 'string'
+        ? sanitizeMessengerText(entry).replace(/\s+/g, ' ').trim()
+        : '',
+    )
+    .filter(Boolean)
+    .map((entry) => {
+      const maxChars = options?.maxCharsPerItem ?? 180;
+      return entry.length > maxChars
+        ? `${entry.slice(0, maxChars).trim()}...`
+        : entry;
+    });
+
+  if (items.length < (options?.minItems ?? 1)) {
+    throw new Error(`LLM JSON output has too few items in field: ${key}`);
+  }
+
+  return items;
+}
 
 export interface ReminderParseResult {
   prose: StudyReminderLlmProse;
@@ -22,8 +61,14 @@ export interface ReminderParseResult {
 export function parseReminderOutput(content: string): ReminderParseResult {
   const parsed = parseJsonObject(content);
   const prose: StudyReminderLlmProse = {
-    greeting: readRequiredStringField(parsed, 'greeting', { maxChars: 120 }),
-    intro: readRequiredStringField(parsed, 'intro', { maxChars: 240 }),
+    greeting: readRequiredStringField(parsed, 'greeting', {
+      maxChars: 120,
+      sanitize: sanitizeMessengerText,
+    }),
+    intro: readRequiredStringField(parsed, 'intro', {
+      maxChars: 240,
+      sanitize: sanitizeMessengerText,
+    }),
     tasks: readRequiredStringArrayField(parsed, 'tasks', {
       minItems: 3,
       maxItems: 4,
@@ -31,8 +76,12 @@ export function parseReminderOutput(content: string): ReminderParseResult {
     }),
     motivation: readRequiredStringField(parsed, 'motivation', {
       maxChars: 500,
+      sanitize: sanitizeMessengerText,
     }),
-    signoff: readRequiredStringField(parsed, 'signoff', { maxChars: 120 }),
+    signoff: readRequiredStringField(parsed, 'signoff', {
+      maxChars: 120,
+      sanitize: sanitizeMessengerText,
+    }),
   };
   const rawTime = parsed['scheduledTime'];
   return {

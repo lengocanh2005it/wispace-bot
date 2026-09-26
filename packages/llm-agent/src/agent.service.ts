@@ -20,7 +20,7 @@ import {
   isStopIntent,
 } from './scope.utils';
 import { sleep, isAbortError } from './retry.utils';
-import { jitteredDelayMs } from '@wispace/bot-common/utils';
+import { jitteredDelayMs, withTimeout } from '@wispace/bot-common/utils';
 import {
   buildExhaustionPartialAnswer,
   buildNonDisclosureReply,
@@ -86,29 +86,6 @@ const NOOP_LOGGER = { warn: () => undefined, debug: () => undefined };
 
 const MAX_RETRY_DELAY_MS = 10_000;
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-  onTimeout?: () => void,
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      onTimeout?.();
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err: unknown) => {
-        clearTimeout(timer);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      },
-    );
-  });
-}
 function linkAbortSignal(
   source: AbortSignal | undefined,
   target: AbortController,

@@ -149,6 +149,10 @@ export {
 } from '../retry.utils';
 export { loadSystemPromptFile } from '../load-system-prompt';
 export {
+  parseJsonObject,
+  readRequiredStringField,
+} from '../llm-json-output.utils';
+export {
   canonicalizeToolObservation,
   fitToolObservation,
   observationMarker,

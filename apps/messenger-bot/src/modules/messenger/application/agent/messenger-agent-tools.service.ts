@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { withTimeout } from '@wispace/bot-common/utils';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   type PlatformAgentReply,
@@ -65,7 +66,6 @@ import {
   isRescheduleIntent,
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
-import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/messenger-report-subscription-intent.utils';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =

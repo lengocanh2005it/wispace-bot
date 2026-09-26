@@ -18,7 +18,26 @@ export function loadSystemPrompt(key: SystemPromptKey): string {
     return cached;
   }
 
-  const content = readFileSync(join(__dirname, fileName), 'utf8').trim();
+  let content: string;
+  try {
+    content = readFileSync(join(__dirname, fileName), 'utf8').trim();
+  } catch (error) {
+    if (
+      key !== 'studentReport' ||
+      !/[/\\]src[/\\]shared[/\\]prompts$/.test(__dirname)
+    ) {
+      throw error;
+    }
+
+    content = readFileSync(
+      join(
+        __dirname,
+        '../../../../../packages/student-report/src/prompts',
+        fileName,
+      ),
+      'utf8',
+    ).trim();
+  }
 
   promptCache.set(fileName, content);
   return content;

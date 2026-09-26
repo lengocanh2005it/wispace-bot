@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && node ../../packages/student-report/scripts/copy-prompt-to-app.mjs zalo-bot",
     "format": "oxfmt",
     "start": "nest start",
     "start:dev": "nest start --watch",
