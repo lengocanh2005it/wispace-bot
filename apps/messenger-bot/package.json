@@ -58,6 +58,7 @@
     "@opentelemetry/resources": "^2.8.0",
     "@opentelemetry/sdk-node": "^0.222.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@wispace/account-link-core": "*",
     "@wispace/bot-common": "*",
     "@wispace/bot-metrics": "*",
     "@wispace/chat-agent": "*",
