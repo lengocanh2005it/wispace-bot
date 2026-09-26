@@ -42,6 +42,7 @@
     "@wispace/contracts": "*",
     "@wispace/date-utils": "*",
     "@wispace/reschedule-confirm": "*",
+    "@wispace/scheduler-core": "*",
     "@wispace/wispace-client": "*",
     "cron": "^4.4.0",
     "date-fns": "^4.4.0",

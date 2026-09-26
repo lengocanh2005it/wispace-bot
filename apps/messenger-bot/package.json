@@ -64,6 +64,7 @@
     "@wispace/chat-agent": "*",
     "@wispace/chat-history": "*",
     "@wispace/chat-metering": "*",
+    "@wispace/chat-pipeline": "*",
     "@wispace/chat-queue-core": "*",
     "@wispace/cleanup-cron": "*",
     "@wispace/contracts": "*",
