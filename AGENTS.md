@@ -227,7 +227,6 @@ Existing specs (key files, not exhaustive — `apps/*/src/**/*.spec.ts` + `packa
 - `apps/messenger-bot/src/modules/student-report/application/services/student-report.service.spec.ts`
 - `apps/messenger-bot/src/shared/common/guards/internal-api-key.guard.spec.ts`
 - `apps/messenger-bot/src/shared/config/poc.constants.spec.ts`
-- `apps/messenger-bot/src/shared/utils/prompt-injection.utils.spec.ts`
 
 **Discord bot:**
 
