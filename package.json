@@ -60,7 +60,7 @@
   "lint-staged": {
     "*.ts": [
       "oxfmt",
-      "oxlint --fix"
+      "oxlint --fix --no-error-on-unmatched-pattern"
     ]
   },
   "dependencies": {
