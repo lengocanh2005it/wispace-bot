@@ -14,19 +14,21 @@ import {
 import {
   RESCHEDULE_SCOPE_ERROR_MESSAGE,
   RescheduleStageAbortedError,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import {
-  type AgentToolName,
-  type BoundedToolDisclosure,
-  type GetUpcomingStudySessionsArgs,
-  type ListStudyCalendarEntriesArgs,
-  type RescheduleStudySessionArgs,
   buildBoundedToolResultMetadata,
   readPastDays,
   readPositiveInteger,
   readPositiveLimit,
   readValidatedDate,
   readValidatedTime,
+} from '@wispace/llm-agent/core';
+import type {
+  AgentToolName,
+  BoundedToolDisclosure,
+  GetUpcomingStudySessionsArgs,
+  ListStudyCalendarEntriesArgs,
+  RescheduleStudySessionArgs,
 } from '@wispace/llm-agent/core';
 import {
   MessengerLinkContext,
@@ -46,7 +48,7 @@ import type { StudyReminderOperationsPort } from '@messenger/modules/study-remin
 import {
   MemoizedWispaceGoalsService,
   PrecreateExerciseApiClient,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import {
   buildCalendarEntriesRichFollowUp,

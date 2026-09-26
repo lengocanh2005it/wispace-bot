@@ -8,18 +8,18 @@ import {
   buildCrisisSupportHandoffMessage,
   buildHostilityDeflectionMessage,
   CHAT_FAILURE_FALLBACK_MESSAGE,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 
 import type {
   AgentMetricsPort,
   ClassifyResult,
   LlmExecutionPort,
   LlmProviderAdapter,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import type {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import type { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type { PlatformAgentToolsService } from './platform-agent-tools.service';
@@ -35,20 +35,20 @@ const DEFAULT_PROMPT_CANARY = 'abcdef0123456789abcdef0123456789';
 const mockLlmReply = jest.fn();
 const mockGeneratePromptCanary = jest.fn(() => DEFAULT_PROMPT_CANARY);
 
-jest.mock('@wispace/llm-agent', () => ({
-  ...jest.requireActual('@wispace/llm-agent'),
+jest.mock('@wispace/llm-agent/core', () => ({
+  ...jest.requireActual('@wispace/llm-agent/core'),
   CHAT_SYSTEM_PROMPT_CORE: 'core prompt',
   LlmAgentService: jest.fn().mockImplementation(() => ({
     reply: mockLlmReply,
   })),
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   retryWithBackoff: jest.fn(),
-  createEnvLlmExecutionPort: jest.fn(),
+  generatePromptCanary: () => mockGeneratePromptCanary(),
 }));
 
-jest.mock('@wispace/llm-agent/core', () => ({
-  ...jest.requireActual('@wispace/llm-agent/core'),
-  generatePromptCanary: () => mockGeneratePromptCanary(),
+jest.mock('@wispace/llm-agent/adapters', () => ({
+  ...jest.requireActual('@wispace/llm-agent/adapters'),
+  createEnvLlmExecutionPort: jest.fn(),
 }));
 
 describe('PlatformAgentService', () => {
@@ -407,10 +407,9 @@ describe('PlatformAgentService', () => {
   });
 
   it('composes the system prompt through the shared composer — runtime output is byte-identical to the harness path (#646)', async () => {
-    const { composeChatSystemPrompt: realCompose } =
-      jest.requireActual<typeof import('@wispace/llm-agent')>(
-        '@wispace/llm-agent',
-      );
+    const { composeChatSystemPrompt: realCompose } = jest.requireActual<
+      typeof import('@wispace/llm-agent/core')
+    >('@wispace/llm-agent/core');
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),
       appendTurn: jest.fn().mockResolvedValue(undefined),

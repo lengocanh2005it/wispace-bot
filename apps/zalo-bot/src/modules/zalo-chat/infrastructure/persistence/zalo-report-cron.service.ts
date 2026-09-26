@@ -9,28 +9,26 @@ import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  PlatformStudentReportService,
-  isStudentReportRetryableError,
-} from '@wispace/student-report';
+import { PlatformStudentReportService } from '@wispace/student-report/adapters';
+import { isStudentReportRetryableError } from '@wispace/student-report/core';
 import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
-import type {
-  ReportClaimRepositoryPort,
-  ClassifiedError,
-} from '@wispace/scheduler-core';
+import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core/core';
+import type { ClassifiedError } from '@wispace/scheduler-core/adapters';
 import {
   REPORT_CLAIM_REPOSITORY,
+  evaluateExamWindow,
+  runBatched,
+  todayReportDate,
+} from '@wispace/scheduler-core/core';
+import {
   ReportCronLeaderService,
   ReportCronLockService,
   ReportOrchestrationService,
   ReportScheduleService,
-  evaluateExamWindow,
-  runBatched,
-  todayReportDate,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/adapters';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloSendError } from '../../application/services/zalo-outbound.service';
-import { WispaceApiError } from '@wispace/wispace-client';
+import { WispaceApiError } from '@wispace/wispace-client/core';
 import type { Platform } from '@wispace/contracts';
 import {
   buildLlmExecutionConfig,

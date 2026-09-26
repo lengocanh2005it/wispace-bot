@@ -21,7 +21,7 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
+import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent/core';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 import { ChatRuntimeConfig } from '../chat-runtime-config';
 import type { ChatQueueBufferSnapshot } from './chat-queue-store.types';

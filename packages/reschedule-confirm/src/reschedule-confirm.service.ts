@@ -9,7 +9,7 @@ import { isAbortError } from '@wispace/bot-common/utils';
 import type {
   RescheduleSchedulingMode,
   UserCalendarRecord,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import {
   MemoryRescheduleStore,
   type RescheduleStorePort,

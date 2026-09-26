@@ -4,14 +4,12 @@
   "description": "Generic reschedule confirmation service for WISPACE bots",
   "private": true,
   "license": "UNLICENSED",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "default": "./dist/index.js"
+    "./core": {
+      "import": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts",
+      "require": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
     },
     "./adapters": {
       "import": "./dist/adapters/index.js",

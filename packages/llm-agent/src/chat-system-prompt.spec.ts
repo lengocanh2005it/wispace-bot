@@ -3,7 +3,7 @@ import {
   composeChatSystemPrompt,
   generatePromptCanary,
 } from './chat-system-prompt';
-import { generatePromptCanary as generatePromptCanaryFromRoot } from './index';
+import { generatePromptCanary as generatePromptCanaryFromCore } from './core';
 import { buildHostilityDeflectionMessage } from './messages';
 
 const PROMPT_CANARY = '0123456789abcdef0123456789abcdef';
@@ -27,8 +27,8 @@ describe('generatePromptCanary', () => {
     );
   });
 
-  it('exports the generator from the package root', () => {
-    expect(generatePromptCanaryFromRoot(() => Buffer.alloc(16))).toBe(
+  it('exports the generator from the core entrypoint', () => {
+    expect(generatePromptCanaryFromCore(() => Buffer.alloc(16))).toBe(
       '00000000000000000000000000000000',
     );
   });

@@ -19,7 +19,7 @@ import {
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { PlatformLinkStateService } from '@wispace/database';
-import { WispaceLinkStatusClient } from '@wispace/wispace-client';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
   CLARIFICATION_STATE_STORE,

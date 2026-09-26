@@ -10,7 +10,7 @@ import type {
 import {
   cancelStudyReminderJobsForOwnershipChange,
   nextMappingGenerationAfterTombstone,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import type { DiscordAccountLinkRepositoryPort } from '../../domain/ports/discord-account-link.repository.port';
 

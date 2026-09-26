@@ -5,7 +5,7 @@ import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
   ChatRateLimitRepository as ChatMeteringRepository,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import type {
   RecoverIdempotencyOutcome,
   ReserveFreeFormSlotInput,

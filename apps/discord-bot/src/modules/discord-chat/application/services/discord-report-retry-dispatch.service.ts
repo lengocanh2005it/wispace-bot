@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import {
-  REPORT_SEND_JOB_REPOSITORY,
-  ReportCronLeaderService,
-  type ReportSendJobRepositoryPort,
-  type ReportMapping,
-} from '@wispace/scheduler-core';
+import { REPORT_SEND_JOB_REPOSITORY } from '@wispace/scheduler-core/core';
+import type {
+  ReportSendJobRepositoryPort,
+  ReportMapping,
+} from '@wispace/scheduler-core/core';
+import { ReportCronLeaderService } from '@wispace/scheduler-core/adapters';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
   DISCORD_REPORT_ACCOUNT_READER,

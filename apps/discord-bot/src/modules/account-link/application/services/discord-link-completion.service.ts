@@ -5,11 +5,13 @@ import {
   LinkConflictError,
   LinkPersistenceExhaustedError,
   LinkTokenRejectedError,
-  type LinkCompletionAfterCommitContext,
-  type LinkFlowAdapter,
+} from '@wispace/account-link-core/core';
+import type {
+  LinkCompletionAfterCommitContext,
+  LinkFlowAdapter,
 } from '@wispace/account-link-core/core';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import {
   DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
   type DiscordLinkVerifyRecordRepositoryPort,

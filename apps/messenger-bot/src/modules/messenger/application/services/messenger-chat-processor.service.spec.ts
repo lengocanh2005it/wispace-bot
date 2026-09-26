@@ -21,7 +21,7 @@ import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PlatformChatHistoryService } from '@wispace/chat-agent';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import type { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
-import { PrivacyStateService } from '@wispace/llm-agent';
+import { PrivacyStateService } from '@wispace/llm-agent/adapters';
 import {
   capMergedChatUserText,
   mergeChatUserTexts,

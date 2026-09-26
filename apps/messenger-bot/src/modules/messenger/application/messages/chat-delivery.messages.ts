@@ -2,7 +2,7 @@ import {
   isGreetingOnly,
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import { isMessenger24hWindowError } from '../contracts/messenger-delivery.contract';
 import { buildUnsupportedMessageTypeReply as buildSharedUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 export {

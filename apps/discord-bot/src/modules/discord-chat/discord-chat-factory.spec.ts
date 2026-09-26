@@ -3,11 +3,11 @@ import {
   createFailoverLlmProviderAdapter,
   OpenAiAdapter,
   FailoverLlmProviderAdapter,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/adapters';
 import type {
   LlmProviderEntryConfig,
   LlmProviderPolicy,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/adapters';
 import { PlatformAgentService } from '@wispace/chat-agent';
 import {
   RescheduleRecoveryCronService,

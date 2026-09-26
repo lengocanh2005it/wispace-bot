@@ -15,6 +15,9 @@ const MIXED_PACKAGE =
 const CONCRETE_OUTER_SYMBOL =
   /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore)$/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
+// #1126: these packages publish only explicit subpaths; a bare root specifier
+// is not a compatibility facade and must not resolve.
+const ROOT_SPECIFIER = /^@wispace\/(account-link-core|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
 const DATABASE_FORBIDDEN_DEPENDENCIES = [
   '@wispace/reschedule-confirm',
   '@wispace/scheduler-core',
@@ -40,76 +43,81 @@ export const FRAMEWORK_BOUND_ADAPTERS = [
 // set — its acceptance criterion is that it is empty — and #432 is the
 // umbrella. New edges fail immediately: add a port, never an entry here.
 const LEGACY_APPLICATION_IMPORTS = new Set([
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/wispace-client|WispaceTokenVerifyService',
   'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/wispace-client/adapters|WispaceTokenVerifyService',
   'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/bot-common/locks|ADVISORY_LOCKS,PgAdvisoryLockService',
   'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/wispace-client/core|WispaceLinkStatusClient',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-consent.service.ts|@wispace/database|NotificationPreferenceService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-menu.service.ts|@wispace/wispace-client|WispaceApiError,WispaceCalendarService,WispaceGoalsService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-menu.service.ts|@wispace/wispace-client/adapters|WispaceCalendarService,WispaceGoalsService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|discord.js|ActionRowBuilder,ButtonBuilder,ButtonStyle,Client,TextChannel',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|discord.js|MessageCreateOptions',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-platform-connectivity.service.ts|discord.js|Client',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/scheduler-core|ReportCronLeaderService,ReportCronLockService,ReportScheduleService,evaluateExamWindow,todayReportDate,runBatched',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core|ReportOrchestrationService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/student-report|isStudentReportRetryableError,PlatformStudentReportService',
-  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportCronLeaderService,ReportSendJobRepositoryPort,ReportMapping',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService,ReportCronLockService,ReportScheduleService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core/adapters|ClassifiedError',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core/adapters|ReportOrchestrationService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/student-report/adapters|PlatformStudentReportService',
   'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService,ADVISORY_LOCKS',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService',
   'apps/discord-bot/src/modules/discord-chat/application/utils/discord-outbound-guard.ts|discord.js|MessageMentionOptions',
   'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/chat-metering/adapters|ChatIdempotencyEntity,ChatToolDailyUsageEntity',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
   'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|typeorm|Repository',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/cleanup-cron|CleanupCronService',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/chat-metering|ChatIdempotencyEntity,ChatToolDailyUsageEntity',
-  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-event-cleanup-cron.service.ts|@wispace/cleanup-cron|CleanupCronService',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-consistency-cron.service.ts|@wispace/chat-metering/adapters|RedisBurstReconciler',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-event-cleanup-cron.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
   'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-stuck-recovery-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
+  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@messenger/infrastructure/database/entities/user.entity|UserEntity',
   'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@nestjs/typeorm|InjectRepository',
   'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|typeorm|In,Repository',
-  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@messenger/infrastructure/database/entities/user.entity|UserEntity',
   'apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution.service.ts|ioredis|Redis',
-  'apps/messenger-bot/src/modules/llm-usage/application/services/llm-usage-cleanup-cron.service.ts|@wispace/cleanup-cron|CleanupCronService',
-  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts|@wispace/wispace-client|MemoizedWispaceGoalsService,PrecreateExerciseApiClient',
+  'apps/messenger-bot/src/modules/llm-usage/application/services/llm-usage-cleanup-cron.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
+  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts|@wispace/wispace-client/core|MemoizedWispaceGoalsService,PrecreateExerciseApiClient',
   'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts|@wispace/chat-agent|PlatformAgentService',
   'apps/messenger-bot/src/modules/messenger/application/services/chat-history-store-startup.service.ts|../../infrastructure/persistence/chat-history.store.resolver|ChatHistoryStoreResolver',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|../../infrastructure/adapters/messenger-chat-pipeline-adapters|createMessengerChatPipelineAdapters',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/chat-agent|PlatformChatHistoryService,readChatFlushRetrySettings,ChatRuntimeConfig',
   // #995: the chat privacy path owns the durable cleanup request and consumes
   // the shared persistence contract at this application boundary.
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/database|PRIVACY_CLEANUP_STORES,PrivacyDataService,PrivacyExpectedMapping',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|../../infrastructure/adapters/messenger-chat-pipeline-adapters|createMessengerChatPipelineAdapters',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/chat-agent|PlatformChatHistoryService,readChatFlushRetrySettings,ChatRuntimeConfig',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/llm-agent/adapters|PrivacyStateService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-context.service.ts|../../infrastructure/wispace/wispace-messenger-token-verify.service|WispaceMessengerTokenVerifyService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/wispace-client/core|WispaceLinkStatusClient',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-mapping.service.ts|@wispace/database|PlatformLinkStateService,NotificationPreferenceService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-message-log-cleanup.service.ts|@wispace/cleanup-cron|CleanupCronService',
-  'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|@wispace/database|PlatformDeadLetterService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-message-log-cleanup.service.ts|@wispace/cleanup-cron/adapters|CleanupCronService',
   'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|../../infrastructure/meta/messenger-platform-connectivity.service|MessengerPlatformConnectivityService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|@wispace/database|PlatformDeadLetterService',
   'apps/messenger-bot/src/modules/messenger/application/services/webhook-action-executor.service.ts|@wispace/database|NotificationPreferenceService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health|isDataQualityCronEnabled,DataQualityService,DataQualityCheckResult',
+  'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health/adapters|isDataQualityCronEnabled',
+  'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health/core|DataQualityService',
   'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@wispace/chat-metering/adapters|LlmSafetyEventEntity,LlmSafetyEventRepository',
   'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|typeorm|Repository',
-  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@wispace/chat-metering|LlmSafetyCore,LlmSafetyEventEntity,LlmSafetyEventRepository',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/scheduler-core|ReportCronLeaderService,ReportCronLockService,ReportScheduleService,todayReportDate,runBatched,SendScheduledReportsOptions,SendScheduledReportsResult,ClaimAndSendResult',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/scheduler-core|REPORT_CLAIM_REPOSITORY,ReportClaimRepositoryPort,REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportSendScheduleService,ClaimAndSendResult',
-  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService,ReportCronLockService,ReportScheduleService',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/scheduler-core/adapters|ReportSendScheduleService',
   'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core/adapters|ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService',
   'apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts|../../infrastructure/wispace/task-score-average-api.service|TaskScoreAverageApiService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
-  'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder.service.ts|@wispace/study-reminder-shared/adapters|StudyReminderScheduleService',
   'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|../../infrastructure/wispace/user-calendar-schedule.service|UserCalendarScheduleService',
-  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/database|NotificationPreferenceService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|@wispace/study-reminder-shared/adapters|StudyReminderScheduleService',
   'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/chat-agent|PlatformChatQueueService',
+  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/database|NotificationPreferenceService',
   'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|typeorm|Repository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@wispace/study-reminder-shared/adapters|cancelStudyReminderJobsForOwnershipChange,nextMappingGenerationAfterTombstone',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@zalo/infrastructure/database/entities/zalo-account-link.entity|ZaloAccountLinkEntity',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/wispace-client|WispaceTokenVerifyService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|typeorm|Repository',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/wispace-client/adapters|WispaceTokenVerifyService',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/wispace-client/core|WispaceLinkStatusClient',
 ]);
 
 const CORE_RULES = [
@@ -347,6 +355,16 @@ function importedModules(fileName, sourceText) {
       add(node, node.moduleSpecifier);
       return;
     }
+    // `import('@wispace/pkg').Type` in a type position resolves like any other
+    // import, so the entrypoint rule has to see it.
+    if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    ) {
+      add(node, node.argument.literal);
+      return;
+    }
     if (
       ts.isImportEqualsDeclaration(node) &&
       ts.isExternalModuleReference(node.moduleReference)
@@ -513,6 +531,20 @@ function packageImportViolation(relativePath, imported) {
   return undefined;
 }
 
+function rootEntrypointViolation(relativePath, imported) {
+  if (!ROOT_SPECIFIER.test(imported.imported)) return undefined;
+  return {
+    rule: 'no-root-package-entrypoint',
+    package: ownerOf(relativePath),
+    file: relativePath,
+    line: imported.line,
+    imported: imported.imported,
+    symbols: imported.symbols,
+    message:
+      'shared packages publish explicit /core and /adapters subpaths; import the narrowest subpath instead of the package root',
+  };
+}
+
 const MESSENGER_FEATURE_ROOT = 'apps/messenger-bot/src/modules/messenger/';
 const STUDY_REMINDER_FEATURE_ROOT =
   'apps/messenger-bot/src/modules/study-reminder/';
@@ -627,9 +659,62 @@ function ownerOf(relativePath) {
   return relativePath.split('/').slice(0, 2).join('/');
 }
 
+// scripts/*.mjs and apps/*/scripts/*.mjs require() built packages, so the AST
+// walk over .ts never sees them. Without this pass a bare root specifier
+// re-enters through the smoke scripts and only fails when a CI job runs it
+// against a live Postgres.
+const SCRIPT_REQUIRE = /(?:module\.)?require\(\s*['"](@wispace\/[^'"]+)['"]\s*\)/g;
+
+function scriptRootEntrypointViolations(rootDir) {
+  const violations = [];
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath);
+        continue;
+      }
+      if (entry.name.endsWith('.mjs') || entry.name.endsWith('.cjs')) {
+        if (entry.name.endsWith('.test.mjs') || entry.name.endsWith('.spec.mjs')) {
+          continue;
+        }
+        files.push(fullPath);
+      }
+    }
+  };
+  for (const directory of ['scripts', 'apps']) {
+    const fullPath = path.join(rootDir, directory);
+    if (existsSync(fullPath)) visit(fullPath);
+  }
+
+  for (const file of files) {
+    const relativePath = path
+      .relative(rootDir, file)
+      .replaceAll(path.sep, '/');
+    readFileSync(file, 'utf8').split('\n').forEach((text, index) => {
+      for (const [, specifier] of text.matchAll(SCRIPT_REQUIRE)) {
+        if (!ROOT_SPECIFIER.test(specifier)) continue;
+        violations.push({
+          rule: 'no-root-package-entrypoint',
+          package: ownerOf(relativePath),
+          file: relativePath,
+          line: index + 1,
+          imported: specifier,
+          symbols: ['require'],
+          message:
+            'shared packages publish explicit /core and /adapters subpaths; require the narrowest subpath instead of the package root',
+        });
+      }
+    });
+  }
+  return violations;
+}
+
 export function checkArchitecture(rootDir) {
   const absoluteRoot = path.resolve(rootDir);
-  const violations = [];
+  const violations = scriptRootEntrypointViolations(absoluteRoot);
   let scannedFiles = 0;
 
   for (const file of sourceFiles(absoluteRoot)) {
@@ -655,6 +740,12 @@ export function checkArchitecture(rootDir) {
         packageViolation.line = imported.line;
         violations.push(packageViolation);
       }
+
+      const entrypointViolation = rootEntrypointViolation(
+        relativePath,
+        imported,
+      );
+      if (entrypointViolation) violations.push(entrypointViolation);
 
       for (const rule of CORE_RULES) {
         if (

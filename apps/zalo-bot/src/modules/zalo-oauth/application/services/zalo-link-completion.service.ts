@@ -5,12 +5,14 @@ import {
   LinkCompletionCore,
   LinkPersistenceExhaustedError,
   LinkTokenRejectedError,
-  type LinkCompletionAfterCommitContext,
-  type LinkFlowAdapter,
+} from '@wispace/account-link-core/core';
+import type {
+  LinkCompletionAfterCommitContext,
+  LinkFlowAdapter,
 } from '@wispace/account-link-core/core';
 import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,

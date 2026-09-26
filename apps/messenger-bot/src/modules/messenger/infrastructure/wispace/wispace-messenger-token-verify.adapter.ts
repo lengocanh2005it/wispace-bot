@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import {
   isValidCadence,
   normalizeCadence,

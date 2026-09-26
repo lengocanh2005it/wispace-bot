@@ -3,11 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 import {
   ChatIdempotencyEntity,
   ChatToolDailyUsageEntity,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 
 const CLEANUP_NAME = 'chat-idempotency-cleanup';
 const CLEANUP_LOCK_ID = 202;

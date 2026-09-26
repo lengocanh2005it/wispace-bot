@@ -3,12 +3,14 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import {
   REPORT_CLAIM_REPOSITORY,
-  type ReportClaimRepositoryPort,
   REPORT_SEND_JOB_REPOSITORY,
-  type ReportSendJobRepositoryPort,
-  ReportSendScheduleService,
-  type ClaimAndSendResult,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
+import type {
+  ReportClaimRepositoryPort,
+  ReportSendJobRepositoryPort,
+  ClaimAndSendResult,
+} from '@wispace/scheduler-core/core';
+import { ReportSendScheduleService } from '@wispace/scheduler-core/adapters';
 import {
   MESSENGER_REPORT_SENT_READER,
   type MessengerReportSentReaderPort,
@@ -20,11 +22,11 @@ import {
   MessengerPartialSendError,
   isMessengerAmbiguousDeliveryError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
-import { isStudentReportRetryableError } from '@wispace/student-report';
-import {
-  LlmOverloadError,
-  type LlmExecutionAttempt,
-  type LlmExecutionRetryCause,
+import { isStudentReportRetryableError } from '@wispace/student-report/core';
+import { LlmOverloadError } from '@wispace/llm-agent/core';
+import type {
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 

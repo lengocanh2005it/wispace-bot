@@ -13,8 +13,8 @@ import { PlatformOpsController } from '@wispace/bot-common/health';
 import {
   createCalendarGetSessions,
   StudyReminderSyncService,
-} from '@wispace/study-reminder-shared';
-import { WispaceCalendarService } from '@wispace/wispace-client';
+} from '@wispace/study-reminder-shared/adapters';
+import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import {
   PrivacyDataService,
   PRIVACY_CLEANUP_STORES,

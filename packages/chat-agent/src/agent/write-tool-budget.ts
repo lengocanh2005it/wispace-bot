@@ -10,9 +10,11 @@ import {
   AGENT_TOOL_NAMES,
   getAgentToolDefinition,
   isAgentToolName,
-  type AgentToolName,
-  type AgentToolNameByBudget,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import type {
+  AgentToolName,
+  AgentToolNameByBudget,
+} from '@wispace/llm-agent/core';
 
 export type WriteToolName = AgentToolNameByBudget<'write'>;
 

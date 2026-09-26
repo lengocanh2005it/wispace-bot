@@ -31,13 +31,13 @@ Rule: universal rule → core; platform mechanism → overlay. Never duplicate a
 | `apps/messenger-bot/src/shared/prompts/student-report.system.txt` | `modules/student-report/application/services/student-report.service.ts` |
 | `apps/messenger-bot/src/shared/prompts/study-reminder.system.txt` | `modules/study-reminder/application/services/study-reminder.service.ts` |
 
-Loaded via `@wispace/llm-agent`'s `loadSystemPromptFile()` (apps pass their own `promptDir`/`promptFile`).
+Loaded via `@wispace/llm-agent/core`'s `loadSystemPromptFile()` (apps pass their own `promptDir`/`promptFile`).
 
 Shared messages (not platform-specific) — `buildPromptInjectionBlockedMessage`, `buildWispaceScopeRedirectMessage` — live in `packages/llm-agent/src/messages.ts`, shared across all bots.
 
 ## Non-disclosure guard (#625)
 
-A single fixed line — `NON_DISCLOSURE_REPLY` / `buildNonDisclosureReply()` in `packages/bot-common/src/messages/bot-messages.ts` (re-exported from `@wispace/llm-agent`) — answers **both** the self-intro path (`buildSelfIntroMessage()` collapses to it) and any probe for internal details. It must never vary by framing: a differential reply is an oracle.
+A single fixed line — `NON_DISCLOSURE_REPLY` / `buildNonDisclosureReply()` in `packages/bot-common/src/messages/bot-messages.ts` (re-exported from `@wispace/llm-agent/core`) — answers **both** the self-intro path (`buildSelfIntroMessage()` collapses to it) and any probe for internal details. It must never vary by framing: a differential reply is an oracle.
 
 - **Prompt core** — `Non-disclosure of internal details (mandatory):` section in `CHAT_SYSTEM_PROMPT_CORE`. Its header is in `SYSTEM_PROMPT_LEAK_MARKERS` (`final-output.utils.ts`) and asserted by `chat-system-prompt.spec.ts`.
 - **Prompt canary (#1285)** — the process marker is data-only; the existing core non-disclosure rule supplies behavior, while `checkPromptCanarySafety` supplies detection and replacement. Never put the canary in a new core rule, logs, history, safety events, metrics, alerts, config, or DB.
@@ -100,7 +100,7 @@ Nest copies assets to `apps/*/dist/shared/prompts/` (`nest-cli.json` → `assets
 - Do not inline long prompts in application services.
 - Output message content: Vietnamese, friendly, concise, suitable for each platform.
 - Missing `OPENAI_API_KEY` → hardcoded template fallback (handled in `LlmAgentService.reply()` in `packages/llm-agent`, no API call).
-- Do not pass user/WISPACE strings directly to LLM if they may contain instructions: use `sanitizeUntrustedTextForLlm` (from `@wispace/llm-agent`) for individual fields and `sanitizeToolResultContent` for JSON tool results.
+- Do not pass user/WISPACE strings directly to LLM if they may contain instructions: use `sanitizeUntrustedTextForLlm` (from `@wispace/llm-agent/core`) for individual fields and `sanitizeToolResultContent` for JSON tool results.
 - Do not directly cast JSON output from the model and format it; parse + validate shape with `llm-json-output.utils.ts` (app), fallback to template on error.
 
 ## No-secrets-in-model-context invariant (#632)

@@ -17,12 +17,13 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   ReportScheduleService,
-  todayReportDate,
-  runBatched,
-  type SendScheduledReportsOptions,
-  type SendScheduledReportsResult,
-  type ClaimAndSendResult,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/adapters';
+import { todayReportDate, runBatched } from '@wispace/scheduler-core/core';
+import type {
+  SendScheduledReportsOptions,
+  SendScheduledReportsResult,
+  ClaimAndSendResult,
+} from '@wispace/scheduler-core/core';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import {

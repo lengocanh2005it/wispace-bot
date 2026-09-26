@@ -3,8 +3,11 @@ import {
   LlmOverloadError,
   LlmExecutionDisabledError,
   REDACTED_PLACEHOLDER,
-} from '@wispace/llm-agent';
-import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import type {
+  LlmExecutionPort,
+  LlmProviderAdapter,
+} from '@wispace/llm-agent/core';
 
 function adapterReturning(
   content: string,

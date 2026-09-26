@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { ReengagementApiClient } from '@wispace/wispace-client';
+import { ReengagementApiClient } from '@wispace/wispace-client/core';
 import type {
   ReengagementPayload,
   ReengagementSendStatus,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
 import { DiscordAccountLinkService } from '../account-link/application/services/discord-account-link.service';
 

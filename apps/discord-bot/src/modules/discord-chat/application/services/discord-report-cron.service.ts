@@ -5,10 +5,12 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   ReportScheduleService,
+} from '@wispace/scheduler-core/adapters';
+import {
   evaluateExamWindow,
   todayReportDate,
   runBatched,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import {
   CanonicalPlatformService,
   WebActivityService,
@@ -27,7 +29,7 @@ import {
 import type {
   ReportMapping,
   ClaimAndSendResult,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import type { Platform } from '@wispace/contracts';
 
 const PLATFORM = 'discord' as const;

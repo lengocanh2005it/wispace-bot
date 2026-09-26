@@ -16,7 +16,7 @@ import {
   acquireStudyReminderOwnershipMutationLock,
   cancelStudyReminderJobsForOwnershipChange,
   nextMappingGenerationAfterTombstone,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';

@@ -1,10 +1,8 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatQuotaOpsService } from '@messenger/modules/chat-rate-limit/application/services/chat-quota-ops.service';
-import {
-  STUDY_REMINDER_JOB_REPOSITORY,
-  type StudyReminderJobRepositoryPort,
-} from '@wispace/study-reminder-shared';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
+import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';

@@ -2,7 +2,7 @@
  * Messenger does not render Markdown — strip common markers so users do not see literal * or **.
  */
 // ponytail: byte-identical to llm-agent's sanitizeReplyText — reuse instead of copying
-export { sanitizeReplyText as sanitizeMessengerText } from '@wispace/llm-agent';
+export { sanitizeReplyText as sanitizeMessengerText } from '@wispace/llm-agent/core';
 
 /** Split long replies into Messenger-sized bubbles (Meta recommends short messages). */
 export function splitMessengerBubbles(

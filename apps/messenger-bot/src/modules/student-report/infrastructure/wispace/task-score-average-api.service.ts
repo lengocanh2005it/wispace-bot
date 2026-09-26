@@ -7,11 +7,11 @@ import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   TaskScoreAverageApiClient,
-  type TaskScoreAverageRecord,
   MemoizedWispaceGoalsService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
+import type { TaskScoreAverageRecord } from '@wispace/wispace-client/core';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
-import type { StudentCapacityInput } from '@wispace/student-report';
+import type { StudentCapacityInput } from '@wispace/student-report/core';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 // ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import {
@@ -19,7 +19,7 @@ import {
   parseExamDateToIso,
   resolveExamCountdown,
   todayReportDate,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import { buildWispaceClientConfig } from './wispace-client-helpers';
 
 const ID_HEADER = 'x-psid' as const;

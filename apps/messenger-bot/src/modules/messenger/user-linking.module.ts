@@ -23,9 +23,9 @@ import { MESSENGER_TOKEN_VERIFY } from './domain/ports/messenger-token-verify.po
 import { PlatformLinkStateService } from '@wispace/database';
 import {
   WispaceConfigService,
-  WispaceLinkStatusClient,
   WispaceTokenVerifyService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/adapters';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**

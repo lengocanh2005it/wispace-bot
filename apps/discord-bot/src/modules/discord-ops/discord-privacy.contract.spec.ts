@@ -10,8 +10,8 @@ import {
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import { PrivacyDataService } from '@wispace/database';
-import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
-import { WispaceCalendarService } from '@wispace/wispace-client';
+import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
+import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 import { DiscordOpsController } from './discord-ops.controller';
 

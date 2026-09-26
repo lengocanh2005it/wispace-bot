@@ -1,4 +1,4 @@
-import type { BurstReservationResult } from '@wispace/chat-metering';
+import type { BurstReservationResult } from '@wispace/chat-metering/core';
 
 export const CHAT_BURST_COUNTER = Symbol('CHAT_BURST_COUNTER');
 

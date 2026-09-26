@@ -4,17 +4,15 @@ import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
 import type {
   ReportMapping,
   ClaimAndSendResult,
-  ClassifiedError,
-} from '@wispace/scheduler-core';
-import { ReportOrchestrationService } from '@wispace/scheduler-core';
-import {
-  isStudentReportRetryableError,
-  PlatformStudentReportService,
-} from '@wispace/student-report';
-import {
-  LlmOverloadError,
-  type LlmExecutionAttempt,
-  type LlmExecutionRetryCause,
+} from '@wispace/scheduler-core/core';
+import type { ClassifiedError } from '@wispace/scheduler-core/adapters';
+import { ReportOrchestrationService } from '@wispace/scheduler-core/adapters';
+import { isStudentReportRetryableError } from '@wispace/student-report/core';
+import { PlatformStudentReportService } from '@wispace/student-report/adapters';
+import { LlmOverloadError } from '@wispace/llm-agent/core';
+import type {
+  LlmExecutionAttempt,
+  LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
 
 /**

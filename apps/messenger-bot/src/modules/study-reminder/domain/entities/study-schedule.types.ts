@@ -1,7 +1,7 @@
 import type {
   CalendarSessionTimeRange,
   NormalizedStudySession,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 
 export type { CalendarSessionTimeRange, NormalizedStudySession };
 

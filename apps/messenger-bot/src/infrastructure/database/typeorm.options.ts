@@ -10,10 +10,10 @@ import {
   ChatIdempotencyEntity,
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { ChatQuotaEventEntity } from './entities/chat-quota-event.entity';
 import { MessageLogEntity } from './entities/message-log.entity';
-import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared/adapters';
 import { UserEntity } from './entities/user.entity';
 import { MessengerLinkVerifyRecordEntity } from './entities/messenger-link-verify-record.entity';
 

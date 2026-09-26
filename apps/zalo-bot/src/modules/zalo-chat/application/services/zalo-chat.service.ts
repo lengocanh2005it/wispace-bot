@@ -15,10 +15,8 @@ import {
 } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { NotificationPreferenceService } from '@wispace/database';
-import {
-  STUDY_REMINDER_JOB_REPOSITORY,
-  type StudyReminderJobRepositoryPort,
-} from '@wispace/study-reminder-shared';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
+import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
@@ -28,8 +26,8 @@ import {
   RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
   RESCHEDULE_EXPIRED_MESSAGE,
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
-  type ReschedulePendingState,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
+import type { ReschedulePendingState } from '@wispace/reschedule-confirm/core';
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
@@ -39,7 +37,7 @@ import {
   IntentDetector,
   detectDisclosureProbe,
   isStopIntent,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,

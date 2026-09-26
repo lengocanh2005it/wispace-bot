@@ -2,8 +2,8 @@
 import { HttpStatus, RequestMethod } from '@nestjs/common';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import type { BotMetricsService } from '@wispace/bot-metrics';
-import { WispaceApiError } from '@wispace/wispace-client';
-import type { ReengagementApiClient } from '@wispace/wispace-client';
+import { WispaceApiError } from '@wispace/wispace-client/core';
+import type { ReengagementApiClient } from '@wispace/wispace-client/core';
 import type { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
 import type { DiscordAccountLinkService } from '../account-link/application/services/discord-account-link.service';
 import { DiscordReengagementService } from './discord-reengagement.service';

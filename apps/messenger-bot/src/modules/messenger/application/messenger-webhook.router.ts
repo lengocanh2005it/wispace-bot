@@ -8,7 +8,7 @@ import {
   CONFIRM_RESCHEDULE_POSTBACK,
   CANCEL_RESCHEDULE_POSTBACK,
 } from './constants/messenger-reschedule.constants';
-import { IntentDetector, detectDisclosureProbe } from '@wispace/llm-agent';
+import { IntentDetector, detectDisclosureProbe } from '@wispace/llm-agent/core';
 import {
   buildGreetingMessage,
   buildNonDisclosureReply,

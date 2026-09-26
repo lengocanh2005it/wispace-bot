@@ -20,8 +20,8 @@ import {
   createSessionSourceGetSessions,
   StudyReminderSyncService,
   StudyReminderWorkerService,
-  type StudyReminderSyncResult,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
+import { StudyReminderSyncResult } from '@wispace/study-reminder-shared/core';
 import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { ReportCronService } from '../../application/services/report-cron.service';

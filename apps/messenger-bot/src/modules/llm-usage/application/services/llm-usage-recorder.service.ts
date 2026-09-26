@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
-import {
-  LlmUsageRecorderCore,
-  type UsageWriterPort,
-  type LlmUsageRecorderMetrics,
-} from '@wispace/chat-metering';
+import { LlmUsageRecorderCore } from '@wispace/chat-metering/core';
+import type {
+  UsageWriterPort,
+  LlmUsageRecorderMetrics,
+} from '@wispace/chat-metering/core';
 import type {
   RecordLlmUsageFromCompletionInput,
   RecordLlmUsageInput,

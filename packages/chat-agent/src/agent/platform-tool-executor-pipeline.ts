@@ -6,11 +6,13 @@ import {
   parseAndValidateToolArguments,
   sanitizeUntrustedTextForLlm,
   AGENT_TOOL_NAMES,
-  type AgentToolCapability,
-  type AgentToolMap,
-  type AgentToolMetadata,
-  type AgentToolName,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import type {
+  AgentToolCapability,
+  AgentToolMap,
+  AgentToolMetadata,
+  AgentToolName,
+} from '@wispace/llm-agent/core';
 import {
   errorMessage,
   maskExternalId,

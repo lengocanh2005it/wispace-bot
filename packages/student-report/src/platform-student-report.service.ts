@@ -11,13 +11,13 @@ import type {
 import {
   buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
-  type AdmissionMetrics,
 } from '@wispace/llm-agent/adapters';
-import {
-  type LlmDegradedModeEvent,
-  loadSystemPromptFile,
-  type LlmProviderAdapter,
-  type LlmExecutionPort,
+import type { AdmissionMetrics } from '@wispace/llm-agent/adapters';
+import { loadSystemPromptFile } from '@wispace/llm-agent/core';
+import type {
+  LlmDegradedModeEvent,
+  LlmProviderAdapter,
+  LlmExecutionPort,
 } from '@wispace/llm-agent/core';
 import {
   StudentReportCore,

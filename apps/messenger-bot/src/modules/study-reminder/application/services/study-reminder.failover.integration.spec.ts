@@ -2,12 +2,14 @@ import {
   createEnvLlmExecutionPort,
   createLlmProviderAdapterFromEnv,
   OpenAiAdapter,
-  type EnvLlmExecutionConfig,
-  type LlmExecutionPort,
-  type LlmJsonResponse,
-  type LlmUsageRecorderPort,
-} from '@wispace/llm-agent';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+} from '@wispace/llm-agent/adapters';
+import type { EnvLlmExecutionConfig } from '@wispace/llm-agent/adapters';
+import {
+  LlmExecutionPort,
+  LlmJsonResponse,
+  LlmUsageRecorderPort,
+} from '@wispace/llm-agent/core';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
 import { StudyReminderService } from './study-reminder.service';
 import type { StudyReminderDisplayNamePort } from '../../domain/ports/study-reminder-display-name.port';
 

@@ -2,14 +2,16 @@ import { Logger, Module, type Provider } from '@nestjs/common';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
   createWispaceProviders,
-  MemoizedWispaceGoalsService,
   RedisWispaceCacheStore,
   WispaceCalendarService,
   WispaceConfigService,
-  WispaceDataCache,
   WispaceGoalsService,
+} from '@wispace/wispace-client/adapters';
+import {
+  MemoizedWispaceGoalsService,
+  WispaceDataCache,
   PrecreateExerciseApiClient,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 

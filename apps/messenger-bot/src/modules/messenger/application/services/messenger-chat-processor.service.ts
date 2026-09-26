@@ -14,9 +14,9 @@ import {
   detectPrivacyIntent,
   isConfirmationResponse,
   isCancellationResponse,
-  PrivacyStateService,
-} from '@wispace/llm-agent';
-import type { PrivacyIntent } from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import { PrivacyStateService } from '@wispace/llm-agent/adapters';
+import type { PrivacyIntent } from '@wispace/llm-agent/core';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import {
@@ -57,7 +57,7 @@ import {
   ChatRuntimeConfig,
 } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
-import { isValidApprovalToken } from '@wispace/reschedule-confirm';
+import { isValidApprovalToken } from '@wispace/reschedule-confirm/core';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 
 export interface ChatBatchInput {

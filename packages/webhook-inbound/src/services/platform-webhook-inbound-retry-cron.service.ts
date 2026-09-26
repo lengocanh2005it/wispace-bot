@@ -10,7 +10,7 @@ import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
-import { runBatched } from '@wispace/scheduler-core';
+import { runBatched } from '@wispace/scheduler-core/core';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,

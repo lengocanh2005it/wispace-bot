@@ -5,8 +5,10 @@ import { Counter } from 'prom-client';
 import {
   LinkReconcileCronCore,
   readPositiveInteger,
-  type LinkReconcileBatchResult,
-  type LinkReconcileContext,
+} from '@wispace/account-link-core/core';
+import type {
+  LinkReconcileBatchResult,
+  LinkReconcileContext,
 } from '@wispace/account-link-core/core';
 import {
   ADVISORY_LOCKS,
@@ -29,7 +31,7 @@ import {
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { PlatformLinkStateService } from '@wispace/database';
-import { WispaceLinkStatusClient } from '@wispace/wispace-client';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 

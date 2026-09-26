@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PlatformAgentService } from '@wispace/chat-agent';
-import type { RescheduleCancellationOutcome } from '@wispace/reschedule-confirm';
+import type { RescheduleCancellationOutcome } from '@wispace/reschedule-confirm/core';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import type {
   MessengerAgentReply,

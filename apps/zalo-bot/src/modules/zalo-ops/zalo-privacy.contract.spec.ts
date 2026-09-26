@@ -10,8 +10,8 @@ import {
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import { PrivacyDataService } from '@wispace/database';
-import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
-import { WispaceCalendarService } from '@wispace/wispace-client';
+import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
+import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import { ZaloOpsController } from './zalo-ops.controller';
 

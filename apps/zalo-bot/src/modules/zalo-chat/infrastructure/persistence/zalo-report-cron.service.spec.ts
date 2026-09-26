@@ -1,9 +1,7 @@
 import { Repository } from 'typeorm';
-import {
-  ReportClaimRepositoryPort,
-  ReportScheduleService,
-  todayReportDate,
-} from '@wispace/scheduler-core';
+import { todayReportDate } from '@wispace/scheduler-core/core';
+import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core/core';
+import { ReportScheduleService } from '@wispace/scheduler-core/adapters';
 import type { Platform } from '@wispace/contracts';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloReportCronService } from './zalo-report-cron.service';
@@ -18,8 +16,12 @@ type ZaloReportCronTestSurface = {
   ) => Promise<'sent' | 'skipped' | 'error'>;
 };
 
-jest.mock('@wispace/scheduler-core', () => ({
-  ...jest.requireActual('@wispace/scheduler-core'),
+jest.mock('@wispace/scheduler-core/adapters', () => ({
+  ...jest.requireActual('@wispace/scheduler-core/adapters'),
+}));
+
+jest.mock('@wispace/scheduler-core/core', () => ({
+  ...jest.requireActual('@wispace/scheduler-core/core'),
   evaluateExamWindow: jest.fn().mockResolvedValue({ skip: false }),
   runBatched: jest.fn().mockImplementation(async (items, _concurrency, fn) => {
     const results = [];

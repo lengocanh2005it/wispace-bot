@@ -14,13 +14,15 @@ import {
 import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import {
   classifyLlmFailure,
-  type LlmDegradedAction,
-  type LlmDegradedFailureClass,
-  type LlmDegradedModeEvent,
-  type LlmExecutionPort,
-  type LlmProviderAdapter,
-  type LlmUsageRecorderPort,
   sanitizeUntrustedTextForLlm,
+} from '@wispace/llm-agent/core';
+import type {
+  LlmDegradedAction,
+  LlmDegradedFailureClass,
+  LlmDegradedModeEvent,
+  LlmExecutionPort,
+  LlmProviderAdapter,
+  LlmUsageRecorderPort,
 } from '@wispace/llm-agent/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
@@ -40,7 +42,7 @@ import {
   StudyReminderLlmInput,
   StudyReminderLlmOutput,
 } from '../../domain/entities/study-schedule.types';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
 import { StudySessionSourceService } from './study-session-source.service';
 import {
   STUDY_REMINDER_DISPLAY_NAME_PORT,

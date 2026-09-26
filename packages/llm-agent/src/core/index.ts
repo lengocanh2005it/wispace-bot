@@ -6,6 +6,7 @@ export {
   LlmAgentService,
   LlmRetryExhaustedError,
   classifyLlmFailure,
+  DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
 } from '../agent.service';
 export type { LlmAgentPorts } from '../agent.service';
 export {
@@ -249,10 +250,13 @@ export type {
 export { CLASSIFIER_SYSTEM_PROMPT } from '../classifier/classifier-prompt';
 export {
   CLASSIFIER_LABELS,
+  CLASSIFIER_FAILURE_REASONS,
+  CLASSIFIER_OUTCOME_LABELS,
   isExtractionReason,
   type ClassifierLabel,
   type FlaggedClassifierLabel,
   type ClassifierVerdict,
+  type ClassifierOutcomeLabel,
   type ClassifyResult,
   type ClassifyFailureReason,
   type ContentClassifierPort,

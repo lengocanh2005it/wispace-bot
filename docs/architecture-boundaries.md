@@ -47,28 +47,31 @@ owner of retry/terminal persistence; and `sent`, `not_sent`, `ambiguous`, and
 `rate_limited` keep their current delivery semantics. The refactor adds no new
 lock or concurrency policy.
 
-## Package entrypoints
+## Package entrypoints (selected #1126 target)
 
-The affected shared packages expose explicit public subpaths:
+The packages in this table use explicit public subpaths. This convention does not apply to every package with an `exports` map; feature-oriented exports such as `bot-common` remain separate.
 
-| Package                 | Framework-free entrypoint             | Outer adapter entrypoint                                         |
+| Package                 | Core entrypoint                       | Outer adapter entrypoint                                         |
 | ----------------------- | ------------------------------------- | ---------------------------------------------------------------- |
 | `llm-agent`             | `@wispace/llm-agent/core`             | `@wispace/llm-agent/adapters`                                    |
 | `wispace-client`        | `@wispace/wispace-client/core`        | `@wispace/wispace-client/adapters`                               |
 | `student-report`        | `@wispace/student-report/core`        | `@wispace/student-report/adapters`                               |
 | `chat-metering`         | `@wispace/chat-metering/core`         | `@wispace/chat-metering/adapters`                                |
 | `scheduler-core`        | `@wispace/scheduler-core/core`        | `@wispace/scheduler-core/adapters`                               |
-| `reschedule-confirm`    | `@wispace/reschedule-confirm`         | `@wispace/reschedule-confirm/adapters`                           |
+| `reschedule-confirm`    | `@wispace/reschedule-confirm/core`    | `@wispace/reschedule-confirm/adapters`                           |
 | `study-reminder-shared` | `@wispace/study-reminder-shared/core` | `@wispace/study-reminder-shared/adapters`                        |
 | `ops-health`            | `@wispace/ops-health/core`            | `@wispace/ops-health/adapters`                                   |
 | `account-link-core`     | `@wispace/account-link-core/core`     | `@wispace/account-link-core/adapters`                            |
 | `cleanup-cron`          | —                                     | `@wispace/cleanup-cron/adapters` (intentionally framework-bound) |
 
-New code should use the narrowest published entrypoint. Core/application code
-uses `/core` where one exists; composition roots and NestJS/TypeORM/Redis wiring
-use `/adapters`. Runtime services that are already part of a package's root API
-may remain there. TypeORM implementations moved out of `database` are available
-only from their owner adapter subpaths and are not re-exported by `database`.
+Bare package-root imports are forbidden for packages in this table; there is no
+root compatibility facade. Domain and application code use `/core` where it
+exists, while infrastructure and composition roots import `/adapters`. The
+adapter-only `cleanup-cron` package has no `/core` surface. #1126 owns the
+specifier migration; #1088 owns removing existing application adapter edges,
+and the migration must not add legacy exceptions. TypeORM implementations moved
+out of `database` are available only from their owner adapter subpaths and are
+not re-exported by `database`.
 
 The database package owns TypeORM entities, migrations, connection/circuit
 breaker primitives, and persistence-only state. It must not import
@@ -99,7 +102,7 @@ composition roots, preserving telemetry without an upward package dependency.
 
 Tests/specs, generated output, `dist`, and `node_modules` are excluded. Test code may import adapters to assemble a harness, but production code cannot hide a forbidden edge there.
 
-The current application migration debt is recorded as exact file/module/symbol triplets in `LEGACY_APPLICATION_IMPORTS`. This is a ratchet, not a blanket exemption: adding a new edge or changing the imported symbol set fails CI; #429/#430 remove entries as adapters move outward.
+The current application migration debt is recorded as exact file/module/symbol triplets in `LEGACY_APPLICATION_IMPORTS`. This is a ratchet, not a blanket exemption: adding a new edge or changing the imported symbol set fails CI. #1126 may update specifiers for the same existing edges; #1088 owns removing those edges and emptying the set.
 
 ## Explicit outer adapters
 

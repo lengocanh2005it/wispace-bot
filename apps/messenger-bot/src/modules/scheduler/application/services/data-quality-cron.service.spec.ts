@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { DataQualityCronService } from './data-quality-cron.service';
-import type { DataQualityRunResult } from '@wispace/ops-health';
+import type { DataQualityRunResult } from '@wispace/ops-health/core';
 
 function config(values: Record<string, string> = {}): ConfigService {
   return {

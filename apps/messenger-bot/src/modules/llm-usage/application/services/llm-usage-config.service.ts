@@ -9,7 +9,7 @@ import {
   buildProviderCachedInputCostEnvKey,
   estimateCostUsd,
   todayUsageDate,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/core';
 import {
   readEnvBoolean,
   readEnvPositiveInt,

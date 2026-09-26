@@ -12,7 +12,7 @@ import {
   PlatformReportClaimRepository,
   ReportClaimStaleResetCronService,
 } from '@wispace/scheduler-core/adapters';
-import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core';
+import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core/core';
 import { ZaloReportModule } from './zalo-report.module';
 
 function findFactoryProvider(module: object, token: unknown) {

@@ -5,7 +5,7 @@ import {
   MessengerApiError,
   MessengerPartialSendError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
-import { LlmProviderCircuitOpenError } from '@wispace/llm-agent';
+import { LlmProviderCircuitOpenError } from '@wispace/llm-agent/core';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 
 describe('ReportSendOrchestrationService.claimAndSend', () => {

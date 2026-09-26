@@ -11,7 +11,7 @@ import {
   LLM_USAGE_REPOSITORY,
   type LlmUsageRepositoryPort,
 } from '../../domain/repositories/llm-usage.repository.port';
-import { addCostUsdStrings } from '@wispace/chat-metering';
+import { addCostUsdStrings } from '@wispace/chat-metering/core';
 import { LlmUsageConfigService } from './llm-usage-config.service';
 
 const USAGE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

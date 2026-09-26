@@ -4,15 +4,7 @@
   "description": "Framework-agnostic account-link lifecycle policies shared by WISPACE bots",
   "private": true,
   "license": "UNLICENSED",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
     "./core": {
       "import": "./dist/core/index.js",
       "types": "./dist/core/index.d.ts",

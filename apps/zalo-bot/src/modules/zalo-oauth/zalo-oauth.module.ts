@@ -10,9 +10,9 @@ import {
 } from '@wispace/chat-agent';
 import {
   WispaceConfigService,
-  WispaceLinkStatusClient,
   WispaceTokenVerifyService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/adapters';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
 import { PlatformLinkStateService } from '@wispace/database';
 import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';

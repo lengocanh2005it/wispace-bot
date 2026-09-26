@@ -62,23 +62,23 @@ const {
 const {
   TypeormStudyReminderJobRepository,
   StudyReminderJobEntity,
-} = require('@wispace/study-reminder-shared');
+} = require('@wispace/study-reminder-shared/adapters');
 const {
   RescheduleConfirmationService,
-} = require('@wispace/reschedule-confirm');
+} = require('@wispace/reschedule-confirm/core');
 const {
   TypeormRescheduleStore,
 } = require('@wispace/reschedule-confirm/adapters');
 const {
   PlatformWebhookInboundEventService,
 } = require('@wispace/webhook-inbound');
-const { RedisBurstCounter } = require('@wispace/chat-metering');
-const { ChatRateLimitRepository } = require('@wispace/chat-metering');
+const { RedisBurstCounter } = require('@wispace/chat-metering/adapters');
+const { ChatRateLimitRepository } = require('@wispace/chat-metering/adapters');
 const {
   ChatDailyUsageEntity: QuotaDailyUsageEntity,
   ChatIdempotencyEntity: QuotaIdempotencyEntity,
-} = require('@wispace/chat-metering');
-const { LlmOverloadError } = require('@wispace/llm-agent');
+} = require('@wispace/chat-metering/adapters');
+const { LlmOverloadError } = require('@wispace/llm-agent/core');
 const { acquireRedisSlot } = require('@wispace/llm-agent/execution');
 const {
   RedisChatQueueStore,

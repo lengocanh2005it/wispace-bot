@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mocks */
 import type { ConfigService } from '@nestjs/config';
 import type { PlatformChatQueueService } from '@wispace/chat-agent';
-import type { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import type { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import type { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import type { DiscordMenuService } from '../../application/services/discord-menu.service';
 import type { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';

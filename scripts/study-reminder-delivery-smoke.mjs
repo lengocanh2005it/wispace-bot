@@ -21,7 +21,7 @@ const {
   StudyReminderDispatchService,
   StudyReminderSyncService,
   wrapMessageSender,
-} = require('@wispace/study-reminder-shared');
+} = require('@wispace/study-reminder-shared/adapters');
 const {
   UserNotificationPreferenceEntity,
   UserPlatformMappingEntity,

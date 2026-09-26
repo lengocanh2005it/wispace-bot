@@ -10,10 +10,12 @@ import type {
 } from '@wispace/chat-agent';
 import {
   PrecreateExerciseApiClient,
+  WispaceDataCache,
+} from '@wispace/wispace-client/core';
+import {
   WispaceCalendarService,
   WispaceGoalsService,
-  WispaceDataCache,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/adapters';
 
 /**
  * Wire the concrete wispace-client services to the chat-agent capability

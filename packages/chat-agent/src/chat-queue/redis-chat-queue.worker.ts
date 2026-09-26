@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
-import { runBatched } from '@wispace/scheduler-core';
+import { runBatched } from '@wispace/scheduler-core/core';
 import { ChatRuntimeConfig } from '../chat-runtime-config';
 
 const POLL_MS = 2000;

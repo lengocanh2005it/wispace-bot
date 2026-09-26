@@ -1,6 +1,9 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { LlmJsonResponse, LlmProviderAdapter } from '@wispace/llm-agent';
+import type {
+  LlmJsonResponse,
+  LlmProviderAdapter,
+} from '@wispace/llm-agent/core';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
 import {
   StudentReportRetryableError,
@@ -9,7 +12,7 @@ import {
 import {
   buildStudentReportApiUnavailableMessage,
   buildStudentReportNoScoreDataMessage,
-} from '@wispace/student-report';
+} from '@wispace/student-report/core';
 import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
 import { StudentReportService } from './student-report.service';
 

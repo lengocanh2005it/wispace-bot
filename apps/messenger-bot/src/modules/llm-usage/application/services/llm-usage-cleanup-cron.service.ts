@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 import {
   LLM_USAGE_REPOSITORY,
   type LlmUsageRepositoryPort,

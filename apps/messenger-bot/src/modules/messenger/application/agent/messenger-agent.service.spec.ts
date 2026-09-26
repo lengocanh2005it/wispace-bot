@@ -3,7 +3,7 @@ import { join } from 'path';
 import type {
   LlmProviderAdapter,
   LlmToolChatResponse,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import {
   PlatformAgentService,
   PlatformAgentToolsService,

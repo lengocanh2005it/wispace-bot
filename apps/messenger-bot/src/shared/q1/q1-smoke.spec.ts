@@ -2,10 +2,10 @@ import { ConfigService } from '@nestjs/config';
 import { ChatRateLimitConfigService } from '../../modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import {
   parseExamDateToIso,
-  ReportScheduleService,
   resolveExamCountdown,
   todayReportDate,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
+import { ReportScheduleService } from '@wispace/scheduler-core/adapters';
 import { resolveAppTimezone } from '../config/app-timezone';
 
 describe('Q1 smoke checks (automated)', () => {

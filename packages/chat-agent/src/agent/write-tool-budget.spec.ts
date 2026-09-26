@@ -1,8 +1,5 @@
-import {
-  AGENT_TOOLS,
-  getAgentToolDefinition,
-  type AgentToolName,
-} from '@wispace/llm-agent';
+import { AGENT_TOOLS, getAgentToolDefinition } from '@wispace/llm-agent/core';
+import type { AgentToolName } from '@wispace/llm-agent/core';
 import {
   BUDGET_EXEMPT_TOOLS,
   WRITE_TOOL_NAMES,

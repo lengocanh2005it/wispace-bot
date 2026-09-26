@@ -6,10 +6,8 @@ import {
 } from '@wispace/bot-common/messages';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { NotificationPreferenceService } from '@wispace/database';
-import {
-  STUDY_REMINDER_JOB_REPOSITORY,
-  type StudyReminderJobRepositoryPort,
-} from '@wispace/study-reminder-shared';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
+import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '../messages/messenger-reminder.messages';
@@ -40,7 +38,7 @@ import type { ConsentCommand } from '@wispace/bot-common/messages';
 import {
   isValidApprovalToken,
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 
 @Injectable()
 export class WebhookActionExecutorService {

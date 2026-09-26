@@ -3,7 +3,7 @@ import type {
   RescheduleCancellationOutcome,
   StageInput,
   StageResult,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import type {
   AdmissionMetrics,
   AgentMetricsPort,
@@ -11,7 +11,7 @@ import type {
   LlmExecutionPort,
   AgentToolName,
   LlmAgentPromptParts,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import type { PinnedFact } from './pinned-facts';
 import type { WispaceCacheInvalidationPort } from './wispace-capability.ports';
 import type { ClarificationStateStore } from '../clarification/clarification-state';

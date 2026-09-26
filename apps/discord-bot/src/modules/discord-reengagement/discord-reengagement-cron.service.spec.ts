@@ -4,7 +4,7 @@ import type { SchedulerRegistry } from '@nestjs/schedule';
 import { Logger } from '@nestjs/common';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import type { ReengagementApiClient } from '@wispace/wispace-client';
+import type { ReengagementApiClient } from '@wispace/wispace-client/core';
 import type { DiscordReengagementService } from './discord-reengagement.service';
 import { DiscordReengagementCronService } from './discord-reengagement-cron.service';
 

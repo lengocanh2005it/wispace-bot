@@ -4,7 +4,7 @@ import {
   buildPrecreateExerciseUnavailableMessage,
   detectPromptInjection,
   sanitizeUntrustedTextForLlm,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import type {
   ExerciseCapabilityPort,
   WispaceCacheInvalidationPort,

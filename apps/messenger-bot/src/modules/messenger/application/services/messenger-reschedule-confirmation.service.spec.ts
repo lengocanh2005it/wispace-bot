@@ -1,5 +1,8 @@
 import { MessengerRescheduleConfirmationService } from './messenger-reschedule-confirmation.service';
-import type { CalendarPort, ReschedulePort } from '@wispace/reschedule-confirm';
+import type {
+  CalendarPort,
+  ReschedulePort,
+} from '@wispace/reschedule-confirm/core';
 
 describe('MessengerRescheduleConfirmationService', () => {
   const createService = (

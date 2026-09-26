@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import {
   LlmUsageEventEntity,
   LlmUsageRepository as ChatMeteringLlmUsageRepository,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import type { LlmUsageRepositoryPort } from '../../domain/repositories/llm-usage.repository.port';
 import type { RecordLlmUsageInput } from '../../domain/entities/llm-usage.types';
 import type {

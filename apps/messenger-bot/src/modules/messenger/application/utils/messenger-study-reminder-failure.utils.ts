@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { WispaceApiError } from '@wispace/wispace-client';
+import { WispaceApiError } from '@wispace/wispace-client/core';
 import { isMessenger24hWindowError } from '../contracts/messenger-delivery.contract';
 
 /** Messenger-owned terminal/retry classification for study-reminder sends. */

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type {
   CalendarPort,
   CalendarEntryView,
-} from '@wispace/reschedule-confirm';
-import { WispaceCalendarService } from '@wispace/wispace-client';
+} from '@wispace/reschedule-confirm/core';
+import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 
 @Injectable()
 export class ZaloCalendarPort implements CalendarPort<string> {

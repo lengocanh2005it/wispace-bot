@@ -9,8 +9,8 @@ import {
   ChatIdempotencyEntity,
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
-} from '@wispace/chat-metering';
-import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+} from '@wispace/chat-metering/adapters';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared/adapters';
 import { ChatQuotaEventEntity } from './entities/chat-quota-event.entity';
 import { MessageLogEntity } from './entities/message-log.entity';
 

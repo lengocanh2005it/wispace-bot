@@ -1,4 +1,4 @@
-import type { LlmUsage } from '@wispace/llm-agent';
+import type { LlmUsage } from '@wispace/llm-agent/core';
 
 export type LlmUsageFeature =
   | 'FREE_FORM_CHAT'

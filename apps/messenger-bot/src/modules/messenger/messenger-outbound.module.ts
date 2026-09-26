@@ -13,10 +13,8 @@ import { PlatformReportClaimRepository } from '@wispace/scheduler-core/adapters'
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from './domain/repositories/messenger-message-log.repository.port';
-import {
-  REPORT_CLAIM_REPOSITORY,
-  type ReportClaimRepositoryPort,
-} from '@wispace/scheduler-core/core';
+import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core/core';
+import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core/core';
 import { MessengerRepository } from './infrastructure/persistence/messenger.repository';
 import { MessengerReportSentReader } from './infrastructure/persistence/messenger-report-sent-reader';
 import { MESSENGER_REPORT_SENT_READER } from './domain/repositories/messenger-report-sent-reader.port';

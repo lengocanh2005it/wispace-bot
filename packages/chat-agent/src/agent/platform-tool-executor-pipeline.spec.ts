@@ -1,4 +1,4 @@
-import { AGENT_TOOL_NAMES, deriveAgentToolMap } from '@wispace/llm-agent';
+import { AGENT_TOOL_NAMES, deriveAgentToolMap } from '@wispace/llm-agent/core';
 import {
   PLATFORM_TOOL_CONFORMANCE_MATRIX,
   PlatformToolExecutorPipeline,

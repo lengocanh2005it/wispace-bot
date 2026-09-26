@@ -4,9 +4,9 @@ import {
   CRISIS_SUPPORT_RESOURCE_MESSAGE,
   buildCrisisSupportHandoffMessage,
   isExtractionReason,
-} from '../index';
+} from '../core';
 
-it('re-exports the classifier prompt and isExtractionReason from the package root', () => {
+it('re-exports the classifier prompt and isExtractionReason from the core entrypoint', () => {
   expect(typeof CLASSIFIER_SYSTEM_PROMPT).toBe('string');
   expect(isExtractionReason('system prompt extraction')).toBe(true);
   expect(isExtractionReason('safe question')).toBe(false);

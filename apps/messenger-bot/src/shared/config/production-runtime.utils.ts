@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   validateUpstreamUrl,
   buildUpstreamUrlPolicy,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 
 export function isTestRuntime(configService: ConfigService): boolean {
   return configService.get<string>('NODE_ENV')?.trim() === 'test';

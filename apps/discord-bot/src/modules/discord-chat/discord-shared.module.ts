@@ -2,15 +2,19 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   createLlmProviderAdapterFromEnv,
-  buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
   createLlmAdmissionCoordinator,
-  type LlmProviderAdapter,
-  type LlmExecutionPort,
-  type LlmAdmissionCoordinator,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/adapters';
+import {
+  buildLlmExecutionConfig,
+  LlmAdmissionCoordinator,
+} from '@wispace/llm-agent/core';
+import type {
+  LlmProviderAdapter,
+  LlmExecutionPort,
+} from '@wispace/llm-agent/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
-import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
+import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core/core';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';
 import { DISCORD_REPORT_ACCOUNT_READER } from './domain/ports/discord-report-account-reader.port';

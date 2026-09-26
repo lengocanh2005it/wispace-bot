@@ -3,11 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import type {
   WispaceApiClientConfig,
   WispaceClientMetrics,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import {
   buildUpstreamUrlPolicy,
   validateUpstreamUrl,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 
 export function buildWispaceClientConfig(
   configService: ConfigService,

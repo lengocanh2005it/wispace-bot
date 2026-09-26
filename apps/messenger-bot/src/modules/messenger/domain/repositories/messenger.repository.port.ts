@@ -3,7 +3,7 @@ import type { MessengerMessageLogRepositoryPort } from './messenger-message-log.
 
 export const MESSENGER_REPOSITORY = Symbol('MESSENGER_REPOSITORY');
 
-export type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
+export type { ReportClaimRepositoryPort } from '@wispace/scheduler-core/core';
 
 /**
  * Full repository port — extends the focused ports for backward compatibility.

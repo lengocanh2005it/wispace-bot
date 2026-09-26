@@ -1,4 +1,4 @@
-import type { LlmUsageAggregateRow } from '@wispace/chat-metering';
+import type { LlmUsageAggregateRow } from '@wispace/chat-metering/core';
 
 export type { LlmUsageAggregateRow };
 

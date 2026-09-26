@@ -2,12 +2,12 @@ import { BadRequestException } from '@nestjs/common';
 import {
   PlatformStudyCalendarCommandService,
   StudyReminderScheduleService,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
+import { closeKeepAliveAgents } from '@wispace/wispace-client/core';
 import {
-  closeKeepAliveAgents,
   WispaceCalendarService,
   WispaceConfigService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/adapters';
 import { ConfigService } from '@nestjs/config';
 import { StudyReminderModule } from './study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';

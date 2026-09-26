@@ -1,1 +1,1 @@
-export { StudentReportNoScoreDataError } from '@wispace/student-report';
+export { StudentReportNoScoreDataError } from '@wispace/student-report/core';

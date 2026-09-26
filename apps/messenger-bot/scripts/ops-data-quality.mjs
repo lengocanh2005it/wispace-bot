@@ -7,7 +7,7 @@ const {
   DataQualityService,
   TypeormDataQualityRepository,
   readDataQualityConfig,
-} = require('@wispace/ops-health');
+} = require('@wispace/ops-health/adapters');
 const { getPostgresSsl } = require('@wispace/database');
 
 const HELP = `Usage: npm run ops:data-quality -- [options]

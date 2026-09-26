@@ -1,5 +1,5 @@
 import { MessengerApiError } from '../services/messenger-outbound.service';
-import { WispaceApiError } from '@wispace/wispace-client';
+import { WispaceApiError } from '@wispace/wispace-client/core';
 import { classifyMessengerDispatchFailure } from './messenger-study-reminder-failure.utils';
 
 describe('classifyMessengerDispatchFailure', () => {

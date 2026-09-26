@@ -2,7 +2,7 @@ import {
   AGENT_TOOL_NAMES,
   registerRuntimeSecrets,
   resetRuntimeSecretsForTests,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import { Logger } from '@nestjs/common';
 import { PlatformAgentToolsService } from './platform-agent-tools.service';
 import type {
@@ -18,7 +18,7 @@ import type {
 import {
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
   RESCHEDULE_SCOPE_ERROR_MESSAGE,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import { exercisePlatformToolExecutorConformance } from './platform-tool-executor-conformance';
 
 const DISCORD_NOT_LINKED_MESSAGE =

@@ -3,7 +3,7 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type {
   ReportDeliveryPort,
   ReportDeliveryResult,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import {
   ZaloSendError,
   isZaloAmbiguousDeliveryError,
@@ -13,7 +13,7 @@ import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
 } from '../ports/zalo-outbound.port';
-import { WispaceApiError } from '@wispace/wispace-client';
+import { WispaceApiError } from '@wispace/wispace-client/core';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 
 /**

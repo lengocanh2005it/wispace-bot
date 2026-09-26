@@ -1,6 +1,6 @@
 import { MessengerReportDeliveryService } from './messenger-report-delivery.service';
 import { ProactiveMessenger24hSkippedError } from '../utils/proactive-send.utils';
-import type { RetryableApiError } from '@wispace/student-report';
+import type { RetryableApiError } from '@wispace/student-report/core';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
 import type { UserMessengerMapping } from '../../domain/entities/messenger.types';
 

@@ -2,9 +2,9 @@ import {
   createEnvLlmExecutionPort,
   createLlmProviderAdapterFromEnv,
   OpenAiAdapter,
-  type EnvLlmExecutionConfig,
-  type LlmJsonResponse,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/adapters';
+import type { EnvLlmExecutionConfig } from '@wispace/llm-agent/adapters';
+import { LlmJsonResponse } from '@wispace/llm-agent/core';
 import { StudentReportCore } from './student-report.service';
 
 const capacityInput = {

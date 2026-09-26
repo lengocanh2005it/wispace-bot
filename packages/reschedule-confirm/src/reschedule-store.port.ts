@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
+import type { RescheduleSchedulingMode } from '@wispace/wispace-client/core';
 
 export interface PendingRescheduleRecord<TExternalId> {
   externalId: TExternalId;

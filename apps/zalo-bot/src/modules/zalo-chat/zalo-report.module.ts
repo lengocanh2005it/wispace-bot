@@ -3,34 +3,41 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { join } from 'path';
-import { PlatformStudentReportService } from '@wispace/student-report';
+import { PlatformStudentReportService } from '@wispace/student-report/adapters';
 import {
   ChatMeteringModule,
   PlatformLlmUsageRecorderAdapter,
   LlmUsageEventEntity,
   provideWiredUsageRecorder,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
+import type {
+  LlmExecutionPort,
+  LlmProviderAdapter,
+} from '@wispace/llm-agent/core';
 import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,
-  WispaceGoalsService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
+import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import {
   GOALS_DATA_PORT,
   REPORT_CLAIM_REPOSITORY,
   REPORT_DELIVERY_PORT,
   REPORT_DELIVERY_METRICS,
+  parseExamDateToIso,
+  type ReportClaimRepositoryPort,
+} from '@wispace/scheduler-core/core';
+import {
   ReportScheduleService,
   ReportSendScheduleService,
   ReportOrchestrationService,
-  parseExamDateToIso,
-  type ReportClaimRepositoryPort,
   CronLeaderHeartbeatService,
   ReportCronLeaderService,
   ReportCronLockService,
-} from '@wispace/scheduler-core';
+  PlatformReportClaimRepository,
+  ReportClaimStaleResetCronService,
+} from '@wispace/scheduler-core/adapters';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import {
   CronLeaderLeaseEntity,
@@ -40,10 +47,6 @@ import {
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
-import {
-  PlatformReportClaimRepository,
-  ReportClaimStaleResetCronService,
-} from '@wispace/scheduler-core/adapters';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { DatabaseModule } from '../../infrastructure/database/database.module';

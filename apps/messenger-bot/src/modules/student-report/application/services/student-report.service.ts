@@ -1,17 +1,15 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import {
-  StudentReportCore,
-  type StudentReportPorts,
-} from '@wispace/student-report';
+import { StudentReportCore } from '@wispace/student-report/core';
+import type { StudentReportPorts } from '@wispace/student-report/core';
 import type {
   LlmProviderAdapter,
   LlmExecutionAttempt,
   LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { todayUsageDate } from '@wispace/chat-metering';
+import { todayUsageDate } from '@wispace/chat-metering/core';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';

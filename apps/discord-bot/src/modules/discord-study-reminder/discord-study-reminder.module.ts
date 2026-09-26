@@ -7,14 +7,14 @@ import {
   StudyReminderJobEntity,
   createStudyReminderProviders,
   createCalendarGetSessions,
-  GET_SESSIONS,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
+import { GET_SESSIONS } from '@wispace/study-reminder-shared/core';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import { WispaceCalendarService } from '@wispace/wispace-client';
+import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
 import {
   CanonicalPlatformService,

@@ -2,7 +2,7 @@ import { TaskScoreAverageApiService } from './task-score-average-api.service';
 import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import type { ConfigService } from '@nestjs/config';
 
 describe('TaskScoreAverageApiService', () => {

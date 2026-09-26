@@ -9,20 +9,22 @@ import {
   StudyReminderWorkerService,
   StudyReminderJobEntity,
   TypeormStudyReminderJobRepository,
+  DORMANT_REASON,
+  createStudyReminderProviders,
+  createSessionSourceGetSessions,
+  PlatformStudyCalendarCommandService,
+} from '@wispace/study-reminder-shared/adapters';
+import {
   MAPPING_READER,
   MESSAGE_SENDER,
   STUDY_REMINDER_JOB_REPOSITORY,
   DISPATCH_HOOKS,
-  DORMANT_REASON,
-  createStudyReminderProviders,
-  createSessionSourceGetSessions,
   GET_SESSIONS,
   type MappingReaderPort,
   type MessageSenderPort,
   type DispatchHooksPort,
   type StudyReminderJobStatus,
-} from '@wispace/study-reminder-shared';
-import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared/adapters';
+} from '@wispace/study-reminder-shared/core';
 import { CommonModule } from '../../shared/common/common.module';
 import { APP_TIMEZONE_ENV_KEYS } from '../../shared/config/app-timezone';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
@@ -33,10 +35,8 @@ import { MessengerOutboundModule } from '../messenger/messenger-outbound.module'
 import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import {
-  MemoizedWispaceGoalsService,
-  WispaceCalendarService,
-} from '@wispace/wispace-client';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
+import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';

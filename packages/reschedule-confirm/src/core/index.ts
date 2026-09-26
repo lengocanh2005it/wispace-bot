@@ -1,3 +1,6 @@
+// Framework-free reschedule confirmation policy, contracts, and the in-memory
+// store. TypeORM persistence and the recovery cron live in `adapters`.
+
 export {
   RescheduleConfirmationService,
   RescheduleStageAbortedError,
@@ -26,7 +29,7 @@ export {
   type CalendarCacheInvalidationPort,
   type RescheduleConfirmationOptions,
   type RescheduleScopeFailureReason,
-} from './reschedule-confirm.service';
+} from '../reschedule-confirm.service';
 export {
   MemoryRescheduleStore,
   type PendingRescheduleRecord,
@@ -34,4 +37,4 @@ export {
   type RescheduleCancellationOutcome,
   type ReschedulePendingState,
   type RescheduleStorePort,
-} from './reschedule-store.port';
+} from '../reschedule-store.port';

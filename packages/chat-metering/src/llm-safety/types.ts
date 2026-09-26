@@ -1,4 +1,4 @@
-import type { FlaggedClassifierLabel } from '@wispace/llm-agent';
+import type { FlaggedClassifierLabel } from '@wispace/llm-agent/core';
 
 export interface InsertLlmSafetyEvent {
   feature: string;

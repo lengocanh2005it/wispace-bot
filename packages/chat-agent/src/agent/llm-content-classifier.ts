@@ -4,13 +4,15 @@ import {
   LlmOverloadError,
   LlmExecutionDisabledError,
   redactSecrets,
-  type ClassifierLabel,
-  type ClassifyFailureReason,
-  type ClassifyResult,
-  type ContentClassifierPort,
-  type LlmExecutionPort,
-  type LlmProviderAdapter,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import type {
+  ClassifierLabel,
+  ClassifyFailureReason,
+  ClassifyResult,
+  ContentClassifierPort,
+  LlmExecutionPort,
+  LlmProviderAdapter,
+} from '@wispace/llm-agent/core';
 import { isAbortError } from '@wispace/bot-common/utils';
 
 const DEFAULT_MAX_INPUT_CHARS = 512;

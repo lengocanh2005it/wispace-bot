@@ -2,7 +2,7 @@ import { EntityManager, Repository } from 'typeorm';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { ChatRateLimitRepository } from './chat-rate-limit.repository';
 import type { ChatQuotaEventRecorderService } from '../../application/services/chat-quota-event-recorder.service';
 

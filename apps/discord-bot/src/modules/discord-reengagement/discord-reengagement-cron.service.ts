@@ -17,8 +17,8 @@ import {
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { NotificationPreferenceService } from '@wispace/database';
-import { ReengagementApiClient } from '@wispace/wispace-client';
-import type { ReengagementCandidate } from '@wispace/wispace-client';
+import { ReengagementApiClient } from '@wispace/wispace-client/core';
+import type { ReengagementCandidate } from '@wispace/wispace-client/core';
 import { DiscordReengagementService } from './discord-reengagement.service';
 
 const CRON_NAME = 'discord-reengagement-batch';

@@ -4,9 +4,11 @@ import { sleep } from '@wispace/bot-common/utils';
 import {
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
-  type CalendarSessionTimeRange,
-  type RescheduleSchedulingMode,
-  type UserCalendarRecord,
+} from '@wispace/wispace-client/core';
+import type {
+  CalendarSessionTimeRange,
+  RescheduleSchedulingMode,
+  UserCalendarRecord,
 } from '@wispace/wispace-client/core';
 import type {
   RescheduleConfigPort,
@@ -15,12 +17,12 @@ import type {
 import type {
   RescheduleStudySessionResult,
   StudyCalendarEntryView,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import {
   assertRescheduleRecordOwnership,
   getRescheduleScopeFailureReason,
   RescheduleScopeError,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,

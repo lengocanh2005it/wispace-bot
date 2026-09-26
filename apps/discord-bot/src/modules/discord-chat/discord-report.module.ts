@@ -3,14 +3,17 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { join } from 'path';
-import { PlatformStudentReportService } from '@wispace/student-report';
+import { PlatformStudentReportService } from '@wispace/student-report/adapters';
 import {
   PlatformLlmUsageRecorderAdapter,
   provideWiredUsageRecorder,
   ChatMeteringModule,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
+import type {
+  LlmExecutionPort,
+  LlmProviderAdapter,
+} from '@wispace/llm-agent/core';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -18,13 +21,18 @@ import {
   ReportCronLockService,
   CronLeaderHeartbeatService,
   ReportOrchestrationService,
+  PlatformReportClaimRepository,
+  PlatformReportSendJobRepository,
+  ReportClaimStaleResetCronService,
+} from '@wispace/scheduler-core/adapters';
+import {
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
   REPORT_DELIVERY_METRICS,
   GOALS_DATA_PORT,
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
@@ -35,15 +43,10 @@ import {
   CronLeaderLeaseService,
 } from '@wispace/database';
 import {
-  PlatformReportClaimRepository,
-  PlatformReportSendJobRepository,
-  ReportClaimStaleResetCronService,
-} from '@wispace/scheduler-core/adapters';
-import {
   MemoizedWispaceGoalsService,
   WispaceDataCache,
-  WispaceGoalsService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
+import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';

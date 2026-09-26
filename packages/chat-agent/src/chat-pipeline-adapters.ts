@@ -12,7 +12,7 @@ import type {
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import { PlatformAgentService } from './agent/platform-agent.service';
 import { PlatformChatHistoryService } from './chat-history/platform-chat-history.service';
-import type { PlatformChatRateLimitService } from '@wispace/chat-metering';
+import type { PlatformChatRateLimitService } from '@wispace/chat-metering/adapters';
 
 /**
  * Minimal outbound service contract — both DiscordOutboundService and

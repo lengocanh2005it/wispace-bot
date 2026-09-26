@@ -3,9 +3,9 @@ import type {
   LlmJsonResponse,
   LlmProviderAdapter,
   LlmUsageRecorderPort,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
 import { StudyReminderService } from './study-reminder.service';
 import { StudySessionSourceService } from './study-session-source.service';
 import type { StudyReminderDisplayNamePort } from '../../domain/ports/study-reminder-display-name.port';

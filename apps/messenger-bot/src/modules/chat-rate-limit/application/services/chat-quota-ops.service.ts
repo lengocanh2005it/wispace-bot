@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { todayUsageDate } from '@wispace/chat-metering';
+import { todayUsageDate } from '@wispace/chat-metering/core';
 import { subMilliseconds } from 'date-fns';
 import { ChatQuotaOpsSummary } from '../../domain/entities/chat-quota-ops.types';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';

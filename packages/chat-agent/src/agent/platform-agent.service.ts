@@ -4,15 +4,8 @@ import {
   CHAT_SYSTEM_PROMPT_CORE,
   DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
   LlmAgentService,
-  LlmAgentPorts,
   NOOP_METRICS_PORT,
-  ToolExecutorPort,
   composeChatSystemPrompt,
-  createEnvLlmExecutionPort,
-  type LlmExecutionPort,
-  type LlmProviderAdapter,
-  type LlmAgentPromptParts,
-  type ClassifyResult,
   loadSystemPromptFile,
   IntentDetector,
   isAmbiguousMessage,
@@ -34,17 +27,24 @@ import {
   detectPromptInjectionAcrossTurns,
   redactSecrets,
   sanitizeUntrustedTextForLlm,
+  buildLlmExecutionConfig,
+  generatePromptCanary,
+  type LlmAgentPorts,
+  type ToolExecutorPort,
+  type LlmProviderAdapter,
+  type LlmAgentPromptParts,
+  type ClassifyResult,
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
   type LlmDegradedModeEvent,
   type ClassifierOutcomeLabel,
-  buildLlmExecutionConfig,
-} from '@wispace/llm-agent';
-import { generatePromptCanary } from '@wispace/llm-agent/core';
+  type LlmExecutionPort,
+} from '@wispace/llm-agent/core';
+import { createEnvLlmExecutionPort } from '@wispace/llm-agent/adapters';
 import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import {
   errorMessage,
   maskExternalId,
@@ -58,8 +58,8 @@ import {
   RESCHEDULE_CANCELLED_MESSAGE,
   RESCHEDULE_CANCEL_PROCESSING_MESSAGE,
   RESCHEDULE_EXPIRED_MESSAGE,
-  type RescheduleCancellationOutcome,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
+import type { RescheduleCancellationOutcome } from '@wispace/reschedule-confirm/core';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type {
   PlatformAgentInput,

@@ -113,7 +113,7 @@ test('legacy application edges are exact ratchet entries', () => {
   try {
     f.write(
       'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts',
-      "import { NewWispaceService } from '@wispace/wispace-client';\nexport class CompletionService {}\n",
+      "import { NewWispaceService } from '@wispace/wispace-client/core';\nexport class CompletionService {}\n",
     );
 
     const result = checkArchitecture(f.root);
@@ -130,7 +130,7 @@ test('domain imports of concrete symbols from mixed packages are reported', () =
   try {
     f.write(
       'apps/demo/src/modules/feature/domain/model.ts',
-      "import { UserGoalsApiClient } from '@wispace/wispace-client';\nexport class Model {}\n",
+      "import { UserGoalsApiClient } from '@wispace/wispace-client/core';\nexport class Model {}\n",
     );
 
     const result = checkArchitecture(f.root);
@@ -345,7 +345,7 @@ test('affected packages publish explicit core/adapter entrypoints', () => {
     'student-report': ['./core', './adapters'],
     'chat-metering': ['./core', './adapters'],
     'scheduler-core': ['./core', './adapters'],
-    'reschedule-confirm': ['./adapters'],
+    'reschedule-confirm': ['./core', './adapters'],
     'study-reminder-shared': ['./core', './adapters'],
     'ops-health': ['./core', './adapters'],
     'account-link-core': ['./core', './adapters'],
@@ -359,7 +359,6 @@ test('affected packages publish explicit core/adapter entrypoints', () => {
         'utf8',
       ),
     );
-    assert.ok(packageJson.exports?.['.'], `${name} must preserve root export`);
     for (const subpath of subpaths) {
       const entry = packageJson.exports[subpath];
       assert.ok(entry, `${name} must publish ${subpath}`);
@@ -369,6 +368,11 @@ test('affected packages publish explicit core/adapter entrypoints', () => {
       assert.equal(entry.require, `${distPath}/index.js`);
       assert.equal(entry.types, `${distPath}/index.d.ts`);
     }
+    assert.equal(
+      packageJson.exports?.['.'],
+      undefined,
+      `${name} must not publish a root compatibility facade`,
+    );
   }
 });
 
@@ -377,15 +381,15 @@ test('the database package cannot import or depend on domain policy packages', (
   try {
     f.write(
       'packages/database/src/services/report.service.ts',
-      "import { ReportScheduleService } from '@wispace/scheduler-core';\nexport const service = ReportScheduleService;\n",
+      "import { ReportScheduleService } from '@wispace/scheduler-core/adapters';\nexport const service = ReportScheduleService;\n",
     );
     f.write(
       'packages/database/src/services/report-export.ts',
-      "export { ReportScheduleService } from '@wispace/scheduler-core';\n",
+      "export { ReportScheduleService } from '@wispace/scheduler-core/adapters';\n",
     );
     f.write(
       'packages/database/src/services/reschedule.spec.ts',
-      "import type { RescheduleStorePort } from '@wispace/reschedule-confirm';\nexport type Store = RescheduleStorePort;\n",
+      "import type { RescheduleStorePort } from '@wispace/reschedule-confirm/core';\nexport type Store = RescheduleStorePort;\n",
     );
     f.write(
       'packages/database/src/services/metrics.ts',
@@ -416,10 +420,10 @@ test('the database package cannot import or depend on domain policy packages', (
         '@wispace/bot-metrics',
         '@wispace/bot-metrics',
         '@wispace/reschedule-confirm',
-        '@wispace/reschedule-confirm',
+        '@wispace/reschedule-confirm/core',
         '@wispace/scheduler-core',
-        '@wispace/scheduler-core',
-        '@wispace/scheduler-core',
+        '@wispace/scheduler-core/adapters',
+        '@wispace/scheduler-core/adapters',
       ],
     );
   } finally {
@@ -465,6 +469,67 @@ test('the database workspace lockfile cannot retain domain policy dependencies',
         '@wispace/scheduler-core',
       ],
     );
+  } finally {
+    f.close();
+  }
+});
+
+test('affected packages reject bare root imports', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/messenger-bot/src/modules/scheduler/infrastructure/report-schedule.adapter.ts',
+      "import { ReportScheduleService } from '@wispace/scheduler-core';\nexport const s = ReportScheduleService;\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/study-reminder/infrastructure/study-schedule.adapter.ts',
+      "import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/core';\nexport const s = StudyReminderScheduleService;\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/infrastructure/cleanup.adapter.ts',
+      "import { CleanupCronService } from '@wispace/cleanup-cron/adapters';\nexport const s = CleanupCronService;\n",
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/infrastructure/reschedule.adapter.ts',
+      "export type Mode = import('@wispace/reschedule-confirm').RescheduleSchedulingMode;\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 2);
+    assert.ok(
+      result.violations.every(
+        (violation) => violation.rule === 'no-root-package-entrypoint',
+      ),
+    );
+    assert.deepEqual(
+      result.violations.map((violation) => violation.imported).sort(),
+      ['@wispace/reschedule-confirm', '@wispace/scheduler-core'],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('smoke scripts requiring a bare root are reported', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'scripts/database-bootstrap-smoke.mjs',
+      "const { CleanupCronService } = require('@wispace/cleanup-cron');\n",
+    );
+    f.write(
+      'apps/messenger-bot/scripts/ops-data-quality.mjs',
+      "const { getPostgresSsl } = require('@wispace/database');\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    const [violation] = result.violations;
+    assert.equal(violation.rule, 'no-root-package-entrypoint');
+    assert.equal(violation.imported, '@wispace/cleanup-cron');
+    assert.equal(violation.line, 1);
   } finally {
     f.close();
   }

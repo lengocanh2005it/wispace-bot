@@ -1,10 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import {
-  ChatRateLimitCore,
-  todayUsageDate,
-  type ChatQuotaCheckResult,
-} from '@wispace/chat-metering';
+import { ChatRateLimitCore, todayUsageDate } from '@wispace/chat-metering/core';
+import type { ChatQuotaCheckResult } from '@wispace/chat-metering/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 import { ChatQuotaEventRecorderService } from './chat-quota-event-recorder.service';

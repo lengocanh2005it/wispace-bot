@@ -1,4 +1,4 @@
-import { detectPromptInjection } from '@wispace/llm-agent';
+import { detectPromptInjection } from '@wispace/llm-agent/core';
 
 const EXPLICIT_REPORT_SUBSCRIPTION_INTENTS = [
   /\bdang ky(?: nhan)? bao cao\b/u,

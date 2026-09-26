@@ -1131,6 +1131,10 @@ _Avoid_: cache result when describing the artifact origin
 Said of a package whose enforced core imports no NestJS, no TypeORM and no vendor SDK, so any bot can use it. It describes named core paths, not always a whole package — several packages ship explicit outer adapters alongside a pure core.
 _Avoid_: "pure package", "no dependencies" — the claim is about framework coupling, not about having none
 
+**core entrypoint / adapter entrypoint**:
+The public boundary between a package's framework-neutral policy and contracts, and its integrations with frameworks or outside systems. Inner workflows depend on core; composition roots bind adapters.
+_Avoid_: mixed package barrel when describing this boundary
+
 **database portability boundary**:
 The rule that database-engine-specific persistence code stays behind adapters and infrastructure boundaries, while domain code, application business logic, and public ports remain engine-neutral. It is a boundary about dependencies and observable behavior, not a promise that SQL or migration files are portable.
 _Avoid_: portable SQL promise, drop-in database guarantee

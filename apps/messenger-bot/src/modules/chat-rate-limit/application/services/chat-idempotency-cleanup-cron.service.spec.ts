@@ -1,10 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 import {
   ChatIdempotencyEntity,
   ChatToolDailyUsageEntity,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { ChatIdempotencyCleanupCronService } from './chat-idempotency-cleanup-cron.service';
 
 describe('ChatIdempotencyCleanupCronService', () => {

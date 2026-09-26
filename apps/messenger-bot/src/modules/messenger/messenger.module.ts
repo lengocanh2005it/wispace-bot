@@ -6,7 +6,7 @@ import { DataSource, type Repository } from 'typeorm';
 import {
   CleanupCronService,
   PlatformLinkAuditCleanupService,
-} from '@wispace/cleanup-cron';
+} from '@wispace/cleanup-cron/adapters';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
   PlatformDeadLetterCronService,

@@ -5,15 +5,17 @@ import { join } from 'node:path';
 import {
   NOOP_METRICS_PORT,
   buildNonDisclosureReply,
-  type AgentMetricsPort,
-  type LlmProviderAdapter,
-  type LlmToolChatRequest,
-  type LlmToolChatResponse,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import type {
+  AgentMetricsPort,
+  LlmProviderAdapter,
+  LlmToolChatRequest,
+  LlmToolChatResponse,
+} from '@wispace/llm-agent/core';
 import type {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import { MemoryClarificationStateStore } from '../clarification/clarification-state';
 import type { PlatformAgentOptions } from './platform-agent.types';

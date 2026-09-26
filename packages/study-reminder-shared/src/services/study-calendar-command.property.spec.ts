@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import {
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 
 /**
  * #621 property suite: the reschedule slot math is a deterministic pure

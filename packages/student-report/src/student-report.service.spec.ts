@@ -5,11 +5,11 @@ import {
   type RetryableApiError,
 } from './errors';
 import type { StudentCapacityInput } from './types';
-import {
-  LlmOverloadError,
-  type LlmProviderAdapter,
-  type LlmJsonResponse,
-} from '@wispace/llm-agent';
+import { LlmOverloadError } from '@wispace/llm-agent/core';
+import type {
+  LlmProviderAdapter,
+  LlmJsonResponse,
+} from '@wispace/llm-agent/core';
 
 const baseInput: StudentCapacityInput = {
   exam_date: '2026-08-01',

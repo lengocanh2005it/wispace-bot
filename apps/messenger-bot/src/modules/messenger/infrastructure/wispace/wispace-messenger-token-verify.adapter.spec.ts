@@ -1,5 +1,5 @@
 import { InternalServerErrorException } from '@nestjs/common';
-import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import { WispaceMessengerTokenVerifyAdapter } from './wispace-messenger-token-verify.adapter';
 
 describe('WispaceMessengerTokenVerifyAdapter', () => {

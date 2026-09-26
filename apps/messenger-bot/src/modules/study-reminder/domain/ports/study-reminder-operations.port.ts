@@ -2,14 +2,14 @@ import type {
   CalendarSessionTimeRange,
   NormalizedStudySession,
   RescheduleSchedulingMode,
-} from '@wispace/wispace-client';
-import type { StudyCalendarEntryView } from '@wispace/reschedule-confirm';
+} from '@wispace/wispace-client/core';
+import type { StudyCalendarEntryView } from '@wispace/reschedule-confirm/core';
 import type { StudyReminderLlmOutput } from '../entities/study-schedule.types';
 
 export type {
   CalendarSessionTimeRange,
   NormalizedStudySession,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 
 export const STUDY_REMINDER_OPERATIONS_PORT = Symbol(
   'STUDY_REMINDER_OPERATIONS_PORT',

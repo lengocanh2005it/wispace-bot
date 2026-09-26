@@ -1,9 +1,9 @@
-import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared/adapters';
 import type {
   RescheduleStudySessionResult,
   StudyCalendarEntryView,
-} from '@wispace/reschedule-confirm';
-import type { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+} from '@wispace/reschedule-confirm/core';
+import type { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 import type { StudySessionSourceService } from '../../application/services/study-session-source.service';
 import { StudyCalendarCommandService } from './study-calendar-command.service';
 

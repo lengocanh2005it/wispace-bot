@@ -7,7 +7,7 @@ import {
   CleanupCronService,
   PlatformCleanupCronService,
   PlatformLinkAuditCleanupService,
-} from '@wispace/cleanup-cron';
+} from '@wispace/cleanup-cron/adapters';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
@@ -25,7 +25,7 @@ import {
   ChatIdempotencyEntity,
   LlmSafetyCleanupService,
   provideWiredUsageRecorder,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
@@ -50,31 +50,36 @@ import type {
   ChatQueueStorePort,
   ClarificationStateStore,
 } from '@wispace/chat-agent';
-import type { LlmExecutionPort, LlmProviderAdapter } from '@wispace/llm-agent';
-import { buildWriteToolDailyBudgetMessage } from '@wispace/llm-agent';
+import type {
+  LlmExecutionPort,
+  LlmProviderAdapter,
+} from '@wispace/llm-agent/core';
+import { buildWriteToolDailyBudgetMessage } from '@wispace/llm-agent/core';
 import {
   WispaceCalendarService,
-  PrecreateExerciseApiClient,
   WispaceGoalsService,
+} from '@wispace/wispace-client/adapters';
+import {
+  PrecreateExerciseApiClient,
   WispaceDataCache,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import {
   DiscordCalendarCapabilityAdapter,
   DiscordExerciseCapabilityAdapter,
   DiscordGoalsCapabilityAdapter,
   DiscordWispaceCacheInvalidationAdapter,
 } from './infrastructure/adapters/discord-wispace-capability.adapters';
-import {
-  RescheduleConfirmationService,
-  type CalendarPort,
-  type ReschedulePort,
-} from '@wispace/reschedule-confirm';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
+import type {
+  CalendarPort,
+  ReschedulePort,
+} from '@wispace/reschedule-confirm/core';
 import {
   PlatformStudyCalendarCommandService,
   StudyReminderJobEntity,
   TypeormStudyReminderJobRepository,
-  STUDY_REMINDER_JOB_REPOSITORY,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
 import { DiscordMenuService } from './application/services/discord-menu.service';
 import { DiscordConsentService } from './application/services/discord-consent.service';
 import { DatabaseModule } from '../../infrastructure/database/database.module';

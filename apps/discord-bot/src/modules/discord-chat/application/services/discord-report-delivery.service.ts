@@ -8,7 +8,7 @@ import type {
   ReportDeliveryPort,
   ReportDeliveryResult,
   ReportMapping,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import {
   DiscordDeliveryFailureError,
   DiscordOutboundService,

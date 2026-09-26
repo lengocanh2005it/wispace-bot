@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { WispaceApiError } from '@wispace/wispace-client/core';
 import {
-  WispaceApiError,
   WispaceCalendarService,
   WispaceGoalsService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/adapters';
 
 const NOT_LINKED =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';

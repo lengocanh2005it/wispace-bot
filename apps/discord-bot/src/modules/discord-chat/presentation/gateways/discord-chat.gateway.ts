@@ -25,7 +25,7 @@ import { DiscordConsentService } from '../../application/services/discord-consen
 import {
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
   RescheduleConfirmationService,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
   RESCHEDULE_CONFIRM_CUSTOM_ID,
@@ -40,12 +40,12 @@ import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/acc
 import { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
-import { WispaceApiError } from '@wispace/wispace-client';
+import { WispaceApiError } from '@wispace/wispace-client/core';
 import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
   detectDisclosureProbe,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';

@@ -32,7 +32,7 @@ import {
   type DiscordOutboundNeutralized,
   type DiscordOutboundPreparation,
 } from '../utils/discord-outbound-guard';
-import { withRetry } from '@wispace/wispace-client';
+import { withRetry } from '@wispace/wispace-client/core';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 

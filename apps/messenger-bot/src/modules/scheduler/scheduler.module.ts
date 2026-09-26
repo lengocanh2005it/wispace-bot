@@ -10,12 +10,16 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   CronLeaderHeartbeatService,
+  PlatformReportSendJobRepository,
+  ReportClaimStaleResetCronService,
+} from '@wispace/scheduler-core/adapters';
+import {
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import {
   ReportSendJobEntity,
   CronLeaderLeaseService,
@@ -24,18 +28,14 @@ import {
   PrivacyCleanupJobStore,
   PRIVACY_CLEANUP_STORES,
 } from '@wispace/database';
-import {
-  PlatformReportSendJobRepository,
-  ReportClaimStaleResetCronService,
-} from '@wispace/scheduler-core/adapters';
-import { LlmSafetyEventEntity } from '@wispace/chat-metering';
+import { LlmSafetyEventEntity } from '@wispace/chat-metering/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { DataQualityService } from '@wispace/ops-health/core';
 import {
-  DataQualityService,
   TypeormDataQualityDatabase,
   TypeormDataQualityRepository,
   readDataQualityConfig,
-} from '@wispace/ops-health';
+} from '@wispace/ops-health/adapters';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { ChatPipelineModule } from '../messenger/chat-pipeline.module';
@@ -46,7 +46,7 @@ import { UserLinkingModule } from '../messenger/user-linking.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { DataQualityCronService } from './application/services/data-quality-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';

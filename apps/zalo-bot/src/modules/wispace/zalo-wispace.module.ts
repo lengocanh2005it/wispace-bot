@@ -4,11 +4,13 @@ import {
   createWispaceProviders,
   RedisWispaceCacheStore,
   WispaceConfigService,
-  WispaceDataCache,
   WispaceGoalsService,
   WispaceCalendarService,
+} from '@wispace/wispace-client/adapters';
+import {
+  WispaceDataCache,
   PrecreateExerciseApiClient,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**

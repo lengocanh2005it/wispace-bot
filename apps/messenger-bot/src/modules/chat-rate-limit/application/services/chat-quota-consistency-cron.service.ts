@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { RedisBurstReconciler } from '@wispace/chat-metering';
+import { RedisBurstReconciler } from '@wispace/chat-metering/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   studyReminderTerminalFailurePredicateSql,
-} = require('@wispace/study-reminder-shared');
+} = require('@wispace/study-reminder-shared/core');
 
 const HELP = `Usage: npm run ops:health -- [options]
 

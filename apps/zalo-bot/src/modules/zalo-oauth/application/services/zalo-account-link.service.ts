@@ -13,7 +13,7 @@ import type {
 import {
   cancelStudyReminderJobsForOwnershipChange,
   nextMappingGenerationAfterTombstone,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import {
   ZALO_OAUTH_CLIENT,

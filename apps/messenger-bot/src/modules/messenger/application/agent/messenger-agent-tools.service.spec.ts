@@ -9,10 +9,10 @@ import { MessengerAgentToolsService } from './messenger-agent-tools.service';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
 import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
-import type { PrecreateExerciseApiClient } from '@wispace/wispace-client';
-import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm';
+import type { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
+import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm/core';
 
 describe('MessengerAgentToolsService', () => {
   const createService = (

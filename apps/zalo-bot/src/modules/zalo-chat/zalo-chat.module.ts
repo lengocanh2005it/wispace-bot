@@ -5,14 +5,18 @@ import { join } from 'path';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import {
   createLlmProviderAdapterFromEnv,
-  buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
   createLlmAdmissionCoordinator,
-  type LlmProviderAdapter,
-  type LlmExecutionPort,
-  type LlmAdmissionCoordinator,
+} from '@wispace/llm-agent/adapters';
+import {
+  buildLlmExecutionConfig,
+  LlmAdmissionCoordinator,
   buildWriteToolDailyBudgetMessage,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import type {
+  LlmProviderAdapter,
+  LlmExecutionPort,
+} from '@wispace/llm-agent/core';
 import {
   ChatMeteringModule,
   ChatIdempotencyEntity,
@@ -22,7 +26,7 @@ import {
   PlatformLlmSafetyEventAdapter,
   LlmSafetyCleanupService,
   provideWiredUsageRecorder,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
 import {
   PlatformAgentService,
   LlmContentClassifier,
@@ -46,10 +50,12 @@ import type {
 import {
   WispaceCalendarService,
   WispaceConfigService,
-  PrecreateExerciseApiClient,
   WispaceGoalsService,
+} from '@wispace/wispace-client/adapters';
+import {
+  PrecreateExerciseApiClient,
   WispaceDataCache,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import {
   ZaloCalendarCapabilityAdapter,
   ZaloExerciseCapabilityAdapter,
@@ -76,17 +82,17 @@ import {
 import { ZALO_CLARIFICATION_AGENT } from './application/ports/zalo-clarification-agent.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
-import {
-  RescheduleConfirmationService,
-  type CalendarPort,
-  type ReschedulePort,
-} from '@wispace/reschedule-confirm';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
+import type {
+  CalendarPort,
+  ReschedulePort,
+} from '@wispace/reschedule-confirm/core';
 import {
   PlatformStudyCalendarCommandService,
   StudyReminderJobEntity,
   TypeormStudyReminderJobRepository,
-  STUDY_REMINDER_JOB_REPOSITORY,
-} from '@wispace/study-reminder-shared';
+} from '@wispace/study-reminder-shared/adapters';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
@@ -113,7 +119,7 @@ import {
   CleanupCronService,
   PlatformCleanupCronService,
   PlatformLinkAuditCleanupService,
-} from '@wispace/cleanup-cron';
+} from '@wispace/cleanup-cron/adapters';
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { DatabaseModule } from '../../infrastructure/database/database.module';

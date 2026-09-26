@@ -5,7 +5,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { CanonicalPlatformService } from '@wispace/database';
-import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves

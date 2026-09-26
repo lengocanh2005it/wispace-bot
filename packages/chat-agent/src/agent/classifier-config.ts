@@ -1,8 +1,8 @@
 import {
   buildLlmProviderPolicyFromEnv,
   validateLlmProviderModel,
-  type LlmProviderPolicy,
 } from '@wispace/llm-agent/adapters';
+import type { LlmProviderPolicy } from '@wispace/llm-agent/adapters';
 
 export const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
 

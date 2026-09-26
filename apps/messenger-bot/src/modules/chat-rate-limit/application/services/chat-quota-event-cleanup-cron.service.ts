@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 import { CHAT_QUOTA_EVENT_REPOSITORY } from '../../domain/repositories/chat-quota-event.repository.port';
 import type { ChatQuotaEventRepositoryPort } from '../../domain/repositories/chat-quota-event.repository.port';
 

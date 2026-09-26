@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import {
-  RescheduleConfirmationService,
-  type CalendarPort,
-  type ReschedulePort,
-  type RescheduleStorePort,
-  type RescheduleConfirmationOptions,
-} from '@wispace/reschedule-confirm';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
+import type {
+  CalendarPort,
+  ReschedulePort,
+  RescheduleStorePort,
+  RescheduleConfirmationOptions,
+} from '@wispace/reschedule-confirm/core';
 import { buildRescheduleConfirmFollowUp } from '../formatters/messenger-rich-message.builder';
 import type { MessengerStageResult } from '../types/messenger-reschedule-confirmation.types';
 
@@ -28,7 +28,7 @@ export class MessengerRescheduleConfirmationService extends RescheduleConfirmati
     externalId: string;
     userId: number;
     calendarId: number;
-    schedulingMode: import('@wispace/wispace-client').RescheduleSchedulingMode;
+    schedulingMode: import('@wispace/wispace-client/core').RescheduleSchedulingMode;
     newLocalDate?: string;
     newTime?: string;
     platform?: string;

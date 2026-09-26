@@ -5,7 +5,10 @@ import { join } from 'path';
 import { trace } from '@opentelemetry/api';
 import { Repository } from 'typeorm';
 import { WispaceModule } from '../wispace/wispace.module';
-import type { CalendarPort, ReschedulePort } from '@wispace/reschedule-confirm';
+import type {
+  CalendarPort,
+  ReschedulePort,
+} from '@wispace/reschedule-confirm/core';
 import {
   PlatformAgentService,
   PlatformAgentToolsService,
@@ -21,9 +24,9 @@ import {
   LlmUsageEventEntity,
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
-  toUsageRecorderMetrics,
   PlatformWriteToolBudgetService,
-} from '@wispace/chat-metering';
+} from '@wispace/chat-metering/adapters';
+import { toUsageRecorderMetrics } from '@wispace/chat-metering/core';
 import type { LlmProviderAdapter } from '@wispace/llm-agent/core';
 import { PrivacyStateService } from '@wispace/llm-agent/adapters';
 import {
@@ -35,10 +38,8 @@ import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
-import {
-  WispaceConfigService,
-  PrecreateExerciseApiClient,
-} from '@wispace/wispace-client';
+import { WispaceConfigService } from '@wispace/wispace-client/adapters';
+import { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
 import {
   LearnerProfileEntity,
   RescheduleConfirmationEntity,

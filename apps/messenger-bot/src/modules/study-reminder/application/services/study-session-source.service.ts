@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared/adapters';
 import { addHours } from 'date-fns';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
 import { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';

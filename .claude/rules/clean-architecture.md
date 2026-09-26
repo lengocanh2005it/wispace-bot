@@ -1,6 +1,6 @@
 # Clean Architecture — wispace-bots (Turborepo monorepo)
 
-The executable scope and exception map lives in [`docs/architecture-boundaries.md`](../../docs/architecture-boundaries.md). Affected shared packages expose explicit `/core` and `/adapters` entrypoints; the package root is a backward-compatible migration façade.
+The executable scope and exception map lives in [`docs/architecture-boundaries.md`](../../docs/architecture-boundaries.md). Packages in its entrypoint table use explicit `/core` and `/adapters` paths where both surfaces exist; bare package-root imports are not supported compatibility facades. Domain and application code use `/core`; `/adapters` is imported only by infrastructure and composition roots. Adapter-only packages such as `cleanup-cron` expose only `/adapters`; unrelated feature subpaths such as `bot-common` are outside this convention. Existing application adapter edges remain tracked by `LEGACY_APPLICATION_IMPORTS` and #1088; do not add new edges.
 
 Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (reference: [clean-nestjs-cli](https://github.com/jheisonnovak/clean-nestjs-cli), [NestJS-DDD-DevOps](https://andrea-acampora.github.io/nestjs-ddd-devops/)), inside `apps/messenger-bot/src/`. Paths below are relative to `apps/messenger-bot/src/` unless stated otherwise.
 

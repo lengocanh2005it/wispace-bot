@@ -1,11 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import {
-  isDataQualityCronEnabled,
-  DataQualityService,
-  type DataQualityCheckResult,
-} from '@wispace/ops-health';
+import { isDataQualityCronEnabled } from '@wispace/ops-health/adapters';
+import { DataQualityService } from '@wispace/ops-health/core';
+import type { DataQualityCheckResult } from '@wispace/ops-health/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 @Injectable()

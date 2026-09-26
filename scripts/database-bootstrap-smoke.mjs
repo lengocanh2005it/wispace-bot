@@ -15,7 +15,7 @@ const { DataSource, In } = require('typeorm');
 const {
   CleanupCronService,
   PlatformCleanupCronService,
-} = require('@wispace/cleanup-cron');
+} = require('@wispace/cleanup-cron/adapters');
 const { PgAdvisoryLockService } = require('@wispace/bot-common/locks');
 const {
   CanonicalPlatformService,

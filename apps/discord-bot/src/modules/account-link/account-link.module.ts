@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   WispaceConfigService,
-  WispaceLinkStatusClient,
   WispaceTokenVerifyService,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/adapters';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
 import { PlatformLinkStateService } from '@wispace/database';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';

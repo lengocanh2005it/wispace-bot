@@ -5,12 +5,14 @@ import {
   RedisWispaceCacheStore,
   WispaceCalendarService,
   WispaceConfigService,
-  WispaceDataCache,
   WispaceGoalsService,
+} from '@wispace/wispace-client/adapters';
+import {
+  WispaceDataCache,
   PrecreateExerciseApiClient,
   ReengagementApiClient,
-} from '@wispace/wispace-client';
-import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
+} from '@wispace/wispace-client/core';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared/adapters';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**

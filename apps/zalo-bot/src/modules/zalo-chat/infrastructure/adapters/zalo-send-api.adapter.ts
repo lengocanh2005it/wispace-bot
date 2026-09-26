@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { readResponseText } from '@wispace/bot-common/utils';
-import { keepAliveFetch } from '@wispace/wispace-client';
+import { keepAliveFetch } from '@wispace/wispace-client/core';
 import type {
   ZaloOutboundTransportInput,
   ZaloOutboundTransportPort,

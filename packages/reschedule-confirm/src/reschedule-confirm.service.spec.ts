@@ -13,7 +13,7 @@ import {
   MemoryRescheduleStore,
   type RescheduleStorePort,
 } from './reschedule-store.port';
-import { WispaceDataCache } from '@wispace/wispace-client';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
 
 function mockCalendarPort(): CalendarPort<string> {
   return {

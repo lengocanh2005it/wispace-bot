@@ -1,6 +1,6 @@
 import { MessengerMessageLogCleanupService } from './messenger-message-log-cleanup.service';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 
 describe('MessengerMessageLogCleanupService', () => {
   const deleteMessageLogsOlderThan = jest.fn<Promise<number>, [Date]>();

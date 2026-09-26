@@ -4,6 +4,15 @@ export { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
 export { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
 export { TypeormMappingReader } from '../infrastructure/typeorm-mapping-reader';
 export {
+  acquireStudyReminderOwnershipLock,
+  acquireStudyReminderOwnershipMutationLock,
+  cancelStudyReminderJobsForOwnershipChange,
+  nextMappingGenerationAfterTombstone,
+  studyReminderMappingTable,
+  studyReminderOwnershipLockKey,
+  type StudyReminderOwnershipCancellationReason,
+} from '../infrastructure/study-reminder-ownership';
+export {
   StudyReminderScheduleService,
   type StudyReminderScheduleServiceOptions,
 } from '../services/study-reminder-schedule.service';

@@ -4,7 +4,7 @@ import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
 import type { ZaloClarificationAgentPort } from '../ports/zalo-clarification-agent.port';
-import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import { NotificationPreferenceService } from '@wispace/database';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
 

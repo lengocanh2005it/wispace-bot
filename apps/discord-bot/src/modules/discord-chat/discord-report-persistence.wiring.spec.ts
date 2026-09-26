@@ -10,7 +10,7 @@ import { ReportSendJobEntity } from '@wispace/database';
 import {
   REPORT_CLAIM_REPOSITORY,
   REPORT_SEND_JOB_REPOSITORY,
-} from '@wispace/scheduler-core';
+} from '@wispace/scheduler-core/core';
 import { DiscordReportModule } from './discord-report.module';
 
 function findFactoryProvider(module: object, token: unknown) {

@@ -12,13 +12,13 @@ import {
   ChatIdempotencyEntity,
   ChatToolDailyUsageEntity,
   PlatformWriteToolBudgetService,
-  MemoryBurstCounter,
   PostgresBurstCounter,
   RedisBurstCounter,
   RedisBurstReconciler,
-  type BurstReservationResult,
-} from '@wispace/chat-metering';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+} from '@wispace/chat-metering/adapters';
+import { MemoryBurstCounter } from '@wispace/chat-metering/core';
+import type { BurstReservationResult } from '@wispace/chat-metering/core';
+import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 import { ChatQuotaEventEntity } from '../../infrastructure/database/entities/chat-quota-event.entity';
 import { ChatQuotaEventCleanupCronService } from './application/services/chat-quota-event-cleanup-cron.service';
 import { ChatQuotaEventRecorderService } from './application/services/chat-quota-event-recorder.service';

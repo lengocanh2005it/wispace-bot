@@ -2,7 +2,7 @@ import { DiscordConsentService } from './discord-consent.service';
 import type { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import type { DiscordOutboundService } from './discord-outbound.service';
 import { NotificationPreferenceService } from '@wispace/database';
-import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared';
+import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
 
 describe('DiscordConsentService (#596)', () => {
   const buildService = (

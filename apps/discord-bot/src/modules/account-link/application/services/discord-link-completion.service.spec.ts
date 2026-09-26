@@ -4,7 +4,7 @@ import type { DiscordGuildMembershipPort } from '../../domain/ports/discord-guil
 import type { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import type { DiscordWelcomeService } from './discord-welcome.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
-import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import { DiscordLinkCompletionService } from './discord-link-completion.service';
 
 function buildHarness(overrides: {

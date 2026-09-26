@@ -4,7 +4,7 @@ import { isAbortError } from '@wispace/bot-common/utils';
 import type {
   RescheduleStudySessionResult,
   StudyCalendarEntryView,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import {
   PlatformStudyCalendarCommandService,
   StudyReminderSyncService,
@@ -13,7 +13,7 @@ import {
 import type {
   CalendarSessionTimeRange,
   RescheduleSchedulingMode,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import { StudySessionSourceService } from '../../application/services/study-session-source.service';
 
 @Injectable()

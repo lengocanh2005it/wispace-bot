@@ -7,8 +7,8 @@ import {
   ChatIdempotencyEntity,
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
-} from '@wispace/chat-metering';
-import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+} from '@wispace/chat-metering/adapters';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared/adapters';
 import {
   getTypeOrmOptions as buildSharedOptions,
   SHARED_ENTITIES,

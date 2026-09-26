@@ -6,10 +6,8 @@ import {
 } from '@wispace/bot-common/messages';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { NotificationPreferenceService } from '@wispace/database';
-import {
-  STUDY_REMINDER_JOB_REPOSITORY,
-  type StudyReminderJobRepositoryPort,
-} from '@wispace/study-reminder-shared';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
+import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordOutboundService } from './discord-outbound.service';
 

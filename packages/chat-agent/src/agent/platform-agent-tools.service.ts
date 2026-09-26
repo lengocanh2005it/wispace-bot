@@ -1,8 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
-  type GetUpcomingStudySessionsArgs,
-  type ListStudyCalendarEntriesArgs,
-  type RescheduleStudySessionArgs,
   buildBoundedToolResultMetadata,
   readPositiveInteger,
   readPositiveLimit,
@@ -10,6 +7,11 @@ import {
   readValidatedDate,
   readValidatedTime,
   sanitizeUntrustedTextForLlm,
+} from '@wispace/llm-agent/core';
+import type {
+  GetUpcomingStudySessionsArgs,
+  ListStudyCalendarEntriesArgs,
+  RescheduleStudySessionArgs,
 } from '@wispace/llm-agent/core';
 import {
   errorMessage,
@@ -20,7 +22,7 @@ import { isAbortError } from '@wispace/bot-common/utils';
 import {
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
   RescheduleStageAbortedError,
-} from '@wispace/reschedule-confirm';
+} from '@wispace/reschedule-confirm/core';
 import type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,

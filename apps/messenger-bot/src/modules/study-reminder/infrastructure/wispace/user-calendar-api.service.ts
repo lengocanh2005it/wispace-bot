@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserCalendarApiClient } from '@wispace/wispace-client';
+import { UserCalendarApiClient } from '@wispace/wispace-client/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   CreateUserCalendarInput,
