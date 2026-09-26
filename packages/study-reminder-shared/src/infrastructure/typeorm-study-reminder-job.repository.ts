@@ -19,6 +19,7 @@ import type { SyncJobRepository } from '../ports/study-reminder-sync-job.reposit
 import type { DispatchJobRepository } from '../ports/study-reminder-dispatch-job.repository.port';
 import type { OpsJobRepository } from '../ports/study-reminder-ops-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
+import { PLATFORM_STORAGE } from '@wispace/contracts';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 import {
   acquireStudyReminderOwnershipLock,
@@ -424,7 +425,8 @@ export class TypeormStudyReminderJobRepository
         );
 
         const table = studyReminderMappingTable(params.platform);
-        const statusSelect = params.platform === 'messenger' ? ', status' : '';
+        const { statusColumn } = PLATFORM_STORAGE[params.platform];
+        const statusSelect = statusColumn ? `, ${statusColumn}` : '';
         const rows = extractQueryRows<{
           userId: number | null;
           state: string;
@@ -459,7 +461,7 @@ export class TypeormStudyReminderJobRepository
             reason: tombstone ? 'locally_unlinked' : 'link_status_unknown',
           };
         }
-        if (params.platform === 'messenger' && mapping.status !== 'ACTIVE') {
+        if (statusColumn && mapping.status !== 'ACTIVE') {
           return { authorized: false, reason: 'locally_unlinked' };
         }
         if (mapping.state === 'confirmed-revoked') {

@@ -389,6 +389,9 @@ jobs:
       - name: Check scheduled-report persistence consolidation (#744)
         run: bash .github/scripts/check-scheduled-report-persistence.sh
 
+      - name: Check platform storage literals (#1079)
+        run: bash .github/scripts/check-platform-storage-literals.sh
+
       - name: Check OpenAI SDK import boundary (#427)
         run: bash .github/scripts/check-openai-sdk-imports.sh
 

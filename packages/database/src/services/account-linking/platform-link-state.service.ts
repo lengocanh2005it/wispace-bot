@@ -3,18 +3,12 @@ import { DataSource, EntityManager } from 'typeorm';
 import { createHash } from 'crypto';
 import { studyReminderOwnershipLockKey } from '@wispace/bot-common/locks';
 import { errorMessage } from '@wispace/bot-common/masking';
+import { PLATFORM_STORAGE } from '@wispace/contracts';
 import type { Platform, PlatformLinkState } from '@wispace/contracts';
 import type {
   PlatformLinkAuditEventType,
   PlatformLinkObservation,
 } from '../../types';
-
-const TABLES: Record<Platform, { table: string; idType: 'number' | 'string' }> =
-  {
-    messenger: { table: 'user_platform_mappings', idType: 'number' },
-    discord: { table: 'discord_account_links', idType: 'string' },
-    zalo: { table: 'zalo_account_links', idType: 'string' },
-  };
 
 export interface PlatformLinkRow {
   id: string;
@@ -62,7 +56,7 @@ export class PlatformLinkStateService {
     platform: Platform,
     externalUserId: string,
   ): Promise<PlatformLinkRow | null> {
-    const table = TABLES[platform].table;
+    const table = PLATFORM_STORAGE[platform].mappingTable;
     const rows = await this.dataSource.query<RawLinkRow[]>(
       `SELECT id::text AS id, platform, external_user_id AS "externalUserId",
               user_id AS "userId", COALESCE(link_state, 'active') AS state,
@@ -104,7 +98,7 @@ export class PlatformLinkStateService {
     afterId: string | undefined,
     limit: number,
   ): Promise<PlatformLinkRow[]> {
-    const table = TABLES[platform].table;
+    const table = PLATFORM_STORAGE[platform].mappingTable;
     const rows = await this.dataSource.query<RawLinkRow[]>(
       `SELECT id::text AS id, platform, external_user_id AS "externalUserId",
               user_id AS "userId", COALESCE(link_state, 'active') AS state,
@@ -125,7 +119,7 @@ export class PlatformLinkStateService {
     observation: PlatformLinkObservation,
     options: { expectedGeneration?: string } = {},
   ): Promise<PlatformLinkTransition> {
-    const table = TABLES[platform].table;
+    const table = PLATFORM_STORAGE[platform].mappingTable;
     return this.dataSource.transaction(async (manager) => {
       const rows = await manager.query<RawLinkRow[]>(
         `WITH ownership_lock AS (

@@ -1,7 +1,11 @@
 /**
  * Shared kernel contracts for cross-context use.
  *
- * Canonical owners: this package owns platform identity and the status/taxonomy
+ * This package has zero imports by rule (`contracts-core-no-imports`), so every
+ * declaration lives in this one module.
+ *
+ * Canonical owners: this package owns platform identity, the per-platform
+ * storage layout that goes with it (ADR-0042), and the status/taxonomy
  * contracts consumed by more than one context (database entities, chat
  * packages, scheduler, study reminders, apps). Contexts that are the sole
  * consumer of a contract keep it local (e.g. chat quota reasons in
@@ -9,8 +13,70 @@
  * @wispace/study-reminder-shared, persistence-only states in @wispace/database).
  */
 
+/**
+ * The single declaration of the platform vocabulary; `Platform` is derived from
+ * it so there is no second list to keep in step.
+ *
+ * `PLATFORM_STORAGE` states, per platform, which table and column hold that
+ * platform's mapping and verify-intent rows (#1079). It is the only place a
+ * platform name may become a storage fact.
+ *
+ * Table names live here rather than in `@wispace/database` because
+ * `@wispace/study-reminder-shared` must not depend on the database package
+ * (shared packages reach it only through adapter subpaths) yet must read the
+ * same mapping table the erasure path reads. See ADR-0042.
+ */
+export const PLATFORMS = ['messenger', 'discord', 'zalo'] as const;
+
 /** Platform discriminator used across all WISPACE bots. */
-export type Platform = 'messenger' | 'discord' | 'zalo';
+export type Platform = (typeof PLATFORMS)[number];
+
+/**
+ * Where one platform keeps its rows, and the shape differences between those
+ * tables.
+ *
+ * The three platform mapping tables are siblings, not one primary table plus
+ * two: they agree on `platform`, `external_user_id` and `link_state`, and
+ * differ in whether they carry a status column.
+ */
+export interface PlatformStorage {
+  /** Table holding this platform's externalUserId to WISPACE userId mapping. */
+  readonly mappingTable: string;
+  /** Table holding durable link-verify intents. */
+  readonly verifyTable: string;
+  /** Column on {@link PlatformStorage.verifyTable} carrying the platform external identifier. */
+  readonly verifyIdColumn: string;
+  /** Column carrying the ACTIVE/INACTIVE mapping status, or null when absent. */
+  readonly statusColumn: 'status' | null;
+}
+
+/**
+ * Literal values, not names derived by convention: a reader who must know the
+ * naming rule to derive a value already has to know the rule, and the rule is
+ * the part most easily forgotten. The ACTIVE/INACTIVE literals stay shared
+ * because they are identical on every platform; only the column's presence
+ * varies.
+ */
+export const PLATFORM_STORAGE = {
+  messenger: {
+    mappingTable: 'user_platform_mappings',
+    verifyTable: 'messenger_link_verify_records',
+    verifyIdColumn: 'psid',
+    statusColumn: 'status',
+  },
+  discord: {
+    mappingTable: 'discord_account_links',
+    verifyTable: 'discord_link_verify_records',
+    verifyIdColumn: 'discord_user_id',
+    statusColumn: null,
+  },
+  zalo: {
+    mappingTable: 'zalo_account_links',
+    verifyTable: 'zalo_link_verify_records',
+    verifyIdColumn: 'zalo_user_id',
+    statusColumn: null,
+  },
+} as const satisfies Record<Platform, PlatformStorage>;
 
 export const PRIVACY_CLEANUP_STORES = [
   'chat_history',

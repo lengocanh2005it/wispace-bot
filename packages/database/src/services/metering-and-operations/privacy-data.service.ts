@@ -14,6 +14,7 @@ import {
 } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { jitteredDelayMs, sleep } from '@wispace/bot-common/utils';
+import { PLATFORMS, PLATFORM_STORAGE } from '@wispace/contracts';
 import type {
   Platform,
   PrivacyDeleteResult,
@@ -123,10 +124,7 @@ export async function isPrivacyCleanupGenerationCurrent(
   if (typeof dataSource.query !== 'function') {
     throw new Error('privacy cleanup generation fence unavailable');
   }
-  const mappingTableName = MAPPING_TABLES[platform];
-  if (!mappingTableName) {
-    throw new Error(`Unknown platform: ${platform}`);
-  }
+  const mappingTableName = PLATFORM_STORAGE[platform].mappingTable;
   const mappingRows = (await dataSource.query(
     `SELECT mapping_generation, link_state
        FROM "${mappingTableName}"
@@ -160,24 +158,6 @@ export async function isPrivacyCleanupGenerationCurrent(
     ? true
     : sameOrOlderGeneration(mappingGeneration, latest);
 }
-
-const PLATFORMS = [
-  'messenger',
-  'discord',
-  'zalo',
-] as const satisfies readonly Platform[];
-
-const MAPPING_TABLES: Record<Platform, string> = {
-  messenger: 'user_platform_mappings',
-  discord: 'discord_account_links',
-  zalo: 'zalo_account_links',
-};
-
-const VERIFY_INTENT_TABLES: Record<Platform, string> = {
-  messenger: 'messenger_link_verify_records',
-  discord: 'discord_link_verify_records',
-  zalo: 'zalo_link_verify_records',
-};
 
 const SCOPED_ENTITY_NAMES = [
   'learnerProfile',
@@ -406,9 +386,9 @@ export class PrivacyDataService {
         generation,
       );
       await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
-      const table = mappingTable(currentPlatform);
-      const statusSql =
-        currentPlatform === 'messenger' ? `, status = 'INACTIVE'` : '';
+      const { mappingTable: table, statusColumn } =
+        PLATFORM_STORAGE[currentPlatform];
+      const statusSql = statusColumn ? `, ${statusColumn} = 'INACTIVE'` : '';
       await manager.query(
         `UPDATE "${table}"
          SET link_state = 'locally-unlinked', mapping_generation = $3,
@@ -1212,12 +1192,6 @@ interface QueryManager {
   query(sql: string, params?: readonly unknown[]): Promise<unknown>;
 }
 
-function mappingTable(platform: Platform): string {
-  const table = MAPPING_TABLES[platform];
-  if (!table) throw new Error(`Unknown platform: ${platform}`);
-  return table;
-}
-
 function targetName(target: PrivacyEntityTarget | undefined): string {
   if (!target) return 'missing';
   if (typeof target === 'string') return target;
@@ -1245,10 +1219,10 @@ async function deleteVerifyIntent(
   platform: Platform,
   externalUserId: string,
 ): Promise<void> {
-  const table = VERIFY_INTENT_TABLES[platform];
   const queryManager = manager as QueryManager | undefined;
-  if (!table || !queryManager?.query) return;
-  const column = platform === 'messenger' ? 'psid' : `${platform}_user_id`;
+  if (!queryManager?.query) return;
+  const { verifyTable: table, verifyIdColumn: column } =
+    PLATFORM_STORAGE[platform];
   await queryManager.query(`DELETE FROM "${table}" WHERE "${column}" = $1`, [
     externalUserId,
   ]);

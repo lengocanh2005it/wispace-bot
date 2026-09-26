@@ -7,6 +7,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { PLATFORMS } from '@wispace/contracts';
 import type { Platform } from '@wispace/contracts';
 import { UserNotificationPreferenceEntity } from '../../entities/user-notification-preference.entity';
 
@@ -234,8 +235,8 @@ export class CanonicalPlatformService {
     allowNull = true,
   ): Platform | null {
     if (value === null && allowNull) return null;
-    if (value === 'messenger' || value === 'discord' || value === 'zalo') {
-      return value;
+    if (PLATFORMS.includes(value as Platform)) {
+      return value as Platform;
     }
     throw new Error(
       'Canonical platform batch lookup returned unknown platform',

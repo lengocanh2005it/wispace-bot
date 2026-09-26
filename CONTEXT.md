@@ -15,7 +15,7 @@ Page-Scoped ID — identifier Facebook assigns to each Messenger user, unique pe
 _Avoid_: user ID, sender ID
 
 **externalUserId**:
-Platform-specific user identifier (`psid` for Messenger, Discord user ID, Zalo UID). Used in cross-platform packages.
+Platform-specific user identifier — the Facebook-assigned `psid` on Messenger, a Discord user ID, a Zalo UID. Stored in the `external_user_id` column of every platform mapping table. Used in cross-platform packages.
 _Avoid_: platform user ID, bot user ID
 
 **userId**:
@@ -31,8 +31,12 @@ Facebook's short link domain for Messenger. `m.me/{page}?ref={token}&topic=...&c
 _Avoid_: Messenger link
 
 **platform**:
-String discriminator on most entities and cross-package types (`'messenger'`, `'discord'`, `'zalo'`). Allows multi-bot shared database.
+String discriminator on most entities and cross-platform types (`'messenger'`, `'discord'`, `'zalo'`). Allows multi-bot shared database.
 _Avoid_: channel, service
+
+**platform storage**:
+The one registry stating, per platform, which table and column hold its mapping rows and its verify-intent rows. `PLATFORM_STORAGE` in `@wispace/contracts`, exhaustively keyed by `platform` so a missing entry is a compile error; one platform's entry is a `PlatformStorage` descriptor. The only place platform names may be turned into storage facts. Redis key prefixes, privacy cleanup store sets, priority order, and lock identifiers are **not** platform storage and keep their own registries.
+_Avoid_: platform capability metadata (that phrase is the LLM tool vocabulary), platform config
 
 ### Account Linking
 
@@ -52,9 +56,13 @@ _Avoid_: frequency (field name is `cadence`)
 Notification topic (e.g. `'IELTS'`, `'IELTS Writing'`). Stored on the mapping.
 _Avoid_: subject
 
+**platform mapping table** (DB table):
+One mapping table per platform — `user_platform_mappings`, `discord_account_links`, `zalo_account_links`. They are siblings, not one primary table plus two: all three carry `platform`, `external_user_id`, and `link_state`, and they differ in primary-key type (`int` on Messenger, `bigint` on the other two) and in the Messenger-only `status`, `cadence`, and `topic` columns.
+_Avoid_: primary mapping table, link table, account link table
+
 **user_platform_mappings** (DB table):
-Primary mapping table (entity: `UserPlatformMappingEntity`). Stores `user_id`, `external_user_id`, `platform`, `cadence`, `topic`, `status`.
-_Avoid_: user_messenger_mappings (migrated to new name)
+The Messenger platform mapping table (entity: `UserPlatformMappingEntity`). Its name is legacy from when it was the only mapping table. Stores `user_id`, `external_user_id`, `platform`, `cadence`, `topic`, `status`.
+_Avoid_: primary mapping table (it is one of three siblings), user_messenger_mappings (migrated to new name)
 
 **ACTIVE / INACTIVE**:
 Mapping status. Only `ACTIVE` mappings receive notifications and are synced.

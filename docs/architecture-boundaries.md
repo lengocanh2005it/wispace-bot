@@ -30,6 +30,16 @@ Shared packages may import it only from their `src/adapters/**` subtree; keep
 database-owned code in `packages/database` and shared contracts in
 `packages/contracts`.
 
+One consequence is that per-platform **table and column names** are shared
+contracts rather than database-owned code (#1079, ADR-0042). `PLATFORM_STORAGE`
+lives in `packages/contracts` because `@wispace/study-reminder-shared` must not
+depend on the database package yet must read the same mapping table the erasure
+path reads. It is data, not a type, and the boundary above still holds: the
+contracts package stays dependency-free and no consumer gains a database import
+by reading a table name. Entities, migrations, and raw SQL stay in
+`packages/database`; a new platform's entity, migration, and composition-root
+wiring remain that package's and the app's work.
+
 JavaScript operational scripts are scanned alongside TypeScript source,
 including static imports/exports, type queries, dynamic imports, and CommonJS
 `require` forms. Direct database imports are allowed only in

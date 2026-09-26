@@ -1,5 +1,6 @@
 import { hashExternalId } from '@wispace/bot-common/masking';
 import { extractQueryRows } from '@wispace/bot-common/utils';
+import { PLATFORM_STORAGE } from '@wispace/contracts';
 import type { Platform } from '@wispace/contracts';
 import type { EntityManager } from 'typeorm';
 
@@ -8,12 +9,6 @@ export {
   acquireStudyReminderOwnershipMutationLock,
   studyReminderOwnershipLockKey,
 } from '@wispace/bot-common/locks';
-
-const MAPPING_TABLES: Record<Platform, string> = {
-  messenger: 'user_platform_mappings',
-  discord: 'discord_account_links',
-  zalo: 'zalo_account_links',
-};
 
 export type StudyReminderOwnershipCancellationReason =
   | 'mapping_ownership_changed'
@@ -63,7 +58,7 @@ export async function cancelStudyReminderJobsForOwnershipChange(
 }
 
 export function studyReminderMappingTable(platform: Platform): string {
-  return MAPPING_TABLES[platform];
+  return PLATFORM_STORAGE[platform].mappingTable;
 }
 
 /** Prevents a privacy-unlink tombstone from being reused at generation 1. */
