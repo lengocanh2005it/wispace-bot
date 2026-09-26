@@ -82,6 +82,9 @@ jobs:
       - name: Test architecture dependency guard (#431)
         run: npm run architecture:test
 
+      - name: Test workspace dependency guard
+        run: npm run workspace-deps:test
+
       - name: Verify pull request (format + lint + typecheck + test + build, affected packages only)
         if: github.event_name == 'pull_request'
         run: npm run verify:affected

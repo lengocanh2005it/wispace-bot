@@ -104,6 +104,15 @@ npx turbo run build --filter=@wispace/messenger-bot...
 npx turbo run test --filter=@wispace/messenger-bot...
 ```
 
+Static CI guards (root, no database needed) — both run inside `npm run verify`:
+
+```bash
+npm run architecture:check      # import boundary rules
+npm run workspace-deps:check    # workspace packages imported without being declared
+```
+
+`knip:deps` cannot cover the second one. knip skips an undeclared import whenever the imported package is a workspace package and the importing workspace is `private` (`knip/dist/DependencyDeputy.js:148`), which is true of every workspace here, so it reports zero unlisted no matter how many exist — its `--strict` bypass implies production mode, drops the spec-file entry points this repo's `knip.json` relies on, and still reports nothing. The failure is invisible by construction: root `node_modules` symlinks every workspace and a whole-repo `turbo run build` compiles every package regardless of the graph, so an undeclared import resolves and builds until a declared-graph build (`--filter=@pkg^...`) runs on a clean checkout. When the guard fails, add the package to that workspace's `package.json`; root `scripts/` is deliberately out of scope because the operational smoke and drill scripts there are approved tooling imports.
+
 Database CI checks (root, disposable PostgreSQL only):
 
 ```bash
