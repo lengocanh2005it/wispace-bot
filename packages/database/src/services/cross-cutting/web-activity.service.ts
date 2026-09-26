@@ -1,3 +1,10 @@
+/**
+ * Cross-cutting service: no context in `CONTEXT-MAP.md` owns it.
+ * Consumers: each app's `database.module` and study-reminder module, the three
+ * scheduled-report paths, and Messenger's `web-activity` module. Discord
+ * re-engagement deliberately does not read it (#595) - a dormant learner is
+ * still a valid recipient. See `docs/architecture-boundaries.md`.
+ */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';

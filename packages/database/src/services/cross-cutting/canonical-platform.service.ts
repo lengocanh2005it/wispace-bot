@@ -1,8 +1,14 @@
+/**
+ * Cross-cutting service — no context in `CONTEXT-MAP.md` owns it.
+ * Consumers: each app's `database.module`, its study-reminder module, and its
+ * scheduled-report module. Stays in `packages/database` until an owning package
+ * can host it; see `docs/architecture-boundaries.md` for the folder convention.
+ */
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import type { Platform } from '@wispace/contracts';
-import { UserNotificationPreferenceEntity } from '../entities/user-notification-preference.entity';
+import { UserNotificationPreferenceEntity } from '../../entities/user-notification-preference.entity';
 
 export const DEFAULT_PLATFORM_PRIORITY: Platform[] = [
   'zalo',

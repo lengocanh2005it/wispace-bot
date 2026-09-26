@@ -10,7 +10,7 @@ import { sleep, extractQueryRows } from '@wispace/bot-common/utils';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
-} from '../entities/webhook-dead-letter.entity';
+} from '../../entities/webhook-dead-letter.entity';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 
 /** Result of an atomic dead-letter claim — the caller owns the row until it

@@ -466,7 +466,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 ## Privacy erasure (GDPR Art. 17)
 
-`PrivacyDataService` (`packages/database/src/services/privacy-data.service.ts`) handles user data erasure. All operations are idempotent — safe to call multiple times.
+`PrivacyDataService` (`packages/database/src/services/metering-and-operations/privacy-data.service.ts`) handles user data erasure. All operations are idempotent — safe to call multiple times.
 
 **Erasure scope** (atomic via `dataSource.transaction()`):
 

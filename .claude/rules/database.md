@@ -108,6 +108,8 @@ When adding a new migration (Discord, Zalo, or new shared table):
 
 ## Notes
 
+- `src/services/` is grouped by the owning context named in `CONTEXT-MAP.md` — see [Database service folders (#1349)](../../docs/architecture-boundaries.md#database-service-folders-1349). `cross-cutting/` holds modules no context owns; a folder name records where a service belongs, it does not transfer ownership. This layout is review-enforced by convention, not by a CI guard.
+
 - Cross-context contracts are **no longer owned here** (#423): `Platform`, `PlatformLinkState`, `ReportSendJobStatus`, `OutboundDeliveryOutcome`, `MessageType` moved to `packages/contracts` (`@wispace/contracts`); chat-quota contracts live in `packages/chat-metering`, `StudyReminderJobStatus` in `packages/study-reminder-shared`. This package keeps persistence-only states in `src/types.ts` and must not re-export contracts — `.github/scripts/check-database-type-imports.sh` (CI `deploy-scripts-test`) fails on any type-only import of `@wispace/database` outside this package.
 
 - `data-source.ts` is used by TypeORM CLI (`dist/infrastructure/database/data-source.js`).

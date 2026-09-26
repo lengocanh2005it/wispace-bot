@@ -1,3 +1,9 @@
+/**
+ * Cross-cutting module: no context in `CONTEXT-MAP.md` owns it. A SQL builder
+ * rather than a service. Every consumer wires it into
+ * `ChatMeteringModule.forPlatform(...)` for quota accounting, including the
+ * Discord and Zalo report modules. See `docs/architecture-boundaries.md`.
+ */
 interface LearnerUsageQueryInput {
   externalUserId?: string;
   platform?: string;

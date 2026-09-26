@@ -3,7 +3,7 @@ import {
   resolveCanonicalPlatform,
   CanonicalPlatformService,
 } from './canonical-platform.service';
-import { UserNotificationPreferenceEntity } from '../entities/user-notification-preference.entity';
+import { UserNotificationPreferenceEntity } from '../../entities/user-notification-preference.entity';
 
 describe('resolveCanonicalPlatform (pure function)', () => {
   it('returns undefined when no platforms are active', () => {

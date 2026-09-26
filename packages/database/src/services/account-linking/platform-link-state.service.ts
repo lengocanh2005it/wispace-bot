@@ -7,7 +7,7 @@ import type { Platform, PlatformLinkState } from '@wispace/contracts';
 import type {
   PlatformLinkAuditEventType,
   PlatformLinkObservation,
-} from '../types';
+} from '../../types';
 
 const TABLES: Record<Platform, { table: string; idType: 'number' | 'string' }> =
   {

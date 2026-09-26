@@ -1,8 +1,13 @@
+/**
+ * Cross-cutting service — no context in `CONTEXT-MAP.md` owns it.
+ * Consumers: each app's scheduled-report module, which claims the lease for the
+ * 08:00 wave. See `docs/architecture-boundaries.md` for the folder convention.
+ */
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { errorMessage } from '@wispace/bot-common/masking';
-import { CronLeaderLeaseEntity } from '../entities/cron-leader-lease.entity';
+import { CronLeaderLeaseEntity } from '../../entities/cron-leader-lease.entity';
 
 const DEFAULT_LEASE_TTL_MS = 3 * 60 * 1000;
 

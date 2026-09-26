@@ -14,7 +14,7 @@ import {
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
-import type { WebhookDeadLetterEntry } from '../entities/webhook-dead-letter.entity';
+import type { WebhookDeadLetterEntry } from '../../entities/webhook-dead-letter.entity';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;

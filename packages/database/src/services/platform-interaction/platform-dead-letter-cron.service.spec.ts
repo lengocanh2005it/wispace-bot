@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import type { WebhookDeadLetterEntry } from '../entities/webhook-dead-letter.entity';
+import type { WebhookDeadLetterEntry } from '../../entities/webhook-dead-letter.entity';
 import type { DeadLetterClaim } from './platform-dead-letter.service';
 import {
   DEAD_LETTER_RETRY_CRON,

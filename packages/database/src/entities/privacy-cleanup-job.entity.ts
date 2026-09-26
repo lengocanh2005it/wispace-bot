@@ -11,7 +11,7 @@ import type {
   PrivacyCleanupOperation,
   PrivacyCleanupJobStatus,
   PrivacyCleanupStore,
-} from '../services/privacy-cleanup-job.service';
+} from '../services/metering-and-operations/privacy-cleanup-job.service';
 
 /** Durable, own-platform work item for state stores outside the DB transaction. */
 @Entity('privacy_cleanup_jobs')

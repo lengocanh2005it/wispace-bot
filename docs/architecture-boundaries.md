@@ -40,6 +40,29 @@ and `scripts/privacy-erasure-drill.mjs`. The checker fails closed when a
 required scan root is missing or the production TypeScript scan is empty.
 There are no legacy application-import exceptions.
 
+## Database service folders (#1349)
+
+`packages/database/src/services/` is grouped by the owning context named in
+[`CONTEXT-MAP.md`](../CONTEXT-MAP.md). A folder name states which context a
+service belongs to; it does not transfer ownership.
+
+| Folder                   | Owning context        |
+| ------------------------ | --------------------- |
+| `account-linking/`       | Account Linking       |
+| `platform-interaction/`  | Platform Interaction  |
+| `metering-and-operations/` | Metering & Operations |
+| `cross-cutting/`         | none — see below      |
+
+`cross-cutting/` holds four modules that no context owns: `canonical-platform`,
+`web-activity`, `learner-usage-query`, and `cron-leader-lease`. Each carries a
+header comment naming its real consumers. The folder records existing debt — the
+fix is moving each module into an owning package, the way #1078 moved the report
+and reschedule adapters. Add a fifth folder only together with a new context in
+`CONTEXT-MAP.md`.
+
+`packages/database/src/index.ts` stays the single export surface; there are no
+per-folder barrels.
+
 ## Messenger ↔ Study Reminder boundary (#435)
 
 The two features communicate through capability ports, not each other's concrete

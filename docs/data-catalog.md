@@ -18,8 +18,8 @@ Derived by reading source, not by inspecting a live database:
   Messenger-local cleanup services, with the default each reads when its env
   var is unset.
 - **Erasure** — `PrivacyDataService` in
-  `packages/database/src/services/privacy-data.service.ts`: `MAPPING_TABLES`,
-  `VERIFY_INTENT_TABLES`, and `SCOPED_ENTITY_NAMES`.
+  `packages/database/src/services/metering-and-operations/privacy-data.service.ts`:
+  `MAPPING_TABLES`, `VERIFY_INTENT_TABLES`, and `SCOPED_ENTITY_NAMES`.
 
 What this catalog does **not** establish: actual row counts, whether a
 retention cron is enabled in production, and whether any table holds data the

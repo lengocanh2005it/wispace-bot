@@ -28,7 +28,7 @@ import {
   type PrivacyCleanupJobRef,
   type PrivacyCleanupStore,
 } from './privacy-cleanup-job.service';
-import { PrivacyCleanupJobEntity } from '../entities/privacy-cleanup-job.entity';
+import { PrivacyCleanupJobEntity } from '../../entities/privacy-cleanup-job.entity';
 
 export type {
   PrivacyDeleteResult,

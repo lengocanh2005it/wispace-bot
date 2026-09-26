@@ -1,6 +1,6 @@
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 import type { Repository } from 'typeorm';
-import type { WebhookDeadLetterEntity } from '../entities/webhook-dead-letter.entity';
+import type { WebhookDeadLetterEntity } from '../../entities/webhook-dead-letter.entity';
 import type { Platform } from '@wispace/contracts';
 
 describe('PlatformDeadLetterService', () => {

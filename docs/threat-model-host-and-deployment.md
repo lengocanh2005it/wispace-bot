@@ -215,7 +215,7 @@ The repository contains exactly **three** string interpolations into SQL, and al
 
 | Site | Interpolates | What constrains it |
 |---|---|---|
-| `packages/database/src/services/privacy-data.service.ts:1279` | `table`, `column` | `VERIFY_INTENT_TABLES` is a `Record<Platform,string>` with three hardcoded entries; `if (!table) return` runs first |
+| `packages/database/src/services/metering-and-operations/privacy-data.service.ts:1252` | `table`, `column` | `VERIFY_INTENT_TABLES` is a `Record<Platform,string>` with three hardcoded entries; `if (!table) return` runs first |
 | `packages/study-reminder-shared/src/infrastructure/typeorm-study-reminder-job.repository.ts:419` | `timeoutMs` | `Math.max(1, Math.min(Math.trunc(x ?? 5000), 10000))` |
 | `packages/database/src/migrations/1786933000000-*.ts:121` | index name | Migration; developer-controlled |
 

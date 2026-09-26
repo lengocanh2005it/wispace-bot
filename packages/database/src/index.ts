@@ -55,22 +55,22 @@ export {
   type PlatformLinkRow,
   type PlatformLinkTransition,
   type PlatformLinkStatusReader,
-} from './services/platform-link-state.service';
+} from './services/account-linking/platform-link-state.service';
 
-export { PlatformDeadLetterService } from './services/platform-dead-letter.service';
+export { PlatformDeadLetterService } from './services/platform-interaction/platform-dead-letter.service';
 export {
   PlatformDeadLetterCronService,
   type DeadLetterCronOptions,
-} from './services/platform-dead-letter-cron.service';
+} from './services/platform-interaction/platform-dead-letter-cron.service';
 export {
   DeliveryLogService,
   type MessageLogRow,
-} from './services/delivery-log.service';
-export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
+} from './services/platform-interaction/delivery-log.service';
+export { CronLeaderLeaseService } from './services/cross-cutting/cron-leader-lease.service';
 export {
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,
-} from './services/learner-usage-query';
+} from './services/cross-cutting/learner-usage-query';
 export {
   PrivacyDataService,
   hasPrivacyCleanupAdapter,
@@ -84,7 +84,7 @@ export {
   type PrivacyExpectedMapping,
   type PrivacyUnlinkResult,
   type PrivacyDeleteResult,
-} from './services/privacy-data.service';
+} from './services/metering-and-operations/privacy-data.service';
 export {
   PrivacyCleanupJobStore,
   PRIVACY_CLEANUP_STORES,
@@ -101,22 +101,22 @@ export {
   type PrivacyCleanupJobRow,
   type PrivacyCleanupSummary,
   type PrivacyCleanupMetrics,
-} from './services/privacy-cleanup-job.service';
+} from './services/metering-and-operations/privacy-cleanup-job.service';
 export {
   PrivacyCleanupReconciler,
   type PrivacyCleanupReconcilerOptions,
   type PrivacyCleanupRunResult,
-} from './services/privacy-cleanup-reconciler.service';
+} from './services/metering-and-operations/privacy-cleanup-reconciler.service';
 export {
   CanonicalPlatformService,
   resolveCanonicalPlatform,
   DEFAULT_PLATFORM_PRIORITY,
-} from './services/canonical-platform.service';
-export { NotificationPreferenceService } from './services/notification-preference.service';
+} from './services/cross-cutting/canonical-platform.service';
+export { NotificationPreferenceService } from './services/metering-and-operations/notification-preference.service';
 export {
   WebActivityService,
   normalizeToUtcIso,
-} from './services/web-activity.service';
+} from './services/cross-cutting/web-activity.service';
 export { WebActivityEntity } from './entities/web-activity.entity';
 export { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 export { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
