@@ -48,7 +48,7 @@
     "ioredis": "^6.0.0",
     "knip": "6.35.1",
     "lint-staged": "^17.0.8",
-    "oxfmt": "^0.67.0",
+    "oxfmt": "^0.70.0",
     "oxlint": "^1.79.0",
     "oxlint-tsgolint": "^7.0.2001",
     "turbo": "^2.3.0",
