@@ -29,11 +29,11 @@
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nestjs/cli": "^12.0.0",
-    "@nestjs/common": "^12.0.1",
+    "@nestjs/cli": "^12.0.3",
+    "@nestjs/common": "^12.0.4",
     "@nestjs/config": "^12.0.0",
-    "@nestjs/schematics": "^12.0.0",
-    "@nestjs/testing": "^12.0.1",
+    "@nestjs/schematics": "^12.0.4",
+    "@nestjs/testing": "^12.0.4",
     "@wispace/bot-common": "*",
     "@wispace/study-reminder-shared": "*",
     "date-fns": "^4.4.0",
