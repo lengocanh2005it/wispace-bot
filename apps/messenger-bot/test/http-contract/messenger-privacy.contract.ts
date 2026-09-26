@@ -9,7 +9,9 @@ import { StudySessionSourceService } from '@messenger/modules/study-reminder/app
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { ReportSendRetryDispatchService } from '@messenger/modules/scheduler/application/services/report-send-retry-dispatch.service';
 import { PrivacyDataService } from '@wispace/database';
+import { PRIVACY_DATA } from '@messenger/modules/messenger/application/chat-processing-seams.port';
 import { AgentReplyAdapter } from '@messenger/modules/messenger/infrastructure/adapters/agent-reply.adapter';
+import { AGENT_REPLY } from '@messenger/modules/messenger/application/ports/agent-reply.port';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
@@ -18,6 +20,21 @@ import { createContractApp } from './helpers';
 /** Minimal mocks for SchedulerController — only what the DI container needs. */
 function buildControllerProviders() {
   const noop = jest.fn();
+  // The controller injects the PRIVACY_DATA / AGENT_REPLY tokens, not the
+  // concrete classes, so each mock is registered under both keys.
+  const privacyData = {
+    unlink: jest.fn().mockResolvedValue({
+      unlinked: true,
+      status: 'complete',
+    }),
+    delete: jest.fn().mockResolvedValue({
+      deleted: true,
+      status: 'complete',
+      outstandingStores: [],
+    }),
+    export: jest.fn().mockResolvedValue({ data: {} }),
+  };
+  const agentReply = { clearClarificationState: noop };
   return [
     { provide: ReportCronService, useValue: { sendScheduledReports: noop } },
     {
@@ -37,25 +54,10 @@ function buildControllerProviders() {
       provide: ReportSendRetryDispatchService,
       useValue: { dispatchDueReportRetries: noop },
     },
-    {
-      provide: PrivacyDataService,
-      useValue: {
-        unlink: jest.fn().mockResolvedValue({
-          unlinked: true,
-          status: 'complete',
-        }),
-        delete: jest.fn().mockResolvedValue({
-          deleted: true,
-          status: 'complete',
-          outstandingStores: [],
-        }),
-        export: jest.fn().mockResolvedValue({ data: {} }),
-      },
-    },
-    {
-      provide: AgentReplyAdapter,
-      useValue: { clearClarificationState: noop },
-    },
+    { provide: PrivacyDataService, useValue: privacyData },
+    { provide: PRIVACY_DATA, useValue: privacyData },
+    { provide: AgentReplyAdapter, useValue: agentReply },
+    { provide: AGENT_REPLY, useValue: agentReply },
     { provide: PlatformChatHistoryService, useValue: { clear: noop } },
     { provide: MessengerChatEnqueueService, useValue: { clear: noop } },
     {
