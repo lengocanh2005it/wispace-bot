@@ -29,12 +29,6 @@
       "require": "./dist/agent.tools.js",
       "default": "./dist/agent.tools.js"
     },
-    "./utils": {
-      "import": "./dist/utils/index.js",
-      "types": "./dist/utils/index.d.ts",
-      "require": "./dist/utils/index.js",
-      "default": "./dist/utils/index.js"
-    },
     "./execution": {
       "import": "./dist/execution/index.js",
       "types": "./dist/execution/index.d.ts",

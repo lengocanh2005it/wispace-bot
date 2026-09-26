@@ -1,4 +1,4 @@
-import { isInjectionSanitizeReason } from './prompt-injection.utils';
+import { isInjectionSanitizeReason } from '../safety/prompt-injection.utils';
 import {
   canonicalizeToolObservation,
   fitToolObservation,

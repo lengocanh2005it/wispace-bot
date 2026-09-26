@@ -3,7 +3,7 @@ import {
   jitteredDelayMs,
   sleep,
 } from '@wispace/bot-common/utils';
-import type { LlmAttemptBudget } from '../execution/attempt-budget';
+import type { LlmAttemptBudget } from './execution/attempt-budget';
 
 export { isAbortError, sleep } from '@wispace/bot-common/utils';
 

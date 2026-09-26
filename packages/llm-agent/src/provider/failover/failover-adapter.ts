@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import { LlmAllProvidersExhaustedError } from './failover.errors';
-import { sleep, isAbortError } from '../../utils/retry.utils';
+import { sleep, isAbortError } from '../../retry.utils';
 import type { LlmAttemptBudget } from '../../execution/attempt-budget';
 
 interface CircuitState {

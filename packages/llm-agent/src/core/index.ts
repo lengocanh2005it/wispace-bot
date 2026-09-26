@@ -114,18 +114,18 @@ export {
   detectDisclosureProbe,
   sanitizeToolResultContent,
   sanitizeUntrustedTextForLlm,
-} from '../utils/prompt-injection.utils';
+} from '../safety/prompt-injection.utils';
 export type {
   InjectionCheckResult,
   DisclosureProbeResult,
   DisclosureProbeCategory,
-} from '../utils/prompt-injection.utils';
-export { checkLlmGrounding } from '../utils/llm-grounding.utils';
-export type { LlmGroundingResult } from '../utils/llm-grounding.utils';
+} from '../safety/prompt-injection.utils';
+export { checkLlmGrounding } from '../grounding/llm-grounding.utils';
+export type { LlmGroundingResult } from '../grounding/llm-grounding.utils';
 export {
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from '../utils/openai-error.utils';
+} from '../openai-error.utils';
 export {
   isObviouslyOffTopic,
   isGreetingOnly,
@@ -133,53 +133,53 @@ export {
   isStopIntent,
   normalizeScopeText,
   isDistressExpression,
-} from '../utils/scope.utils';
+} from '../scope.utils';
 export {
   detectPrivacyIntent,
   isConfirmationResponse,
   isCancellationResponse,
   type PrivacyAction,
   type PrivacyIntent,
-} from '../utils/privacy-intent.utils';
-export { sanitizeReplyText } from '../utils/text.utils';
+} from '../privacy/privacy-intent.utils';
+export { sanitizeReplyText } from '../text.utils';
 export {
   sleep,
   retryWithBackoff,
   cappedExponentialBackoff,
-} from '../utils/retry.utils';
-export { loadSystemPromptFile } from '../utils/load-system-prompt';
+} from '../retry.utils';
+export { loadSystemPromptFile } from '../load-system-prompt';
 export {
   canonicalizeToolObservation,
   fitToolObservation,
   observationMarker,
   projectToolObservation,
   reduceToolObservation,
-} from '../utils/tool-observation';
+} from '../observation/tool-observation';
 export type {
   ReducedToolObservation,
   ToolObservationOutcome,
-} from '../utils/tool-observation';
+} from '../observation/tool-observation';
 export {
   SYSTEM_PROMPT_LEAK_MARKERS,
   checkFinalOutputSafety,
   checkPromptCanarySafety,
   isHarmfulOutputSafetyReason,
-} from '../utils/final-output.utils';
+} from '../safety/final-output.utils';
 export type {
   FinalOutputSafetyResult,
   HarmfulOutputSafetyReason,
-} from '../utils/final-output.utils';
+} from '../safety/final-output.utils';
 export {
   CREDENTIAL_SHAPES,
   findCredentialShape,
-} from '../utils/secret-patterns.utils';
+} from '../safety/secret-patterns.utils';
 export {
   collectRuntimeSecretValues,
   redactSecrets,
   registerRuntimeSecrets,
   resetRuntimeSecretsForTests,
   REDACTED_PLACEHOLDER,
-} from '../utils/secret-redaction.utils';
+} from '../safety/secret-redaction.utils';
 
 export { NOOP_METRICS_PORT } from '../ports';
 export type {

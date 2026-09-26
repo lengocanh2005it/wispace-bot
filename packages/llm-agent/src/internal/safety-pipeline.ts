@@ -1,17 +1,17 @@
 import type { BoundedToolDisclosure } from '../agent.tools';
-import { checkLlmGrounding } from '../utils/llm-grounding.utils';
+import { checkLlmGrounding } from '../grounding/llm-grounding.utils';
 import {
   checkFinalOutputSafety,
   checkPromptCanarySafety,
   isHarmfulOutputSafetyReason,
-} from '../utils/final-output.utils';
+} from '../safety/final-output.utils';
 import {
   buildCappedResultMessage,
   buildFinalOutputBlockedMessage,
   buildGroundingBlockedMessage,
   buildNonDisclosureReply,
 } from '../messages';
-import { sanitizeReplyText } from '../utils/text.utils';
+import { sanitizeReplyText } from '../text.utils';
 
 export type SafetyOutcome = 'allowed' | 'grounding_blocked' | 'final_blocked';
 

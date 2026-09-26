@@ -1,7 +1,7 @@
 import {
   DEFAULT_GREETING_KEYWORDS,
   matchStandaloneKeyword,
-} from './utils/scope.utils';
+} from './scope.utils';
 
 /**
  * Lightweight intent detection for WISPACE bots.

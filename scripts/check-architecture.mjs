@@ -49,7 +49,7 @@ const CORE_OUTER_PATH =
  * scopes below; widening this list requires a named issue and owner.
  */
 export const FRAMEWORK_BOUND_ADAPTERS = [
-  'packages/llm-agent/src/utils/privacy-state.service.ts',
+  'packages/llm-agent/src/privacy/privacy-state.service.ts',
   'packages/student-report/src/platform-student-report.service.ts',
 ];
 

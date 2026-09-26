@@ -17,7 +17,7 @@ description = "Known dummy credentials in specs and docs"
 regexes = [
   # apps/messenger-bot/src/.../chat-rate-limit.repository.spec.ts
   '''mid-stuck-ext1''',
-  # packages/llm-agent/src/utils/secret-*.utils.spec.ts — fixtures for the
+  # packages/llm-agent/src/safety/secret-*.utils.spec.ts — fixtures for the
   # redaction utils (#632); these files exist to hold credential shapes.
   '''sk-1234567890abcdef1234567890abcdef''',
   '''sk-collect-1234567890''',

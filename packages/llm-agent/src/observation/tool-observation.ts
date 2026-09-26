@@ -1,7 +1,7 @@
 import {
   isInjectionSanitizeReason,
   sanitizeToolResultContent,
-} from './prompt-injection.utils';
+} from '../safety/prompt-injection.utils';
 import {
   deriveAgentToolMap,
   isAgentToolName,

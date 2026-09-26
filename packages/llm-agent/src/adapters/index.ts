@@ -3,4 +3,4 @@
 
 export * from '../provider/index';
 export * from '../execution/index';
-export { PrivacyStateService } from '../utils/privacy-state.service';
+export { PrivacyStateService } from '../privacy/privacy-state.service';

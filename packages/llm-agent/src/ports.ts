@@ -202,4 +202,4 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   totalProviderAttemptsInc: () => undefined,
 };
 import type { LlmUsage } from './provider/types';
-import type { ToolObservationOutcome } from './utils/tool-observation';
+import type { ToolObservationOutcome } from './observation/tool-observation';

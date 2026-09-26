@@ -3,7 +3,7 @@ import type { LlmMessage } from '../provider/types';
 import {
   isInjectionSanitizeReason,
   sanitizeUntrustedTextForLlm,
-} from '../utils/prompt-injection.utils';
+} from '../safety/prompt-injection.utils';
 import type {
   ChatHistoryMessage,
   LlmAgentInput,

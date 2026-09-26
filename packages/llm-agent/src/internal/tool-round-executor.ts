@@ -15,9 +15,9 @@ import {
   observationMarker,
   reduceToolObservation,
   type ToolObservationOutcome,
-} from '../utils/tool-observation';
-import { sanitizeUntrustedTextForLlm } from '../utils/prompt-injection.utils';
-import { isAbortError } from '../utils/retry.utils';
+} from '../observation/tool-observation';
+import { sanitizeUntrustedTextForLlm } from '../safety/prompt-injection.utils';
+import { isAbortError } from '../retry.utils';
 import {
   errorMessage,
   maskExternalId,

@@ -1,6 +1,6 @@
 import { readHttpsUrl } from '@wispace/bot-common/utils';
 import { isAgentToolName, type BoundedToolDisclosure } from '../agent.tools';
-import { sanitizeUntrustedTextForLlm } from './prompt-injection.utils';
+import { sanitizeUntrustedTextForLlm } from '../safety/prompt-injection.utils';
 
 const MAX_TOOL_SUMMARY_CHARS = 8_000;
 const MAX_RESULT_VALUE_CHARS = 256;

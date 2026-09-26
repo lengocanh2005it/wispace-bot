@@ -12,14 +12,14 @@ import {
   detectPromptInjection,
   detectPromptInjectionAcrossTurns,
   detectDisclosureProbe,
-} from './utils/prompt-injection.utils';
-import { isHarmfulOutputSafetyReason } from './utils/final-output.utils';
+} from './safety/prompt-injection.utils';
+import { isHarmfulOutputSafetyReason } from './safety/final-output.utils';
 import {
   isObviouslyOffTopic,
   isAmbiguousMessage,
   isStopIntent,
-} from './utils/scope.utils';
-import { sleep, isAbortError } from './utils/retry.utils';
+} from './scope.utils';
+import { sleep, isAbortError } from './retry.utils';
 import { jitteredDelayMs } from '@wispace/bot-common/utils';
 import {
   buildExhaustionPartialAnswer,
@@ -56,7 +56,7 @@ import { LlmAttemptBudget } from './execution/attempt-budget';
 import {
   buildToolSummary,
   type ToolSummaryObservation,
-} from './utils/tool-summary';
+} from './observation/tool-summary';
 
 export { DEFAULT_TOOL_EXECUTION_TIMEOUT_MS } from './internal/agent-limits';
 import {

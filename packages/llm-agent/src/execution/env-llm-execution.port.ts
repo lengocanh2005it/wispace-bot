@@ -7,10 +7,7 @@ import type {
   LlmExecutionRetryCause,
   LlmExecutionPort,
 } from '../ports';
-import {
-  cappedExponentialBackoff,
-  retryWithBackoff,
-} from '../utils/retry.utils';
+import { cappedExponentialBackoff, retryWithBackoff } from '../retry.utils';
 import { acquireRedisSlot, type SlotLogger } from './redis-slot-limiter';
 import {
   LlmOverloadError,

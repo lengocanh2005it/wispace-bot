@@ -13,8 +13,8 @@ import {
   isPlatformApiError,
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from '../../utils/openai-error.utils';
-import { isAbortError } from '../../utils/retry.utils';
+} from '../../openai-error.utils';
+import { isAbortError } from '../../retry.utils';
 import {
   toOpenAiTools,
   toOpenAiMessages,

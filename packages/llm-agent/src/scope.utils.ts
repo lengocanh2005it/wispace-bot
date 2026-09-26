@@ -1,4 +1,4 @@
-import { buildSafetyScanCandidates } from './prompt-injection.utils';
+import { buildSafetyScanCandidates } from './safety/prompt-injection.utils';
 
 export function normalizeScopeText(text: string): string {
   return text
