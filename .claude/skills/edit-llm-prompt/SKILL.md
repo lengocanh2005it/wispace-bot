@@ -13,16 +13,18 @@ description: Edit LLM system prompts for student reports, study reminders, or th
 | `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt`          | Chat AI — Messenger overlay (identity, cards, reschedule buttons, report registration)              | Overlay of the core                            |
 | `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`              | Chat AI — Discord overlay (identity, DM privacy, reschedule buttons)                                | Overlay of the core                            |
 | `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`                    | Chat AI — Zalo overlay (identity, reschedule confirm)                                               | Overlay of the core                            |
-| `apps/messenger-bot/src/shared/prompts/student-report.system.txt`          | Student report (Messenger)                                                                          | Standalone                                     |
+| `packages/student-report/src/prompts/student-report.system.txt`             | Student report (shared)                                                                             | Canonical source; each app build copies it to `dist/shared/prompts/` |
 | `apps/messenger-bot/src/shared/prompts/study-reminder.system.txt`          | Study reminder (Messenger)                                                                          | Standalone                                     |
 
 Read `.claude/rules/prompts.md` before editing.
+
+Edit the canonical student-report prompt once; Messenger, Discord, and Zalo builds copy the same bytes into their runtime prompt directory.
 
 ## Workflow
 
 1. Decide where the change belongs: **core** (applies to all bots) vs **overlay** (one platform). Never duplicate a core rule into an overlay.
 2. Edit the file — output targets Vietnamese bot messages.
-3. `npx turbo run build --filter=@wispace/chat-agent... --filter=@wispace/messenger-bot...` (chat core) or `--filter=@wispace/messenger-bot...` (app prompt files — copies to `apps/messenger-bot/dist/shared/prompts/`).
+3. Build the affected runtime assets: chat core with `npx turbo run build --filter=@wispace/chat-agent... --filter=@wispace/messenger-bot...`; app overlays/reminders with the relevant bot filter; canonical student-report prompt with all three bot filters (`--filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...`). Each app build copies the canonical report prompt to `dist/shared/prompts/`.
 4. **Editing `CHAT_SYSTEM_PROMPT_CORE`** also: (a) update the section-presence guards in `packages/llm-agent/src/chat-system-prompt.spec.ts` and `SYSTEM_PROMPT_LEAK_MARKERS` in `final-output.utils.ts` if you added/renamed a section; (b) run `npm run eval:rehash:check` to expose stale hashes. Keep old hashes in the behavior PR; use step 5 for the write-mode rehash after review and merge.
 5. **Keep evaluator hash rewrites separate (#1238)**: do not run write-mode `npm run eval:rehash` in a behavior PR. Land the prompt/agent change first, allow the read-only guardrail battery to show the expected stale-hash red state, then rebase main and open a hash-only rehash PR with `Rehashes: #<behavior-pr>` in the body. A combined behavior plus hash PR needs the exact `eval-rehash-approved` label and a fresh current-head APPROVED review from a trusted OWNER or MEMBER who is not the author.
 6. Test: bot preview menu or `POST /messenger/send-reports` with `{ "psid": "..." }` (ops key).

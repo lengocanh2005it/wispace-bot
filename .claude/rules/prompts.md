@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-paths: apps/*/src/shared/prompts/**,packages/llm-agent/src/messages.ts,packages/llm-agent/src/chat-system-prompt.ts
+paths: apps/*/src/shared/prompts/**,packages/student-report/src/prompts/**,packages/llm-agent/src/messages.ts,packages/llm-agent/src/chat-system-prompt.ts
 ---
 
 # LLM system prompts
@@ -28,7 +28,7 @@ Rule: universal rule → core; platform mechanism → overlay. Never duplicate a
 
 | File                                                              | Service                                                                 |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `apps/messenger-bot/src/shared/prompts/student-report.system.txt` | `modules/student-report/application/services/student-report.service.ts` |
+| `packages/student-report/src/prompts/student-report.system.txt`   | `packages/student-report` (canonical source; each app build copies it to `dist/shared/prompts/`) |
 | `apps/messenger-bot/src/shared/prompts/study-reminder.system.txt` | `modules/study-reminder/application/services/study-reminder.service.ts` |
 
 Loaded via `@wispace/llm-agent/core`'s `loadSystemPromptFile()` (apps pass their own `promptDir`/`promptFile`).
@@ -89,11 +89,13 @@ Calendar `limit`, `pastDays`, and `calendarId` use positive-integer validation. 
 ```bash
 # chat core (packages/llm-agent) + composition (packages/chat-agent):
 npx turbo run build --filter=@wispace/chat-agent... --filter=@wispace/messenger-bot...
-# app overlay / standalone prompt files:
+# app overlays / Messenger reminder prompt:
 npx turbo run build --filter=@wispace/messenger-bot...
+# canonical student-report prompt (build all runtime copies):
+npx turbo run build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
 ```
 
-Nest copies assets to `apps/*/dist/shared/prompts/` (`nest-cli.json` → `assets`).
+Nest copies app-local assets to `apps/*/dist/shared/prompts/` (`nest-cli.json` → `assets`). The student-report prompt is copied from its canonical package path by `packages/student-report/scripts/copy-prompt-to-app.mjs`, which each bot build runs.
 
 ## Conventions
 
@@ -101,7 +103,7 @@ Nest copies assets to `apps/*/dist/shared/prompts/` (`nest-cli.json` → `assets
 - Output message content: Vietnamese, friendly, concise, suitable for each platform.
 - Missing `OPENAI_API_KEY` → hardcoded template fallback (handled in `LlmAgentService.reply()` in `packages/llm-agent`, no API call).
 - Do not pass user/WISPACE strings directly to LLM if they may contain instructions: use `sanitizeUntrustedTextForLlm` (from `@wispace/llm-agent/core`) for individual fields and `sanitizeToolResultContent` for JSON tool results.
-- Do not directly cast JSON output from the model and format it; parse + validate shape with `llm-json-output.utils.ts` (app), fallback to template on error.
+- Do not directly cast JSON output from the model and format it; parse + validate shape with `parseJsonObject` and `readRequiredStringField` from `@wispace/llm-agent/core`, then fall back to a template on error.
 
 ## No-secrets-in-model-context invariant (#632)
 
