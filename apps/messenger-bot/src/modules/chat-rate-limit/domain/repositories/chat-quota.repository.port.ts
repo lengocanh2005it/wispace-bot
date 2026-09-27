@@ -1,9 +1,9 @@
 import type { ChatQuotaReleaseReason } from '@wispace/contracts';
 import type {
   RecoverIdempotencyOutcome,
-  ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
-} from '../entities/chat-idempotency.types';
+} from '@wispace/chat-metering/core';
+import type { ReserveFreeFormSlotInput } from '../entities/chat-idempotency.types';
 
 export const CHAT_QUOTA_REPOSITORY = Symbol('CHAT_QUOTA_REPOSITORY');
 

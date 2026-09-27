@@ -9,9 +9,9 @@ import {
 import type { ChatQuotaReleaseReason } from '@wispace/contracts';
 import type {
   RecoverIdempotencyOutcome,
-  ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
-} from '../../domain/entities/chat-idempotency.types';
+} from '@wispace/chat-metering/core';
+import type { ReserveFreeFormSlotInput } from '../../domain/entities/chat-idempotency.types';
 import {
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,

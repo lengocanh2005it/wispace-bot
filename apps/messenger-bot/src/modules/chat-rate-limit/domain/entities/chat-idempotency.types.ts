@@ -1,3 +1,15 @@
+/**
+ * The Messenger port's own input shape, not a copy of the core's.
+ *
+ * `ReserveFreeFormSlotInput` names the field `psid` where the shared core
+ * names it `externalUserId`, and the persistence adapter translates between
+ * them. That translation is the point of the boundary: collapsing the two
+ * would push one platform's vocabulary into the core that all three platforms
+ * share.
+ *
+ * The outcome types were pure duplicates of the core's, with no field to
+ * translate, so they are imported from it instead.
+ */
 export interface ReserveFreeFormSlotInput {
   psid: string;
   userId?: number;
@@ -9,17 +21,3 @@ export interface ReserveFreeFormSlotInput {
   burstSince?: Date;
   burstCountsRefunded?: boolean;
 }
-
-export type ReserveFreeFormSlotOutcome =
-  | { status: 'reserved'; freeFormCount: number }
-  | { status: 'idempotency_conflict' }
-  | { status: 'daily_limit_exceeded' }
-  | { status: 'burst_limit_exceeded'; count: number };
-
-/** Outcome when reclaiming an idempotency key for Meta retry / crash recovery (H2). */
-export type RecoverIdempotencyOutcome =
-  | 'reopened'
-  | 'in_flight'
-  | 'delivered'
-  | 'completed'
-  | 'not_found';
