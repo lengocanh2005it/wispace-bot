@@ -37,15 +37,14 @@ label; the change boundary the split was supposed to create did not exist.
 
 The `grounding/` directory is dissolved and the checker moves into the safety
 directory, renamed on arrival to match the sibling naming convention — the
-package is already `llm-agent`, so no module there carries an `llm-` prefix.
-The rename is performed in version control so the file's history follows it.
+package is already `llm-agent`, so no module in `safety/` carries an `llm-`
+prefix. The rule covers filenames only; the exported symbols keep their `Llm`
+prefix, because they are public through the `core` barrel. The rename is
+performed in version control so the file's history follows it.
 
 The two named review surfaces are the same surface: a change to the gate is
 re-read in both checks at once, so the security reviewer and the grounding
-reviewer are the same reader on the same day. The cost of the merge is that
-the directory name is now a slightly lossy index for one of its five
-modules, and the glossary carries the precision the folder name no longer
-does.
+reviewer are the same reader on the same day.
 
 This is a file move, so it touches no behavior. No prompt content changes, so
 the eval fixture prompt hashes stay valid and no re-approval cycle is
@@ -57,6 +56,21 @@ in this package.
 The domain glossary is left alone. The move relocates a module between
 directories without moving a concept across a boundary, so no glossary entry
 changes — the same reasoning ADR-0044 applied to its own decomposition.
+
+## Consequences
+
+The cost of the merge is that the directory name is now a slightly lossy index
+for one of its five modules, and the glossary carries the precision the folder
+name no longer does.
+
+Two documents elsewhere in the tree name the checker's old path. Both are
+records of what a specific past change did, not inventories of the present, so
+neither is edited to describe this later move. The migration plan's Phase 1
+section still names a `openai-error.utils.ts` that #1438 had already removed,
+which shows what that section records. The dated stale-issue audit is a scan
+result whose columns are the old location, the new location at that time, and
+the issues that cited it; it already anticipates this case when it says a
+finding survives and only its citation goes stale.
 
 ## References
 
