@@ -11,7 +11,7 @@
     },
     "packages/bot-metrics/src/bot-metrics.service.ts": {
       "lines": 1412,
-      "context": "Unclassified - not named in CONTEXT-MAP.md",
+      "context": "Shared kernel",
       "trackedBy": "#778",
       "reason": "Largest candidate. No decomposition owner. Unlike the other four it has no extracted sibling to build a seam on."
     },
@@ -35,7 +35,7 @@
     },
     "packages/llm-agent/src/agent.service.ts": {
       "lines": 996,
-      "context": "Unclassified - not named in CONTEXT-MAP.md",
+      "context": "Shared kernel",
       "trackedBy": "#778",
       "reason": "Split once already by #438. Extracted collaborators total 1196 lines, so the split left the repository 69 lines larger, not 59% smaller."
     }

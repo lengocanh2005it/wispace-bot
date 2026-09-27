@@ -47,7 +47,7 @@ requests the next exercise and sends WISPACE's link.
 3. `wispace-client` is an Anti-Corruption Layer, not a domain model shared by every context.
 4. `externalUserId`, `userId`, and `platform` are shared identity vocabulary; they must not become a reason to put all business logic in one package.
 5. Platform-specific delivery crosses an outbound port; Reminder and Report do not call Messenger/Discord/Zalo services directly.
-6. `bot-common`, `date-utils`, LLM provider adapters, and database connection utilities are shared kernel/infrastructure, not bounded contexts.
+6. `bot-common`, `bot-metrics`, `date-utils`, `llm-agent`, and database connection utilities are shared kernel/infrastructure, not bounded contexts. `llm-agent` is consumed by four contexts and has no runtime dependency on any of them; `bot-metrics` is consumed only at app composition roots.
 
 ## Known Boundary Debt
 
@@ -64,6 +64,7 @@ The following points are recorded as boundary debt, not complete boundaries:
   module to an owning package.
 - `student-report` currently has direct Wispace and LLM-metering adapters; `StudentReportCore` is the closest part to a clean boundary.
 - Account linking currently has platform-specific storage/flows and no unified context contract.
+- `llm-agent` is shared kernel by the evidence in rule 6, and it also holds free-form-chat-specific content: the chat system prompt core, the canned learner-facing reply copy, the WISPACE chat tool catalog, the greeting fast path, the scope gate, and the input classifier prompt. Its three `chat-history` imports are type-only uses of `ChatHistoryMessage`, which is why they do not make it a Free-form Chat package. A cross-context package carrying one context's prompt and tools is a placement question rather than a rule violation — nothing imports the package *because* of that content — and moving it is a separate decision from classifying it.
 
 When a context develops a sufficiently distinct language, invariant, or set of
 decisions, create `<context>/CONTEXT.md` and add its path to the table above.
