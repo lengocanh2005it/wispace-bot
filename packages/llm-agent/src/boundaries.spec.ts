@@ -20,10 +20,22 @@ describe('llm-agent package boundaries', () => {
   });
 
   it('keeps the failure-origin classifiers on the core surface', () => {
-    // Their location moved out of the package root; their published names did not.
-    // Without this, a dropped re-export is caught only by whichever consumer
-    // happens to import the name. #1438 changes these names — update in that change.
-    expect(core.isOpenAiRateLimitError).toBeDefined();
-    expect(core.isOpenAiServerError).toBeDefined();
+    // Their location moved out of the package root in #1442; #1438 then gave them
+    // vendor-neutral names. Without this, a dropped re-export is caught only by
+    // whichever consumer happens to import the name.
+    expect(core.isRateLimitError).toBeDefined();
+    expect(core.isServerError).toBeDefined();
+    expect(coreExports.isOpenAiRateLimitError).toBeUndefined();
+    expect(coreExports.isOpenAiServerError).toBeUndefined();
+  });
+
+  it('publishes no vendor-named export from the core surface', () => {
+    // The principle, not just the two names #1438 happened to rename. A rule that
+    // only knew `isOpenAi*` would stay green while `isAnthropicRateLimitError`
+    // shipped — which is the exact gap #1439 closes, asserted here first.
+    const vendorNamedExports = Object.keys(coreExports).filter((name) =>
+      /openai|anthropic|gemini/i.test(name),
+    );
+    expect(vendorNamedExports).toEqual([]);
   });
 });

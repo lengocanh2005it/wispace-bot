@@ -1,9 +1,9 @@
-import { isOpenAiRateLimitError, isOpenAiServerError } from './failure-origin';
+import { isRateLimitError, isServerError } from './failure-origin';
 
 describe('failure-origin', () => {
-  it('detects OpenAI rate limit errors', () => {
+  it('detects rate limit errors', () => {
     expect(
-      isOpenAiRateLimitError(
+      isRateLimitError(
         Object.assign(new Error('rate limit'), {
           name: 'RateLimitError',
           status: 429,
@@ -12,9 +12,9 @@ describe('failure-origin', () => {
     ).toBe(true);
   });
 
-  it('detects OpenAI server errors', () => {
+  it('detects server errors', () => {
     expect(
-      isOpenAiServerError(
+      isServerError(
         Object.assign(new Error('server'), {
           name: 'InternalServerError',
           status: 500,
@@ -23,12 +23,12 @@ describe('failure-origin', () => {
     ).toBe(true);
   });
 
-  it('does not treat Messenger API errors as OpenAI server errors', () => {
+  it('does not treat Messenger API errors as provider server errors', () => {
     const error = Object.assign(new Error('Send failed'), {
       name: 'MessengerApiError',
       status: 500,
       responseBody: '{}',
     });
-    expect(isOpenAiServerError(error)).toBe(false);
+    expect(isServerError(error)).toBe(false);
   });
 });

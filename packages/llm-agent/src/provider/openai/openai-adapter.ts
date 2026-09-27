@@ -11,8 +11,8 @@ import type {
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import {
   isPlatformApiError,
-  isOpenAiRateLimitError,
-  isOpenAiServerError,
+  isRateLimitError,
+  isServerError,
 } from '../failure-origin';
 import { isAbortError } from '../../retry.utils';
 import {
@@ -144,7 +144,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   }
 
   isRateLimitError(error: unknown): boolean {
-    return isOpenAiRateLimitError(error);
+    return isRateLimitError(error);
   }
 
   normalizeError(error: unknown): LlmProviderError {
@@ -225,7 +225,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   }
 
   private isServerError(error: unknown): boolean {
-    return isOpenAiServerError(error);
+    return isServerError(error);
   }
 
   private isAuthError(error: unknown): boolean {

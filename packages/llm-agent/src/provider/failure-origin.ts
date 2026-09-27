@@ -5,8 +5,13 @@
  * `isPlatformApiError` recognises a delivery failure classification — the
  * platform-owned interpretation of an outbound delivery failure, distinct from a
  * provider's `OutboundDeliveryOutcome`. The other two recognise an upstream-health
- * signal for this vendor specifically: a rate limit or a server error, which
- * accumulate toward the execution circuit.
+ * signal: a rate limit or a server error, which accumulate toward the execution
+ * circuit. Their published names are vendor-neutral (#1438) but their bodies are
+ * not: the checks still recognise one vendor's error shape, so a neutral name
+ * describes the *capability* ("is this a rate limit?") without claiming the
+ * classification itself is vendor-independent. The body is left unchanged
+ * deliberately — rewriting it to plain HTTP status codes would change which
+ * production errors reach which delivery message.
  *
  * The platform check is not a special case bolted on. It is the negative guard
  * that stops a platform error being misread as a provider one, which is why it
@@ -21,7 +26,7 @@ export function isPlatformApiError(error: unknown): boolean {
   );
 }
 
-export function isOpenAiRateLimitError(error: unknown): boolean {
+export function isRateLimitError(error: unknown): boolean {
   if (isPlatformApiError(error)) {
     return false;
   }
@@ -42,7 +47,7 @@ export function isOpenAiRateLimitError(error: unknown): boolean {
   return false;
 }
 
-export function isOpenAiServerError(error: unknown): boolean {
+export function isServerError(error: unknown): boolean {
   if (isPlatformApiError(error)) {
     return false;
   }

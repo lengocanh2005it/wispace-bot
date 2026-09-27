@@ -1,7 +1,7 @@
 import {
   isGreetingOnly,
-  isOpenAiRateLimitError,
-  isOpenAiServerError,
+  isRateLimitError,
+  isServerError,
 } from '@wispace/llm-agent/core';
 import { isMessenger24hWindowError } from '../contracts/messenger-delivery.contract';
 import { buildUnsupportedMessageTypeReply as buildSharedUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
@@ -29,11 +29,11 @@ export function buildChatDeliveryErrorMessage(
     );
   }
 
-  if (isOpenAiRateLimitError(error)) {
+  if (isRateLimitError(error)) {
     return 'Trợ lý AI đang quá tải, bạn thử lại sau 1–2 phút nhé.';
   }
 
-  if (isOpenAiServerError(error)) {
+  if (isServerError(error)) {
     return 'Trợ lý AI tạm thời gặp sự cố, bạn thử lại sau giây lát nhé.';
   }
 

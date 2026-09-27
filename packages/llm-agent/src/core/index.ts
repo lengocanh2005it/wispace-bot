@@ -121,21 +121,15 @@ export type {
 } from '../safety/prompt-injection.utils';
 export { checkLlmGrounding } from '../grounding/llm-grounding.utils';
 export type { LlmGroundingResult } from '../grounding/llm-grounding.utils';
-// Vendor-named on purpose for now: `chat-delivery.messages.ts` in messenger-bot
-// branches on these to pick a delivery message, so getting the vendor out of
-// this framework-free surface is a public rename with its own issue (#1438).
+// The framework-free core names these by capability, not by vendor (#1438):
+// `chat-delivery.messages.ts` in messenger-bot branches on them to pick a delivery
+// message, and a neutral core was deciding a vendor-specific outcome. The bodies
+// still recognise one vendor's error shape; the exported names no longer leak it.
 //
-// The architecture guard does not flag this, for two separate reasons. It matches
-// module specifiers, never exported symbol names, so it cannot see that these two
-// names identify a vendor. And its outer-path list omits `provider`, so `core`
-// importing from the provider tree is unconstrained — though it already did so
-// for the provider types and the failover error before this module moved, so that
-// import is not a new crossing. The first gap is what #1439 closes; the second is
-// pre-existing. Do not read the naming as an accident to tidy up in passing.
-export {
-  isOpenAiRateLimitError,
-  isOpenAiServerError,
-} from '../provider/failure-origin';
+// The architecture guard does not flag a vendor name in an exported identifier —
+// every rule it evaluates matches a module specifier, never a name. #1439 closes
+// that gap, and `boundaries.spec.ts` asserts it ahead of the rule landing.
+export { isRateLimitError, isServerError } from '../provider/failure-origin';
 export {
   isObviouslyOffTopic,
   isGreetingOnly,

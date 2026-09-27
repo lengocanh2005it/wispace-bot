@@ -11,9 +11,14 @@ Implemented (PR #32 — `LlmProviderAdapter` pattern with OpenAI, OpenRouter, Mi
 > The fourth bullet below is also no longer the shipped shape. The provider
 > failure classifiers were **not** folded into private adapter methods. They live
 > in a provider-tree module and are imported by the adapter, because
-> `@wispace/llm-agent/core` re-exports two of them under their existing names for
-> the Messenger chat-delivery path, and preserving that published surface needs a
-> module that exports them rather than a private method. See #1430 and #1438.
+> `@wispace/llm-agent/core` re-exports two of them for the Messenger chat-delivery
+> path, and keeping them on that surface needs a module that exports them rather
+> than a private method. #1430 moved them off the package root; #1438 then
+> renamed the published surface from `isOpenAiRateLimitError`/`isOpenAiServerError`
+> to `isRateLimitError`/`isServerError`, so the framework-free core no longer
+> names a vendor in its export surface. The names describe the capability; the
+> bodies still recognise one vendor's error shape and were deliberately left
+> unchanged so the production error-to-message mapping does not shift.
 > The bullet is left as written because it records what PR #32 shipped.
 
 ## Context
