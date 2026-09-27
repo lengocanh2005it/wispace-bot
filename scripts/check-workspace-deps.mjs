@@ -23,81 +23,24 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { SOURCE_DIRS, eachSpecifier, walk } from './lib/source-scan.mjs';
+
 const SCOPE = '@wispace/';
-const SOURCE_DIRS = ['src', 'test', 'scripts'];
-const SOURCE_EXT = /\.(ts|mts|cts|mjs|cjs|js)$/;
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.turbo']);
-
-/** Remove comments so a commented-out import is not read as a real one. */
-function stripComments(text) {
-  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
-  return noBlocks
-    .split('\n')
-    .map((line) => {
-      let i = 0;
-      while (i < line.length - 1) {
-        if (line[i] === '/' && line[i + 1] === '/') {
-          const before = line.slice(0, i);
-          const singles = (before.match(/'/g) ?? []).length;
-          const doubles = (before.match(/"/g) ?? []).length;
-          // Keep `//` that belongs to a URL like https:// inside a string.
-          if (singles % 2 === 0 && doubles % 2 === 0) return before;
-          i += 2;
-          continue;
-        }
-        i += 1;
-      }
-      return line;
-    })
-    .join('\n');
-}
-
-const SPECIFIER_PATTERNS = [
-  /\bfrom\s+['"]([^'"]+)['"]/g, // import ... from 'x' / export ... from 'x'
-  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g, // dynamic import('x')
-  /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g, // require('x')
-  /^\s*import\s+['"]([^'"]+)['"]/gm, // bare side-effect import
-];
 
 function collectSpecifiers(source) {
-  const lines = stripComments(source).split('\n');
   const found = [];
-  lines.forEach((raw, index) => {
-    const line = raw.trim();
-    for (const pattern of SPECIFIER_PATTERNS) {
-      pattern.lastIndex = 0;
-      for (const match of line.matchAll(pattern)) {
-        const specifier = match[1];
-        if (!specifier.startsWith(SCOPE)) continue;
-        const name = specifier.split('/').slice(0, 2).join('/');
-        const typeOnly = /^(import|export)\s+type\b/.test(line);
-        found.push({
-          specifier,
-          name,
-          subpath: specifier.slice(name.length) || '(root)',
-          line: index + 1,
-          typeOnly,
-        });
-      }
-    }
-  });
+  for (const { specifier, line, number } of eachSpecifier(source)) {
+    if (!specifier.startsWith(SCOPE)) continue;
+    const name = specifier.split('/').slice(0, 2).join('/');
+    found.push({
+      specifier,
+      name,
+      subpath: specifier.slice(name.length) || '(root)',
+      line: number,
+      typeOnly: /^(import|export)\s+type\b/.test(line),
+    });
+  }
   return found;
-}
-
-function walk(dir, out = []) {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) walk(path, out);
-    else if (entry.isFile() && SOURCE_EXT.test(entry.name)) out.push(path);
-  }
-  return out;
 }
 
 function expandWorkspaceGlobs(root, patterns) {

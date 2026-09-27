@@ -83,11 +83,50 @@ test('a scoped build-only package is reported by its full name', () => {
   }
 });
 
+test('a nested scoped build-only package is reported', () => {
+  // The defect this pins, in the form that actually occurs: npm nests a
+  // dependency under its workspace when the hoisted slot holds an incompatible
+  // version, so a scoped toolchain package can appear at any depth. Matching
+  // only the root-relative path made a nested @nestjs/cli pass while CI stayed
+  // green. The three scoped names were added for exactly this.
+  const f = image([
+    ['node_modules/@wispace/wispace-client/package.json', '{"name":"@wispace/wispace-client"}\n'],
+    ['node_modules/@wispace/wispace-client/dist/index.js', 'module.exports = 5;\n'],
+    ['node_modules/@wispace/wispace-client/node_modules/@nestjs/cli/package.json', '{}\n'],
+  ]);
+  try {
+    const { status, output } = runCheck(f.root);
+    assert.equal(status, 1, 'a nested scoped forbidden name must be detected');
+    reportsPath(output, 'wispace-client/node_modules/@nestjs/cli');
+  } finally {
+    f.close();
+  }
+});
+
+test('a deeply nested scoped build-only package is still reported', () => {
+  const f = image([
+    ['node_modules/@wispace/wispace-client/package.json', '{"name":"@wispace/wispace-client"}\n'],
+    ['node_modules/@wispace/wispace-client/dist/index.js', 'module.exports = 6;\n'],
+    ['node_modules/@wispace/wispace-client/node_modules/undici/package.json', '{"name":"undici"}\n'],
+    [
+      'node_modules/@wispace/wispace-client/node_modules/undici/node_modules/@nestjs/schematics/package.json',
+      '{}\n',
+    ],
+  ]);
+  try {
+    const { status, output } = runCheck(f.root);
+    assert.equal(status, 1);
+    reportsPath(output, 'undici/node_modules/@nestjs/schematics');
+  } finally {
+    f.close();
+  }
+});
+
 test('a nested toolchain directory is not matched by its bare directory name', () => {
-  // Deliberate: the alias TypeScript copy is not in the forbidden list. It leaves
-  // the runtime closure because its declaring package does, and `typescript` is
-  // too generic a directory name to blacklist on its own. Matching is relative
-  // to the node_modules root, so a nested copy is out of scope by design.
+  // Deliberate and asymmetric with the case above: an unscoped name is too
+  // generic to assert on at depth, so the alias TypeScript copy is matched at
+  // the root only. It leaves the runtime closure because its declaring package
+  // does, not because this check blacklists every copy.
   const f = image([
     ['node_modules/@wispace/wispace-client/node_modules/typescript/package.json', '{}\n'],
     ['node_modules/@wispace/wispace-client/dist/index.js', 'module.exports = 4;\n'],

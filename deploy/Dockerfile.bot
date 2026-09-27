@@ -48,13 +48,19 @@ ARG APP_NAME
 COPY --from=pruner /tmp/pruned/json/ ./
 COPY --from=pruner /tmp/pruned/package-lock.json ./package-lock.json
 RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci --omit=dev --ignore-scripts
-# Still needed, and not a substitute for correct manifests. `@nestjs/cli`,
-# `@nestjs/schematics` and `@nestjs/testing` are gone from the runtime closure
-# because they moved to devDependencies (#1219), but typeorm declares
-# `typescript` and `ts-node` as optional peers, so both stay reachable in the
-# production tree. `npm run manifest-deps:check` keeps build-only tooling out;
-# it cannot reach a transitive optional peer, so the deletion stays. Both paths
-# are enforced by deploy/verify-runtime-image.mjs.
+# Still needed, and not a substitute for correct manifests. #1219 deleted the
+# `@nestjs/cli` / `@nestjs/schematics` / `@nestjs/testing` entries from the
+# `packages/*` manifests, which is what takes the Nest CLI toolchain out of the
+# runtime closure; nothing was re-declared in devDependencies, and the apps'
+# pre-existing dev declarations were already correct. `typescript` and
+# `ts-node` are a different case: typeorm declares both as optional peers, so
+# they stay reachable in the production tree whatever the manifests say.
+# `npm run manifest-deps:check` governs direct declarations and cannot reach a
+# transitive optional peer, so this deletion stays. Each guard covers what the
+# other cannot: the lint keeps tooling out of the manifests, this removes a
+# peer's copy, and deploy/verify-runtime-image.mjs proves the result on the
+# built image (root paths for the unscoped names, any depth for the scoped
+# ones).
 RUN rm -rf node_modules/typescript node_modules/ts-node
 
 # npm leaves a dependency nested under its workspace when the hoisted slot

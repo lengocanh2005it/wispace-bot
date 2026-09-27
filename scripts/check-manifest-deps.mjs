@@ -23,85 +23,39 @@
  * The opposite direction — imports without declarations — is `knip:deps` plus
  * `check-workspace-deps.mjs`.
  */
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const SOURCE_DIRS = ['src', 'test', 'scripts'];
-const SOURCE_EXT = /\.(ts|mts|cts|mjs|cjs|js)$/;
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.turbo']);
+import {
+  IMPORT_SPECIFIER_PATTERNS,
+  SOURCE_DIRS,
+  eachSpecifier,
+  packageNameOf,
+  walk,
+} from './lib/source-scan.mjs';
 
-/** Remove comments so a commented-out import is not read as a real one. */
-function stripComments(text) {
-  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
-  return noBlocks
-    .split('\n')
-    .map((line) => {
-      let i = 0;
-      while (i < line.length - 1) {
-        if (line[i] === '/' && line[i + 1] === '/') {
-          const before = line.slice(0, i);
-          const singles = (before.match(/'/g) ?? []).length;
-          const doubles = (before.match(/"/g) ?? []).length;
-          // Keep `//` that belongs to a URL like https:// inside a string.
-          if (singles % 2 === 0 && doubles % 2 === 0) return before;
-          i += 2;
-          continue;
-        }
-        i += 1;
-      }
-      return line;
-    })
-    .join('\n');
-}
+// A spec stub names the package as the first string argument: jest.mock('x'),
+// vi.mock, jest.doMock. Without this a package genuinely used only through a
+// spec stub reads as unused. Deliberately narrower than "first argument of any
+// call": a bare `logger.log('helmet')` must not satisfy a `helmet` declaration,
+// or the guard would loosen toward missing real cases.
+const MOCK_SPECIFIER_PATTERN =
+  /\b(?:jest|vi)\.(?:mock|doMock|unmock|doUnmock|unstable_mockModule)\s*\(\s*['"]([^'"]+)['"]/g;
 
-const SPECIFIER_PATTERNS = [
-  /\bfrom\s+['"]([^'"]+)['"]/g, // import ... from 'x' / export ... from 'x'
-  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g, // dynamic import('x')
-  /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g, // require('x')
-  /^\s*import\s+['"]([^'"]+)['"]/gm, // bare side-effect import
-  // First string argument of any call, which is how a spec names a package it
-  // stubs: jest.mock('@nestjs/core', ...), vi.mock, jest.doMock. Without this a
-  // package genuinely used only through a spec stub reads as unused.
-  /\b\w+\.\w+\s*\(\s*['"]([^'"]+)['"]/g,
-];
+const SPECIFIER_PATTERNS = [...IMPORT_SPECIFIER_PATTERNS, MOCK_SPECIFIER_PATTERN];
 
 /**
- * Every package name a source file references. Subpaths collapse to their
- * package (`@scope/pkg/deep` -> `@scope/pkg`), and node builtins are dropped
- * because a built-in is never a declared dependency.
+ * Every package name a source file references. Specs are scanned alongside
+ * source because a `jest.mock` and a barrel re-export are real usages.
  */
 export function collectImportedPackages(source) {
   const found = new Set();
-  for (const line of stripComments(source).split('\n')) {
-    for (const pattern of SPECIFIER_PATTERNS) {
-      pattern.lastIndex = 0;
-      for (const match of line.matchAll(pattern)) {
-        const specifier = match[1];
-        if (specifier.startsWith('.') || specifier.startsWith('#')) continue;
-        if (specifier.startsWith('node:')) continue;
-        const parts = specifier.split('/');
-        found.add(specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]);
-      }
-    }
+  for (const { specifier } of eachSpecifier(source, SPECIFIER_PATTERNS)) {
+    const name = packageNameOf(specifier);
+    if (name) found.add(name);
   }
   return found;
-}
-
-function walk(dir, out = []) {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) walk(path, out);
-    else if (entry.isFile() && SOURCE_EXT.test(entry.name)) out.push(path);
-  }
-  return out;
 }
 
 export function checkManifestDeps(root) {
