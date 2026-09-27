@@ -135,7 +135,7 @@ export type { LlmGroundingResult } from '../grounding/llm-grounding.utils';
 export {
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from '../provider/upstream-failure-classifiers';
+} from '../provider/failure-origin';
 export {
   isObviouslyOffTopic,
   isGreetingOnly,
