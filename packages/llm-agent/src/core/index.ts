@@ -122,12 +122,16 @@ export type {
 export { checkLlmGrounding } from '../grounding/llm-grounding.utils';
 export type { LlmGroundingResult } from '../grounding/llm-grounding.utils';
 // Vendor-named on purpose for now: `chat-delivery.messages.ts` in messenger-bot
-// branches on these to pick a delivery message, so removing the vendor names from
-// this framework-free surface is a public rename with its own issue (#1438). This
-// barrel publishes symbols whose names say "OpenAI" while the package is otherwise
-// provider-neutral, and the architecture guard does not catch it because it
-// inspects imports, not re-exports (#1439). Do not read that as an accident to
-// tidy up inside an unrelated change.
+// branches on these to pick a delivery message, so getting the vendor out of
+// this framework-free surface is a public rename with its own issue (#1438).
+//
+// The architecture guard does not flag this, for two separate reasons. It matches
+// module specifiers, never exported symbol names, so it cannot see that these two
+// names identify a vendor. And its outer-path list omits `provider`, so `core`
+// importing from the provider tree is unconstrained — though it already did so
+// for the provider types and the failover error before this module moved, so that
+// import is not a new crossing. The first gap is what #1439 closes; the second is
+// pre-existing. Do not read the naming as an accident to tidy up in passing.
 export {
   isOpenAiRateLimitError,
   isOpenAiServerError,
