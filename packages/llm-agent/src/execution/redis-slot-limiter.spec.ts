@@ -10,6 +10,31 @@ describe('acquireRedisSlot', () => {
     };
   }
 
+  /**
+   * Records the delay `abortableSleep` asks for and fires it straight away.
+   *
+   * The acquire loop's only timer is that sleep, so this is the whole timing
+   * surface. Asserting the requested delay rather than the wall clock it
+   * happens to take keeps the test a property of the limiter instead of a
+   * property of how busy the machine is.
+   */
+  function captureRequestedSleeps() {
+    const requested: number[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    const spy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...rest: unknown[]
+    ) => {
+      requested.push(Number(timeout) || 0);
+      return realSetTimeout(handler, 0, ...rest);
+    }) as unknown as typeof globalThis.setTimeout);
+    return {
+      ms: () => requested,
+      restore: () => spy.mockRestore(),
+    };
+  }
+
   it('acquires slot and returns release function', async () => {
     const redis = makeRedis(1);
     const metrics = { incrementCounter: jest.fn() };
@@ -327,40 +352,48 @@ describe('acquireRedisSlot', () => {
   });
 
   it('jitters retry delays across the full [0, backoff) range (#453)', async () => {
-    // random() pinned to ~1 → sleeps at the full exponential backoff
-    // (100 + 200 + 400ms); proves the cadence grows exponentially.
+    // random() pinned to ~1 → the sleep sits at the top of the range the
+    // growing backoff offers, so the cadence widens instead of repeating.
     const redis = makeRedis(0);
     const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.9999);
+    const fullJitter = captureRequestedSleeps();
 
-    const startedAt = Date.now();
     await expect(
       acquireRedisSlot(redis as never, 'test', 10, mockLogger, {
         maxRetries: 4,
         retryDelayMs: 100,
       }),
     ).rejects.toBeInstanceOf(LlmOverloadError);
-    const fullJitterElapsed = Date.now() - startedAt;
+
+    fullJitter.restore();
     randomSpy.mockRestore();
 
     expect(redis.eval).toHaveBeenCalledTimes(4);
-    // 4 full-jitter sleeps at random≈1: 100 + 200 + 400 + 800 = 1500ms
-    // (exponential growth; the ≥650ms floor only needs the first three).
-    expect(fullJitterElapsed).toBeGreaterThanOrEqual(650);
+    // One sleep after each attempt but the last, so four retries ask for
+    // three: 100, then 200, then 400.
+    expect(fullJitter.ms()).toEqual([
+      expect.closeTo(100, 1),
+      expect.closeTo(200, 1),
+      expect.closeTo(400, 1),
+    ]);
 
-    // random() pinned to ~0 → sleeps collapse to ~0ms; the same 4 attempts
-    // complete almost immediately — the herd breaks apart.
+    // random() pinned to 0 → every requested delay collapses to 0, so callers
+    // that all draw the same jitter still never retry on a fixed cadence.
     const zeroRandom = jest.spyOn(Math, 'random').mockReturnValue(0);
     const zeroRedis = makeRedis(0);
-    const zeroStartedAt = Date.now();
+    const zeroJitter = captureRequestedSleeps();
+
     await expect(
       acquireRedisSlot(zeroRedis as never, 'test', 10, mockLogger, {
         maxRetries: 4,
         retryDelayMs: 100,
       }),
     ).rejects.toBeInstanceOf(LlmOverloadError);
-    const zeroJitterElapsed = Date.now() - zeroStartedAt;
+
+    zeroJitter.restore();
     zeroRandom.mockRestore();
 
-    expect(zeroJitterElapsed).toBeLessThan(200);
+    expect(zeroRedis.eval).toHaveBeenCalledTimes(4);
+    expect(zeroJitter.ms()).toEqual([0, 0, 0]);
   });
 });
