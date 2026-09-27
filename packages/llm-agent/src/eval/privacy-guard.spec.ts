@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
+import { listFixtures } from './eval-prompt-hash';
 
 const FIXTURES_DIR = join(__dirname, '../../fixtures');
 
@@ -9,9 +10,7 @@ const FIXTURES_DIR = join(__dirname, '../../fixtures');
  * Zalo ID, WISPACE userId) or any long numeric identifier.
  */
 describe('eval fixture privacy guard', () => {
-  const files = readdirSync(FIXTURES_DIR)
-    .filter((file) => file.endsWith('.json'))
-    .sort();
+  const files = listFixtures(FIXTURES_DIR);
 
   it('discovers at least one fixture', () => {
     expect(files.length).toBeGreaterThan(0);

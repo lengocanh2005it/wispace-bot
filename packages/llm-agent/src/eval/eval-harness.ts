@@ -1,6 +1,3 @@
-import { createHash } from 'crypto';
-import { existsSync, readFileSync } from 'fs';
-import { dirname, join, relative, resolve } from 'path';
 import type { ChatHistoryMessage } from '@wispace/chat-history';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { LlmAgentService } from '../agent.service';
@@ -35,6 +32,12 @@ import type {
   LlmToolChatResponse,
 } from '../provider/types';
 import type { LlmAgentReply } from '../types';
+import {
+  getRepoRoot,
+  normalizePromptContent,
+  readPrompt,
+  sha256Hex,
+} from './eval-prompt-hash';
 
 /**
  * Deterministic offline orchestration regression harness for `LlmAgentService`.
@@ -60,26 +63,17 @@ import type { LlmAgentReply } from '../types';
  */
 
 /**
- * Resolves the repo root by walking up until a `turbo.json` marker is found.
- * Jest runs with `rootDir: src` and can present `__dirname`-relative module
- * paths, so a fixed depth (`../../..`) is not reliable — the marker walk is.
+ * Re-exported so the existing `from './eval-harness'` call sites keep
+ * resolving; the implementations now live in `eval-prompt-hash.ts` (ADR-0045).
  */
-export function resolveRepoRoot(): string {
-  let dir = __dirname;
-  for (let depth = 0; depth < 8; depth++) {
-    if (existsSync(join(dir, 'turbo.json'))) {
-      return dir;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  throw new Error(
-    'eval: could not locate the repo root (no turbo.json found walking up)',
-  );
-}
-
-const REPO_ROOT = resolveRepoRoot();
+export {
+  getRepoRoot,
+  listFixtures,
+  normalizePromptContent,
+  resolvePromptPath,
+  resolveRepoRoot,
+  sha256Hex,
+} from './eval-prompt-hash';
 
 const EVAL_METADATA = {
   provider: 'eval',
@@ -661,21 +655,6 @@ export function parseFixture(
   };
 }
 
-export function sha256Hex(content: string): string {
-  return createHash('sha256').update(content, 'utf8').digest('hex');
-}
-
-export function resolvePromptPath(
-  promptPath: string,
-  repoRoot: string = REPO_ROOT,
-): string {
-  return resolve(repoRoot, promptPath);
-}
-
-export function normalizePromptContent(content: string): string {
-  return content.replace(/\r\n/g, '\n');
-}
-
 export type PromptLoadResult =
   | { ok: true; content: string }
   | { ok: false; error: string };
@@ -684,37 +663,32 @@ export type PromptLoadResult =
  * Reads one prompt file and verifies its LF-normalized sha256. Line endings
  * are normalized (`\r\n` → `\n`) before hashing so the fixture hash matches
  * regardless of whether the checkout uses CRLF (Windows) or LF (CI).
+ *
+ * The read, escape check, and hashing all come from `readPrompt` so the
+ * harness and the rehash tool cannot drift apart (ADR-0045).
  */
-export function loadPrompt(path: string, hash: string): PromptLoadResult {
-  const resolved = resolvePromptPath(path);
-  const relativePath = relative(REPO_ROOT, resolved);
-  if (relativePath.startsWith('..') || relativePath.startsWith('.')) {
-    return {
-      ok: false,
-      error: `promptPath "${path}" escapes the repo root`,
-    };
+export function loadPrompt(
+  path: string,
+  hash: string,
+  repoRoot: string = getRepoRoot(),
+): PromptLoadResult {
+  const read = readPrompt(repoRoot, path);
+  if (!read.ok) {
+    return { ok: false, error: read.error };
   }
-  let raw: string;
-  try {
-    raw = readFileSync(resolved, 'utf8');
-  } catch {
-    return { ok: false, error: `prompt file not found: ${path}` };
-  }
-  const content = normalizePromptContent(raw);
-  const actual = sha256Hex(content);
-  if (actual !== hash.toLowerCase()) {
+  if (read.hash !== hash.toLowerCase()) {
     return {
       ok: false,
       error: [
         `prompt hash mismatch for ${path}`,
         `  fixture expects ${hash}`,
-        `  actual is      ${actual}`,
+        `  actual is      ${read.hash}`,
         'The prompt changed — re-validate the fixture expected behavior,',
         'then update the hash (and the script) deliberately.',
       ].join('\n'),
     };
   }
-  return { ok: true, content };
+  return { ok: true, content: read.content };
 }
 
 /**
@@ -963,8 +937,10 @@ export async function runEvalFixture(
   // The core is composed from the imported runtime constant — the exact text
   // `PlatformAgentService.buildSystemPrompt` sends — and its hash is pinned
   // per fixture so prompt edits fail the eval until re-validated (#646).
+  // Normalization goes through the shared helper so the harness and the
+  // rehash tool cannot compute different core hashes (ADR-0045).
   const actualCoreHash = sha256Hex(
-    CHAT_SYSTEM_PROMPT_CORE.replace(/\r\n/g, '\n'),
+    normalizePromptContent(CHAT_SYSTEM_PROMPT_CORE),
   );
   if (actualCoreHash !== fixture.coreHash) {
     return {

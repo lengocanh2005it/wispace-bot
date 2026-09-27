@@ -1,19 +1,15 @@
-import {
-  readFileSync,
-  readdirSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'fs';
-import { join, relative, resolve, isAbsolute } from 'path';
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { join, relative, resolve } from 'path';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { CHAT_SYSTEM_PROMPT_CORE } from '../chat-system-prompt';
+import { parseFixture } from './eval-harness';
 import {
+  listFixtures,
   normalizePromptContent,
-  parseFixture,
-  resolvePromptPath,
+  readPrompt,
   resolveRepoRoot,
   sha256Hex,
-} from './eval-harness';
+} from './eval-prompt-hash';
 
 export interface RehashEvalFixturesOptions {
   check?: boolean;
@@ -34,15 +30,6 @@ interface PlannedFixture {
   content: string;
   filePath: string;
   relativePath: string;
-}
-
-function isRepoPath(repoRoot: string, filePath: string): boolean {
-  const relativePath = relative(repoRoot, filePath);
-  return (
-    relativePath !== '' &&
-    !relativePath.startsWith('..') &&
-    !isAbsolute(relativePath)
-  );
 }
 
 function fixturePath(repoRoot: string, filePath: string): string {
@@ -246,10 +233,6 @@ function replaceHashes(
   );
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function writeAtomically(filePath: string, content: string): void {
   const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(temporaryPath, content, 'utf8');
@@ -266,17 +249,11 @@ function writeAtomically(filePath: string, content: string): void {
 }
 
 function readPromptHash(repoRoot: string, promptPath: string): string {
-  const resolvedPath = resolvePromptPath(promptPath, repoRoot);
-  if (!isRepoPath(repoRoot, resolvedPath)) {
-    throw new Error(`prompt path "${promptPath}" escapes the repo root`);
+  const read = readPrompt(repoRoot, promptPath);
+  if (!read.ok) {
+    throw new Error(read.error);
   }
-  let content: string;
-  try {
-    content = readFileSync(resolvedPath, 'utf8');
-  } catch {
-    throw new Error(`prompt file not found: ${promptPath}`);
-  }
-  return sha256Hex(normalizePromptContent(content));
+  return read.hash;
 }
 
 function resolveOptions(options: RehashEvalFixturesOptions) {
@@ -302,9 +279,7 @@ export function rehashEvalFixtures(
   let files: string[];
 
   try {
-    files = readdirSync(fixturesDir)
-      .filter((file) => file.endsWith('.json'))
-      .sort();
+    files = listFixtures(fixturesDir);
   } catch {
     return {
       ok: false,
@@ -325,7 +300,7 @@ export function rehashEvalFixtures(
       rawText = readFileSync(filePath, 'utf8');
       rawFixture = JSON.parse(rawText) as unknown;
     } catch (error) {
-      errors.push(`${relativePath}: invalid JSON (${errorText(error)})`);
+      errors.push(`${relativePath}: invalid JSON (${errorMessage(error)})`);
       continue;
     }
 
@@ -343,14 +318,14 @@ export function rehashEvalFixtures(
         readPromptHash(repoRoot, String(promptFile.path)),
       );
     } catch (error) {
-      errors.push(`${relativePath}: ${errorText(error)}`);
+      errors.push(`${relativePath}: ${errorMessage(error)}`);
       continue;
     }
     let formatted: string;
     try {
       formatted = replaceHashes(rawText, actualCoreHash, promptHashes);
     } catch (error) {
-      errors.push(`${relativePath}: ${errorText(error)}`);
+      errors.push(`${relativePath}: ${errorMessage(error)}`);
       continue;
     }
 
@@ -379,7 +354,9 @@ export function rehashEvalFixtures(
       writeAtomically(plan.filePath, plan.content);
       changed.push(plan.relativePath);
     } catch (error) {
-      errors.push(`${plan.relativePath}: write failed (${errorText(error)})`);
+      errors.push(
+        `${plan.relativePath}: write failed (${errorMessage(error)})`,
+      );
     }
   }
 

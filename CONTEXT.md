@@ -902,6 +902,18 @@ _Avoid_: moderation event, safety log
 A curated guardrail-evaluation case for legitimate learner traffic whose expected path reaches the model without being blocked. Its pass rate describes only the selected fixture corpus, not the false-positive rate on live traffic.
 _Avoid_: allowlist entry, production false-positive rate
 
+**eval harness**:
+The deterministic offline lane that replays eval fixtures through a frozen scripted provider to prove the agent loop honors each fixture's expected orchestration — tool order, exact tool arguments, request contracts, plan consumption, and leak guards. It calls no provider and is not a live model or tool-selection evaluation.
+_Avoid_: eval test, live eval, guardrail battery — a battery is a tiered pass-rate rollup over harness runs, not the harness itself
+
+**eval fixture**:
+A JSON case declaring the expected orchestration for one scenario, together with the pinned sha256 of the real chat core prompt and overlay files it depends on. A prompt edit that changes either hash fails the eval until the fixture is deliberately re-validated.
+_Avoid_: snapshot, golden file, rehash — a rehash rewrites pinned hashes; a fixture declares them
+
+**scripted adapter**:
+The frozen provider stand-in the eval harness installs in place of a real LLM. It returns a fixture's pre-declared responses in round order and fails loudly when the loop asks for more, so an unexpected extra round shows up as a call-count mismatch.
+_Avoid_: mock LLM, stub provider, fake model
+
 **non-disclosure**:
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
 _Avoid_: secrecy, confidentiality

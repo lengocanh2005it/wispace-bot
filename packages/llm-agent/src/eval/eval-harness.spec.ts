@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { parseFixture, runEvalFixture } from './eval-harness';
+import { listFixtures } from './eval-prompt-hash';
 
 const FIXTURES_DIR = join(__dirname, '../../fixtures');
 
@@ -40,9 +41,7 @@ describe('eval fixture tiers', () => {
 });
 
 function listFixtureFiles(): string[] {
-  return readdirSync(FIXTURES_DIR)
-    .filter((file) => file.endsWith('.json'))
-    .sort();
+  return listFixtures(FIXTURES_DIR);
 }
 
 describe('LLM agent eval harness (offline orchestration regression)', () => {

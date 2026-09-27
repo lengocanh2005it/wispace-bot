@@ -1,10 +1,11 @@
-import { readdirSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   parseFixture,
   runEvalFixture,
   type EvalFixtureResult,
 } from './eval-harness';
+import { listFixtures } from './eval-prompt-hash';
 
 /**
  * #635 pass bar: `must-block` and `must-allow` fixtures require 100%;
@@ -105,8 +106,7 @@ export async function runGuardrailBatteryFromDir(
   const adversarialNames: string[] = [];
   const mustAllowNames: string[] = [];
 
-  for (const file of readdirSync(fixturesDir).sort()) {
-    if (!file.endsWith('.json')) continue;
+  for (const file of listFixtures(fixturesDir)) {
     const raw = JSON.parse(readFileSync(join(fixturesDir, file), 'utf8'));
     const parsed = parseFixture(raw);
     if ('errors' in parsed) {
