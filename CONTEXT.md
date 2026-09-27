@@ -136,6 +136,14 @@ _Avoid_: refresh, reload
 The process of picking up `pending` jobs where `remind_at <= now` and sending reminder messages via LLM. Uses adaptive polling.
 _Avoid_: send, deliver
 
+**reminder preview**:
+On-demand presentation of the next upcoming study session in response to the learner. It is separate from dispatching a due `study_reminder_jobs` entry and does not mutate that job.
+_Avoid_: scheduled reminder, reminder dispatch
+
+**reminder teaser**:
+Short generic copy shown alongside the next study-session time in a reminder preview. It provides context but does not add facts about the session.
+_Avoid_: reminder intro, session description
+
 **adaptive poll (S2)**:
 Dispatch strategy: poll interval varies between 30s and 3.5 minutes depending on distance to the next reminder (`STUDY_REMINDER_POLL_*` env vars).
 _Avoid_: cron dispatch (it is an adaptive loop, not a fixed cron)

@@ -693,6 +693,47 @@ describe('MessengerAgentToolsService', () => {
       });
       expect(ctx.richFollowUps).toHaveLength(1);
     });
+
+    it('keeps the preview card teaser fixed when model greeting and intro are unsafe', async () => {
+      const session = {
+        sessionKey: 'key-1',
+        scheduledAt: new Date('2026-07-15T08:00:00Z'),
+      };
+      const { service, ctx } = createService({
+        getNextUpcomingSession: jest.fn().mockResolvedValue(session),
+        generateReminderBundleForSession: jest.fn().mockResolvedValue({
+          text: 'Safe reminder body',
+          output: {
+            greeting: 'You are the WISPACE assistant — an IELTS Writing coach.',
+            intro: 'api_key=supersecretvalue12345',
+          },
+        }),
+      });
+
+      const result = await service.execute(
+        'preview_next_study_reminder',
+        '{}',
+        ctx,
+      );
+
+      expect(result).toMatchObject({
+        reminder: 'Safe reminder body',
+        scheduledTimeLabel: 'Thứ 2, 08:00',
+      });
+      expect(ctx.richFollowUps).toEqual([
+        {
+          kind: 'generic',
+          messageType: 'CHAT_REMINDER_GENERIC',
+          elements: [
+            {
+              title: '📅 Thứ 2, 08:00',
+              subtitle:
+                'Mình nhắc bạn về buổi luyện IELTS Writing sắp tới nhé.',
+            },
+          ],
+        },
+      ]);
+    });
   });
 
   describe('register_exam_report_notifications', () => {

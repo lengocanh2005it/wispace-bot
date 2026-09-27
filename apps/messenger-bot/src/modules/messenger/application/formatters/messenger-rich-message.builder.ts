@@ -8,6 +8,8 @@ import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 const TITLE_MAX = 80;
 const SUBTITLE_MAX = 80;
 const MAX_GENERIC_ELEMENTS = 10;
+const REMINDER_PREVIEW_TEASER =
+  'Mình nhắc bạn về buổi luyện IELTS Writing sắp tới nhé.';
 
 function buildDisclosureElement(
   disclosure: BoundedToolDisclosure,
@@ -150,7 +152,6 @@ export function buildUserGoalsRichFollowUp(goals: {
 
 export function buildReminderPreviewRichFollowUp(params: {
   scheduledTimeLabel: string;
-  teaser: string;
 }): MessengerRichFollowUp {
   return {
     kind: 'generic',
@@ -158,7 +159,7 @@ export function buildReminderPreviewRichFollowUp(params: {
     elements: [
       {
         title: clipMessengerLabel(`📅 ${params.scheduledTimeLabel}`, TITLE_MAX),
-        subtitle: clipMessengerLabel(params.teaser, SUBTITLE_MAX),
+        subtitle: clipMessengerLabel(REMINDER_PREVIEW_TEASER, SUBTITLE_MAX),
       },
     ],
   };

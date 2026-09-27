@@ -481,19 +481,13 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       session.scheduledAt,
     );
 
-    const teaser = [bundle.output.greeting, bundle.output.intro]
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .join(' ')
-      .replace(/\s+/g, ' ');
-
     return withPlatformToolDecoration(
       {
         hasSession: true,
         scheduledTimeLabel,
         reminder: bundle.text,
       },
-      buildReminderPreviewRichFollowUp({ scheduledTimeLabel, teaser }),
+      buildReminderPreviewRichFollowUp({ scheduledTimeLabel }),
     );
   }
 

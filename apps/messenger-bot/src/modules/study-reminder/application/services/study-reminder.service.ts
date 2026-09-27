@@ -14,6 +14,8 @@ import {
 import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import {
   classifyLlmFailure,
+  checkFinalOutputSafety,
+  redactSecrets,
   sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent/core';
 import type {
@@ -302,12 +304,26 @@ export class StudyReminderService {
         this.logger.warn(
           `Study reminder time mismatch psid=${maskExternalId(
             context.psid,
-          )} model="${modelScheduledTime}" server="${input.scheduledTimeLabel}" — server label rendered`,
+          )} — server label rendered`,
         );
       }
       // #123: the reminder time always comes from trusted server data; the
       // model's `scheduledTime` (if any) is never rendered.
-      return buildReminderOutput(prose, input.scheduledTimeLabel);
+      const output = buildReminderOutput(prose, input.scheduledTimeLabel);
+      const formattedOutput = formatReminder(output);
+      if (
+        redactSecrets(formattedOutput).redacted ||
+        checkFinalOutputSafety(formattedOutput).unsafe
+      ) {
+        this.recordDegraded(
+          context.psid,
+          'invalid_output',
+          'reminder_fallback',
+          correlationId,
+        );
+        return buildFallbackReminder(input);
+      }
+      return output;
     } catch (error) {
       this.recordDegraded(
         context.psid,

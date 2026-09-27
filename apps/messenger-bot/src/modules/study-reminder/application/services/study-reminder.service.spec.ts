@@ -1,8 +1,13 @@
+import { Logger } from '@nestjs/common';
 import type {
   LlmExecutionPort,
   LlmJsonResponse,
   LlmProviderAdapter,
   LlmUsageRecorderPort,
+} from '@wispace/llm-agent/core';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
 } from '@wispace/llm-agent/core';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
 import type { StudyReminderTimeFormatterPort } from '../../domain/ports/study-reminder-operations.port';
@@ -14,6 +19,28 @@ const mockAdapter = {
   isConfigured: () => true,
   getDefaultModel: () => 'gpt-5.4',
 } as unknown as LlmProviderAdapter;
+
+type ReminderContent = {
+  greeting: string;
+  intro: string;
+  scheduledTime: string;
+  tasks: string[];
+  motivation: string;
+  signoff: string;
+};
+
+const VALID_REMINDER_CONTENT: ReminderContent = {
+  greeting: 'Chào Mai,',
+  intro: 'Mình nhắc bạn về buổi học nhé.',
+  scheduledTime: '09:00 01/07/2026',
+  tasks: ['Ôn feedback', 'Luyện Task 2', 'Soát lỗi ngữ pháp'],
+  motivation: 'Cố thêm một chút là tiến bộ rõ hơn.',
+  signoff: 'Cố lên nhé!',
+};
+
+function reminderJson(overrides: Partial<ReminderContent> = {}): string {
+  return JSON.stringify({ ...VALID_REMINDER_CONTENT, ...overrides });
+}
 
 describe('StudyReminderService', () => {
   const session: NormalizedStudySession = {
@@ -34,7 +61,15 @@ describe('StudyReminderService', () => {
     };
   }
 
-  function buildService(llmContent: string) {
+  afterEach(() => {
+    resetRuntimeSecretsForTests();
+    jest.restoreAllMocks();
+  });
+
+  function buildService(
+    llmContent: string,
+    metrics?: { incLlmDegradedMode: jest.Mock },
+  ) {
     const service = new StudyReminderService(
       {
         getUpcomingSessions: jest.fn(),
@@ -58,6 +93,7 @@ describe('StudyReminderService', () => {
         run: jest.fn(() => Promise.resolve(makeJsonResponse(llmContent))),
       } as unknown as LlmExecutionPort,
       mockAdapter,
+      metrics as never,
     );
 
     return service;
@@ -133,6 +169,88 @@ describe('StudyReminderService', () => {
     expect(result).toContain('Chào Mai,');
     expect(result).toContain('Ôn feedback');
     expect(result).toContain('📅 09:00 01/07/2026');
+  });
+
+  it.each([
+    {
+      reason: 'prompt leak',
+      overrides: {
+        greeting: 'You are the WISPACE assistant — an IELTS Writing coach.',
+      },
+      unsafeText: 'You are the WISPACE assistant — an IELTS Writing coach.',
+    },
+    {
+      reason: 'credential-shaped text',
+      overrides: { intro: 'api_key=supersecretvalue12345' },
+      unsafeText: 'api_key=supersecretvalue12345',
+    },
+    {
+      reason: 'vendor/model disclosure',
+      overrides: { motivation: 'Mình chạy trên GPT-4o của OpenAI.' },
+      unsafeText: 'Mình chạy trên GPT-4o của OpenAI.',
+    },
+    {
+      reason: 'actionable harmful text',
+      overrides: { tasks: ['Hãy tự tử đi.', 'Luyện Task 2', 'Soát lỗi'] },
+      unsafeText: 'Hãy tự tử đi.',
+    },
+  ])(
+    'uses the full safe fallback for $reason in generated reminder text',
+    async ({ overrides, unsafeText }) => {
+      const metrics = { incLlmDegradedMode: jest.fn() };
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const service = buildService(reminderJson(overrides), metrics);
+
+      const result = await service.generateReminderForSession('psid-1', {
+        ...session,
+        topic: 'Task 2',
+      });
+
+      expect(result).toContain('Luyện viết theo chủ đề Task 2');
+      expect(result).toContain('📅 09:00 01/07/2026');
+      expect(result).not.toContain(unsafeText);
+      expect(metrics.incLlmDegradedMode).toHaveBeenCalledWith({
+        platform: 'messenger',
+        feature: 'STUDY_REMINDER',
+        failureClass: 'invalid_output',
+        action: 'reminder_fallback',
+        correlationId: 'psid-1',
+      });
+      expect(
+        JSON.stringify(metrics.incLlmDegradedMode.mock.calls),
+      ).not.toContain(unsafeText);
+      expect(warn.mock.calls.flat().join(' ')).not.toContain(unsafeText);
+    },
+  );
+
+  it('uses the full safe fallback when generated text contains a registered runtime secret', async () => {
+    const secret = 'internal-secret-9876';
+    registerRuntimeSecrets([secret]);
+    const service = buildService(
+      reminderJson({ signoff: `Hẹn gặp lại, ${secret}.` }),
+    );
+
+    const result = await service.generateReminderForSession('psid-1', {
+      ...session,
+      topic: 'Task 2',
+    });
+
+    expect(result).toContain('Luyện viết theo chủ đề Task 2');
+    expect(result).not.toContain(secret);
+  });
+
+  it('does not log model-supplied scheduledTime content', async () => {
+    const modelTime = 'api_key=supersecretvalue12345';
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const service = buildService(reminderJson({ scheduledTime: modelTime }));
+
+    const result = await service.generateReminderForSession('psid-1', {
+      ...session,
+      topic: 'Task 2',
+    });
+
+    expect(result).toContain('📅 09:00 01/07/2026');
+    expect(warn.mock.calls.flat().join(' ')).not.toContain(modelTime);
   });
 
   it('always renders the server scheduledTimeLabel, never the model time (#123)', async () => {
