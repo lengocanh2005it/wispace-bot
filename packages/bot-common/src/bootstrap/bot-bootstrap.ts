@@ -4,6 +4,10 @@ import {
   type LoggerService,
   type Type,
 } from '@nestjs/common';
+// Both declarations in this package's `dependencies` are load-bearing even
+// where the import is type-only: NestFactory.create resolves the HTTP platform
+// through a dynamic import('@nestjs/platform-express') and exits the process
+// when the adapter is absent. Do not "clean up" either entry as unused.
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
