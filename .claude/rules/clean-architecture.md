@@ -2,6 +2,12 @@
 
 The executable scope and exception map lives in [`docs/architecture-boundaries.md`](../../docs/architecture-boundaries.md). Packages in its entrypoint table use explicit `/core` and `/adapters` paths where both surfaces exist; bare package-root imports are not supported compatibility facades. Domain and application code use `/core`; `/adapters` is imported only by infrastructure and composition roots. Adapter-only packages such as `cleanup-cron` expose only `/adapters`; unrelated feature subpaths such as `bot-common` are outside this convention. Issue #1088 removed all legacy application adapter exceptions. Database dependencies belong in app infrastructure/adapters or composition roots; shared packages may import `@wispace/database` only under `src/adapters`, and operational tooling may do so only in the five scripts listed in `docs/architecture-boundaries.md`.
 
+## Monorepo boundary: `packages/bot-common`
+
+`packages/bot-common` is shared NestJS infrastructure with feature-oriented subpaths; it is outside the `/core` and `/adapters` entrypoint convention. Add or move a capability into this package only when production code in at least two distinct applications uses that capability directly. A capability is a cohesive public behavior or contract that an app can consume independently. Production type-level use counts; test-only imports, dependency declarations without source use, re-exports, and use through another shared package do not. Evaluate each capability independently, so unrelated uses of other `bot-common` APIs do not qualify. Private helpers implementing an already shared capability do not need separate app consumers.
+
+Apply this rule prospectively; this does not require an audit or migration of existing package contents. If a change leaves a capability with only one production-app consumer, move it into that app in the same change.
+
 Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (reference: [clean-nestjs-cli](https://github.com/jheisonnovak/clean-nestjs-cli), [NestJS-DDD-DevOps](https://andrea-acampora.github.io/nestjs-ddd-devops/)), inside `apps/messenger-bot/src/`. Paths below are relative to `apps/messenger-bot/src/` unless stated otherwise.
 
 ## Monorepo boundary: `packages/account-link-core`
