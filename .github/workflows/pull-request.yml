@@ -85,6 +85,12 @@ jobs:
       - name: Test workspace dependency guard
         run: npm run workspace-deps:test
 
+      - name: Test manifest dependency guard (#1219)
+        run: npm run manifest-deps:test
+
+      - name: Test runtime image check (#1219)
+        run: npm run runtime-image:test
+
       - name: Test file-size ratchet (ADR-0044)
         run: npm run file-size:test
 
