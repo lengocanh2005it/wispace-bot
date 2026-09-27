@@ -18,4 +18,12 @@ describe('llm-agent package boundaries', () => {
     expect(adapters.createLlmProviderAdapterFromEnv).toBeDefined();
     expect(adapters.createEnvLlmExecutionPort).toBeDefined();
   });
+
+  it('keeps the failure-origin classifiers on the core surface', () => {
+    // Their location moved out of the package root; their published names did not.
+    // Without this, a dropped re-export is caught only by whichever consumer
+    // happens to import the name. #1438 changes these names — update in that change.
+    expect(core.isOpenAiRateLimitError).toBeDefined();
+    expect(core.isOpenAiServerError).toBeDefined();
+  });
 });

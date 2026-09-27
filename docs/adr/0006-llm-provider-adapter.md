@@ -8,6 +8,14 @@ Implemented (PR #32 — `LlmProviderAdapter` pattern with OpenAI, OpenRouter, Mi
 > contract by [ADR-0017](0017-llm-agent-context-budget-and-pipeline.md).
 > Current adapters expose the synchronous operations documented below.
 
+> The fourth bullet below is also no longer the shipped shape. The provider
+> failure classifiers were **not** folded into private adapter methods. They live
+> in a provider-tree module and are imported by the adapter, because
+> `@wispace/llm-agent/core` re-exports two of them under their existing names for
+> the Messenger chat-delivery path, and preserving that published surface needs a
+> module that exports them rather than a private method. See #1430 and #1438.
+> The bullet is left as written because it records what PR #32 shipped.
+
 ## Context
 
 `packages/llm-agent` is the core agentic loop shared across all 3 bots (Messenger, Discord, Zalo). It handles function calling (tool definitions, tool call parsing, tool result round-trips) with LLM providers.
