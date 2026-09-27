@@ -4,8 +4,6 @@
   "description": "Shared NestJS infrastructure for WISPACE bots: ops API guard, advisory locks",
   "private": true,
   "license": "UNLICENSED",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:types": "tsc -p tsconfig.build.json --noEmit",
@@ -58,11 +56,6 @@
     ]
   },
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
     "./guard": {
       "import": "./dist/guard/index.js",
       "require": "./dist/guard/index.js",

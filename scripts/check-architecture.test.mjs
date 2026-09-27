@@ -739,6 +739,24 @@ test('affected packages reject bare root imports', () => {
   }
 });
 
+test('a bot-common root import is rejected so one import cannot pull Nest and ioredis', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/chat-agent/src/chat-queue/retry.ts',
+      "export { withTimeout } from '@wispace/bot-common';\n",
+    );
+    const result = checkArchitecture(f.root);
+
+    assert.deepEqual(
+      result.violations.map((violation) => violation.rule),
+      ['no-root-package-entrypoint'],
+    );
+  } finally {
+    f.close();
+  }
+});
+
 test('smoke scripts requiring a bare root are reported', () => {
   const f = fixture();
   try {

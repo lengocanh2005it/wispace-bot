@@ -16,8 +16,10 @@ const CONCRETE_OUTER_SYMBOL =
   /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore)$/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 // #1126: these packages publish only explicit subpaths; a bare root specifier
-// is not a compatibility facade and must not resolve.
-const ROOT_SPECIFIER = /^@wispace\/(account-link-core|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
+// is not a compatibility facade and must not resolve. `bot-common` joined the
+// list when its root barrel was removed: nothing imported it, and it re-exported
+// every sub-barrel, so one bare import would have pulled Nest and ioredis in.
+const ROOT_SPECIFIER = /^@wispace\/(account-link-core|bot-common|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
 const DATABASE_FORBIDDEN_DEPENDENCIES = [
   '@wispace/reschedule-confirm',
   '@wispace/scheduler-core',
@@ -521,7 +523,7 @@ function rootEntrypointViolation(relativePath, imported) {
     imported: imported.imported,
     symbols: imported.symbols,
     message:
-      'shared packages publish explicit /core and /adapters subpaths; import the narrowest subpath instead of the package root',
+      'shared packages publish explicit subpath entrypoints; import the narrowest subpath instead of the package root',
   };
 }
 

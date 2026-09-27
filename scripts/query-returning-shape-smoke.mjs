@@ -18,7 +18,7 @@ import { dirname, resolve } from 'node:path';
 const require = createRequire(import.meta.url);
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const { DataSource } = require('typeorm');
-const { extractQueryRows } = require('@wispace/bot-common');
+const { extractQueryRows } = require('@wispace/bot-common/utils');
 
 for (const key of ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
   if (!process.env[key]?.trim()) {

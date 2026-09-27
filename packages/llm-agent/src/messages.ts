@@ -9,10 +9,11 @@ export const CHAT_FAILURE_FALLBACK_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
 
 /**
- * Standard non-disclosure reply (#625) — re-exported from `@wispace/bot-common`
- * (the leaf package) so `@wispace/llm-agent` consumers and the bot gateways
- * share ONE constant. Used for any internal-details probe and for the
- * self-intro path; it must never vary by framing.
+ * Standard non-disclosure reply (#625) — re-exported from
+ * `@wispace/bot-common/messages` (the leaf package) so `@wispace/llm-agent`
+ * consumers and the bot gateways share ONE constant. Used for any
+ * internal-details probe and for the self-intro path; it must never vary by
+ * framing.
  */
 export {
   NON_DISCLOSURE_REPLY,

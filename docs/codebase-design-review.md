@@ -84,7 +84,7 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 | `CleanupCronService.execute(config, deleteFn, isEnabled, getRetentionDays)` | Body chỉ đọc `name`+`advisoryLockId`; 5 field config chết trong khi cùng fact đến lại 3 lần qua callbacks |
 | ~~Privacy pair trong llm-agent~~ | **Done (#1107)** — moved to Messenger; LLM core keeps only generic scope normalization |
 | ~~`todayReportDate` and date aliases~~ | **Done (#1107)** — consumers call canonical date helper names |
-| Barrel doors quá rộng | llm-agent index export ~47 values + 25 types (core chỉ cần ~6); bot-common ~37 symbols ép Nest+ioredis lên mọi consumer |
+| ~~Barrel doors quá rộng~~ | **Đã xong** — `llm-agent` không còn root export (chỉ 5 subpath, #1126/ADR-0041) nên "index export ~47 values + 25 types" không còn tồn tại. `bot-common` root barrel (11 sub-barrel, kéo `guard`/`redis`/`cron`) đã bị gỡ — không consumer nào dùng — và `bot-common` được thêm vào `ROOT_SPECIFIER` để rule `no-root-package-entrypoint` chặn tái phát |
 
 ### 2.3 Seam giả định (1 adapter — indirection, không phải seam)
 
@@ -125,7 +125,10 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 5. **Copy-drift Discord→Zalo mất behavior**: Zalo thiếu relink-notification + welcome-dedupe trong reconcile
    cron; `readPositiveInt` lệch nhau; leader-lock chỉ Discord có; cross-platform dedup chỉ Zalo có.
 6. **Vi phạm framework boundary tự tuyên bố**: `PlatformStudentReportService` kéo Nest+metering+database+wispace-client; `wispace-client` import
-   `@nestjs/*`; gián tiếp `llm-agent` kéo Nest+ioredis qua bot-common barrel.
+   `@nestjs/*`. ~~gián tiếp `llm-agent` kéo Nest+ioredis qua bot-common barrel~~ — **sai, đã gỡ**: `llm-agent` có **0** import `@nestjs/*`, và chỉ
+   import `bot-common` qua subpath (`/utils`, `/masking`, `/messages`), không qua barrel root. Nó import `ioredis` **trực tiếp** ở
+   `execution/redis-slot-limiter.ts` và `execution/env-llm-execution.port.ts` cho global admission lease; ioredis là infrastructure, không
+   phải framework, nên không phải vi phạm framework boundary.
 7. **Cùng port, khác semantics** (interface nói dối): history resolver Messenger fail-soft vs Platform
    fail-closed-at-boot; `appendToolSummary` memory = pending-until-next-turn vs Redis = persist-until-TTL;
    merge text xảy ra 3 lần dọc flow.
