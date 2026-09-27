@@ -119,7 +119,7 @@ Each adapter handles:
 - Converts `LlmToolDefinition` → `ChatCompletionTool`
 - Converts `LlmMessage` → `ChatCompletionMessageParam`
 - Converts `ChatCompletion` → `LlmResponse`
-- Moves existing `openai-error.utils.ts` logic into adapter methods
+- Keeps the upstream-failure classifiers in a provider-tree module, `provider/upstream-failure-classifiers.ts`, and imports them; it does **not** fold them into private adapter methods. Folding is unreachable while the published surface is preserved: `@wispace/llm-agent/core` re-exports `isOpenAiRateLimitError` and `isOpenAiServerError` for the Messenger chat-delivery path, which requires a module that exports them. The module is named for "upstream" rather than for this vendor because a third of it matches Messenger/Discord/Zalo platform API error names (#1430, #1438).
 
 ### Historical streaming design (superseded)
 

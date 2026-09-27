@@ -13,7 +13,7 @@ import {
   isPlatformApiError,
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from '../../openai-error.utils';
+} from '../upstream-failure-classifiers';
 import { isAbortError } from '../../retry.utils';
 import {
   toOpenAiTools,

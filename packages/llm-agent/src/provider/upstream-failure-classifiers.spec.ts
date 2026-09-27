@@ -1,9 +1,9 @@
 import {
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from './openai-error.utils';
+} from './upstream-failure-classifiers';
 
-describe('openai-error.utils', () => {
+describe('upstream-failure-classifiers', () => {
   it('detects OpenAI rate limit errors', () => {
     expect(
       isOpenAiRateLimitError(

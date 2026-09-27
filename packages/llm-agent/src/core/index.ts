@@ -121,10 +121,17 @@ export type {
 } from '../safety/prompt-injection.utils';
 export { checkLlmGrounding } from '../grounding/llm-grounding.utils';
 export type { LlmGroundingResult } from '../grounding/llm-grounding.utils';
+// Vendor-named on purpose for now: `chat-delivery.messages.ts` in messenger-bot
+// branches on these to pick a delivery message, so removing the vendor names from
+// this framework-free surface is a public rename with its own issue (#1438). This
+// barrel publishes symbols whose names say "OpenAI" while the package is otherwise
+// provider-neutral, and the architecture guard does not catch it because it
+// inspects imports, not re-exports (#1439). Do not read that as an accident to
+// tidy up inside an unrelated change.
 export {
   isOpenAiRateLimitError,
   isOpenAiServerError,
-} from '../openai-error.utils';
+} from '../provider/upstream-failure-classifiers';
 export {
   isObviouslyOffTopic,
   isGreetingOnly,
