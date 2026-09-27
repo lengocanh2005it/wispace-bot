@@ -1,5 +1,5 @@
 import type { BoundedToolDisclosure } from '../agent.tools';
-import { checkLlmGrounding } from '../grounding/llm-grounding.utils';
+import { checkLlmGrounding } from '../safety/grounding.utils';
 import {
   checkFinalOutputSafety,
   checkPromptCanarySafety,

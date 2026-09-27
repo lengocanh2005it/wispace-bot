@@ -119,8 +119,8 @@ export type {
   DisclosureProbeResult,
   DisclosureProbeCategory,
 } from '../safety/prompt-injection.utils';
-export { checkLlmGrounding } from '../grounding/llm-grounding.utils';
-export type { LlmGroundingResult } from '../grounding/llm-grounding.utils';
+export { checkLlmGrounding } from '../safety/grounding.utils';
+export type { LlmGroundingResult } from '../safety/grounding.utils';
 // The framework-free core names these by capability, not by vendor (#1438):
 // `chat-delivery.messages.ts` in messenger-bot branches on them to pick a delivery
 // message, and a neutral core was deciding a vendor-specific outcome. The bodies

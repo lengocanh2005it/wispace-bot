@@ -1,4 +1,4 @@
-import { checkLlmGrounding } from './llm-grounding.utils';
+import { checkLlmGrounding } from './grounding.utils';
 
 describe('checkLlmGrounding', () => {
   describe('clean responses — should NOT be flagged', () => {
