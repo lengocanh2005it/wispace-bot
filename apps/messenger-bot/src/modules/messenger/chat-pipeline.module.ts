@@ -29,7 +29,6 @@ import {
 } from '@wispace/chat-metering/adapters';
 import { toUsageRecorderMetrics } from '@wispace/chat-metering/core';
 import type { LlmProviderAdapter } from '@wispace/llm-agent/core';
-import { PrivacyStateService } from '@wispace/llm-agent/adapters';
 import {
   sanitizeUntrustedTextForLlm,
   buildWriteToolDailyBudgetMessage,
@@ -109,6 +108,7 @@ import {
   resolveMessengerClassifierModel,
 } from './classifier-config';
 import { MessengerChatProcessorService } from './application/services/messenger-chat-processor.service';
+import { PrivacyStateService } from './application/privacy/privacy-state.service';
 import { MessengerRescheduleConfirmationService } from './application/services/messenger-reschedule-confirmation.service';
 import { ChatHistoryStoreStartupService } from './infrastructure/persistence/chat-history-store-startup.service';
 import { ChatQueueStoreStartupService } from './application/services/chat-queue-store-startup.service';

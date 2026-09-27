@@ -60,7 +60,6 @@ const CONTRACTS_OWNED_TYPES = new Set([
  * scopes below; widening this list requires a named issue and owner.
  */
 export const FRAMEWORK_BOUND_ADAPTERS = [
-  'packages/llm-agent/src/privacy/privacy-state.service.ts',
   'packages/student-report/src/platform-student-report.service.ts',
 ];
 

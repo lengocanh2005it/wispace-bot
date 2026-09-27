@@ -1,13 +1,13 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering/adapters';
-import { todayUsageDate } from '@wispace/chat-metering/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import type { Platform } from '@wispace/contracts';
-import type {
-  UserGoalsRecord,
-  TaskScoreAverageRecord,
+import {
+  WispaceDataCache,
+  todayInTimezone,
 } from '@wispace/wispace-client/core';
+import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import {
   buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
@@ -29,19 +29,6 @@ import type { StudentCapacityInput } from './types';
 
 const FEATURE = 'STUDENT_REPORT';
 
-/** Structural goals-port accepted by the report service — satisfied by both
- * `WispaceGoalsService` and the request-scoped memoized wrapper. */
-export interface ReportGoalsPort {
-  getUserGoals(
-    externalUserId: string,
-    options?: { signal?: AbortSignal },
-  ): Promise<UserGoalsRecord>;
-  getTaskScoreAverages(
-    externalUserId: string,
-    options?: { signal?: AbortSignal },
-  ): Promise<TaskScoreAverageRecord[]>;
-}
-
 // Execution-control defaults — same contract and env keys as the Messenger
 // app's `LlmExecutionConfigService`, so Discord/Zalo reports share the same
 // documented path as chat and Messenger reports.
@@ -60,7 +47,8 @@ export class PlatformStudentReportService {
   constructor(
     private readonly platform: Platform,
     private readonly configService: ConfigService,
-    private readonly goalsService: ReportGoalsPort,
+    private readonly goalsService: WispaceGoalsService,
+    private readonly cache: WispaceDataCache,
     private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
@@ -91,7 +79,7 @@ export class PlatformStudentReportService {
     const timezone =
       this.configService.get<string>('STUDY_REMINDER_TIMEZONE')?.trim() ??
       'Asia/Ho_Chi_Minh';
-    const correlationId = `${externalUserId}:${todayUsageDate(timezone)}`;
+    const correlationId = `${externalUserId}:${todayInTimezone(timezone)}`;
 
     return this.core.generateReport(externalUserId, {
       correlationId,
@@ -141,12 +129,13 @@ export class PlatformStudentReportService {
           externalUserId,
           options,
         ): Promise<StudentCapacityInput> => {
-          // Independent inputs — fetch concurrently (#456); the goals leg is
-          // served by the shared memoizer, so repeated calls in one window
-          // collapse into a single upstream fetch.
+          // Independent inputs — fetch concurrently (#456); the shared cache
+          // collapses repeated goals reads within the central TTL.
           const [taskScores, goals] = await Promise.all([
             this.goalsService.getTaskScoreAverages(externalUserId, options),
-            this.goalsService.getUserGoals(externalUserId, options),
+            this.cache.getOrFetch('goals', externalUserId, undefined, () =>
+              this.goalsService.getUserGoals(externalUserId, options),
+            ),
           ]);
           if (!taskScores || taskScores.length === 0) {
             throw new StudentReportNoScoreDataError(externalUserId);

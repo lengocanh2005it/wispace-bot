@@ -20,7 +20,7 @@ import type { MessengerChatSharedConfigService } from './messenger-chat-shared-c
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import type { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
-import { PrivacyStateService } from '@wispace/llm-agent/adapters';
+import { PrivacyStateService } from '../privacy/privacy-state.service';
 import {
   capMergedChatUserText,
   mergeChatUserTexts,

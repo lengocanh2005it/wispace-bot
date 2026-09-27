@@ -1,11 +1,8 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import {
-  evaluateExamWindow,
-  todayReportDate,
-  runBatched,
-} from '@wispace/scheduler-core/core';
+import { evaluateExamWindow, runBatched } from '@wispace/scheduler-core/core';
+import { todayInTimezone } from '@wispace/wispace-client/core';
 import type {
   CanonicalPlatformPort,
   ReportCronLeaderPort,
@@ -118,7 +115,7 @@ export class DiscordReportCronService {
   async sendScheduledReports(
     opts: { forceSend?: boolean; externalUserId?: string } = {},
   ) {
-    const reportDate = todayReportDate();
+    const reportDate = todayInTimezone('Asia/Ho_Chi_Minh');
     const concurrency = this.concurrency;
 
     let total = 0;

@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { todayReportDate } from '@wispace/scheduler-core/core';
+import { todayInTimezone } from '@wispace/wispace-client/core';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core/core';
 import { ReportScheduleService } from '@wispace/scheduler-core/adapters';
 import type { Platform } from '@wispace/contracts';
@@ -32,7 +32,7 @@ jest.mock('@wispace/scheduler-core/core', () => ({
   }),
 }));
 
-const reportDate = todayReportDate();
+const reportDate = todayInTimezone('Asia/Ho_Chi_Minh');
 const link = {
   id: '1',
   externalUserId: 'zalo-1',

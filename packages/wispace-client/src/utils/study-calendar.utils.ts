@@ -4,7 +4,7 @@ const OFFSET_PROBE_HOURS = [-48, -24, 0, 24, 48];
 
 import {
   getDatePartsInTimezone,
-  formatLocalDate as formatLocalDateInTimezone,
+  formatLocalDate,
   tomorrowInTimezone,
 } from '@wispace/date-utils';
 
@@ -200,9 +200,7 @@ export function getLocalDateFromEventDate(
   eventDate: string,
   timezone: string,
 ): string {
-  return formatLocalDateInTimezone(
-    parseLocalDatePartsFromEventDate(eventDate, timezone),
-  );
+  return formatLocalDate(parseLocalDatePartsFromEventDate(eventDate, timezone));
 }
 
 export function addDaysToLocalDate(
@@ -216,7 +214,7 @@ export function addDaysToLocalDate(
 
   const [year, month, day] = localDate.split('-').map(Number);
   const probe = new Date(Date.UTC(year, month - 1, day + days, 12, 0, 0));
-  return formatLocalDateInTimezone(getDatePartsInTimezone(probe, timezone));
+  return formatLocalDate(getDatePartsInTimezone(probe, timezone));
 }
 
 export function resolveRescheduleSlot(params: {

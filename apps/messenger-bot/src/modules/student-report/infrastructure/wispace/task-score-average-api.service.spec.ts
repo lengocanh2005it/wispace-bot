@@ -1,8 +1,6 @@
 import { TaskScoreAverageApiService } from './task-score-average-api.service';
-import {
-  MemoizedWispaceGoalsService,
-  WispaceDataCache,
-} from '@wispace/wispace-client/core';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
+import type { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import type { ConfigService } from '@nestjs/config';
 
 describe('TaskScoreAverageApiService', () => {
@@ -30,16 +28,11 @@ describe('TaskScoreAverageApiService', () => {
       targetScore: 7,
       examDate: '2026-09-01',
     });
-    // The service consumes the shared memoizer facade (#456) — the same
-    // wrapper the reminder/report ports bind, so goals collapse into one
-    // upstream fetch per user per TTL window.
-    const memoizedGoals = new MemoizedWispaceGoalsService(
-      { getUserGoals } as never,
-      new WispaceDataCache(),
-    );
+    const goalsService = { getUserGoals } as unknown as WispaceGoalsService;
     const service = new TaskScoreAverageApiService(
       { get: jest.fn().mockReturnValue(undefined) } as unknown as ConfigService,
-      memoizedGoals,
+      goalsService,
+      new WispaceDataCache(),
     );
     (service as unknown as { getClient: () => unknown }).getClient = () => ({
       getTaskScoreAverages,

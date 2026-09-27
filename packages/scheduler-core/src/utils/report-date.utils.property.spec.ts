@@ -1,5 +1,6 @@
 import fc from 'fast-check';
-import { startOfReportDay, todayReportDate } from './report-date.utils';
+import { todayInTimezone } from '@wispace/date-utils';
+import { startOfReportDay } from './report-date.utils';
 
 fc.configureGlobal({ numRuns: 200 });
 
@@ -25,8 +26,8 @@ describe('report date utility properties', () => {
       fc.property(INSTANT, fc.constantFrom(...TIMEZONES), (now, timezone) => {
         const start = startOfReportDay(timezone, now);
 
-        expect(todayReportDate(timezone, start)).toBe(
-          todayReportDate(timezone, now),
+        expect(todayInTimezone(timezone, start)).toBe(
+          todayInTimezone(timezone, now),
         );
         expect(start.getTime()).toBeLessThanOrEqual(now.getTime());
       }),

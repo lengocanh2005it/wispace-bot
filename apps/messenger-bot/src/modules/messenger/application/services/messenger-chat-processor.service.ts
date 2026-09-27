@@ -13,8 +13,8 @@ import {
   detectPrivacyIntent,
   isConfirmationResponse,
   isCancellationResponse,
-} from '@wispace/llm-agent/core';
-import type { PrivacyIntent } from '@wispace/llm-agent/core';
+} from '../privacy/privacy-intent.utils';
+import type { PrivacyIntent } from '../privacy/privacy-intent.utils';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import {

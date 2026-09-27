@@ -1,16 +1,16 @@
 import { ConfigService } from '@nestjs/config';
 import { ChatRateLimitConfigService } from '../../modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
+import { todayInTimezone } from '@wispace/wispace-client/core';
 import {
   parseExamDateToIso,
   resolveExamCountdown,
-  todayReportDate,
 } from '@wispace/scheduler-core/core';
 import { ReportScheduleService } from '@wispace/scheduler-core/adapters';
 import { resolveAppTimezone } from '../config/app-timezone';
 
 describe('Q1 smoke checks (automated)', () => {
   it('marks a past exam correctly for student reports', () => {
-    const currentDate = todayReportDate(
+    const currentDate = todayInTimezone(
       'Asia/Ho_Chi_Minh',
       new Date('2026-06-14T10:00:00+07:00'),
     );

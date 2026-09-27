@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
-  MemoizedWispaceGoalsService,
   PrecreateExerciseApiClient,
+  WispaceDataCache,
 } from '@wispace/wispace-client/core';
+import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import type {
   AgentExerciseCreatePort,
   AgentGoalsReadPort,
@@ -10,10 +11,15 @@ import type {
 
 @Injectable()
 export class AgentGoalsReadAdapter implements AgentGoalsReadPort {
-  constructor(private readonly goals: MemoizedWispaceGoalsService) {}
+  constructor(
+    private readonly goals: WispaceGoalsService,
+    private readonly cache: WispaceDataCache,
+  ) {}
 
   getUserGoals(externalId: string) {
-    return this.goals.getUserGoals(externalId);
+    return this.cache.getOrFetch('goals', externalId, undefined, () =>
+      this.goals.getUserGoals(externalId),
+    );
   }
 }
 

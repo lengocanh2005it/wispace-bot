@@ -164,7 +164,6 @@ The same check enforces **declaration** ownership, not only import edges. A type
 
 The exact framework-bound exclusions live in `FRAMEWORK_BOUND_ADAPTERS` in [`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs). They are limited to:
 
-- the privacy-state NestJS adapter in `llm-agent`;
 - the platform student-report adapter in `student-report`.
 
 The package `/adapters` barrels make the remaining NestJS/TypeORM/Redis

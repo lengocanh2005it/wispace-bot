@@ -35,8 +35,11 @@ import { MessengerOutboundModule } from '../messenger/messenger-outbound.module'
 import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
-import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
+import {
+  WispaceGoalsService,
+  WispaceCalendarService,
+} from '@wispace/wispace-client/adapters';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
@@ -202,13 +205,21 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     {
       provide: REMINDER_STUDENT_DATA_PORT,
       useFactory: (
-        memoizedGoals: MemoizedWispaceGoalsService,
+        goalsService: WispaceGoalsService,
+        cache: WispaceDataCache,
         taskScoreAverageApi: TaskScoreAverageApiService,
       ): ReminderStudentDataPort => ({
-        getUserGoals: (psid) => memoizedGoals.getUserGoals(psid),
+        getUserGoals: (psid) =>
+          cache.getOrFetch('goals', psid, undefined, () =>
+            goalsService.getUserGoals(psid),
+          ),
         getCapacityData: (psid) => taskScoreAverageApi.getCapacityData(psid),
       }),
-      inject: [MemoizedWispaceGoalsService, TaskScoreAverageApiService],
+      inject: [
+        WispaceGoalsService,
+        WispaceDataCache,
+        TaskScoreAverageApiService,
+      ],
     },
     {
       provide: PlatformStudyCalendarCommandService,

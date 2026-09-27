@@ -1,8 +1,6 @@
 // Framework-free quota, usage, safety, and write-budget policies/contracts.
 // TypeORM, Redis, NestJS modules, and platform wiring live in `adapters`.
 
-export { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
-
 export { ChatRateLimitCore } from '../chat-rate-limit/chat-rate-limit-core.service';
 export {
   MemoryBurstCounter,

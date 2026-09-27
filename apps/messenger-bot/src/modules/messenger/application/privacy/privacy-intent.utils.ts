@@ -1,4 +1,4 @@
-import { normalizeScopeText } from '../scope.utils';
+import { normalizeScopeText } from '@wispace/llm-agent/core';
 
 /**
  * Privacy intent detection — detects explicit unlink, delete, and export

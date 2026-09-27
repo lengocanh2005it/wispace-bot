@@ -82,6 +82,10 @@ _Avoid_: mapping version when referring to ownership fencing
 
 ### Privacy & Erasure
 
+**privacy confirmation**:
+A learner's explicit confirmation or cancellation of a pending request to unlink an account, export data, or delete data. It is the conversational step before the privacy action executes, distinct from privacy erasure.
+_Avoid_: consent state, pending privacy request
+
 **privacy erasure**:
 An operation that removes learner-attributable local data and platform-owned state for an external identity after a privacy request. It is distinct from time-based retention cleanup.
 _Avoid_: purge, best-effort delete

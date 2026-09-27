@@ -18,7 +18,6 @@ import {
   REPORT_CLAIM_REPOSITORY,
   evaluateExamWindow,
   runBatched,
-  todayReportDate,
 } from '@wispace/scheduler-core/core';
 import {
   ReportCronLeaderService,
@@ -28,7 +27,7 @@ import {
 } from '@wispace/scheduler-core/adapters';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloSendError } from '../../application/services/zalo-outbound.service';
-import { WispaceApiError } from '@wispace/wispace-client/core';
+import { WispaceApiError, todayInTimezone } from '@wispace/wispace-client/core';
 import type { Platform } from '@wispace/contracts';
 import {
   buildLlmExecutionConfig,
@@ -110,7 +109,7 @@ export class ZaloReportCronService {
   }
 
   async sendReportsBatch(opts: { forceSend?: boolean } = {}): Promise<void> {
-    const reportDate = todayReportDate();
+    const reportDate = todayInTimezone('Asia/Ho_Chi_Minh');
     const forceSend = opts.forceSend === true;
 
     const sentUserIds = new Set(

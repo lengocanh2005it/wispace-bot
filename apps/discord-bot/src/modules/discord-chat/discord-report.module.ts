@@ -53,10 +53,7 @@ import {
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core/core';
-import {
-  MemoizedWispaceGoalsService,
-  WispaceDataCache,
-} from '@wispace/wispace-client/core';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
 import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
@@ -99,26 +96,22 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
   providers: [
     // #549 — shadows forPlatform's unwired recorder with the metrics-wired one.
     provideWiredUsageRecorder('discord', BotMetricsService),
-    // Request-scoped goals memoization: exam window, orchestration and report
-    // generation all fetch goals within one report execution — collapse them
-    // into a single upstream call (TTL from the central #636 policy).
     {
-      provide: MemoizedWispaceGoalsService,
+      provide: GOALS_DATA_PORT,
       useFactory: (
         goalsService: WispaceGoalsService,
         cache: WispaceDataCache,
-      ) => new MemoizedWispaceGoalsService(goalsService, cache),
-      inject: [WispaceGoalsService, WispaceDataCache],
-    },
-    {
-      provide: GOALS_DATA_PORT,
-      useFactory: (goalsService: MemoizedWispaceGoalsService) => ({
+      ) => ({
         getUserGoals: async (externalUserId: string) => ({
-          examDate: (await goalsService.getUserGoals(externalUserId)).examDate,
+          examDate: (
+            await cache.getOrFetch('goals', externalUserId, undefined, () =>
+              goalsService.getUserGoals(externalUserId),
+            )
+          ).examDate,
         }),
         parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
       }),
-      inject: [MemoizedWispaceGoalsService],
+      inject: [WispaceGoalsService, WispaceDataCache],
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
@@ -166,7 +159,8 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
       provide: PlatformStudentReportService,
       useFactory: (
         configService: ConfigService,
-        goalsService: MemoizedWispaceGoalsService,
+        goalsService: WispaceGoalsService,
+        cache: WispaceDataCache,
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
         metrics: BotMetricsService,
@@ -176,6 +170,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
           'discord',
           configService,
           goalsService,
+          cache,
           usageRecorder,
           adapter,
           join(__dirname, '../../shared/prompts'),
@@ -186,7 +181,8 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         ),
       inject: [
         ConfigService,
-        MemoizedWispaceGoalsService,
+        WispaceGoalsService,
+        WispaceDataCache,
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
         BotMetricsService,

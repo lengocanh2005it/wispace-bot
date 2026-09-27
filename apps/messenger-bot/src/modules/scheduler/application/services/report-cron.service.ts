@@ -16,7 +16,8 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import { todayReportDate, runBatched } from '@wispace/scheduler-core/core';
+import { todayInTimezone } from '@wispace/wispace-client/core';
+import { runBatched } from '@wispace/scheduler-core/core';
 import type {
   CanonicalPlatformPort,
   ReportCronLeaderPort,
@@ -138,7 +139,7 @@ export class ReportCronService {
     const psidFilter = options?.externalUserId?.trim();
 
     const schedule = this.reportScheduleService.getExamReminderWindow();
-    const reportDate = todayReportDate(
+    const reportDate = todayInTimezone(
       this.configService.get<string>('CHAT_USAGE_TIMEZONE') ??
         'Asia/Ho_Chi_Minh',
     );

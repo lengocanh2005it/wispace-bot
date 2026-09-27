@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import { ChatRateLimitCore, todayUsageDate } from '@wispace/chat-metering/core';
+import { ChatRateLimitCore } from '@wispace/chat-metering/core';
+import { todayInTimezone } from '@wispace/wispace-client/core';
 import type { ChatQuotaCheckResult } from '@wispace/chat-metering/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
@@ -90,7 +91,7 @@ export class ChatRateLimitService {
     // Whitelist bypass — no quota enforcement
     if (!this.configService.shouldEnforceForPsid(psid)) {
       const { freeFormDailyLimit, timezone } = this.configService.getSettings();
-      const usageDate = todayUsageDate(timezone);
+      const usageDate = todayInTimezone(timezone);
       const used = this.configService.isEnabled()
         ? await this.repository.getDailyUsageCount(
             psid,
@@ -174,7 +175,7 @@ export class ChatRateLimitService {
     limit: number;
   }> {
     const { freeFormDailyLimit, timezone } = this.configService.getSettings();
-    const usageDate = todayUsageDate(timezone);
+    const usageDate = todayInTimezone(timezone);
     const used = this.configService.isEnabled()
       ? await this.repository.getDailyUsageCount(psid, usageDate, userId)
       : 0;

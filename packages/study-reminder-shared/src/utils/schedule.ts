@@ -1,6 +1,6 @@
 /** Pure timezone-aware study reminder scheduling math — no I/O, no config reads. */
 import { subMilliseconds } from 'date-fns';
-import { getDatePartsInTimezone as getDatePartsFromUtils } from '@wispace/date-utils';
+import { getDatePartsInTimezone } from '@wispace/date-utils';
 
 export function computeRemindAt(
   scheduledAt: Date,
@@ -30,8 +30,8 @@ export function formatScheduledTimeLabel(
   timezone: string,
   now: Date = new Date(),
 ): string {
-  const todayParts = getDatePartsFromUtils(now, timezone);
-  const sessionParts = getDatePartsFromUtils(scheduledAt, timezone);
+  const todayParts = getDatePartsInTimezone(now, timezone);
+  const sessionParts = getDatePartsInTimezone(scheduledAt, timezone);
 
   const isToday =
     todayParts.year === sessionParts.year &&
@@ -48,7 +48,7 @@ export function formatScheduledTimeLabel(
       0,
     ),
   );
-  const tomorrowParts = getDatePartsFromUtils(tomorrowProbe, timezone);
+  const tomorrowParts = getDatePartsInTimezone(tomorrowProbe, timezone);
   const isTomorrow =
     tomorrowParts.year === sessionParts.year &&
     tomorrowParts.month === sessionParts.month &&

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
+import { todayInTimezone } from '@wispace/date-utils';
 import {
   buildInputCostEnvKey,
   buildOutputCostEnvKey,
@@ -32,7 +32,7 @@ export class LlmUsageConfigService {
     const timezone =
       this.configService.get<string>('LLM_USAGE_TIMEZONE')?.trim() ||
       'Asia/Ho_Chi_Minh';
-    return todayUsageDate(timezone);
+    return todayInTimezone(timezone);
   }
 
   estimateCostUsdForModel(

@@ -7,7 +7,8 @@ describe('scheduler-core package boundaries', () => {
   it('keeps scheduling contracts and utilities in core', () => {
     expect(coreExports.ReportScheduleService).toBeUndefined();
     expect(coreExports.ReportSendJobStatus).toBeUndefined();
-    expect(core.todayReportDate).toBeDefined();
+    expect(coreExports.todayReportDate).toBeUndefined();
+    expect(core.startOfReportDay).toBeDefined();
     expect(core.runBatched).toBeDefined();
     expect(core.REPORT_SEND_JOB_REPOSITORY).toBeDefined();
 

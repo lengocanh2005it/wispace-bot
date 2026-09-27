@@ -6,10 +6,10 @@ import {
   type WriteToolBudgetPort,
 } from '@wispace/chat-agent';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
+import type { AgentGoalsReadPort } from './agent-tool-edges.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
 import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import type { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
 import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm/core';
@@ -37,9 +37,9 @@ describe('MessengerAgentToolsService', () => {
       generateReportStatic: overrides.generateReportStatic ?? jest.fn(),
     } as unknown as jest.Mocked<StudentReportService>;
 
-    const userGoalsApiService: jest.Mocked<MemoizedWispaceGoalsService> = {
+    const userGoalsApiService: jest.Mocked<AgentGoalsReadPort> = {
       getUserGoals: overrides.getUserGoals ?? jest.fn(),
-    } as unknown as jest.Mocked<MemoizedWispaceGoalsService>;
+    } as unknown as jest.Mocked<AgentGoalsReadPort>;
 
     const studyPort: jest.Mocked<StudyReminderOperationsPort> = {
       getUpcomingSessions: overrides.getUpcomingSessions ?? jest.fn(),

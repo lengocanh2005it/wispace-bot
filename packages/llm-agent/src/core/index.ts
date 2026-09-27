@@ -1,6 +1,5 @@
 // Framework-free LLM orchestration, contracts, policies, and provider ports.
-// Keep runtime factories, SDK adapters, Redis admission, and privacy state in
-// `@wispace/llm-agent/adapters`.
+// Keep runtime factories, SDK adapters, and Redis admission in adapters.
 
 export {
   LlmAgentService,
@@ -134,13 +133,6 @@ export {
   normalizeScopeText,
   isDistressExpression,
 } from '../scope.utils';
-export {
-  detectPrivacyIntent,
-  isConfirmationResponse,
-  isCancellationResponse,
-  type PrivacyAction,
-  type PrivacyIntent,
-} from '../privacy/privacy-intent.utils';
 export { sanitizeReplyText } from '../text.utils';
 export {
   sleep,

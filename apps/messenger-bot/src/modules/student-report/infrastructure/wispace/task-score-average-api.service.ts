@@ -7,18 +7,18 @@ import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   TaskScoreAverageApiClient,
-  MemoizedWispaceGoalsService,
+  WispaceDataCache,
+  todayInTimezone,
+  type TaskScoreAverageRecord,
 } from '@wispace/wispace-client/core';
-import type { TaskScoreAverageRecord } from '@wispace/wispace-client/core';
+import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
 import type { StudentCapacityInput } from '@wispace/student-report/core';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
-// ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import {
   formatExamDateDisplay,
   parseExamDateToIso,
   resolveExamCountdown,
-  todayReportDate,
 } from '@wispace/scheduler-core/core';
 import { buildWispaceClientConfig } from './wispace-client-helpers';
 
@@ -31,7 +31,8 @@ export class TaskScoreAverageApiService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly memoizedGoals: MemoizedWispaceGoalsService,
+    private readonly goalsService: WispaceGoalsService,
+    private readonly cache: WispaceDataCache,
     private readonly metrics?: BotMetricsService,
   ) {}
 
@@ -39,11 +40,13 @@ export class TaskScoreAverageApiService {
     psid: string,
     options?: { signal?: AbortSignal },
   ): Promise<StudentCapacityInput> {
-    // Independent inputs — fetch concurrently; the goals leg is served by the
-    // shared memoizer, so repeated calls in one window collapse (#456).
+    // Independent inputs — fetch concurrently; the shared cache collapses
+    // repeated goals reads within the central TTL (#456).
     const [records, goals] = await Promise.all([
       this.getClient().getTaskScoreAverages(ID_HEADER, psid, options),
-      this.memoizedGoals.getUserGoals(psid, options),
+      this.cache.getOrFetch('goals', psid, undefined, () =>
+        this.goalsService.getUserGoals(psid, options),
+      ),
     ]);
 
     if (records.length === 0) {
@@ -95,7 +98,7 @@ export class TaskScoreAverageApiService {
     );
 
     const examDate = this.parseExamDate(goals.examDate);
-    const currentDate = todayReportDate(resolveAppTimezone(this.configService));
+    const currentDate = todayInTimezone(resolveAppTimezone(this.configService));
     const { daysUntilExam, examHasPassed } = resolveExamCountdown(
       examDate,
       currentDate,

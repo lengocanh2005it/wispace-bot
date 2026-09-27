@@ -12,7 +12,7 @@ import type {
   LlmExecutionRetryCause,
 } from '@wispace/llm-agent/core';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { todayUsageDate } from '@wispace/chat-metering/core';
+import { todayInTimezone } from '@wispace/wispace-client/core';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';
@@ -68,7 +68,7 @@ export class StudentReportService {
     }
 
     const timezone = resolveAppTimezone(this.configService);
-    const correlationId = `${psid}:${todayUsageDate(timezone)}`;
+    const correlationId = `${psid}:${todayInTimezone(timezone)}`;
     const cached = this.reportCache.get(correlationId);
     if (cached) {
       this.logger.debug(`Report cache hit psid=${maskExternalId(psid)}`);
@@ -84,7 +84,7 @@ export class StudentReportService {
       })
       .then((text) => {
         this.reportCache.set(correlationId, {
-          date: todayUsageDate(resolveAppTimezone(this.configService)),
+          date: todayInTimezone(resolveAppTimezone(this.configService)),
           text,
         });
         this.evictStaleReports();
@@ -96,7 +96,7 @@ export class StudentReportService {
   getCachedReport(psid: string): string | null {
     const timezone = resolveAppTimezone(this.configService);
     return (
-      this.reportCache.get(`${psid}:${todayUsageDate(timezone)}`)?.text ?? null
+      this.reportCache.get(`${psid}:${todayInTimezone(timezone)}`)?.text ?? null
     );
   }
 
@@ -112,7 +112,7 @@ export class StudentReportService {
     if (this.reportCache.size <= StudentReportService.CACHE_MAX_ENTRIES) {
       return;
     }
-    const today = todayUsageDate(resolveAppTimezone(this.configService));
+    const today = todayInTimezone(resolveAppTimezone(this.configService));
     for (const [key, entry] of this.reportCache) {
       if (this.reportCache.size <= StudentReportService.CACHE_MAX_ENTRIES) {
         break;

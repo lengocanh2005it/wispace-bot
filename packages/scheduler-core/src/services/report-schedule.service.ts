@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { rawDaysUntilExam } from '../utils/exam-date.utils';
-import { todayReportDate } from '../utils/report-date.utils';
+import { todayInTimezone } from '@wispace/date-utils';
 import { GOALS_DATA_PORT } from '../ports/goals-data.port';
 import type { GoalsDataPort } from '../ports/goals-data.port';
 import type { ReportSchedulePort } from '../ports/report-cron-seams.port';
@@ -60,7 +60,7 @@ export class ReportScheduleService implements ReportSchedulePort {
     examDateIso: string,
     today: Date = new Date(),
   ): number {
-    const currentDate = todayReportDate(this.getReportTimezone(), today);
+    const currentDate = todayInTimezone(this.getReportTimezone(), today);
     return rawDaysUntilExam(examDateIso, currentDate);
   }
 

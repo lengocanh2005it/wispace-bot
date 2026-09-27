@@ -82,8 +82,8 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 | `redis-chat-queue.store.ts` wrapper (messenger) | Re-export 16 dòng nhưng spec 23 test/63 mock, trùng spec của package |
 | Retry helpers ×4 | app-local discord ≈ zalo inline ⊂ llm-agent superset ⊂ wispace-client `withRetry` |
 | `CleanupCronService.execute(config, deleteFn, isEnabled, getRetentionDays)` | Body chỉ đọc `name`+`advisoryLockId`; 5 field config chết trong khi cùng fact đến lại 3 lần qua callbacks |
-| Privacy pair trong llm-agent | Sole consumer = messenger + import NestJS (vi phạm rule); SHALLOW + misplaced |
-| `todayReportDate`, 6 alias date-fns trong date-utils | Re-export 1 dòng, fail deletion test |
+| ~~Privacy pair trong llm-agent~~ | **Done (#1107)** — moved to Messenger; LLM core keeps only generic scope normalization |
+| ~~`todayReportDate` and date aliases~~ | **Done (#1107)** — consumers call canonical date helper names |
 | Barrel doors quá rộng | llm-agent index export ~47 values + 25 types (core chỉ cần ~6); bot-common ~37 symbols ép Nest+ioredis lên mọi consumer |
 
 ### 2.3 Seam giả định (1 adapter — indirection, không phải seam)
@@ -124,8 +124,7 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
    "already reserved" — tức đưa quyền quota về 1 phía.
 5. **Copy-drift Discord→Zalo mất behavior**: Zalo thiếu relink-notification + welcome-dedupe trong reconcile
    cron; `readPositiveInt` lệch nhau; leader-lock chỉ Discord có; cross-platform dedup chỉ Zalo có.
-6. **Vi phạm framework boundary tự tuyên bố**: NestJS trong `llm-agent/utils/privacy-state.service.ts`;
-   `PlatformStudentReportService` kéo Nest+metering+database+wispace-client; `wispace-client` import
+6. **Vi phạm framework boundary tự tuyên bố**: `PlatformStudentReportService` kéo Nest+metering+database+wispace-client; `wispace-client` import
    `@nestjs/*`; gián tiếp `llm-agent` kéo Nest+ioredis qua bot-common barrel.
 7. **Cùng port, khác semantics** (interface nói dối): history resolver Messenger fail-soft vs Platform
    fail-closed-at-boot; `appendToolSummary` memory = pending-until-next-turn vs Redis = persist-until-TTL;
@@ -205,7 +204,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 5. **Dead code sweep**: `readEnv*` copies (student-report bản chết), `acquireRedisSlot` export,
    single-row reminder upsert + custom `lockKey` khỏi port, dangling comment `with-retry.ts:112-116`,
    `retry.utils.ts` của discord-bot (thay bằng bản superset của llm-agent).
-6. **Relocate `PrivacyStateService`/`detectPrivacyIntent` về messenger** (fix framework-leak, deletion test pass).
+6. ~~**Relocate `PrivacyStateService`/`detectPrivacyIntent` về messenger** (fix framework-leak, deletion test pass).~~ **Done (#1107).**
 7. **Thêm advisory lock cho reschedule recovery cron** (consistency với 4 cron còn lại).
 
 ### Tier 1 — Deepen lõi (leverage cao nhất)
@@ -298,7 +297,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 | `packages/database` | Đa số DEEP services; leaky `PrivacyDataService` (latent defect), triplicated inbox port, cron skeleton ×4 |
 | `packages/wispace-client` | Endpoint clients deep; internals shallow (resilience ×3, 5 endpoints naked) |
 | `packages/bot-common` | Grab-bag MIXED — deep units chôn trong barrel; cần split |
-| `packages/bot-metrics`, `date-utils` | DEEP/MIXED — metrics remain useful; date-utils still has a few aliases |
+| `packages/bot-metrics`, `date-utils` | DEEP/MIXED — metrics remain useful; timezone helpers are consumed directly |
 | `packages/ops-health` | SHALLOW + orphaned — fix-or-delete |
 | `apps/discord-bot` / `zalo-bot` | Adapter shells tốt trên shared seams; debt = account-link clones + composition roots |
 | `apps/messenger-bot` | Package-backed tốt; debt = constructor-width processor, rename layer, 2 mảnh logic WISPACE-domain còn mặc đồ Messenger |

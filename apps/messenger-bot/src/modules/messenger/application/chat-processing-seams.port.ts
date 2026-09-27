@@ -8,7 +8,7 @@ import {
   type PrivacyStateCleanup,
   type PrivacyUnlinkResult,
 } from '@wispace/contracts';
-import type { PrivacyIntent } from '@wispace/llm-agent/core';
+import type { PrivacyIntent } from './privacy/privacy-intent.utils';
 
 export { PRIVACY_CLEANUP_STORES };
 export type {

@@ -1,4 +1,4 @@
-import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
+import { todayInTimezone } from '@wispace/date-utils';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import type {
   WriteToolBudgetRepositoryPort,
@@ -49,7 +49,7 @@ export class WriteToolBudgetCore {
 
     const count = await this.repository.getDailyCount(
       userId,
-      todayUsageDate(this.settings.timezone),
+      todayInTimezone(this.settings.timezone),
       toolName,
     );
     if (count >= cap) {
@@ -70,7 +70,7 @@ export class WriteToolBudgetCore {
     const result = await this.repository.tryConsumeDaily({
       externalUserId,
       userId,
-      usageDate: todayUsageDate(this.settings.timezone),
+      usageDate: todayInTimezone(this.settings.timezone),
       toolName,
       dailyCap: cap,
     });
@@ -86,7 +86,7 @@ export class WriteToolBudgetCore {
     if (this.settings.dailyCaps[toolName] === undefined) return;
     await this.repository.refundDaily({
       userId,
-      usageDate: todayUsageDate(this.settings.timezone),
+      usageDate: todayInTimezone(this.settings.timezone),
       toolName,
     });
   }

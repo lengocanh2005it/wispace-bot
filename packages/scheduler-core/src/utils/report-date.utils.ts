@@ -4,17 +4,9 @@ import {
   tomorrowInTimezone,
 } from '@wispace/date-utils';
 
-/** ICT calendar date for scheduled report idempotency (R4). */
-export function todayReportDate(
-  timezone = 'Asia/Ho_Chi_Minh',
-  now = new Date(),
-): string {
-  return todayInTimezone(timezone, now);
-}
-
 /**
  * Absolute instant at which today's report day starts in `timezone` — the
- * instant companion to `todayReportDate`, so the claim branch and the
+ * instant companion to the canonical date utility, so the claim branch and the
  * message-log fallback of the duplicate-report guard cannot define "today"
  * differently (#968). Previously the fallback used
  * `new Date().setHours(0, 0, 0, 0)`, i.e. midnight in the Node process's own

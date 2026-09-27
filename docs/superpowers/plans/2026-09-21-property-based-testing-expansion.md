@@ -511,7 +511,7 @@ git commit -m "test: fuzz clarification state invariants"
 - Modify: `packages/date-utils/src/date.utils.spec.ts:140-155`
 
 **Interfaces:**
-- Consumes: `todayInTimezone`, `tomorrowInTimezone`, `getDatePartsInTimezone`, `formatLocalDate`, `todayReportDate`, and `startOfReportDay`.
+- Consumes: `todayInTimezone`, `tomorrowInTimezone`, `getDatePartsInTimezone`, `formatLocalDate`, and `startOfReportDay`.
 - Produces: next-local-day and report-window invariants across common,
   extreme-offset, and DST-sensitive zones.
 
@@ -558,8 +558,8 @@ For generated instants and supported zones, assert:
 
 ```ts
 const start = startOfReportDay(timezone, now);
-expect(todayReportDate(timezone, start)).toBe(
-  todayReportDate(timezone, now),
+expect(todayInTimezone(timezone, start)).toBe(
+  todayInTimezone(timezone, now),
 );
 expect(start.getTime()).toBeLessThanOrEqual(now.getTime());
 ```

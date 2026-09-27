@@ -1,5 +1,5 @@
 import { subMilliseconds } from 'date-fns';
-import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
+import { todayInTimezone } from '@wispace/date-utils';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
@@ -48,7 +48,7 @@ export class ChatRateLimitCore {
     userId?: number,
   ): Promise<ChatQuotaCheckResult> {
     const { freeFormDailyLimit, timezone } = this.settings;
-    const usageDate = todayUsageDate(timezone);
+    const usageDate = todayInTimezone(timezone);
     const used = await this.repository.getDailyUsageCount(
       externalUserId,
       usageDate,
@@ -63,7 +63,7 @@ export class ChatRateLimitCore {
     params: { userId?: number; idempotencyKey: string },
   ): Promise<ChatQuotaCheckResult> {
     const { freeFormDailyLimit, burstPerMinute, timezone } = this.settings;
-    const usageDate = todayUsageDate(timezone);
+    const usageDate = todayInTimezone(timezone);
     const burstSince = subMilliseconds(new Date(), CHAT_BURST_WINDOW_MS);
 
     const burstResult = await this.burstCounter.tryReserveBurst(

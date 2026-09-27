@@ -34,8 +34,9 @@ export {
 export * from '../utils/study-calendar.utils';
 export {
   formatLocalDate,
-  getDatePartsInTimezone as getLocalDateParts,
-  tomorrowInTimezone as getTomorrowLocalDate,
+  getDatePartsInTimezone,
+  todayInTimezone,
+  tomorrowInTimezone,
 } from '@wispace/date-utils';
 
 export type { UserGoalsRecord } from '../types/user-goals.types';
@@ -74,10 +75,6 @@ export { TaskScoreAverageApiClient } from '../clients/task-score-average-api.cli
 export { UserCalendarApiClient } from '../clients/user-calendar-api.client';
 export { UserCalendarScheduleClient } from '../clients/user-calendar-schedule.client';
 export type { ListCalendarsFn } from '../clients/user-calendar-schedule.client';
-export {
-  MemoizedWispaceGoalsService,
-  type WispaceGoalsPort,
-} from '../clients/memoized-wispace-goals.service';
 export { PrecreateExerciseApiClient } from '../clients/precreate-exercise-api.client';
 export { ReengagementApiClient } from '../clients/reengagement-api.client';
 export type {

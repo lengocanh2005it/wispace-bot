@@ -48,7 +48,8 @@ import { UserLinkingModule } from '../messenger/user-linking.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import { MemoizedWispaceGoalsService } from '@wispace/wispace-client/core';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
+import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { DataQualityCronService } from './infrastructure/cron/data-quality-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
@@ -104,11 +105,17 @@ import { PRIVACY_CLEANUP_SUMMARY_PORT } from './domain/repositories/privacy-clea
   providers: [
     {
       provide: GOALS_DATA_PORT,
-      useFactory: (memoizedGoals: MemoizedWispaceGoalsService) => ({
-        getUserGoals: (psid: string) => memoizedGoals.getUserGoals(psid),
+      useFactory: (
+        goalsService: WispaceGoalsService,
+        cache: WispaceDataCache,
+      ) => ({
+        getUserGoals: (psid: string) =>
+          cache.getOrFetch('goals', psid, undefined, () =>
+            goalsService.getUserGoals(psid),
+          ),
         parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
       }),
-      inject: [MemoizedWispaceGoalsService],
+      inject: [WispaceGoalsService, WispaceDataCache],
     },
     ReportScheduleService,
     {

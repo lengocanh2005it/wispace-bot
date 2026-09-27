@@ -8,7 +8,6 @@ import {
   WispaceGoalsService,
 } from '@wispace/wispace-client/adapters';
 import {
-  MemoizedWispaceGoalsService,
   WispaceDataCache,
   PrecreateExerciseApiClient,
 } from '@wispace/wispace-client/core';
@@ -41,11 +40,7 @@ function createRedisCacheProvider(): Provider {
 
 const cacheLogger = new Logger(WispaceDataCache.name);
 
-/**
- * Messenger's shared WISPACE bindings (#456): the goals memoizer facade over
- * `WispaceDataCache` — one goals fetch per user per TTL window across the
- * reminder, report, and chat-tool paths (mirrors the Discord/Zalo wiring).
- */
+/** Messenger's shared WISPACE bindings, including the shared read cache. */
 @Module({
   providers: [
     ...createWispaceProviders({
@@ -56,14 +51,6 @@ const cacheLogger = new Logger(WispaceDataCache.name);
       timezone: (configService) => () => resolveAppTimezone(configService),
       cacheProvider: createRedisCacheProvider(),
     }),
-    {
-      provide: MemoizedWispaceGoalsService,
-      useFactory: (
-        goalsService: WispaceGoalsService,
-        cache: WispaceDataCache,
-      ) => new MemoizedWispaceGoalsService(goalsService, cache),
-      inject: [WispaceGoalsService, WispaceDataCache],
-    },
   ],
   exports: [
     WispaceGoalsService,
@@ -71,7 +58,6 @@ const cacheLogger = new Logger(WispaceDataCache.name);
     PrecreateExerciseApiClient,
     WispaceConfigService,
     WispaceDataCache,
-    MemoizedWispaceGoalsService,
   ],
 })
 export class WispaceModule {}

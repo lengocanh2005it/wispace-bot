@@ -37,7 +37,7 @@
 | # | Decision |
 |---|---|
 | Q1 | Explicit write-tool allowlist + `BUDGET_EXEMPT_TOOLS` set + a guard test asserting every non-`read_only` agent tool is classified into one or the other. |
-| Q2 | Calendar day in `Asia/Ho_Chi_Minh` via `todayUsageDate(tz)`; counter row keyed by date. |
+| Q2 | Calendar day in `Asia/Ho_Chi_Minh` via `todayInTimezone(tz)`; counter row keyed by date. |
 | Q3 | `precreate`: consume before the WISPACE call, refund unless `status === 'created'`. `reschedule`: consume at confirm time, refund if `rescheduleSession` throws. Malformed calls that never reach WISPACE cost nothing. |
 | Q4 | Metric `write_tool_budget_denied_total{tool,platform,reason}`. |
 | Q5 | Defaults as in Global Constraints. |
@@ -726,7 +726,7 @@ Expected: FAIL — module not found.
 - [ ] **Step 3: Write the core**
 
 ```ts
-import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
+import { todayInTimezone } from '@wispace/date-utils';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import type {
   WriteToolBudgetRepositoryPort,
@@ -777,7 +777,7 @@ export class WriteToolBudgetCore {
 
     const count = await this.repository.getDailyCount(
       userId,
-      todayUsageDate(this.settings.timezone),
+      todayInTimezone(this.settings.timezone),
       toolName,
     );
     if (count >= cap) {
@@ -798,7 +798,7 @@ export class WriteToolBudgetCore {
     const result = await this.repository.tryConsumeDaily({
       externalUserId,
       userId,
-      usageDate: todayUsageDate(this.settings.timezone),
+      usageDate: todayInTimezone(this.settings.timezone),
       toolName,
       dailyCap: cap,
     });
@@ -814,7 +814,7 @@ export class WriteToolBudgetCore {
     if (this.settings.dailyCaps[toolName] === undefined) return;
     await this.repository.refundDaily({
       userId,
-      usageDate: todayUsageDate(this.settings.timezone),
+      usageDate: todayInTimezone(this.settings.timezone),
       toolName,
     });
   }

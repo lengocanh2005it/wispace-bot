@@ -3,6 +3,7 @@ import { PlatformStudentReportService } from './platform-student-report.service'
 import { createEnvLlmExecutionPort } from '@wispace/llm-agent/adapters';
 import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering/adapters';
 import type { WispaceGoalsService } from '@wispace/wispace-client/adapters';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
 import type { LlmProviderAdapter } from '@wispace/llm-agent/core';
 import { StudentReportNoScoreDataError } from './errors';
 
@@ -48,6 +49,7 @@ describe('PlatformStudentReportService', () => {
       'discord',
       config,
       goalsService,
+      new WispaceDataCache(),
       usageRecorder,
       adapter,
       '/prompts',
@@ -119,6 +121,7 @@ describe('PlatformStudentReportService', () => {
         ),
       } as unknown as ConfigService,
       goalsService,
+      new WispaceDataCache(),
       {} as unknown as PlatformLlmUsageRecorderAdapter,
       {} as unknown as LlmProviderAdapter,
       '/prompts',
@@ -145,6 +148,54 @@ describe('PlatformStudentReportService', () => {
       'external-1',
       undefined,
     );
+  });
+
+  it('reuses cached goals across capacity reads while fetching scores per read', async () => {
+    const getUserGoals = jest.fn().mockResolvedValue({
+      targetScore: 7,
+      examDate: '2026-09-01',
+    });
+    const getTaskScoreAverages = jest.fn().mockResolvedValue([
+      {
+        id: 1,
+        userId: 42,
+        task: 'Task 1',
+        avgTotalScore: 6.5,
+        task1Count: 2,
+        task2Count: 0,
+      },
+    ]);
+    const goalsService = {
+      getUserGoals,
+      getTaskScoreAverages,
+    } as unknown as WispaceGoalsService;
+    const service = new PlatformStudentReportService(
+      'discord',
+      {
+        get: jest.fn((key: string) =>
+          key === 'STUDY_REMINDER_TIMEZONE' ? 'Asia/Ho_Chi_Minh' : undefined,
+        ),
+      } as unknown as ConfigService,
+      goalsService,
+      new WispaceDataCache(),
+      {} as unknown as PlatformLlmUsageRecorderAdapter,
+      {} as unknown as LlmProviderAdapter,
+      '/prompts',
+    );
+    await service.generateReport('external-1');
+    const capacityData = (
+      mockPorts as {
+        capacityData: {
+          getCapacityData(externalUserId: string): Promise<unknown>;
+        };
+      }
+    ).capacityData;
+
+    await capacityData.getCapacityData('external-1');
+    await capacityData.getCapacityData('external-1');
+
+    expect(getUserGoals).toHaveBeenCalledTimes(1);
+    expect(getTaskScoreAverages).toHaveBeenCalledTimes(2);
   });
 
   it('returns the report text from the core', async () => {
@@ -201,6 +252,7 @@ describe('PlatformStudentReportService', () => {
       'discord',
       config,
       {} as unknown as WispaceGoalsService,
+      new WispaceDataCache(),
       usageRecorder,
       {} as unknown as LlmProviderAdapter,
       '/prompts',

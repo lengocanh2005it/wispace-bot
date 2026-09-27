@@ -15,10 +15,7 @@ import type {
   LlmExecutionPort,
   LlmProviderAdapter,
 } from '@wispace/llm-agent/core';
-import {
-  MemoizedWispaceGoalsService,
-  WispaceDataCache,
-} from '@wispace/wispace-client/core';
+import { WispaceDataCache } from '@wispace/wispace-client/core';
 import { WispaceGoalsService } from '@wispace/wispace-client/adapters';
 import {
   GOALS_DATA_PORT,
@@ -94,26 +91,22 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
       provide: REPORT_DELIVERY_METRICS,
       useExisting: BotMetricsService,
     },
-    // Request-scoped goals memoization: exam-window check and report
-    // generation both fetch goals within one execution — one upstream call
-    // (TTL from the central #636 policy).
     {
-      provide: MemoizedWispaceGoalsService,
+      provide: GOALS_DATA_PORT,
       useFactory: (
         goalsService: WispaceGoalsService,
         cache: WispaceDataCache,
-      ) => new MemoizedWispaceGoalsService(goalsService, cache),
-      inject: [WispaceGoalsService, WispaceDataCache],
-    },
-    {
-      provide: GOALS_DATA_PORT,
-      useFactory: (goalsService: MemoizedWispaceGoalsService) => ({
+      ) => ({
         getUserGoals: async (externalUserId: string) => ({
-          examDate: (await goalsService.getUserGoals(externalUserId)).examDate,
+          examDate: (
+            await cache.getOrFetch('goals', externalUserId, undefined, () =>
+              goalsService.getUserGoals(externalUserId),
+            )
+          ).examDate,
         }),
         parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
       }),
-      inject: [MemoizedWispaceGoalsService],
+      inject: [WispaceGoalsService, WispaceDataCache],
     },
     ReportScheduleService,
     // #510: platform-scoped report-cron coordination — Zalo previously ran
@@ -181,7 +174,8 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
       provide: PlatformStudentReportService,
       useFactory: (
         configService: ConfigService,
-        goalsService: MemoizedWispaceGoalsService,
+        goalsService: WispaceGoalsService,
+        cache: WispaceDataCache,
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
         metrics: BotMetricsService,
@@ -191,6 +185,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
           'zalo',
           configService,
           goalsService,
+          cache,
           usageRecorder,
           adapter,
           join(__dirname, '../../shared/prompts'),
@@ -201,7 +196,8 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
         ),
       inject: [
         ConfigService,
-        MemoizedWispaceGoalsService,
+        WispaceGoalsService,
+        WispaceDataCache,
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
         BotMetricsService,

@@ -8,8 +8,8 @@ import {
   buildProviderOutputCostEnvKey,
   buildProviderCachedInputCostEnvKey,
   estimateCostUsd,
-  todayUsageDate,
 } from '@wispace/chat-metering/core';
+import { todayInTimezone } from '@wispace/wispace-client/core';
 import {
   readEnvBoolean,
   readEnvPositiveInt,
@@ -37,7 +37,7 @@ export class LlmUsageConfigService {
   }
 
   todayUsageDate(now = new Date()): string {
-    return todayUsageDate(this.getTimezone(), now);
+    return todayInTimezone(this.getTimezone(), now);
   }
 
   getModelInputUsdPer1M(model: string): number | null {
