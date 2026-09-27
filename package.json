@@ -34,6 +34,7 @@
     "workspace-deps:check": "node scripts/check-workspace-deps.mjs",
     "workspace-deps:test": "node --test scripts/check-workspace-deps.test.mjs",
     "file-size:check": "node scripts/check-file-size.mjs",
+    "file-size:report": "node scripts/check-file-size.mjs --report",
     "file-size:test": "node --test scripts/check-file-size.test.mjs",
     "verify:affected": "npm run workspace-deps:check && npm run file-size:check && npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build --affected",
     "verify": "npm run workspace-deps:check && npm run file-size:check && npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build"

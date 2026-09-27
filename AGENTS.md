@@ -104,12 +104,15 @@ npx turbo run build --filter=@wispace/messenger-bot...
 npx turbo run test --filter=@wispace/messenger-bot...
 ```
 
-Static CI guards (root, no database needed) — both run inside `npm run verify`:
+Static CI guards (root, no database needed) — all three run inside `npm run verify`:
 
 ```bash
 npm run architecture:check      # import boundary rules
 npm run workspace-deps:check    # workspace packages imported without being declared
+npm run file-size:check         # a tracked file grew past its recorded ceiling
 ```
+
+`npm run file-size:report` renders the tracked-file baseline as the markdown table used by #778, so that table is generated rather than retyped by hand. Each entry there is a decision, not a measurement: the check rejects one that is missing a bounded context, a tracking issue, or a reason, because a line count with no recorded reason is how a hand-written list becomes an unmaintained one. It is a ratchet and not a size gate — a file may not grow, a new file is never gated by size, and a file that shrinks keeps the higher ceiling. ADR-0044 records why the 780-line threshold it replaced was retired, including the measurement that rejected the two candidate criteria that were meant to replace it.
 
 `knip:deps` cannot cover the second one. knip skips an undeclared import whenever the imported package is a workspace package and the importing workspace is `private` (`knip/dist/DependencyDeputy.js:148`), which is true of every workspace here, so it reports zero unlisted no matter how many exist — its `--strict` bypass implies production mode, drops the spec-file entry points this repo's `knip.json` relies on, and still reports nothing. The failure is invisible by construction: root `node_modules` symlinks every workspace and a whole-repo `turbo run build` compiles every package regardless of the graph, so an undeclared import resolves and builds until a declared-graph build (`--filter=@pkg^...`) runs on a clean checkout. When the guard fails, add the package to that workspace's `package.json`; root `scripts/` is deliberately out of scope because the operational smoke and drill scripts there are approved tooling imports.
 

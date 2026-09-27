@@ -1,12 +1,43 @@
 {
   "measuredAt": "2026-09-27",
-  "note": "Each value is the ceiling that file may not exceed. A file is added here only when a decision named it, and is removed when it is decomposed or deleted. See ADR-0044 and #778.",
+  "measuredAtCommit": "906db79a",
+  "note": "Each entry is a decision, not a measurement. `lines` is the ceiling that file may not exceed; `context`, `trackedBy` and `reason` say who holds the decision to keep it and why. `trackedBy` is the issue holding the decision, which is not always the issue that owns the decomposition: four of these six have no decomposition owner by design. Run `npm run file-size:report` to render this as the #778 index table, so the table is generated rather than retyped. See ADR-0044 and #1433.",
   "files": {
-    "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": 973,
-    "packages/bot-metrics/src/bot-metrics.service.ts": 1412,
-    "packages/chat-agent/src/agent/platform-agent.service.ts": 1187,
-    "packages/chat-agent/src/chat-queue/redis-chat-queue.store.ts": 1168,
-    "packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts": 1004,
-    "packages/llm-agent/src/agent.service.ts": 996
+    "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": {
+      "lines": 973,
+      "context": "Platform Interaction",
+      "trackedBy": "#778",
+      "reason": "No duplication finding. #1084 touches one optional-method cast and does not decompose it."
+    },
+    "packages/bot-metrics/src/bot-metrics.service.ts": {
+      "lines": 1412,
+      "context": "Unclassified - not named in CONTEXT-MAP.md",
+      "trackedBy": "#778",
+      "reason": "Largest candidate. No decomposition owner. Unlike the other four it has no extracted sibling to build a seam on."
+    },
+    "packages/chat-agent/src/agent/platform-agent.service.ts": {
+      "lines": 1187,
+      "context": "Free-form Chat",
+      "trackedBy": "#778",
+      "reason": "No duplication finding. #1212 restructures the constructor and #1084 fixes one cast; neither decomposes the body."
+    },
+    "packages/chat-agent/src/chat-queue/redis-chat-queue.store.ts": {
+      "lines": 1168,
+      "context": "Free-form Chat",
+      "trackedBy": "#778",
+      "reason": "No duplication finding. Do not start before #774 retires the Messenger mirror spec; splitting now spends the spec work twice."
+    },
+    "packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts": {
+      "lines": 1004,
+      "context": "Metering & Operations",
+      "trackedBy": "#1080",
+      "reason": "Owned by #1080, which names itself the concrete plan for this file. Most duplicated candidate, not the largest."
+    },
+    "packages/llm-agent/src/agent.service.ts": {
+      "lines": 996,
+      "context": "Unclassified - not named in CONTEXT-MAP.md",
+      "trackedBy": "#778",
+      "reason": "Split once already by #438. Extracted collaborators total 1196 lines, so the split left the repository 69 lines larger, not 59% smaller."
+    }
   }
 }
