@@ -15,15 +15,17 @@
  *
  * The platform check is not a special case bolted on. It is the negative guard
  * that stops a platform error being misread as a provider one, which is why it
- * runs first in both classifiers.
+ * runs first in both classifiers. It names one error, not three: Discord and Zalo
+ * have never shipped a `*ApiError` — their delivery failures are
+ * `DiscordDeliveryFailureError`/`DiscordRateLimitError` and
+ * `ZaloSendError`/`ZaloRateLimitError`. The two names this used to also check were
+ * forward-written for bots that did not exist yet and matched nothing, so a
+ * Discord or Zalo delivery error was always classified as a provider one. They
+ * are dropped rather than left as dead names. Extending the guard to a platform
+ * is that platform's job, when it ships a comparable error.
  */
 export function isPlatformApiError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.name === 'MessengerApiError' ||
-      error.name === 'DiscordApiError' ||
-      error.name === 'ZaloApiError')
-  );
+  return error instanceof Error && error.name === 'MessengerApiError';
 }
 
 export function isRateLimitError(error: unknown): boolean {
