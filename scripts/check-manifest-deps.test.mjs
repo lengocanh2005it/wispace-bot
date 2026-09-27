@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -183,10 +183,45 @@ test('a repo without a packages directory reports nothing', () => {
   }
 });
 
-test('the lint script is a valid node program', async () => {
-  const source = await import('node:fs').then((fs) =>
-    fs.readFileSync(new URL('./check-manifest-deps.mjs', import.meta.url), 'utf8'),
-  );
+test('a package name passed to an unrelated call does not satisfy a declaration', () => {
+  // The spec-stub pattern must stay narrow. A bare first-string-argument rule
+  // lets `logger.log('helmet')` satisfy a `helmet` declaration, which loosens
+  // the guard toward missing the exact defect class it exists to catch.
+  const f = fixture();
+  try {
+    f.manifest('demo', { dependencies: { helmet: '^8' } });
+    f.write(
+      'packages/demo/src/log.ts',
+      "export const log = (l: { log(s: string): void }) => l.log('helmet');\n",
+    );
+
+    assert.deepEqual(checkManifestDeps(f.root).violations, [
+      { package: 'demo', dependency: 'helmet' },
+    ]);
+  } finally {
+    f.close();
+  }
+});
+
+test('sources outside src are scanned', () => {
+  // SOURCE_DIRS is src + test + scripts. A source-only scan would report both
+  // of these as unused, so the directory list is what makes them count.
+  const f = fixture();
+  try {
+    f.manifest('demo', {
+      dependencies: { '@scws/fast-check': '^4', 'tsx': '^4' },
+    });
+    f.write('packages/demo/test/property.spec.ts', "import fc from '@scws/fast-check';\nexport default fc;\n");
+    f.write('packages/demo/scripts/seed.mjs', "import { run } from 'tsx';\nrun();\n");
+
+    assert.deepEqual(checkManifestDeps(f.root).violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('the lint script is a valid node program', () => {
+  const source = readFileSync(new URL('./check-manifest-deps.mjs', import.meta.url), 'utf8');
   assert.match(source, /export function checkManifestDeps/);
   assert.match(source, /process\.exitCode = 1/);
 });

@@ -18,17 +18,21 @@
  */
 export function findForbiddenPackages(modulesRoot, forbiddenNames, fs, path) {
   const forbidden = [];
-  // Match the path relative to the node_modules root, not the last segment: a
-  // scoped package such as @nestjs/cli presents as `cli` and can never be
-  // matched by its full name otherwise. An unscoped name is identical either
-  // way, so those entries keep matching unchanged.
+  // A scoped name is specific enough to match wherever npm nests it: a nested
+  // `pkg/node_modules/@nestjs/cli` is build tooling in the runtime image just as
+  // much as the hoisted one, and this repo's own docs record undici@7 living
+  // only under a workspace. Unscoped names like `typescript` stay root-only —
+  // the name is too generic to assert on at depth, and the alias copy is
+  // expected to leave the closure with its parent rather than be blacklisted.
+  const scoped = [...forbiddenNames].filter((name) => name.startsWith('@'));
   const walk = (dir) => {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const full = path.join(dir, entry.name);
       const rel = path.relative(modulesRoot, full).split(path.sep).join('/');
-      if (forbiddenNames.has(rel)) forbidden.push(full);
+      const nestedScoped = scoped.some((name) => rel.endsWith('/' + name));
+      if (forbiddenNames.has(rel) || nestedScoped) forbidden.push(full);
       if (rel !== '.cache') walk(full);
     }
   };
