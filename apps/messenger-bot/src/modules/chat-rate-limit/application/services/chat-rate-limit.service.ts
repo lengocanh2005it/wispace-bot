@@ -118,7 +118,7 @@ export class ChatRateLimitService {
         psid,
         userId: params.userId,
         usageDate: result.usageDate,
-        reason: result.reason as 'DAILY_LIMIT' | 'BURST_LIMIT',
+        reason: result.reason,
         limit: result.limit,
         used: result.used,
       });
@@ -184,8 +184,6 @@ export class ChatRateLimitService {
     };
   }
 
-  // Reason is narrowed to 'DAILY_LIMIT' | 'BURST_LIMIT' at the call site —
-  // the core never returns 'NOT_LINKED' or 'IDEMPOTENCY_CONFLICT' here.
   private logQuotaDeny(
     reason: string,
     psid: string,

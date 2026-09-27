@@ -1,11 +1,7 @@
-export type ChatQuotaEventType =
-  | 'CHAT_QUOTA_RESERVED'
-  | 'CHAT_QUOTA_RELEASED'
-  | 'CHAT_QUOTA_DENIED';
-
-export type ChatQuotaDenyReason = 'DAILY_LIMIT' | 'BURST_LIMIT';
-
-export type ChatQuotaReleaseReason = 'send_failed' | 'stuck_recover';
+import type {
+  ChatQuotaDenyReason,
+  ChatQuotaReleaseReason,
+} from '@wispace/contracts';
 
 export interface ChatQuotaReservedPayload {
   limit: number;

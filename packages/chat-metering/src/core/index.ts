@@ -23,11 +23,7 @@ export type {
   ReserveIdempotencyInput,
   RecoverIdempotencyOutcome,
 } from '../chat-rate-limit/types';
-export type {
-  ChatQuotaDenyReason,
-  ChatQuotaReleaseReason,
-  ChatIdempotencyStatus,
-} from '../chat-quota.types';
+export type { ChatIdempotencyStatus } from '../chat-quota.types';
 
 export {
   buildInputCostEnvKey,

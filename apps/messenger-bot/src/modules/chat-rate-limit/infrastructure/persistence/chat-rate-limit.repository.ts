@@ -6,6 +6,7 @@ import {
   ChatIdempotencyEntity,
   ChatRateLimitRepository as ChatMeteringRepository,
 } from '@wispace/chat-metering/adapters';
+import type { ChatQuotaReleaseReason } from '@wispace/contracts';
 import type {
   RecoverIdempotencyOutcome,
   ReserveFreeFormSlotInput,
@@ -88,7 +89,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     psid: string;
     usageDate: string;
     idempotencyKey: string;
-    releaseReason?: 'send_failed' | 'stuck_recover';
+    releaseReason?: ChatQuotaReleaseReason;
     userId?: number;
   }): Promise<boolean> {
     return this.core.refundReservedSlot({

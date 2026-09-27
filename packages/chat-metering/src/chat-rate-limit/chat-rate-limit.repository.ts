@@ -1,6 +1,7 @@
 import type { EntityManager, Repository } from 'typeorm';
 import { IsNull } from 'typeorm';
 import { extractQueryRows } from '@wispace/bot-common/utils';
+import type { ChatQuotaReleaseReason } from '@wispace/contracts';
 import type { ChatDailyUsageEntity } from '../entities/chat-daily-usage.entity';
 import type { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';
 import type {
@@ -56,7 +57,7 @@ export interface ChatRateLimitRepositoryHooks {
       userId?: number;
       usageDate: string;
       idempotencyKey: string;
-      reason: 'send_failed' | 'stuck_recover';
+      reason: ChatQuotaReleaseReason;
       usedAfter: number;
     },
   ): Promise<void>;
@@ -341,7 +342,7 @@ export class ChatRateLimitRepository {
     externalUserId: string;
     usageDate: string;
     idempotencyKey: string;
-    releaseReason?: 'send_failed' | 'stuck_recover';
+    releaseReason?: ChatQuotaReleaseReason;
     userId?: number;
   }): Promise<boolean> {
     const releaseReason = params.releaseReason ?? 'send_failed';

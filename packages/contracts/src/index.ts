@@ -5,12 +5,15 @@
  * declaration lives in this one module.
  *
  * Canonical owners: this package owns platform identity, the per-platform
- * storage layout that goes with it (ADR-0042), and the status/taxonomy
- * contracts consumed by more than one context (database entities, chat
- * packages, scheduler, study reminders, apps). Contexts that are the sole
- * consumer of a contract keep it local (e.g. chat quota reasons in
+ * storage layout that goes with it (ADR-0042), and every contract read by
+ * more than one context (database entities, chat packages, scheduler, study
+ * reminders, apps). ADR-0043 states the test: a cause taxonomy that a deciding
+ * context, an applying context, and a recording context all read is
+ * cross-context and lives here; a state whose meaning is private to one
+ * context's own rows stays with that context (chat idempotency status in
  * @wispace/chat-metering, study-reminder job status in
- * @wispace/study-reminder-shared, persistence-only states in @wispace/database).
+ * @wispace/study-reminder-shared, persistence-only states in
+ * @wispace/database).
  */
 
 /**
@@ -169,6 +172,24 @@ export type OutboundDeliveryOutcome =
   | 'ambiguous'
   | 'not_sent'
   | 'rate_limited';
+
+/**
+ * Why a FREE_FORM quota reservation was refused.
+ *
+ * `IDEMPOTENCY_CONFLICT` is a reachable outcome of the reserve path, not a
+ * hypothetical: a repeated `idempotencyKey` returns it. `NOT_LINKED` has no
+ * producer today and is kept reserved rather than deleted. A narrower type at a
+ * call site is legitimate, but the narrowing needs control flow that proves it,
+ * never a cast.
+ */
+export type ChatQuotaDenyReason =
+  | 'DAILY_LIMIT'
+  | 'BURST_LIMIT'
+  | 'NOT_LINKED'
+  | 'IDEMPOTENCY_CONFLICT';
+
+/** Why a reserved FREE_FORM quota slot was given back. */
+export type ChatQuotaReleaseReason = 'send_failed' | 'stuck_recover';
 
 /** Messenger messageType constants for message log categorization. */
 export const MessageType = {

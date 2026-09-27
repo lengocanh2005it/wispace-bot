@@ -158,6 +158,8 @@ Tests/specs, generated output, `dist`, and `node_modules` are excluded. Test cod
 
 Application and domain scopes have no legacy import exemptions. Every concrete outer-layer edge fails the architecture check; add a narrow inner-layer port when application policy needs an outer adapter.
 
+The same check enforces **declaration** ownership, not only import edges. A type listed as contracts-owned — `ChatQuotaDenyReason` and `ChatQuotaReleaseReason` (#1346, [ADR 0043](adr/0043-contract-ownership-taxonomy.md)) — may only be declared under `packages/contracts/src/`. A second copy elsewhere fails the build rather than drifting, which is what a cast at one call site once used to hide: a narrow copy declared that the core could never return a value it does return. How to decide which package owns a contract is recorded in that ADR.
+
 ## Explicit outer adapters
 
 The exact framework-bound exclusions live in `FRAMEWORK_BOUND_ADAPTERS` in [`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs). They are limited to:

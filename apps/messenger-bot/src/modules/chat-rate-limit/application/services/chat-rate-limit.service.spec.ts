@@ -285,8 +285,8 @@ describe('ChatRateLimitService', () => {
     expect(getCount()).toBe(15);
   });
 
-  it('rejects duplicate reserve for the same message mid', async () => {
-    const { service, getCount } = createService(true, 0);
+  it('rejects duplicate reserve for the same message mid and audits the conflict', async () => {
+    const { service, getCount, quotaEventRecorder } = createService(true, 0);
 
     const first = await service.reserveFreeFormSlot('psid-1', {
       idempotencyKey: 'mid-dup',
@@ -304,6 +304,12 @@ describe('ChatRateLimitService', () => {
     });
     expect(second.usageDate).toMatch(usageDatePattern);
     expect(getCount()).toBe(1);
+    expect(quotaEventRecorder.recordDeniedBestEffort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        psid: 'psid-1',
+        reason: 'IDEMPOTENCY_CONFLICT',
+      }),
+    );
   });
 
   it('refunds a reserved slot without decrementing the advisory counter', async () => {

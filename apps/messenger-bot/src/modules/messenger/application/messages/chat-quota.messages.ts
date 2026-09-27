@@ -1,3 +1,11 @@
+import type { ChatQuotaDenyReason } from '@wispace/contracts';
+
+/** The denial reasons that carry a learner-facing message. */
+type ChatQuotaDenyMessageReason = Exclude<
+  ChatQuotaDenyReason,
+  'NOT_LINKED' | 'IDEMPOTENCY_CONFLICT'
+>;
+
 export function buildChatQuotaDeniedMessage(dailyLimit: number): string {
   return (
     `Hôm nay bạn đã dùng hết ${dailyLimit} lượt chat với WISPACE. ` +
@@ -15,7 +23,7 @@ export function buildChatBurstLimitMessage(burstPerMinute: number): string {
 }
 
 export function buildChatQuotaDenyMessage(
-  reason: 'DAILY_LIMIT' | 'BURST_LIMIT',
+  reason: ChatQuotaDenyMessageReason,
   limit: number,
 ): string {
   if (reason === 'BURST_LIMIT') {

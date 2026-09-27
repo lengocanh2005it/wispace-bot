@@ -1,25 +1,3 @@
-export type ChatIdempotencyStatus =
-  | 'reserved'
-  | 'delivered'
-  | 'completed'
-  | 'refunded';
-
-export interface ChatIdempotencyRecord {
-  idempotencyKey: string;
-  psid: string;
-  userId?: number;
-  usageDate: string;
-  status: ChatIdempotencyStatus;
-  reservedAt: Date;
-}
-
-export interface ReserveIdempotencyInput {
-  idempotencyKey: string;
-  psid: string;
-  userId?: number;
-  usageDate: string;
-}
-
 export interface ReserveFreeFormSlotInput {
   psid: string;
   userId?: number;

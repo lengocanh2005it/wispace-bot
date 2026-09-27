@@ -1,14 +1,10 @@
 import type {
-  ChatIdempotencyStatus,
   ChatQuotaDenyReason,
   ChatQuotaReleaseReason,
-} from '../chat-quota.types';
+} from '@wispace/contracts';
+import type { ChatIdempotencyStatus } from '../chat-quota.types';
 
-export type {
-  ChatQuotaDenyReason,
-  ChatIdempotencyStatus,
-  ChatQuotaReleaseReason,
-} from '../chat-quota.types';
+export type { ChatIdempotencyStatus } from '../chat-quota.types';
 
 export interface ChatQuotaCheckResult {
   allowed: boolean;

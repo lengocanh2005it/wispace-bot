@@ -306,6 +306,104 @@ test('the shared contracts core remains dependency-free', () => {
   }
 });
 
+test('cross-context chat quota types are declared only in the contracts package', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/chat-metering/src/chat-quota.types.ts',
+      "export type ChatQuotaDenyReason = 'DAILY_LIMIT' | 'BURST_LIMIT';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(
+      result.violations[0].rule,
+      'contracts-owned-type-single-declaration',
+    );
+    assert.equal(result.violations[0].declared, 'ChatQuotaDenyReason');
+  } finally {
+    f.close();
+  }
+});
+
+test('an app redeclaring a cross-context contract is a violation', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/messenger-bot/src/modules/chat-rate-limit/domain/entities/quota.types.ts',
+      "export interface ChatQuotaReleaseReason {\n  reason: string;\n}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(
+      result.violations[0].rule,
+      'contracts-owned-type-single-declaration',
+    );
+    assert.equal(result.violations[0].declared, 'ChatQuotaReleaseReason');
+  } finally {
+    f.close();
+  }
+});
+
+test('the contracts package may declare its own cross-context types', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/contracts/src/index.ts',
+      "export type ChatQuotaReleaseReason = 'send_failed' | 'stuck_recover';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 0);
+  } finally {
+    f.close();
+  }
+});
+
+test('a non-exported local redeclaration is still a second source of truth', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/chat-metering/src/chat-rate-limit/quota-locals.ts',
+      "type ChatQuotaDenyReason = 'DAILY_LIMIT' | 'BURST_LIMIT';\nexport const used = 1;\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(
+      result.violations[0].rule,
+      'contracts-owned-type-single-declaration',
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('a spec redeclaring a contracts-owned type is still a violation', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/chat-metering/src/chat-rate-limit/quota.spec.ts',
+      "type ChatQuotaDenyReason = 'BURST_LIMIT';\nexport const used = 1;\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(
+      result.violations[0].rule,
+      'contracts-owned-type-single-declaration',
+    );
+  } finally {
+    f.close();
+  }
+});
+
 test('shared packages cannot import application aliases', () => {
   const f = fixture();
   try {

@@ -44,6 +44,17 @@ const DOMAIN_OUTER_PATH =
 const CORE_OUTER_PATH =
   /(?:^|\/)(?:infrastructure|persistence|presentation|adapters|database|entities)(?:\/|$)/;
 
+// ADR-0043: a cause taxonomy that a deciding context, an applying context,
+// and a recording context all read is cross-context and declared once in
+// @wispace/contracts. A second declaration in any other TypeScript file —
+// specs included — is a second source of truth, which is how a narrow copy
+// once hid a reachable value. Operational JS tooling is not scanned for this
+// rule: it cannot declare a TypeScript type.
+const CONTRACTS_OWNED_TYPES = new Set([
+  'ChatQuotaDenyReason',
+  'ChatQuotaReleaseReason',
+]);
+
 /**
  * These files are adapters by design. They are intentionally outside the core
  * scopes below; widening this list requires a named issue and owner.
@@ -221,6 +232,36 @@ function sourceFiles(rootDir) {
         !entry.name.endsWith('.spec.ts') &&
         !entry.name.endsWith('.test.ts')
       ) {
+        files.push(fullPath);
+      }
+    }
+  };
+
+  for (const directory of ['apps', 'packages']) {
+    const fullPath = path.join(rootDir, directory);
+    if (existsSync(fullPath)) visit(fullPath);
+  }
+  return files;
+}
+
+/**
+ * Every TypeScript file including specs. Import rules may not fire on tests —
+ * test code may import adapters to assemble a harness — but a *declaration*
+ * rule must still see them: a hand-rolled narrow copy in a spec is exactly
+ * the second source of truth the ownership rules exist to prevent.
+ */
+function allTypeScriptFiles(rootDir) {
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && entry.name !== 'dist') {
+          visit(fullPath);
+        }
+        continue;
+      }
+      if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
         files.push(fullPath);
       }
     }
@@ -708,6 +749,51 @@ function databaseRoleViolation(relativePath, imported, sourceKind) {
   return undefined;
 }
 
+function declaredTypeNames(fileName, sourceText) {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    /\.[cm]?js$/.test(fileName) ? ts.ScriptKind.JS : ts.ScriptKind.TS,
+  );
+  const declared = [];
+  const visit = (node) => {
+    if (
+      (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name)
+    ) {
+      const position = sourceFile.getLineAndCharacterOfPosition(
+        node.getStart(sourceFile),
+      );
+      declared.push({ name: node.name.text, line: position.line + 1 });
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return declared;
+}
+
+function contractOwnershipViolation(relativePath, declared) {
+  if (
+    !CONTRACTS_OWNED_TYPES.has(declared.name) ||
+    relativePath.startsWith('packages/contracts/src/')
+  ) {
+    return undefined;
+  }
+
+  return {
+    rule: 'contracts-owned-type-single-declaration',
+    package: ownerOf(relativePath),
+    file: relativePath,
+    line: declared.line,
+    declared: declared.name,
+    message:
+      'cross-context contracts are declared once in @wispace/contracts — import the shared kernel type instead of redeclaring a second source of truth',
+  };
+}
+
 function scanScopeViolations(rootDir) {
   const missing = REQUIRED_SCAN_TARGETS.filter(
     (target) => !existsSync(path.join(rootDir, target)),
@@ -846,10 +932,27 @@ export function checkArchitecture(rootDir) {
   violations.push(...databaseManifestViolation(absoluteRoot));
   violations.push(...databaseLockfileViolation(absoluteRoot));
 
+  for (const file of allTypeScriptFiles(absoluteRoot)) {
+    const relativePath = path
+      .relative(absoluteRoot, file)
+      .replaceAll(path.sep, '/');
+    const source = readFileSync(file, 'utf8');
+    for (const declared of declaredTypeNames(file, source)) {
+      const ownershipViolation = contractOwnershipViolation(
+        relativePath,
+        declared,
+      );
+      if (ownershipViolation) violations.push(ownershipViolation);
+    }
+  }
+
   return { scannedFiles, violations };
 }
 
 export function formatViolation(violation) {
+  if (violation.declared) {
+    return `${violation.file}:${violation.line} [${violation.rule}] ${violation.package}: ${violation.message} (declaration ${violation.declared})`;
+  }
   return `${violation.file}:${violation.line} [${violation.rule}] ${violation.package}: ${violation.message} (import ${violation.symbols.join(', ')} from ${violation.imported})`;
 }
 

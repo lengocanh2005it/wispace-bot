@@ -3,7 +3,7 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type {
   ChatQuotaDenyReason,
   ChatQuotaReleaseReason,
-} from '../../domain/entities/chat-quota-event.types';
+} from '@wispace/contracts';
 import {
   CHAT_QUOTA_EVENT_REPOSITORY,
   type ChatQuotaEventRepositoryPort,

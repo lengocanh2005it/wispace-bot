@@ -712,7 +712,7 @@ interface ChatQuotaCheckResult {
   used: number;
   limit: number;
   remaining: number;
-  reason?: 'DAILY_LIMIT' | 'BURST_LIMIT' | 'NOT_LINKED';
+  reason?: 'DAILY_LIMIT' | 'BURST_LIMIT' | 'IDEMPOTENCY_CONFLICT';
   usageDate: string;
 }
 

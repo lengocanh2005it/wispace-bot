@@ -317,7 +317,7 @@ Changes idempotency status from `reserved` to `completed` after the message is s
 _Avoid_: finalize, commit
 
 **chat_idempotency** (DB table):
-Ensures each `message.mid` (or platform message ID) is counted only once. Entity: `ChatIdempotencyEntity`. States: `reserved`, `completed`, `refunded`.
+Ensures each `message.mid` (or platform message ID) is counted only once. Entity: `ChatIdempotencyEntity`. States: `reserved`, `delivered`, `completed`, `refunded`.
 _Avoid_: dedup table (webhook delivery deduplication is owned by the durable `webhook_inbound_events` inbox)
 
 **idempotencyKey**:
@@ -335,8 +335,16 @@ Quota check result: `{ allowed, used, limit, remaining, reason?, usageDate, quot
 _Avoid_: quota response
 
 **ChatQuotaDenyReason**:
-Quota denial reason: `'DAILY_LIMIT'`, `'BURST_LIMIT'`, `'NOT_LINKED'`, `'IDEMPOTENCY_CONFLICT'`.
+Quota denial reason. A reserve produces `'DAILY_LIMIT'`, `'BURST_LIMIT'`, and `'IDEMPOTENCY_CONFLICT'`; `'NOT_LINKED'` is reserved with no producer today.
 _Avoid_: deny reason string
+
+**ChatQuotaReleaseReason**:
+Why a reserved quota slot was given back: `'send_failed'` (the turn never reached the learner) or `'stuck_recover'` (the reservation outlived its lease and was reclaimed).
+_Avoid_: refund reason, release cause
+
+**ChatIdempotencyStatus**:
+The type naming the lifecycle of a `chat_idempotency` row. Private to the metering context; no other context interprets it.
+_Avoid_: idempotency state, reservation status
 
 **stuck reserved**:
 Idempotency row stuck in `reserved` status beyond TTL (default 10 minutes). Recovered by `recoverStuckReservedSlots()` (H2 hardening).

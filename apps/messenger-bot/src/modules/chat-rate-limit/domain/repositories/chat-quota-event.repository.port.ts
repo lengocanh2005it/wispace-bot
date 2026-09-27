@@ -1,6 +1,6 @@
+import type { ChatQuotaReleaseReason } from '@wispace/contracts';
 import type {
   ChatQuotaDeniedPayload,
-  ChatQuotaReleaseReason,
   ChatQuotaReservedPayload,
   ChatQuotaReleasedPayload,
 } from '../entities/chat-quota-event.types';

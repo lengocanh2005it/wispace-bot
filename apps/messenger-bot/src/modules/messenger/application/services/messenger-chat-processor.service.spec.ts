@@ -1,7 +1,7 @@
 import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
+import type { ChatQuotaCheckResult } from '@wispace/chat-metering/core';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { AgentReplyPort } from '../ports/agent-reply.port';
 import {

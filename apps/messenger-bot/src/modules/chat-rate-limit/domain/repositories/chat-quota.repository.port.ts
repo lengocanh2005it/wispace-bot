@@ -1,3 +1,4 @@
+import type { ChatQuotaReleaseReason } from '@wispace/contracts';
 import type {
   RecoverIdempotencyOutcome,
   ReserveFreeFormSlotInput,
@@ -27,7 +28,7 @@ export interface ChatQuotaRepositoryPort {
     psid: string;
     usageDate: string;
     idempotencyKey: string;
-    releaseReason?: 'send_failed' | 'stuck_recover';
+    releaseReason?: ChatQuotaReleaseReason;
     userId?: number;
   }): Promise<boolean>;
   markDeliveredSlot(idempotencyKey: string): Promise<boolean>;
