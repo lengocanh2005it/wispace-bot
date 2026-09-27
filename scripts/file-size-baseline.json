@@ -1,0 +1,12 @@
+{
+  "measuredAt": "2026-09-27",
+  "note": "Each value is the ceiling that file may not exceed. A file is added here only when a decision named it, and is removed when it is decomposed or deleted. See ADR-0044 and #778.",
+  "files": {
+    "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": 973,
+    "packages/bot-metrics/src/bot-metrics.service.ts": 1412,
+    "packages/chat-agent/src/agent/platform-agent.service.ts": 1187,
+    "packages/chat-agent/src/chat-queue/redis-chat-queue.store.ts": 1168,
+    "packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts": 1004,
+    "packages/llm-agent/src/agent.service.ts": 996
+  }
+}

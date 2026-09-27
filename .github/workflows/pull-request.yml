@@ -85,6 +85,9 @@ jobs:
       - name: Test workspace dependency guard
         run: npm run workspace-deps:test
 
+      - name: Test file-size ratchet (ADR-0044)
+        run: npm run file-size:test
+
       - name: Verify pull request (format + lint + typecheck + test + build, affected packages only)
         if: github.event_name == 'pull_request'
         run: npm run verify:affected
