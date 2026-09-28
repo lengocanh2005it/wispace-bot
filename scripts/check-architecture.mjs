@@ -10,10 +10,36 @@ const CONCRETE_OUTER_PACKAGE =
   /^(?:@wispace\/(?:database|wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$|discord\.js$|@discordjs(?:\/|$)|node:(?:http|https|net|tls)$)/;
 const HARD_OUTER_PACKAGE =
   /^(?:@wispace\/database(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$|discord\.js$|@discordjs(?:\/|$)|node:(?:http|https|net|tls)$)/;
+// #1450: `llm-agent` was measured to have zero blast radius here and is
+// deliberately NOT on the list. Every `llm-agent` import in the enforced scope
+// goes through `/core`, which `frameworkFreePackageRule` declares
+// framework-agnostic -- but that does not help, because this rule keys on the
+// symbol NAME, not the subpath. `LlmProviderAdapter` is an `interface`, the
+// repo's own LLM port, exported from `/core`, and it ends in `Adapter`. Adding
+// the package reports it and two sibling files: 3 false positives, 0 true
+// positives. A framework-free subpath is only a guarantee if the classifier
+// looks at where the symbol comes from, which is what #1451 measures.
 const MIXED_PACKAGE =
   /^@wispace\/(?:wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)/;
+// #1450: `Cache` and `RateLimiter` are concrete names the list was missing.
+// `RedisUserDisplayNameCache` is `@Injectable()` and takes a `ConfigService`;
+// `OutboundRateLimiter` is `@Injectable() implements OnModuleInit` and takes a
+// Redis-backed service. Both are injected from application code. Measured over
+// the enforced scope: 4 true positives, 0 false positives.
+//
+// `Pipeline` is deliberately NOT here. `PlatformToolExecutorPipeline` has zero
+// framework imports across its 328 lines and hand-rolls its constructor, so
+// adding it would catch a symbol that is not a violation -- the over-reporting
+// #1453 exists to stop.
+//
+// This is a stopgap. #1451 -> #1452 -> #1453 replace it with a declaration-
+// based signal and delete this list; do not extend it. #1088's user story 44
+// is that contributors do not rely on filename suffixes.
 const CONCRETE_OUTER_SYMBOL =
-  /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore)$/;
+  /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore|Cache|RateLimiter)$/;
+// A framework-free subpath carries no concrete implementation, so nothing can
+// leak from it however it is imported.
+const FRAMEWORK_FREE_SUBPATH = /^@wispace\/[a-z-]+\/core(?:\/|$)/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 // #1126: these packages publish only explicit subpaths; a bare root specifier
 // is not a compatibility facade and must not resolve. `bot-common` joined the
@@ -107,6 +133,22 @@ const CORE_RULES = [
       'application code must depend on ports, not concrete infrastructure details',
   },
   {
+    // Separate rule id on purpose. "You imported a whole adapter surface by a
+    // shape the rule cannot read" is a different defect from "you imported a
+    // concrete class by name", and merging them into one message would send the
+    // next person looking for a bad symbol name that is not there.
+    rule: 'mixed-import-unclassifiable',
+    globs: [
+      'apps/*/src/modules/*/domain/**',
+      'apps/*/src/modules/*/application/**',
+    ],
+    forbidden: (specifier, symbols) =>
+      !isConcreteMixedImport(specifier, symbols) &&
+      isUnclassifiableMixedImport(specifier, symbols),
+    message:
+      'namespace or wildcard import from a framework-bound package cannot be classified by name; import the port or the specific symbol instead',
+  },
+  {
     rule: 'application-port-no-outer',
     globs: ['apps/*/src/modules/*/application/ports/**'],
     forbidden: (specifier) =>
@@ -185,6 +227,23 @@ function coreEntryPointRule(name, globs) {
       CORE_OUTER_PATH.test(specifier),
     message: `${name} core entrypoints must not import framework, infrastructure, or adapter details`,
   };
+}
+
+// #1450 AC: the check fails closed. A namespace import or `export *` from a
+// framework-bound subpath of a mixed package brings in the whole adapter
+// surface, and the extracted symbols are only the `['*']` placeholder — so the
+// suffix list never sees a name and the import passes unreported. Reporting it
+// is the only honest answer, because the rule genuinely cannot tell.
+//
+// The `/core` carve-out is what keeps this from manufacturing false positives:
+// a framework-free subpath has no concrete implementation to leak, whatever its
+// export shape. That case is real — `messenger-reschedule-confirmation.service.ts`
+// reads a type through `import('@wispace/wispace-client/core')` — and flagging
+// it would contradict `frameworkFreePackageRule`.
+function isUnclassifiableMixedImport(specifier, symbols) {
+  if (!MIXED_PACKAGE.test(specifier)) return false;
+  if (FRAMEWORK_FREE_SUBPATH.test(specifier)) return false;
+  return (symbols ?? []).some((symbol) => symbol === '*');
 }
 
 function isConcreteMixedImport(specifier, symbols) {

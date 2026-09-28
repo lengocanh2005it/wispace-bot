@@ -11,8 +11,10 @@ import {
 import { PlatformDeadLetterService } from '@wispace/database';
 import {
   OUTBOUND_DEAD_LETTER,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeadLetterPort,
 } from '@wispace/contracts';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import { PlatformReportClaimRepository } from '@wispace/scheduler-core/adapters';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
@@ -63,6 +65,13 @@ import { PLATFORM_CONNECTIVITY_SIGNAL } from './application/ports/platform-conne
     MessengerRepository,
     MessengerReportSentReader,
     MessengerOutboundService,
+    {
+      // Bound here because `MessengerOutboundService` is provided here, beside
+      // `OUTBOUND_DEAD_LETTER`, which is bound in the same place for the same
+      // reason. Full account in `docs/architecture-boundaries.md`; see #1450.
+      provide: OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
     {
       provide: PlatformDeadLetterService,
       useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>

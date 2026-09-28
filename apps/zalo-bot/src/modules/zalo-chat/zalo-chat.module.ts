@@ -5,6 +5,7 @@ import { join } from 'path';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
 } from '@wispace/contracts';
 import {
@@ -71,7 +72,11 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  REDIS_CLIENT,
+  OutboundRateLimiter,
+  type RedisClientPort,
+} from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';
@@ -162,6 +167,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     ]),
   ],
   providers: [
+    {
+      // #1450: `ZaloOutboundService` is provided in this same module, so the
+      // token it injects is bound here. `useExisting` keeps the exact instance
+      // the `@Global()` RedisModule exports.
+      provide: OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
     {
       provide: ChatRuntimeConfig,
       useFactory: (configService: ConfigService) =>

@@ -646,6 +646,135 @@ test('the messenger-study-reminder port allowance is symmetric', () => {
   }
 });
 
+test('both new name categories are reported from a single import statement', () => {
+  // #1450: `Cache` and `RateLimiter` were missing from the suffix list, so
+  // `RedisUserDisplayNameCache` and `OutboundRateLimiter` reached application
+  // code unreported. One import carrying both proves each category matches,
+  // rather than proving only that two statements produce two violations.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import { RedisUserDisplayNameCache, OutboundRateLimiter } from '@wispace/bot-common/redis';\nexport class ConsumerService { a = RedisUserDisplayNameCache; b = OutboundRateLimiter; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    const mixed = result.violations.filter(
+      (violation) => violation.rule === 'application-no-outer',
+    );
+    assert.equal(mixed.length, 1);
+    assert.deepEqual([...mixed[0].symbols].sort(), [
+      'OutboundRateLimiter',
+      'RedisUserDisplayNameCache',
+    ]);
+  } finally {
+    f.close();
+  }
+});
+
+test('a framework-free core symbol with no concrete-sounding name stays unreported', () => {
+  // The clean case #1450 asks for, in the scope where the mixed-package name
+  // rule is the only thing that can fire.
+  //
+  // The limit worth stating: a `/core` symbol *named* `SomethingCache` WOULD be
+  // reported, because `isConcreteMixedImport` matches the name and has no
+  // `/core` carve-out. Adding one would weaken a rule this issue was not asked
+  // to weaken, and no such symbol exists in the tree today. It is the known
+  // failure mode of any name-based rule, and #1451 is what replaces it.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import { PLAYER, readSyncHorizonHours } from '@wispace/scheduler-core/core';\nimport { jitteredDelayMs, sleep } from '@wispace/bot-common/redis';\nexport class ConsumerService { a = PLAYER; b = readSyncHorizonHours; c = jitteredDelayMs; d = sleep; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a namespace import from a framework-bound subpath is reported as unclassifiable', () => {
+  // Fails closed (#1450 AC). A namespace import brings in the whole adapter
+  // surface and the checker only ever sees the `['*']` placeholder, so the
+  // suffix list cannot judge it. Reporting is the honest answer.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import * as chatAgent from '@wispace/chat-agent/adapters';\nexport class ConsumerService { x = chatAgent; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    const blind = result.violations.filter(
+      (violation) => violation.rule === 'mixed-import-unclassifiable',
+    );
+    assert.equal(blind.length, 1);
+  } finally {
+    f.close();
+  }
+});
+
+test('a wildcard import from a framework-free subpath stays unreported', () => {
+  // The carve-out that keeps the rule above from manufacturing false
+  // positives. `wispace-client/core` carries no concrete implementation, so
+  // there is nothing to leak however it is imported.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import * as core from '@wispace/wispace-client/core';\nexport class ConsumerService { x = core; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a framework-free core symbol is not reported just because its name ends in a suffix', () => {
+  // `LlmProviderAdapter` is an interface -- the repository's own LLM port --
+  // exported from `llm-agent/core`, which `frameworkFreePackageRule` already
+  // declares framework-agnostic. It ends in `Adapter`, so any name-based rule
+  // reports it. This is the case that keeps `llm-agent` off `MIXED_PACKAGE`:
+  // a framework-free subpath is only a guarantee if the classifier looks at
+  // where a symbol comes from. #1451 measures what does.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/agent.service.ts',
+      "import type { LlmProviderAdapter } from '@wispace/llm-agent/core';\nexport class AgentService { x: LlmProviderAdapter | null = null; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a symbol whose name is absent from the suffix list is not reported', () => {
+  // `PlatformToolExecutorPipeline` — 328 lines, zero framework imports,
+  // hand-rolled constructor injection — is on no suffix list, and the checker
+  // matches names only, so nothing about its declaration is consulted here. The
+  // declaration evidence is what keeps it off the list; that it would be
+  // reported if a matching suffix were added is the assertion.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/pipeline-user.service.ts',
+      "import { PlatformToolExecutorPipeline } from '@wispace/chat-agent';\nexport class PipelineUserService { x = PlatformToolExecutorPipeline; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
 test('a cross-bot alias import is not a cross-feature edge', () => {
   const f = fixture();
   try {

@@ -287,3 +287,33 @@ export interface OutboundDeadLetterPort {
     deliveryKey?: string;
   }): Promise<boolean>;
 }
+
+/**
+ * Per-user outbound rate limiting, as all three bots need it. #1450: the
+ * concrete `OutboundRateLimiter` is an `@Injectable() implements OnModuleInit`
+ * class with Redis counters behind it, so an application service injecting it
+ * is a boundary violation. Each bot binds the adapter in the module that owns
+ * its own outbound service — the same place it binds {@link OutboundDeadLetterPort}.
+ */
+export const OUTBOUND_RATE_LIMIT = Symbol('OUTBOUND_RATE_LIMIT');
+
+export type OutboundRateLimitOutcome =
+  | 'allowed'
+  | 'limited'
+  | 'store_unavailable'
+  | 'disabled';
+
+export interface OutboundRateLimitVerdict {
+  allowed: boolean;
+  outcome: OutboundRateLimitOutcome;
+}
+
+export interface OutboundRateLimitPort {
+  /** Asks whether one send is within budget, and why. */
+  admit(input: {
+    platform: Platform;
+    externalUserId: string;
+    userId?: number | null;
+    units?: number;
+  }): Promise<OutboundRateLimitVerdict>;
+}
