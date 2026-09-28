@@ -131,28 +131,28 @@ jest.mock('ioredis', () => ({
       }
       return command.promise;
     });
-    MockRedis.prototype.connect = jest
-      .fn()
-      .mockImplementation(function (this: MockRedisInstance) {
-        if (this.status === 'reconnecting') {
-          this.status = 'ready';
-          const pending = this.pendingCommands.splice(0);
-          if (this.options.autoResendUnfulfilledCommands !== false) {
-            pending.forEach((command) => this.sendCommand(command));
-          }
+    MockRedis.prototype.connect = jest.fn().mockImplementation(function (
+      this: MockRedisInstance,
+    ) {
+      if (this.status === 'reconnecting') {
+        this.status = 'ready';
+        const pending = this.pendingCommands.splice(0);
+        if (this.options.autoResendUnfulfilledCommands !== false) {
+          pending.forEach((command) => this.sendCommand(command));
         }
-        if (mockRedisNextConnectEventError) {
-          const error = mockRedisNextConnectEventError;
-          mockRedisNextConnectEventError = undefined;
-          this.emit('error', error);
-        }
-        if (mockRedisNextConnectError) {
-          const error = mockRedisNextConnectError;
-          mockRedisNextConnectError = undefined;
-          return Promise.reject(error);
-        }
-        return Promise.resolve();
-      });
+      }
+      if (mockRedisNextConnectEventError) {
+        const error = mockRedisNextConnectEventError;
+        mockRedisNextConnectEventError = undefined;
+        this.emit('error', error);
+      }
+      if (mockRedisNextConnectError) {
+        const error = mockRedisNextConnectError;
+        mockRedisNextConnectError = undefined;
+        return Promise.reject(error);
+      }
+      return Promise.resolve();
+    });
     return MockRedis;
   })(),
 }));
