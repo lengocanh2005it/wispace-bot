@@ -43,8 +43,16 @@ const FRAMEWORK_FREE_SUBPATH = /^@wispace\/[a-z-]+\/core(?:\/|$)/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 // #1126: these packages publish only explicit subpaths; a bare root specifier
 // is not a compatibility facade and must not resolve. `bot-common` joined the
-// list when its root barrel was removed: nothing imported it, and it re-exported
-// every sub-barrel, so one bare import would have pulled Nest and ioredis in.
+// list because it re-exported every sub-barrel, so one bare import would have
+// pulled Nest and ioredis in.
+//
+// The *specifier* is blocked, not the file. `packages/bot-common/src/index.ts`
+// still exists with 11 `export *` lines and is still tracked in git; it is
+// unreachable because the package's `exports` map has no "." key, and nothing
+// imports it. It is the only `export *` left under any `src/`, which makes it a
+// live `['*']` blind spot for any resolver that follows barrels — relevant to
+// #1451. Do not read the absence of a root export as the absence of a root
+// barrel; it is a dead file, not a deleted one.
 const ROOT_SPECIFIER =
   /^@wispace\/(account-link-core|bot-common|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
 const DATABASE_FORBIDDEN_DEPENDENCIES = [
