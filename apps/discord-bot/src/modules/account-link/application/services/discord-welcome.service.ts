@@ -2,7 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { buildGreetingMessage } from '@wispace/bot-common/messages';
-import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
+import {
+  DISCORD_OUTBOUND_MESSAGING,
+  type DiscordOutboundMessagingPort,
+} from '../ports/discord-outbound-messaging.port';
 import {
   readRewelcomeWindowMs,
   readWelcomeClaimMs,
@@ -32,7 +35,8 @@ export class DiscordWelcomeService {
   constructor(
     @Inject(DISCORD_WELCOME_RECORD_REPOSITORY)
     private readonly welcomeRecords: DiscordWelcomeRecordRepositoryPort,
-    private readonly outboundService: DiscordOutboundService,
+    @Inject(DISCORD_OUTBOUND_MESSAGING)
+    private readonly outboundService: DiscordOutboundMessagingPort,
     private readonly configService: ConfigService,
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,

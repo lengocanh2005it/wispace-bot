@@ -19,7 +19,8 @@ const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 // is not a compatibility facade and must not resolve. `bot-common` joined the
 // list when its root barrel was removed: nothing imported it, and it re-exported
 // every sub-barrel, so one bare import would have pulled Nest and ioredis in.
-const ROOT_SPECIFIER = /^@wispace\/(account-link-core|bot-common|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
+const ROOT_SPECIFIER =
+  /^@wispace\/(account-link-core|bot-common|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
 const DATABASE_FORBIDDEN_DEPENDENCIES = [
   '@wispace/reschedule-confirm',
   '@wispace/scheduler-core',
@@ -349,7 +350,8 @@ function importedModules(fileName, sourceText) {
     }
     if (
       ts.isCallExpression(node) &&
-      ((ts.isIdentifier(node.expression) && node.expression.text === 'require') ||
+      ((ts.isIdentifier(node.expression) &&
+        node.expression.text === 'require') ||
         (ts.isPropertyAccessExpression(node.expression) &&
           ((ts.isIdentifier(node.expression.expression) &&
             node.expression.expression.text === 'module' &&
@@ -527,76 +529,188 @@ function rootEntrypointViolation(relativePath, imported) {
   };
 }
 
-const MESSENGER_FEATURE_ROOT = 'apps/messenger-bot/src/modules/messenger/';
-const STUDY_REMINDER_FEATURE_ROOT =
-  'apps/messenger-bot/src/modules/study-reminder/';
+// Feature modules. A feature module is a top-level directory under a bot's
+// `modules` directory (CONTEXT.md). Coverage is derived from that path shape
+// instead of a registry, so a new bot or a new module is covered by adding
+// nothing: the same app-generic shape the layer rules already use. That is the
+// whole point of #1291 — the previous check missed 20 of 22 feature modules
+// because it named two of them as string literals.
+const FEATURE_MODULE_PATH = /^(apps\/[^/]+)\/src\/modules\/([^/]+)\/(.*)$/;
+// Only `@<bot>/modules/...` is an app-internal alias. Anything else — a
+// `@wispace/*` package, a vendor SDK — leaves the workspace and is not a
+// feature-module edge.
+const APP_MODULE_ALIAS = /^@([a-z][\w-]*)\/modules\/(.*)$/;
+const FEATURE_LAYER_DIRS = new Set([
+  'domain',
+  'application',
+  'infrastructure',
+  'presentation',
+]);
 
-function featureForPath(relativePath) {
-  if (relativePath.startsWith(MESSENGER_FEATURE_ROOT)) return 'messenger';
-  if (relativePath.startsWith(STUDY_REMINDER_FEATURE_ROOT)) {
-    return 'study-reminder';
-  }
-  return undefined;
+function featureModuleOf(relativePath) {
+  const match = FEATURE_MODULE_PATH.exec(relativePath);
+  if (!match) return undefined;
+  return { app: match[1], feature: match[2], tail: match[3] };
 }
 
-function featureForImport(relativePath, specifier) {
-  if (specifier.startsWith('@messenger/modules/messenger/')) {
-    return 'messenger';
-  }
-  if (specifier.startsWith('@messenger/modules/study-reminder/')) {
-    return 'study-reminder';
-  }
-  if (!specifier.startsWith('.')) return undefined;
+function featureModuleKey(module) {
+  return `${module.app}/${module.feature}`;
+}
 
-  const resolved = path.posix.normalize(
+/**
+ * Resolve a specifier to a repository-relative path, or undefined when it
+ * leaves the workspace (a shared package, a Node builtin, a vendor SDK).
+ *
+ * The app is taken from the alias itself, not from the importing file, so a
+ * cross-bot alias resolves to the app it actually names. The caller then rejects
+ * it as a cross-app edge, which is outside this rule's scope. Deriving the app
+ * from the importing file instead would silently reclassify a cross-bot import
+ * as a same-app one.
+ */
+function resolveSpecifier(relativePath, specifier) {
+  const alias = APP_MODULE_ALIAS.exec(specifier);
+  if (alias) return `apps/${alias[1]}-bot/src/modules/${alias[2]}`;
+  if (!specifier.startsWith('.')) return undefined;
+  return path.posix.normalize(
     path.posix.join(path.posix.dirname(relativePath), specifier),
   );
-  return featureForPath(resolved);
 }
 
 function isCompositionRoot(relativePath) {
   return relativePath.endsWith('.module.ts');
 }
 
-function isStudyReminderPortImport(specifier) {
+/**
+ * A cross-feature import is allowed when it lands in the target's ports
+ * directory or follows the repository's `.port` file convention. Both forms are
+ * accepted because the codebase uses both: the messenger repository port and
+ * the mapping repository port are ports, imported as ports, and merely live in
+ * a repository directory. A path-only predicate reports files that are already
+ * correct.
+ */
+function isPortImport(resolvedPath) {
   return (
-    specifier.endsWith('/study-reminder-operations.port') ||
-    specifier.endsWith('/study-reminder-sync.port')
+    /(?:^|\/)ports(?:\/|$)/.test(resolvedPath) ||
+    /\.port(?:\.[cm]?[jt]s)?$/.test(resolvedPath)
   );
 }
 
-function featureBoundaryViolation(relativePath, imported) {
-  const sourceFeature = featureForPath(relativePath);
-  const targetFeature = featureForImport(relativePath, imported.imported);
-  if (!sourceFeature || !targetFeature || sourceFeature === targetFeature) {
-    return undefined;
+/**
+ * Feature modules that have no layer directory at all. These are legitimate
+ * transitional shapes — a module skeleton, or a feature nobody has split yet —
+ * so they are exempt from the cross-feature rule rather than failed. Failing
+ * them would only move a file into an application directory to satisfy a path
+ * predicate. They are reported instead, so the exemption is never silent; see
+ * `checkArchitecture`'s warnings.
+ */
+function flatFeatureModules(files, absoluteRoot) {
+  const seen = new Set();
+  const layered = new Set();
+  for (const file of files) {
+    const relativePath = path
+      .relative(absoluteRoot, file)
+      .replaceAll(path.sep, '/');
+    const module = featureModuleOf(relativePath);
+    if (!module) continue;
+    const key = featureModuleKey(module);
+    seen.add(key);
+    if (FEATURE_LAYER_DIRS.has(module.tail.split('/')[0])) layered.add(key);
   }
+  return [...seen].filter((key) => !layered.has(key)).sort();
+}
 
-  if (
-    sourceFeature === 'messenger' &&
-    (isCompositionRoot(relativePath) ||
-      isStudyReminderPortImport(imported.imported))
-  ) {
-    return undefined;
-  }
-  if (sourceFeature === 'study-reminder' && isCompositionRoot(relativePath)) {
+// The messenger <-> study-reminder pair keeps its own identifiers and wording.
+// It is a documented behavioural contract (#435) that predates this rule, and
+// the checker's tests assert these strings by name. Generalising the scope must
+// not change what the one already-enforced pair reports.
+const PRESERVED_FEATURE_PAIR = {
+  'apps/messenger-bot/messenger|study-reminder': {
+    rule: 'messenger-study-reminder-boundary',
+    message:
+      'messenger feature code must consume study-reminder ports, not concrete feature details',
+  },
+  'apps/messenger-bot/study-reminder|messenger': {
+    rule: 'study-reminder-messenger-boundary',
+    message:
+      'study-reminder feature code must not depend on messenger feature details',
+  },
+};
+
+function featureModuleBoundaryViolation(relativePath, imported, flatModules) {
+  const source = featureModuleOf(relativePath);
+  if (!source) return undefined;
+  const resolvedPath = resolveSpecifier(relativePath, imported.imported);
+  if (!resolvedPath) return undefined;
+  const target = featureModuleOf(resolvedPath);
+  if (!target || target.app !== source.app) return undefined;
+  if (target.feature === source.feature) return undefined;
+
+  if (isCompositionRoot(relativePath)) return undefined;
+  if (isPortImport(resolvedPath)) return undefined;
+  if (flatModules.includes(featureModuleKey(source))) return undefined;
+
+  // The already-enforced pair is never gated by the rollout: it is the reason
+  // this check exists, and #1445 generalises it rather than restaging it.
+  const preserved =
+    PRESERVED_FEATURE_PAIR[`${featureModuleKey(source)}|${target.feature}`];
+  if (!preserved && !FEATURE_MODULE_RULE_APPS.has(source.app)) {
     return undefined;
   }
 
   return {
-    rule:
-      sourceFeature === 'messenger'
-        ? 'messenger-study-reminder-boundary'
-        : 'study-reminder-messenger-boundary',
+    rule: preserved?.rule ?? 'feature-module-cross-import',
     package: ownerOf(relativePath),
     file: relativePath,
     line: imported.line,
     imported: imported.imported,
     symbols: imported.symbols,
     message:
-      sourceFeature === 'messenger'
-        ? 'messenger feature code must consume study-reminder ports, not concrete feature details'
-        : 'study-reminder feature code must not depend on messenger feature details',
+      preserved?.message ??
+      `${source.feature} feature module must reach ${target.feature} through its ports or a composition root, not its concrete code`,
+  };
+}
+
+/**
+ * The rule is general; the rollout is staged. Naming an app here is the whole
+ * change needed to bring that app's feature modules under the rule — there is
+ * deliberately no per-edge exemption list, because a per-edge list is a
+ * permanent shelf, and this checker already had one removed (#1088).
+ *
+ * `apps/messenger-bot` is pending #1447, which is blocked on #1446
+ * (`scheduler` reaching into `messenger`'s concrete services — 20 edges, a
+ * dependency-inversion problem rather than a hygiene one).
+ */
+const FEATURE_MODULE_RULE_APPS = new Set(['apps/discord-bot', 'apps/zalo-bot']);
+
+/**
+ * A file placed in a subdirectory the checker does not recognise is a build
+ * failure, not a gap. The layer rules cover `domain` and `application`; a file
+ * in a directory no glob matches escapes every one of them, silently. The
+ * inventory scan behind #1291 omitted the `wispace` module directory — a
+ * module every feature imports — because its classifier did not recognise it
+ * and did not say so. A checker that cannot see a file must fail, or the next
+ * missing file is as invisible as the last one.
+ *
+ * Files sitting directly at a feature root are not flagged: a config or a
+ * controller there is a placement question, not a hole in the check.
+ */
+function moduleLayoutUnclassified(relativePath, flatModules) {
+  const module = featureModuleOf(relativePath);
+  if (!module) return undefined;
+  if (flatModules.includes(featureModuleKey(module))) return undefined;
+  if (isCompositionRoot(relativePath)) return undefined;
+  const segments = module.tail.split('/');
+  if (segments.length < 2) return undefined;
+  if (FEATURE_LAYER_DIRS.has(segments[0])) return undefined;
+
+  return {
+    rule: 'module-layout-unclassified',
+    package: ownerOf(relativePath),
+    file: relativePath,
+    line: 0,
+    imported: '',
+    symbols: [],
+    message: `file sits in "${segments[0]}" under the ${module.feature} feature module, which is not a layer directory; the architecture rules do not cover it`,
   };
 }
 
@@ -677,8 +791,10 @@ function isTestSource(relativePath) {
 }
 
 function isDatabaseSpecifier(specifier) {
-  return specifier === DATABASE_PACKAGE ||
-    specifier.startsWith(`${DATABASE_PACKAGE}/`);
+  return (
+    specifier === DATABASE_PACKAGE ||
+    specifier.startsWith(`${DATABASE_PACKAGE}/`)
+  );
 }
 
 function databaseRoleViolation(relativePath, imported, sourceKind) {
@@ -813,9 +929,7 @@ function scanScopeViolations(rootDir) {
 function scriptImportViolations(rootDir, files) {
   const violations = [];
   for (const file of files) {
-    const relativePath = path
-      .relative(rootDir, file)
-      .replaceAll(path.sep, '/');
+    const relativePath = path.relative(rootDir, file).replaceAll(path.sep, '/');
     const source = readFileSync(file, 'utf8');
     for (const imported of importedModules(file, source)) {
       const entrypointViolation = rootEntrypointViolation(
@@ -837,7 +951,8 @@ function scriptImportViolations(rootDir, files) {
 export function checkArchitecture(rootDir) {
   const absoluteRoot = path.resolve(rootDir);
   const violations = scanScopeViolations(absoluteRoot);
-  if (violations.length > 0) return { scannedFiles: 0, violations };
+  if (violations.length > 0)
+    return { scannedFiles: 0, violations, warnings: [] };
 
   const files = sourceFiles(absoluteRoot);
   if (files.length === 0) {
@@ -854,8 +969,11 @@ export function checkArchitecture(rootDir) {
           message: 'architecture scan found no production TypeScript files',
         },
       ],
+      warnings: [],
     };
   }
+
+  const flatModules = flatFeatureModules(files, absoluteRoot);
 
   const scripts = toolingFiles(absoluteRoot);
   violations.push(...scriptImportViolations(absoluteRoot, scripts));
@@ -869,6 +987,9 @@ export function checkArchitecture(rootDir) {
     const source = readFileSync(file, 'utf8');
     const imports = importedModules(file, source);
 
+    const unclassified = moduleLayoutUnclassified(relativePath, flatModules);
+    if (unclassified) violations.push(unclassified);
+
     for (const imported of imports) {
       const dbViolation = databaseRoleViolation(
         relativePath,
@@ -877,9 +998,10 @@ export function checkArchitecture(rootDir) {
       );
       if (dbViolation) violations.push(dbViolation);
 
-      const boundaryViolation = featureBoundaryViolation(
+      const boundaryViolation = featureModuleBoundaryViolation(
         relativePath,
         imported,
+        flatModules,
       );
       if (boundaryViolation) violations.push(boundaryViolation);
 
@@ -947,7 +1069,17 @@ export function checkArchitecture(rootDir) {
     }
   }
 
-  return { scannedFiles, violations };
+  return {
+    scannedFiles,
+    violations,
+    warnings: flatModules.map((key) => ({
+      rule: 'feature-module-not-layered',
+      package: key.slice(0, key.lastIndexOf('/')),
+      file: `${key.slice(0, key.lastIndexOf('/'))}/src/modules/${key.slice(key.lastIndexOf('/') + 1)}`,
+      message:
+        'feature module has no layer directory; its cross-feature imports are unchecked until it is split into layers',
+    })),
+  };
 }
 
 export function formatViolation(violation) {
@@ -963,6 +1095,9 @@ function run() {
       path.join(path.dirname(fileURLToPath(import.meta.url)), '..'),
   );
   const result = checkArchitecture(rootDir);
+  for (const warning of result.warnings) {
+    console.warn(`[${warning.rule}] ${warning.file}: ${warning.message}`);
+  }
   if (result.violations.length > 0) {
     for (const violation of result.violations) {
       console.error(formatViolation(violation));

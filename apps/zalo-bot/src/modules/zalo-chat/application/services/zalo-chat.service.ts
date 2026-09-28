@@ -24,7 +24,7 @@ import {
   ZALO_ACCOUNT_LINK,
   type ZaloAccountLinkPort,
 } from '@zalo/modules/zalo-oauth/domain/ports/zalo-account-link.port';
-import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
+import { ZALO_WELCOME, type ZaloWelcomePort } from '../ports/zalo-welcome.port';
 import {
   ZALO_CHAT_QUEUE,
   type ZaloChatQueuePort,
@@ -76,7 +76,9 @@ export class ZaloChatService {
     @Optional()
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,
-    @Optional() private readonly welcomeService?: ZaloWelcomeService,
+    @Optional()
+    @Inject(ZALO_WELCOME)
+    private readonly welcomeService?: ZaloWelcomePort,
     @Optional()
     @Inject(ZALO_CLARIFICATION_AGENT)
     private readonly clarificationAgent?: ZaloClarificationAgentPort,

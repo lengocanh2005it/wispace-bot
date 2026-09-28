@@ -10,6 +10,7 @@ import { PLATFORM_LINK_STATE } from '@wispace/account-link-core/core';
 import { PlatformLinkStateService } from '@wispace/database';
 import { DISCORD_TOKEN_VERIFY } from './application/ports/discord-token-verify.port';
 import { LINK_STATE_OBSERVATION } from './application/ports/link-state-observation.port';
+import { DISCORD_OUTBOUND_MESSAGING } from './application/ports/discord-outbound-messaging.port';
 import { WispaceDiscordTokenVerifyAdapter } from './infrastructure/adapters/wispace-discord-token-verify.adapter';
 import { TypeormLinkStateObservationAdapter } from './infrastructure/persistence/typeorm-link-state-observation.adapter';
 import { BotCommonModule } from '@wispace/bot-common/guard';
@@ -45,6 +46,7 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
 import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
 import { DiscordOauthStateService } from './application/services/discord-oauth-state.service';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
 
 @Module({
   imports: [
@@ -64,6 +66,15 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       useFactory: (configService: ConfigService, metrics: BotMetricsService) =>
         new WispaceTokenVerifyService(configService, 'discord', metrics),
       inject: [ConfigService, BotMetricsService],
+    },
+    {
+      // #1445: `account-link` reaches DM delivery only through its own port.
+      // The concrete service is deliberately NOT re-registered here: Nest
+      // prefers a module's own providers over an imported module's, so listing
+      // it would hand this module — and the token below — a second instance
+      // instead of the one `DiscordOutboundModule` exports.
+      provide: DISCORD_OUTBOUND_MESSAGING,
+      useExisting: DiscordOutboundService,
     },
     DiscordAccountLinkService,
     DiscordLinkCompletionService,

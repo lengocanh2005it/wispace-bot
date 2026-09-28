@@ -11,7 +11,14 @@ import {
 } from '@wispace/contracts';
 import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared/core';
 import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
-import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
+import {
+  DISCORD_CONSENT_PROMPT,
+  type DiscordConsentPromptPort,
+} from '../ports/discord-consent-prompt.port';
+import {
+  DISCORD_LINKED_IDENTITY,
+  type DiscordLinkedIdentityPort,
+} from '../../domain/ports/discord-linked-identity.port';
 import { DiscordOutboundService } from './discord-outbound.service';
 
 /**
@@ -24,7 +31,10 @@ export class DiscordConsentService {
   private readonly logger = new Logger(DiscordConsentService.name);
 
   constructor(
-    private readonly accountLinkService: DiscordAccountLinkService,
+    @Inject(DISCORD_LINKED_IDENTITY)
+    private readonly linkedIdentity: DiscordLinkedIdentityPort,
+    @Inject(DISCORD_CONSENT_PROMPT)
+    private readonly consentPrompt: DiscordConsentPromptPort,
     private readonly outboundService: DiscordOutboundService,
     @Inject(NOTIFICATION_PREFERENCE)
     private readonly notificationPreferences: NotificationPreferencePort,
@@ -42,7 +52,7 @@ export class DiscordConsentService {
     if (!command) return false;
 
     const userId =
-      await this.accountLinkService.findUserIdByDiscordId(discordUserId);
+      await this.linkedIdentity.findUserIdByDiscordId(discordUserId);
     if (userId === undefined) {
       await this.outboundService.sendText(
         discordUserId,
@@ -70,7 +80,7 @@ export class DiscordConsentService {
       await this.notificationPreferences.setReportEnabled(userId, enable);
       if (enable) {
         // Explicit opt-in knows the toggle — suppress the opt-out footer.
-        await this.accountLinkService
+        await this.consentPrompt
           .suppressOptOutNotice(discordUserId)
           .catch(() => undefined);
       }

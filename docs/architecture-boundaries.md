@@ -73,7 +73,57 @@ and reschedule adapters. Add a fifth folder only together with a new context in
 `packages/database/src/index.ts` stays the single export surface; there are no
 per-folder barrels.
 
-## Messenger ↔ Study Reminder boundary (#435)
+## Cross-feature module boundaries (#435, generalised in #1445)
+
+A **feature module** is a top-level directory under a bot's `modules`
+directory. Two feature modules in the same bot may depend on each other only in
+one of two ways:
+
+- through the other module's **ports** — a path segment `ports/`, or a file
+  named `*.port.ts`; or
+- from a **composition root** — a `*.module.ts` file, which may bind the
+  concrete adapters.
+
+Any other cross-feature import fails `npm run architecture:check` — another
+module's application services, domain types, infrastructure, presentation, or
+plain utilities. The exemption is defined by what the import *is* (a port), not
+by which layer it sits in, so moving a shared helper into `domain/` or
+`infrastructure/` does not make a concrete cross-feature import legal.
+Violations name both the importing and the target feature module. Tests are
+exempt and may assemble concrete implementations.
+
+**Currently enforced for `discord-bot` and `zalo-bot`.** `messenger-bot` is not
+yet under this rule: its largest cross-feature cluster (`scheduler` importing
+`messenger`'s concrete services) is a dependency-inversion problem rather than
+a hygiene one, and grandfathering it would create the permanent exemption this
+document twice says does not exist. Tracked in #1446 and #1447; the enforced set
+is `FEATURE_MODULE_RULE_APPS` in
+[`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs).
+
+There is no baseline, ratchet, or per-edge allow-list. Both bots' existing
+violations are resolved in the change that enabled the rule, so the check has no
+exceptions to grandfather — adding an app to `FEATURE_MODULE_RULE_APPS` is the
+entire cost of extending coverage.
+
+A feature module with **no layer directory** yet — a module skeleton, or a
+feature nobody has split — is exempt rather than failed, and reported as a
+`feature-module-not-layered` warning with the list asserted by a test. Failing it
+would only move a file into an application directory to satisfy a path
+predicate. The exemption is listed rather than silent so it cannot quietly grow.
+
+A file placed in a subdirectory of a feature module that is not a layer
+directory is a build failure (`module-layout-unclassified`), not a gap: it
+escapes every layer rule at once. Unlike the cross-feature rule, this one applies
+to **every** bot, not just the two above — a layout the checker cannot read is
+worth failing everywhere. Files directly at a feature root are not flagged (a
+config or controller there is a placement question, not a hole in the check), and
+neither are modules with no layer directory, which are exempt above.
+
+### Messenger ↔ Study Reminder (#435)
+
+The messenger and study-reminder pair is the original, and keeps its own
+identifiers and wording because it is a documented behavioural contract. It is
+enforced regardless of the rollout stage above.
 
 The two features communicate through capability ports, not each other's concrete
 application services, utilities, or transport implementations:
@@ -91,8 +141,9 @@ application services, utilities, or transport implementations:
   Messenger application contract; user-facing chat copy remains in Messenger's
   message formatter.
 - Existing `*.module.ts` files are composition roots and may bind the concrete
-  Messenger adapters. Feature application/domain/infrastructure/presentation
-  code may not cross-import concrete services or utilities. Tests may assemble
+  Messenger adapters. Messenger and study-reminder feature code — in
+  `application`, `domain`, `infrastructure` and `presentation` alike — may not
+  cross-import each other's concrete services or utilities. Tests may assemble
   concrete implementations.
 
 Behavior remains owned by the existing use cases: a failed post-link sync does
@@ -142,7 +193,9 @@ composition roots, preserving telemetry without an upward package dependency.
 
 | Area                                                             | Framework-agnostic scope                                            |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Apps                                                             | Every `domain/**` and `application/**` directory                    |
+| Apps — layer rules                                             | Every `domain/**` and `application/**` directory                    |
+| Apps — cross-feature rule                                      | Every feature module; concrete paths in all four layers (`domain`, `application`, `infrastructure`, `presentation`) are covered, for `discord-bot` and `zalo-bot` only |
+| Apps — module layout rule                                     | Every bot; a feature-module file outside a layer directory is reported |
 | `contracts`                                                      | Entire package; it has zero imports                                 |
 | `chat-history`, `chat-queue-core`, `chat-pipeline`, `date-utils` | Entire package                                                      |
 | `llm-agent`                                                      | `src/core/**` plus framework-free orchestration implementations     |
@@ -157,6 +210,8 @@ composition roots, preserving telemetry without an upward package dependency.
 Tests/specs, generated output, `dist`, and `node_modules` are excluded. Test code may import adapters to assemble a harness, but production code cannot hide a forbidden edge there.
 
 Application and domain scopes have no legacy import exemptions. Every concrete outer-layer edge fails the architecture check; add a narrow inner-layer port when application policy needs an outer adapter.
+
+The cross-feature rule has no exemptions either — no baseline, no ratchet, no allow-list. The one exception is structural rather than per-edge: a feature module with no layer directory is skipped until it is split, and the list of those is asserted by a test rather than left to drift. See "Cross-feature module boundaries" above.
 
 The same check enforces **declaration** ownership, not only import edges. A type listed as contracts-owned — `ChatQuotaDenyReason` and `ChatQuotaReleaseReason` (#1346, [ADR 0043](adr/0043-contract-ownership-taxonomy.md)) — may only be declared under `packages/contracts/src/`. A second copy elsewhere fails the build rather than drifting, which is what a cast at one call site once used to hide: a narrow copy declared that the core could never return a value it does return. How to decide which package owns a contract is recorded in that ADR.
 

@@ -18,6 +18,8 @@ import {
   TRY_INLINE_DISPATCHER,
 } from '@wispace/webhook-inbound';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
+import { ZaloChatService } from '../zalo-chat/application/services/zalo-chat.service';
+import { ZALO_INBOUND_CHAT } from './application/ports/inbound-chat.port';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
 import { ZaloWebhookSignatureGuard } from './presentation/guards/zalo-webhook-signature.guard';
 import { ZaloWebhookDispatchService } from './application/zalo-webhook-dispatch.service';
@@ -32,6 +34,12 @@ import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.map
   ],
   controllers: [ZaloWebhookController],
   providers: [
+    {
+      // The dispatcher routes events to zalo-chat through this port rather
+      // than importing its concrete chat service.
+      provide: ZALO_INBOUND_CHAT,
+      useExisting: ZaloChatService,
+    },
     ZaloWebhookDispatchService,
     ZaloWebhookSignatureGuard,
     {

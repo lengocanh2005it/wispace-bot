@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -36,7 +42,12 @@ function fixture(files, baseline = {}) {
   mkdirSync(join(root, 'scripts'), { recursive: true });
   writeFileSync(
     join(root, 'scripts', BASELINE_FILE),
-    JSON.stringify({ measuredAt: '2026-09-27', measuredAtCommit: 'abc1234', ...baseline, files }),
+    JSON.stringify({
+      measuredAt: '2026-09-27',
+      measuredAtCommit: 'abc1234',
+      ...baseline,
+      files,
+    }),
   );
   return {
     root,
@@ -86,7 +97,9 @@ test('a decomposed file keeps its ceiling and passes below it', () => {
 test('a baseline entry with no file on disk is stale', () => {
   const f = fixture({ 'gone.ts': entry({ lines: 12 }) });
   try {
-    assert.deepEqual(checkFileSize(f.root).stale, [{ file: 'gone.ts', lines: 12 }]);
+    assert.deepEqual(checkFileSize(f.root).stale, [
+      { file: 'gone.ts', lines: 12 },
+    ]);
   } finally {
     f.close();
   }
@@ -206,7 +219,11 @@ test('an empty baseline is a ratchet that guards nothing', () => {
   const f = fixture({});
   try {
     assert.deepEqual(checkFileSize(f.root).invalid, [
-      { file: BASELINE_REF, field: 'files', problem: 'empty - a baseline with no entries guards nothing' },
+      {
+        file: BASELINE_REF,
+        field: 'files',
+        problem: 'empty - a baseline with no entries guards nothing',
+      },
     ]);
   } finally {
     f.close();
@@ -221,8 +238,18 @@ test('the report row carries every field of the decision', () => {
       .split('\n')
       .find((line) => line.startsWith('| `a.ts`'));
     assert.deepEqual(
-      row.split('|').slice(1, 7).map((part) => part.trim()),
-      ['`a.ts`', '3', '3', 'Free-form Chat', '#778', 'Named by #778; no duplication finding yet.'],
+      row
+        .split('|')
+        .slice(1, 7)
+        .map((part) => part.trim()),
+      [
+        '`a.ts`',
+        '3',
+        '3',
+        'Free-form Chat',
+        '#778',
+        'Named by #778; no duplication finding yet.',
+      ],
     );
   } finally {
     f.close();
@@ -236,7 +263,13 @@ test('the report separates the live count from the recorded ceiling', () => {
     const row = renderReport(checkFileSize(f.root))
       .split('\n')
       .find((line) => line.startsWith('| `a.ts`'));
-    assert.deepEqual(row.split('|').slice(2, 4).map((part) => part.trim()), ['40', '100']);
+    assert.deepEqual(
+      row
+        .split('|')
+        .slice(2, 4)
+        .map((part) => part.trim()),
+      ['40', '100'],
+    );
   } finally {
     f.close();
   }
@@ -291,12 +324,16 @@ test('every entry in the checked-in baseline names a reason, a tracker and a con
 });
 
 test('the checked-in baseline has a ceiling for every tracked file', () => {
-  const baseline = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts', BASELINE_FILE), 'utf8'));
+  const baseline = JSON.parse(
+    readFileSync(join(REPO_ROOT, 'scripts', BASELINE_FILE), 'utf8'),
+  );
   assert.equal(Object.keys(baseline.files).length, 6);
 });
 
 test('the checked-in baseline is sorted so it reads in one order', () => {
-  const baseline = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts', BASELINE_FILE), 'utf8'));
+  const baseline = JSON.parse(
+    readFileSync(join(REPO_ROOT, 'scripts', BASELINE_FILE), 'utf8'),
+  );
   const paths = Object.keys(baseline.files);
   assert.deepEqual(paths, [...paths].sort());
 });
