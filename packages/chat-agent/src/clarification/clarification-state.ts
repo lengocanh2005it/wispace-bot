@@ -10,7 +10,8 @@ export const MAX_CLARIFICATION_MENU_RESETS = 1;
 const MAX_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_CLARIFICATION_ATTEMPTS_CAP = 10;
 const MAX_CLARIFICATION_MENU_RESETS_CAP = 5;
-const MAX_CLARIFICATION_EVENT_HISTORY = 8;
+/** The tombstone window the read-back validation also bounds. */
+export const MAX_CLARIFICATION_EVENT_HISTORY = 8;
 
 export interface ClarificationLimits {
   ttlMs: number;
@@ -58,7 +59,9 @@ export function readClarificationLimits(
   });
 }
 
-function normalizeLimits(limits: ClarificationLimits): ClarificationLimits {
+export function normalizeLimits(
+  limits: ClarificationLimits,
+): ClarificationLimits {
   return {
     ttlMs: Math.min(
       Number.isFinite(limits.ttlMs) && limits.ttlMs > 0
@@ -101,8 +104,8 @@ export interface ClarificationState {
   lastDeliveryFailed?: boolean;
 }
 
-/** The single expiry rule, shared by the machine's query and the store's prune. */
-function isClarificationStateExpired(
+/** The single expiry rule, shared by the core's query and the store's prune. */
+export function isClarificationStateExpired(
   state: ClarificationState,
   now: number,
 ): boolean {
