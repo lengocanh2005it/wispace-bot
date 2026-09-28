@@ -74,6 +74,7 @@
     "tsc"
   ],
   "ignoreDependencies": [
+    "@nestjs/platform-express",
     "@swc/cli",
     "lint-staged"
   ]
