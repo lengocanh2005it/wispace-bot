@@ -16,7 +16,12 @@ import { join } from 'node:path';
 
 export const SOURCE_DIRS = ['src', 'test', 'scripts'];
 export const SOURCE_EXT = /\.(ts|mts|cts|mjs|cjs|js)$/;
-export const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.turbo']);
+export const SKIP_DIRS = new Set([
+  'node_modules',
+  'dist',
+  'coverage',
+  '.turbo',
+]);
 
 /**
  * The import forms every guard accepts. Stateful (`/g`) patterns are shared, so
@@ -31,7 +36,9 @@ export const IMPORT_SPECIFIER_PATTERNS = [
 
 /** Remove comments so a commented-out import is not read as a real one. */
 export function stripComments(text) {
-  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, (m) =>
+    m.replace(/[^\n]/g, ' '),
+  );
   return noBlocks
     .split('\n')
     .map((line) => {

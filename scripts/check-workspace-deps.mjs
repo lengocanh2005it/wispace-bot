@@ -65,7 +65,9 @@ function expandWorkspaceGlobs(root, patterns) {
 }
 
 export function checkWorkspaceDeps(root) {
-  const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const rootManifest = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  );
   const patterns = Array.isArray(rootManifest.workspaces)
     ? rootManifest.workspaces
     : (rootManifest.workspaces?.packages ?? []);
@@ -76,11 +78,14 @@ export function checkWorkspaceDeps(root) {
   for (const dir of expandWorkspaceGlobs(root, patterns)) {
     let manifest;
     try {
-      manifest = JSON.parse(readFileSync(join(root, dir, 'package.json'), 'utf8'));
+      manifest = JSON.parse(
+        readFileSync(join(root, dir, 'package.json'), 'utf8'),
+      );
     } catch {
       continue;
     }
-    if (typeof manifest.name !== 'string' || !manifest.name.startsWith(SCOPE)) continue;
+    if (typeof manifest.name !== 'string' || !manifest.name.startsWith(SCOPE))
+      continue;
     checked += 1;
 
     const declared = new Set();
@@ -131,7 +136,9 @@ if (invokedDirectly) {
     );
     for (const v of violations) {
       const kind = v.typeOnly ? 'type-only' : 'value';
-      console.error(`  ${v.imported}${v.subpath === '(root)' ? '' : v.subpath}  ${v.package}  ${v.file}:${v.line}  (${kind})`);
+      console.error(
+        `  ${v.imported}${v.subpath === '(root)' ? '' : v.subpath}  ${v.package}  ${v.file}:${v.line}  (${kind})`,
+      );
     }
     console.error(
       '\nAdd each package to the workspace package.json, or import it from its owner. Root node_modules symlinks every workspace, so this only fails on a declared-graph build.',

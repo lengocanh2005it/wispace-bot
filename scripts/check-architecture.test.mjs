@@ -187,7 +187,10 @@ test('shared package database imports stay in adapters', () => {
       result.violations[0].rule,
       'shared-package-database-adapter-only',
     );
-    assert.equal(result.violations[0].file, 'packages/learner-profile/src/types.ts');
+    assert.equal(
+      result.violations[0].file,
+      'packages/learner-profile/src/types.ts',
+    );
   } finally {
     f.close();
   }
@@ -338,7 +341,7 @@ test('an app redeclaring a cross-context contract is a violation', () => {
   try {
     f.write(
       'apps/messenger-bot/src/modules/chat-rate-limit/domain/entities/quota.types.ts',
-      "export interface ChatQuotaReleaseReason {\n  reason: string;\n}\n",
+      'export interface ChatQuotaReleaseReason {\n  reason: string;\n}\n',
     );
 
     const result = checkArchitecture(f.root);
@@ -572,6 +575,71 @@ test('a zalo-bot feature module may not import another feature module concrete c
     assert.equal(
       boundary[0].message,
       'zalo-webhook feature module must reach zalo-chat through its ports or a composition root, not its concrete code',
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('a .port file outside a ports directory is still treated as a port', () => {
+  const f = fixture();
+  try {
+    // The repository convention and the directory convention disagree: the
+    // messenger repository ports live in `domain/repositories`, not in a ports
+    // directory. A path-only predicate reports 17 already-correct files.
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/domain/repositories/messenger.repository.port.ts',
+      'export const MESSENGER_REPOSITORY = Symbol("MESSENGER_REPOSITORY");\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/domain/entities/model.ts',
+      'export class Model {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-ops/application/reads.service.ts',
+      "import { MESSENGER_REPOSITORY } from '@discord/modules/discord-chat/domain/repositories/messenger.repository.port';\nexport class ReadsService { x = MESSENGER_REPOSITORY; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(
+      result.violations.filter(
+        (violation) => violation.rule === 'feature-module-cross-import',
+      ),
+      [],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('the messenger-study-reminder port allowance is symmetric', () => {
+  // The old rule allowed the two study-reminder ports for `messenger` to
+  // consume and allowed study-reminder nothing at all. That asymmetry was an
+  // artefact of a two-string allowlist, not a design intent, and the general
+  // predicate replaces it. Pinned here so the change is a decision on the
+  // record rather than a side effect; the remaining concrete study-reminder
+  // edges are messenger work (#1447).
+  const f = fixture();
+  try {
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/domain/ports/messenger-outbound.port.ts',
+      'export const MESSENGER_OUTBOUND = Symbol("MESSENGER_OUTBOUND");\n',
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/messenger/application/services/outbound.service.ts',
+      'export class MessengerOutboundService {}\n',
+    );
+    f.write(
+      'apps/messenger-bot/src/modules/study-reminder/application/services/dispatch.service.ts',
+      "import { MESSENGER_OUTBOUND } from '@messenger/modules/messenger/domain/ports/messenger-outbound.port';\nexport class DispatchService { x = MESSENGER_OUTBOUND; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(
+      result.violations.filter(
+        (violation) => violation.rule === 'study-reminder-messenger-boundary',
+      ),
+      [],
     );
   } finally {
     f.close();

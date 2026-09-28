@@ -43,7 +43,10 @@ import {
 const MOCK_SPECIFIER_PATTERN =
   /\b(?:jest|vi)\.(?:mock|doMock|unmock|doUnmock|unstable_mockModule)\s*\(\s*['"]([^'"]+)['"]/g;
 
-const SPECIFIER_PATTERNS = [...IMPORT_SPECIFIER_PATTERNS, MOCK_SPECIFIER_PATTERN];
+const SPECIFIER_PATTERNS = [
+  ...IMPORT_SPECIFIER_PATTERNS,
+  MOCK_SPECIFIER_PATTERN,
+];
 
 /**
  * Every package name a source file references. Specs are scanned alongside

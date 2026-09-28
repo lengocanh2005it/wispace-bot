@@ -19,7 +19,8 @@ const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 // is not a compatibility facade and must not resolve. `bot-common` joined the
 // list when its root barrel was removed: nothing imported it, and it re-exported
 // every sub-barrel, so one bare import would have pulled Nest and ioredis in.
-const ROOT_SPECIFIER = /^@wispace\/(account-link-core|bot-common|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
+const ROOT_SPECIFIER =
+  /^@wispace\/(account-link-core|bot-common|chat-metering|cleanup-cron|llm-agent|ops-health|reschedule-confirm|scheduler-core|student-report|study-reminder-shared|wispace-client)$/;
 const DATABASE_FORBIDDEN_DEPENDENCIES = [
   '@wispace/reschedule-confirm',
   '@wispace/scheduler-core',
@@ -349,7 +350,8 @@ function importedModules(fileName, sourceText) {
     }
     if (
       ts.isCallExpression(node) &&
-      ((ts.isIdentifier(node.expression) && node.expression.text === 'require') ||
+      ((ts.isIdentifier(node.expression) &&
+        node.expression.text === 'require') ||
         (ts.isPropertyAccessExpression(node.expression) &&
           ((ts.isIdentifier(node.expression.expression) &&
             node.expression.expression.text === 'module' &&
@@ -789,8 +791,10 @@ function isTestSource(relativePath) {
 }
 
 function isDatabaseSpecifier(specifier) {
-  return specifier === DATABASE_PACKAGE ||
-    specifier.startsWith(`${DATABASE_PACKAGE}/`);
+  return (
+    specifier === DATABASE_PACKAGE ||
+    specifier.startsWith(`${DATABASE_PACKAGE}/`)
+  );
 }
 
 function databaseRoleViolation(relativePath, imported, sourceKind) {
@@ -925,9 +929,7 @@ function scanScopeViolations(rootDir) {
 function scriptImportViolations(rootDir, files) {
   const violations = [];
   for (const file of files) {
-    const relativePath = path
-      .relative(rootDir, file)
-      .replaceAll(path.sep, '/');
+    const relativePath = path.relative(rootDir, file).replaceAll(path.sep, '/');
     const source = readFileSync(file, 'utf8');
     for (const imported of importedModules(file, source)) {
       const entrypointViolation = rootEntrypointViolation(
@@ -949,7 +951,8 @@ function scriptImportViolations(rootDir, files) {
 export function checkArchitecture(rootDir) {
   const absoluteRoot = path.resolve(rootDir);
   const violations = scanScopeViolations(absoluteRoot);
-  if (violations.length > 0) return { scannedFiles: 0, violations, warnings: [] };
+  if (violations.length > 0)
+    return { scannedFiles: 0, violations, warnings: [] };
 
   const files = sourceFiles(absoluteRoot);
   if (files.length === 0) {

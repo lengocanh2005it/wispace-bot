@@ -113,9 +113,11 @@ predicate. The exemption is listed rather than silent so it cannot quietly grow.
 
 A file placed in a subdirectory of a feature module that is not a layer
 directory is a build failure (`module-layout-unclassified`), not a gap: it
-escapes every layer rule at once. Files directly at a feature root are not
-flagged — a config or controller there is a placement question, not a hole in
-the check.
+escapes every layer rule at once. Unlike the cross-feature rule, this one applies
+to **every** bot, not just the two above — a layout the checker cannot read is
+worth failing everywhere. Files directly at a feature root are not flagged (a
+config or controller there is a placement question, not a hole in the check), and
+neither are modules with no layer directory, which are exempt above.
 
 ### Messenger ↔ Study Reminder (#435)
 
@@ -139,7 +141,10 @@ application services, utilities, or transport implementations:
   Messenger application contract; user-facing chat copy remains in Messenger's
   message formatter.
 - Existing `*.module.ts` files are composition roots and may bind the concrete
-  Messenger adapters. Tests may assemble concrete implementations.
+  Messenger adapters. Messenger and study-reminder feature code — in
+  `application`, `domain`, `infrastructure` and `presentation` alike — may not
+  cross-import each other's concrete services or utilities. Tests may assemble
+  concrete implementations.
 
 Behavior remains owned by the existing use cases: a failed post-link sync does
 not roll back a committed mapping; `StudyReminderDispatchService` remains the
@@ -190,8 +195,7 @@ composition roots, preserving telemetry without an upward package dependency.
 | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Apps — layer rules                                             | Every `domain/**` and `application/**` directory                    |
 | Apps — cross-feature rule                                      | Every feature module; concrete paths in all four layers (`domain`, `application`, `infrastructure`, `presentation`) are covered, for `discord-bot` and `zalo-bot` only |
-
-
+| Apps — module layout rule                                     | Every bot; a feature-module file outside a layer directory is reported |
 | `contracts`                                                      | Entire package; it has zero imports                                 |
 | `chat-history`, `chat-queue-core`, `chat-pipeline`, `date-utils` | Entire package                                                      |
 | `llm-agent`                                                      | `src/core/**` plus framework-free orchestration implementations     |
