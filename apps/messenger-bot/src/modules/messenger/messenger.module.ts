@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { ModuleRef } from '@nestjs/core';
 import { DataSource, type Repository } from 'typeorm';
 import {
   CleanupCronService,
@@ -33,6 +32,7 @@ import { MessengerWebhookStartupService } from './application/services/messenger
 import { MessengerReminderDeliveryService } from './application/services/messenger-reminder-delivery.service';
 import { WebhookActionExecutorService } from './application/services/webhook-action-executor.service';
 import { MessengerService } from './application/services/messenger.service';
+import { MessengerWebhookDispatchService } from './application/services/messenger-webhook-dispatch.service';
 import { MessengerProfileService } from './infrastructure/meta/messenger-profile.service';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
@@ -72,6 +72,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
   controllers: [MessengerController],
   providers: [
     MessengerService,
+    MessengerWebhookDispatchService,
     MessengerProfileService,
     MessengerWebhookStartupService,
     {
@@ -93,7 +94,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       provide: InlineWebhookInboundDispatcher,
       useFactory: (
         inboundEvents: PlatformWebhookInboundEventService,
-        moduleRef: ModuleRef,
+        dispatch: MessengerWebhookDispatchService,
         configService: ConfigService,
       ) => {
         const retryConfig = readInboundRetryConfig((key) =>
@@ -101,16 +102,18 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         );
         return new InlineWebhookInboundDispatcher(inboundEvents, 'messenger', {
           processEvent: async (rawPayload) => {
-            // Resolve lazily: MessengerService injects TRY_INLINE_DISPATCHER,
-            // while this callback routes back into MessengerService.
-            await moduleRef
-              .get(MessengerService, { strict: false })
-              .processEvent(await validateAndMapMessengerEvent(rawPayload));
+            await dispatch.processEvent(
+              await validateAndMapMessengerEvent(rawPayload),
+            );
           },
           retryConfig,
         });
       },
-      inject: [PlatformWebhookInboundEventService, ModuleRef, ConfigService],
+      inject: [
+        PlatformWebhookInboundEventService,
+        MessengerWebhookDispatchService,
+        ConfigService,
+      ],
     },
     {
       provide: TRY_INLINE_DISPATCHER,
@@ -130,7 +133,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         inboundEvents: PlatformWebhookInboundEventService,
         configService: ConfigService,
         pgLock: PgAdvisoryLockService,
-        messengerService: MessengerService,
+        messengerDispatch: MessengerWebhookDispatchService,
         metrics: BotMetricsService,
       ) =>
         new PlatformWebhookInboundRetryCronService(
@@ -144,7 +147,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
             processEvent: async (rawPayload) => {
               // Re-validate stored payloads before dispatch — replay must
               // never trust the persisted raw shape (#436).
-              await messengerService.processEvent(
+              await messengerDispatch.processEvent(
                 await validateAndMapMessengerEvent(rawPayload),
               );
             },
@@ -156,7 +159,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         PlatformWebhookInboundEventService,
         ConfigService,
         PgAdvisoryLockService,
-        MessengerService,
+        MessengerWebhookDispatchService,
         BotMetricsService,
       ],
     },
