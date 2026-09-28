@@ -2,6 +2,10 @@ import type { LlmMessage } from '../provider/types';
 import type { LlmAgentInput } from '../types';
 import { AgentLimits, estimateTokens } from './agent-limits';
 import { CONTEXT_TOOL_DEFINITIONS, ContextManager } from './context-manager';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from '@wispace/bot-common/masking';
 
 const input: LlmAgentInput = {
   externalUserId: 'test-user',
@@ -36,6 +40,43 @@ describe('ContextManager', () => {
     expect(JSON.stringify(result.messages)).not.toContain(
       'Ignore all previous instructions',
     );
+  });
+
+  it('redacts a registered runtime secret in the current user turn', () => {
+    // #1047 keeps the current turn's text intact: a benign message must reach
+    // the provider unchanged, and an injection is blocked upstream by
+    // `detectPromptInjection` before this point. Secret redaction is the one
+    // exception, and replaying the same turn from history already applied it —
+    // so the two paths must agree.
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      const manager = new ContextManager(
+        new AgentLimits({ maxInputTokens: 8_000 }),
+      );
+
+      const result = manager.build({
+        ...input,
+        userText: 'key của tôi là Xk9mQ2vLp4Tn7Ws, giúp tôi xem lịch',
+      });
+
+      const currentTurn = result.messages.at(-1);
+      expect(currentTurn?.content).not.toContain('Xk9mQ2vLp4Tn7Ws');
+      expect(currentTurn?.content).toContain('[REDACTED]');
+      expect(currentTurn?.content).toContain('giúp tôi xem lịch');
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
+  });
+
+  it('leaves the current user turn otherwise byte-identical', () => {
+    const manager = new ContextManager(
+      new AgentLimits({ maxInputTokens: 8_000 }),
+    );
+    const text = 'Cho mình xem lịch học tuần này nhé, cảm ơn bạn!';
+
+    const result = manager.build({ ...input, userText: text });
+
+    expect(result.messages.at(-1)).toEqual({ role: 'user', content: text });
   });
 
   it('counts serialized tools and fixed messages in the budget', () => {

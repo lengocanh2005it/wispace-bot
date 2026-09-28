@@ -19,6 +19,49 @@ afterEach(() => {
 });
 
 /**
+ * A DataSource complete enough for the whole DI graph to resolve. An
+ * under-specified stub fails for unrelated reasons, which turns any
+ * "compiles" assertion into a false pass.
+ */
+function createDataSourceStub(): DataSource {
+  const stubRepo = {} as Repository<ObjectLiteral>;
+  const dataSourceStub: DataSource = new Proxy({} as DataSource, {
+    get: (target, prop, receiver) => {
+      if (prop === 'getRepository') return () => stubRepo;
+      if (prop === 'hasMetadata') return () => true;
+      if (prop === 'getTreeRepository') return () => stubRepo;
+      if (prop === 'getMongoRepository') return () => stubRepo;
+      if (prop === 'getMetadata') return () => ({});
+      if (prop === 'manager') {
+        return {
+          transaction: (fn: unknown) =>
+            typeof fn === 'function' ? (fn as () => unknown)() : undefined,
+        };
+      }
+      if (prop === 'options') {
+        return {
+          entities: [],
+          subscribers: [],
+          migrations: [],
+          type: 'postgres',
+        };
+      }
+      if (prop === 'entityMetadatas') return [];
+      if (prop === 'createQueryRunner') {
+        return () => ({
+          connect: () => Promise.resolve(),
+          release: () => Promise.resolve(),
+          query: () => Promise.resolve([{ acquired: false }]),
+        });
+      }
+      if (prop === 'initialize') return () => Promise.resolve(dataSourceStub);
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+  return dataSourceStub;
+}
+
+/**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
  * the whole DI graph. Catches wiring errors (missing providers, exports of
  * unowned tokens, inject/constructor mismatches) that typecheck cannot see
@@ -45,46 +88,9 @@ describe('AppModule boot smoke', () => {
       'https://testbackend.example.com/api/bot/reengagement';
     process.env.INTERNAL_API_KEY = 'test-internal-key';
 
-    const stubRepo = {} as Repository<ObjectLiteral>;
-    const dataSourceMock = new Proxy({} as DataSource, {
-      get: (target, prop, receiver) => {
-        if (prop === 'getRepository') return () => stubRepo;
-        if (prop === 'hasMetadata') return () => true;
-        if (prop === 'getTreeRepository') return () => stubRepo;
-        if (prop === 'getMongoRepository') return () => stubRepo;
-        if (prop === 'getMetadata') return () => ({});
-        if (prop === 'manager') {
-          return {
-            transaction: (fn: unknown) => {
-              if (typeof fn === 'function') return (fn as () => unknown)();
-              return undefined;
-            },
-          };
-        }
-        if (prop === 'options') {
-          return {
-            entities: [],
-            subscribers: [],
-            migrations: [],
-            type: 'postgres',
-          };
-        }
-        if (prop === 'entityMetadatas') return [];
-        if (prop === 'createQueryRunner') {
-          return () => ({
-            connect: () => Promise.resolve(),
-            release: () => Promise.resolve(),
-            query: () => Promise.resolve([{ acquired: false }]),
-          });
-        }
-        if (prop === 'initialize') return () => Promise.resolve(dataSourceMock);
-        return Reflect.get(target, prop, receiver) as unknown;
-      },
-    });
-
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSourceMock)
+      .useValue(createDataSourceStub())
       .compile();
 
     const app = moduleRef.createNestApplication({ logger: false });
@@ -137,11 +143,29 @@ describe('AppModule boot smoke', () => {
     process.env.DB_PASSWORD = 'test';
     process.env.DB_NAME = 'test';
 
+    // The boot guard lives in `bootstrapBot` (after Vault), asserted in
+    // `packages/bot-common/src/bootstrap/bot-bootstrap.spec.ts` — it cannot be
+    // a `ConfigModule.forRoot` validate hook, because that runs at import time
+    // and would read a Vault-delivered key as missing. So a missing key must
+    // NOT be what stops the DI graph from compiling: with the rest of the
+    // required config in place the module still resolves, and the absence
+    // surfaces later at boot.
+    process.env.OPENAI_API_KEY = 'sk-test-key';
+    process.env.OPENAI_MODEL = 'test-model';
+    process.env.LLM_ALLOWED_BASE_URLS = 'api.openai.com';
+    process.env.LLM_ALLOWED_MODELS = 'openai:test-model';
+    process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
+      'https://testbackend.example.com/precreate-exercise';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
+    process.env.WISPACE_API_REENGAGEMENT_URL =
+      'https://testbackend.example.com/api/bot/reengagement';
+
     await expect(
       Test.createTestingModule({ imports: [AppModule] })
         .overrideProvider(DataSource)
-        .useValue({})
+        .useValue(createDataSourceStub())
         .compile(),
-    ).rejects.toThrow();
+    ).resolves.toBeDefined();
   }, 30_000);
 });

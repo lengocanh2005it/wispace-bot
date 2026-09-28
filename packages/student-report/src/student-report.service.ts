@@ -1,4 +1,9 @@
-import { classifyLlmFailure, retryWithBackoff } from '@wispace/llm-agent/core';
+import {
+  checkFinalOutputSafety,
+  classifyLlmFailure,
+  redactSecrets,
+  retryWithBackoff,
+} from '@wispace/llm-agent/core';
 import type {
   LlmExecutionPort,
   LlmDegradedAction,
@@ -346,7 +351,27 @@ export class StudentReportCore {
     try {
       const prose = parseReportOutput(content, this.config.sanitizeText);
       // #124: factual fields come from source data; the LLM only supplies prose.
-      return buildReport(prose, input);
+      // #1377: guard the text that is actually delivered, so the scan sees the
+      // model's prose in its delivered context rather than a parsed shape. The
+      // report was the one LLM surface that reached a learner without this
+      // check, so self-harm prose or an echoed credential went out verbatim.
+      // Mirrors the study-reminder path: fall back rather than deliver.
+      const report = buildReport(prose, input);
+      const rendered = formatReport(report);
+      if (
+        redactSecrets(rendered).redacted ||
+        checkFinalOutputSafety(rendered).unsafe
+      ) {
+        this.recordDegraded(
+          externalUserId,
+          correlationId,
+          'invalid_output',
+          'report_fallback',
+          logger,
+        );
+        return buildFallbackReport(input);
+      }
+      return report;
     } catch (error) {
       this.recordDegraded(
         externalUserId,

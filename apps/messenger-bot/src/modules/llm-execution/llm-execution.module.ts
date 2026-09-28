@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { consoleRedactedLogger } from '@wispace/bot-common/logging';
 import { LlmExecutionConfigService } from './application/services/llm-execution-config.service';
 import { LlmExecutionService } from './application/services/llm-execution.service';
 import {
@@ -107,10 +108,7 @@ import {
         return createFailoverLlmProviderAdapter(
           entries,
           providerOrder,
-          {
-            warn: (msg) => console.warn(msg),
-            error: (msg) => console.error(msg),
-          },
+          consoleRedactedLogger,
           {
             cooldownLongMs: config.getFailoverCooldownLongMs(),
             cooldownShortMs: config.getFailoverCooldownShortMs(),

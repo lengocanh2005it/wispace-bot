@@ -1,4 +1,8 @@
 import { errorMessage, sanitizeErrorStack } from './error-message';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from './runtime-secrets';
 
 describe('errorMessage', () => {
   it('extracts message from standard Error', () => {
@@ -105,6 +109,31 @@ describe('errorMessage', () => {
     ).toBe('Failed for user 1234…2345');
   });
 
+  it('redacts a registered runtime secret that has no credential shape', () => {
+    // Opaque alphanumeric value: no key=, no URI, no Bearer, no long hex.
+    // Shape matching alone cannot see it — the registry can.
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      expect(errorMessage('boot failed, value was Xk9mQ2vLp4Tn7Ws')).toBe(
+        'boot failed, value was [REDACTED]',
+      );
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
+  });
+
+  it('redacts a registered base64 secret containing non-alphanumeric bytes', () => {
+    const key = 'aB3xY9zQ+mN2pL5rT8vW1cD4fG7hJ0kL6';
+    registerRuntimeSecrets([key]);
+    try {
+      expect(errorMessage(`decrypt failed for ${key}`)).toBe(
+        'decrypt failed for [REDACTED]',
+      );
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
+  });
+
   it('limits message length', () => {
     const longMessage = 'A'.repeat(1000);
     const result = errorMessage(longMessage);
@@ -142,6 +171,20 @@ describe('sanitizeErrorStack', () => {
     expect(sanitized).not.toContain('\r');
     expect(sanitized).not.toContain('\t');
     expect(sanitized).toContain('\n');
+  });
+
+  it('redacts a registered runtime secret embedded in a stack frame', () => {
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      const stack =
+        'Error: connect failed Xk9mQ2vLp4Tn7Ws\n' +
+        '    at TCPConnectWrap.afterConnect (net.js:1146:16)';
+      const sanitized = sanitizeErrorStack(stack);
+      expect(sanitized).not.toContain('Xk9mQ2vLp4Tn7Ws');
+      expect(sanitized).toContain('[REDACTED]');
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
   });
 
   it('caps max stack trace length', () => {

@@ -1,6 +1,6 @@
 import { AGENT_TOOLS } from '../agent.tools';
 import { sanitizeReplyText } from '../text.utils';
-import { CREDENTIAL_SHAPES } from './secret-patterns.utils';
+import { CREDENTIAL_SHAPES } from '@wispace/bot-common/masking';
 import {
   DISCLOSURE_CATEGORY,
   type DisclosureCategory,

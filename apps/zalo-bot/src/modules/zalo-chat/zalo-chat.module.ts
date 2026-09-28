@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { join } from 'path';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
+import { consoleRedactedLogger } from '@wispace/bot-common/logging';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
   OUTBOUND_RATE_LIMIT,
@@ -116,8 +117,8 @@ import {
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
 import {
-  RescheduleRecoveryCronService,
   TypeormRescheduleStore,
+  createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
 import {
   LEARNER_PROFILE_STORE,
@@ -238,7 +239,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         );
         return createLlmAdmissionCoordinator(
           config,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           config.globalConcurrencyEnabled ? (redisClient ?? null) : null,
         );
@@ -266,7 +267,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             redis: null,
           },
           adapter,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           admission,
         );
@@ -292,7 +293,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         return createEnvLlmExecutionPort(
           { ...config, redis: null },
           adapter,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           admission,
         );
@@ -750,29 +751,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       }),
       inject: [PlatformStudyCalendarCommandService],
     },
-    {
-      provide: TypeormRescheduleStore,
-      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
-        new TypeormRescheduleStore<string>('zalo', repo),
-      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
-    },
-    {
-      provide: RescheduleRecoveryCronService,
-      useFactory: (
-        store: TypeormRescheduleStore<string>,
-        metrics: BotMetricsService,
-        pgLock: PgAdvisoryLockService,
-      ) =>
-        new RescheduleRecoveryCronService(store, metrics, {
-          pgLock,
-          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        }),
-      inject: [
-        TypeormRescheduleStore,
-        BotMetricsService,
-        PgAdvisoryLockService,
-      ],
-    },
+    ...createRescheduleProviders('zalo'),
     {
       provide: RescheduleConfirmationService,
       useFactory: (

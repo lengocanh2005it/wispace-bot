@@ -1,7 +1,4 @@
-import {
-  CREDENTIAL_SHAPES,
-  findCredentialShape,
-} from './secret-patterns.utils';
+import { CREDENTIAL_SHAPES, findCredentialShape } from './credential-shapes';
 
 describe('CREDENTIAL_SHAPES (#632 input-side secret redaction)', () => {
   it('keeps the shapes the output guard already enforced', () => {

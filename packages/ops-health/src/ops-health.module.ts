@@ -28,6 +28,10 @@ export class OpsHealthModule {
       imports: [ConfigModule, ...(platformModule ? [platformModule] : [])],
       providers: [
         CronHeartbeatRegistry,
+        // The symbol is the only public token: `OpsHealthService` injects
+        // CRON_HEARTBEAT_REGISTRY, so the class was never a second identity
+        // anyone resolved — exporting it only let a reader take the class for
+        // the wire format. Keep the class token internal.
         {
           provide: CRON_HEARTBEAT_REGISTRY,
           useExisting: CronHeartbeatRegistry,
@@ -58,27 +62,22 @@ export class OpsHealthModule {
           inject: [
             OPS_HEALTH_REPOSITORY,
             ConfigService,
-            CronHeartbeatRegistry,
+            CRON_HEARTBEAT_REGISTRY,
             { token: REDIS_CLIENT, optional: true },
             { token: PLATFORM_CONNECTIVITY, optional: true },
           ],
         },
         {
+          // Consumed by `HealthController` in bot-common under its own name.
           provide: BOT_COMMON_OPS_HEALTH_SERVICE,
-          useExisting: OPS_HEALTH_SERVICE,
-        },
-        {
-          provide: OpsHealthService,
           useExisting: OPS_HEALTH_SERVICE,
         },
       ],
       exports: [
-        CronHeartbeatRegistry,
         CRON_HEARTBEAT_REGISTRY,
         OPS_HEALTH_REPOSITORY,
         OPS_HEALTH_SERVICE,
         BOT_COMMON_OPS_HEALTH_SERVICE,
-        OpsHealthService,
       ],
     };
   }

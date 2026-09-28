@@ -33,6 +33,8 @@
     "@nestjs/schedule": "^12.0.1",
     "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
+    "@wispace/bot-metrics": "*",
+    "@wispace/contracts": "*",
     "@wispace/database": "*",
     "typeorm": "^1.1.1",
     "@wispace/wispace-client": "*"

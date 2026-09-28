@@ -109,8 +109,8 @@ import {
   LearnerProfileEntity,
 } from '@wispace/database';
 import {
-  RescheduleRecoveryCronService,
   TypeormRescheduleStore,
+  createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
 import {
   LEARNER_PROFILE_STORE,
@@ -601,29 +601,7 @@ const REGISTER_REPORT_MESSAGE =
       }),
       inject: [PlatformStudyCalendarCommandService],
     },
-    {
-      provide: TypeormRescheduleStore,
-      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
-        new TypeormRescheduleStore<string>('discord', repo),
-      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
-    },
-    {
-      provide: RescheduleRecoveryCronService,
-      useFactory: (
-        store: TypeormRescheduleStore<string>,
-        metrics: BotMetricsService,
-        pgLock: PgAdvisoryLockService,
-      ) =>
-        new RescheduleRecoveryCronService(store, metrics, {
-          pgLock,
-          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        }),
-      inject: [
-        TypeormRescheduleStore,
-        BotMetricsService,
-        PgAdvisoryLockService,
-      ],
-    },
+    ...createRescheduleProviders('discord'),
     {
       provide: RescheduleConfirmationService,
       useFactory: (

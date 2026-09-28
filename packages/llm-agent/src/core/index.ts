@@ -171,10 +171,6 @@ export type {
   HarmfulOutputSafetyReason,
 } from '../safety/final-output.utils';
 export {
-  CREDENTIAL_SHAPES,
-  findCredentialShape,
-} from '../safety/secret-patterns.utils';
-export {
   collectRuntimeSecretValues,
   redactSecrets,
   registerRuntimeSecrets,

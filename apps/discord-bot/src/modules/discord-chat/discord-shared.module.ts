@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { consoleRedactedLogger } from '@wispace/bot-common/logging';
 import {
   createLlmProviderAdapterFromEnv,
   createEnvLlmExecutionPort,
@@ -76,7 +77,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         );
         return createLlmAdmissionCoordinator(
           config,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           config.globalConcurrencyEnabled ? (redisClient ?? null) : null,
         );
@@ -104,7 +105,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
             redis: null,
           },
           adapter,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           admission,
         );
@@ -130,7 +131,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         return createEnvLlmExecutionPort(
           { ...config, redis: null },
           adapter,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           admission,
         );
