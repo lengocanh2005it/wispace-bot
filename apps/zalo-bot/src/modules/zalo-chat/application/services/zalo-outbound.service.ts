@@ -12,14 +12,12 @@ import {
 } from '@zalo/modules/zalo-oauth/application/ports/zalo-oa-token-store.port';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
   type OutboundDeliveryOutcome,
+  type OutboundRateLimitPort,
 } from '@wispace/contracts';
 import { withRetry } from '@wispace/wispace-client/core';
-import {
-  ZALO_OUTBOUND_RATE_LIMIT,
-  type ZaloOutboundRateLimitPort,
-} from '../ports/outbound-rate-limit.port';
 import {
   ZALO_OUTBOUND_TRANSPORT,
   type ZaloOutboundTransportPort,
@@ -114,8 +112,8 @@ export class ZaloOutboundService implements ZaloOutboundPort {
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
     @Optional()
-    @Inject(ZALO_OUTBOUND_RATE_LIMIT)
-    private readonly outboundRateLimiter?: ZaloOutboundRateLimitPort,
+    @Inject(OUTBOUND_RATE_LIMIT)
+    private readonly outboundRateLimiter?: OutboundRateLimitPort,
   ) {}
 
   isAmbiguousDeliveryError(error: unknown): boolean {

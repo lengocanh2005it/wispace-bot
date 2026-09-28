@@ -8,8 +8,10 @@ import {
 } from '@wispace/database';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
 } from '@wispace/contracts';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 import { DISCORD_TRANSPORT } from './application/ports/discord-transport.port';
 import { DiscordSdkTransportAdapter } from './infrastructure/adapters/discord-sdk-transport.adapter';
@@ -29,6 +31,18 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
     ]),
   ],
   providers: [
+    {
+      // #1450: `DiscordOutboundService` is provided HERE, so the token that
+      // service injects has to be bound here too. Binding it in
+      // `DiscordChatModule` — which this module does not import, and which
+      // does not export it — left the injection resolving to `undefined`,
+      // because `@Optional()` swallows the `UnknownDependenciesException`. The
+      // effect was silent: `if (!this.outboundRateLimiter) return true` admits
+      // every send. A token has none of the app-wide visibility a class had
+      // through the `@Global()` RedisModule.
+      provide: OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
     {
       provide: DeliveryLogService,
       useFactory: (repo: Repository<DiscordMessageLogEntity>) =>

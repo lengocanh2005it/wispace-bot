@@ -5,6 +5,17 @@ import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerChatPipelinePorts } from '../ports/messenger-chat-pipeline-ports.port';
 import type { ChatFlushSettings } from '../chat-processing-seams.port';
+import type { MessengerUserDisplayNameCachePort } from '../ports/user-display-name-cache.port';
+
+/**
+ * The display-name cache is the last constructor parameter and is required, not
+ * `@Optional()` (#1450). These tests stop before the privacy ports, so they
+ * have to place it explicitly rather than leave a hole that an optional
+ * parameter would have hidden.
+ */
+function inertDisplayNameCache(): MessengerUserDisplayNameCachePort {
+  return { delStrict: () => Promise.resolve() };
+}
 
 function inertPipelinePorts(
   overrides: Partial<MessengerChatPipelinePorts> = {},
@@ -124,6 +135,10 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
       inertPipelinePorts(),
       flushSettings(),
       chatQueueStore,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      inertDisplayNameCache(),
     );
 
     await service.flushReady('psid-shared');
@@ -217,6 +232,10 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
       inertPipelinePorts({ agent: { reply } }),
       flushSettings({ retryEnabled: true, retryDelayMs: 5000 }),
       chatQueueStore,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      inertDisplayNameCache(),
     );
 
     await expect(service.flushReady('psid-fail')).rejects.toThrow('LLM down');
@@ -306,6 +325,10 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
       inertPipelinePorts(),
       flushSettings({ retryEnabled: true, retryDelayMs: 5000 }),
       chatQueueStore,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      inertDisplayNameCache(),
     );
 
     const pipeline = service as unknown as { pipeline: { flush: jest.Mock } };
@@ -409,6 +432,10 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
       inertPipelinePorts(),
       flushSettings(),
       chatQueueStore,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      inertDisplayNameCache(),
     );
 
     await service.flushReady('psid-shared');
@@ -511,6 +538,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
       undefined, // privacyState
       undefined, // privacyService
       mappingRepository,
+      inertDisplayNameCache(),
     );
 
     await service.flushReady('psid-stale');
@@ -611,6 +639,10 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
       }),
       flushSettings(),
       chatQueueStore,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      inertDisplayNameCache(),
     );
 
     await service.flushReady('psid-drain');

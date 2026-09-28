@@ -28,12 +28,6 @@ import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
-import {
-  OutboundRateLimiter,
-  RedisUserDisplayNameCache,
-} from '@wispace/bot-common/redis';
-import { MESSENGER_OUTBOUND_RATE_LIMIT } from './application/ports/outbound-rate-limit.port';
-import { MESSENGER_USER_DISPLAY_NAME_CACHE } from './application/ports/user-display-name-cache.port';
 import { MessengerMessageLogCleanupService } from './infrastructure/cron/messenger-message-log-cleanup.service';
 import { MessengerWebhookStartupService } from './application/services/messenger-webhook-startup.service';
 import { MessengerReminderDeliveryService } from './application/services/messenger-reminder-delivery.service';
@@ -77,19 +71,6 @@ import { BotMetricsService } from '@wispace/bot-metrics';
   ],
   controllers: [MessengerController],
   providers: [
-    {
-      // #1450: both are capabilities the application layer uses, not the
-      // Redis-backed classes behind them. `useExisting` keeps the exact
-      // instances RedisModule and DisplayNameModule export — a factory here
-      // would give the application layer a second limiter with its own
-      // counters, and a second cache with its own keys.
-      provide: MESSENGER_OUTBOUND_RATE_LIMIT,
-      useExisting: OutboundRateLimiter,
-    },
-    {
-      provide: MESSENGER_USER_DISPLAY_NAME_CACHE,
-      useExisting: RedisUserDisplayNameCache,
-    },
     MessengerService,
     MessengerProfileService,
     MessengerWebhookStartupService,

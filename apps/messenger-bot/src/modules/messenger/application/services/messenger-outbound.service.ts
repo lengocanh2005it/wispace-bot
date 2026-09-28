@@ -31,14 +31,12 @@ import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 import {
   OUTBOUND_DEAD_LETTER,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeadLetterPort,
   type OutboundDeliveryOutcome,
+  type OutboundRateLimitPort,
 } from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import {
-  MESSENGER_OUTBOUND_RATE_LIMIT,
-  type MessengerOutboundRateLimitPort,
-} from '../ports/outbound-rate-limit.port';
 import {
   PLATFORM_CONNECTIVITY_SIGNAL,
   type PlatformConnectivitySignalPort,
@@ -108,8 +106,8 @@ export class MessengerOutboundService {
     @Inject(OUTBOUND_DEAD_LETTER)
     private readonly deadLetter?: OutboundDeadLetterPort,
     @Optional()
-    @Inject(MESSENGER_OUTBOUND_RATE_LIMIT)
-    private readonly outboundRateLimiter?: MessengerOutboundRateLimitPort,
+    @Inject(OUTBOUND_RATE_LIMIT)
+    private readonly outboundRateLimiter?: OutboundRateLimitPort,
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,

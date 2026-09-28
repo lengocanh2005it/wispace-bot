@@ -4,10 +4,10 @@
   "note": "Each entry is a decision, not a measurement. `lines` is the ceiling that file may not exceed; `context`, `trackedBy` and `reason` say who holds the decision to keep it and why. `trackedBy` is the issue holding the decision, which is not always the issue that owns the decomposition: four of these six have no decomposition owner by design. Run `npm run file-size:report` to render this as the #778 index table, so the table is generated rather than retyped. See ADR-0044 and #1433.",
   "files": {
     "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": {
-      "lines": 978,
+      "lines": 981,
       "context": "Platform Interaction",
       "trackedBy": "#778",
-      "reason": "No duplication finding. Raised by #1450 from 973 to 978: the concrete Redis-backed `RedisUserDisplayNameCache` injection became a port token, which costs the import statement and the `@Optional()`/`@Inject()` pair. Five lines of wiring, no new behaviour and no duplicated logic. #1084 touches one optional-method cast and does not decompose it."
+      "reason": "No duplication finding. Raised by #1450 from 973 to 981: the concrete Redis-backed `RedisUserDisplayNameCache` injection became a port token, which costs the import, the `@Inject()` and a short note on why the parameter carries no `@Optional()`. Eight lines of wiring, no new behaviour. #1084 touches one optional-method cast and does not decompose it."
     },
     "packages/bot-metrics/src/bot-metrics.service.ts": {
       "lines": 1412,

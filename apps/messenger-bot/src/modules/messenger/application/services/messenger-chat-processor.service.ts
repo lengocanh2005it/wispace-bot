@@ -119,7 +119,10 @@ export class MessengerChatProcessorService {
     private readonly privacyService?: PrivacyDataPort,
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository?: MessengerMappingRepositoryPort,
-    @Optional()
+    // No `@Optional()`: Nest must throw if this token is unresolvable. The `?`
+    // stays because the privacy hooks reading it are conditional — a silent
+    // `undefined` is how the display-name store left the erasure path with no
+    // failing test. #1450.
     @Inject(MESSENGER_USER_DISPLAY_NAME_CACHE)
     private readonly displayNameCache?: MessengerUserDisplayNameCachePort,
   ) {

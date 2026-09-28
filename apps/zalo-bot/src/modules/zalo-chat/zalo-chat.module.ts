@@ -5,6 +5,7 @@ import { join } from 'path';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
 } from '@wispace/contracts';
 import {
@@ -76,7 +77,6 @@ import {
   OutboundRateLimiter,
   type RedisClientPort,
 } from '@wispace/bot-common/redis';
-import { ZALO_OUTBOUND_RATE_LIMIT } from './application/ports/outbound-rate-limit.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';
@@ -168,11 +168,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   ],
   providers: [
     {
-      // #1450: the outbound service depends on the rate-limit capability, not
-      // on the Redis-backed limiter behind it. `useExisting` keeps the exact
-      // instance RedisModule exports — a factory here would silently give the
-      // application layer a second limiter with its own counters.
-      provide: ZALO_OUTBOUND_RATE_LIMIT,
+      // #1450: `ZaloOutboundService` is provided in this same module, so the
+      // token it injects is bound here. `useExisting` keeps the exact instance
+      // the `@Global()` RedisModule exports.
+      provide: OUTBOUND_RATE_LIMIT,
       useExisting: OutboundRateLimiter,
     },
     {

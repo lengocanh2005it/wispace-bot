@@ -17,8 +17,10 @@ import {
 } from '../constants/discord-reschedule.constants';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
   type OutboundDeliveryOutcome,
+  type OutboundRateLimitPort,
 } from '@wispace/contracts';
 import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
@@ -30,10 +32,6 @@ import {
   type DiscordOutboundPreparation,
 } from '../utils/discord-outbound-guard';
 import { withRetry } from '@wispace/wispace-client/core';
-import {
-  DISCORD_OUTBOUND_RATE_LIMIT,
-  type DiscordOutboundRateLimitPort,
-} from '../ports/outbound-rate-limit.port';
 
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
@@ -139,8 +137,8 @@ export class DiscordOutboundService {
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
     @Optional()
-    @Inject(DISCORD_OUTBOUND_RATE_LIMIT)
-    private readonly outboundRateLimiter?: DiscordOutboundRateLimitPort,
+    @Inject(OUTBOUND_RATE_LIMIT)
+    private readonly outboundRateLimiter?: OutboundRateLimitPort,
   ) {}
 
   isAmbiguousDeliveryError(error: unknown): boolean {

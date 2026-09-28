@@ -33,7 +33,11 @@ import {
   sanitizeUntrustedTextForLlm,
   buildWriteToolDailyBudgetMessage,
 } from '@wispace/llm-agent/core';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  REDIS_CLIENT,
+  RedisUserDisplayNameCache,
+  type RedisClientPort,
+} from '@wispace/bot-common/redis';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
@@ -66,6 +70,7 @@ import { LlmUsageConfigService } from '../llm-usage/application/services/llm-usa
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
+import { MESSENGER_USER_DISPLAY_NAME_CACHE } from './application/ports/user-display-name-cache.port';
 import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerOutboundModule } from './messenger-outbound.module';
@@ -160,6 +165,18 @@ import {
     ]),
   ],
   providers: [
+    {
+      // #1450: `MessengerChatProcessorService` is provided HERE, so the token
+      // it injects has to be bound here too. Binding it in `MessengerModule`,
+      // which this module does not import and which does not export it,
+      // resolved to `undefined` and made the privacy path silently drop the
+      // `display_name_cache` hook — the erasure job reported the store skipped
+      // and the display name survived in Redis. That is a regression: the
+      // parameter previously carried no decorators and resolved through
+      // `design:paramtypes` against the `DisplayNameModule` imported below.
+      provide: MESSENGER_USER_DISPLAY_NAME_CACHE,
+      useExisting: RedisUserDisplayNameCache,
+    },
     {
       provide: ChatRuntimeConfig,
       useFactory: (configService: ConfigService) =>

@@ -11,8 +11,10 @@ import {
 import { PlatformDeadLetterService } from '@wispace/database';
 import {
   OUTBOUND_DEAD_LETTER,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeadLetterPort,
 } from '@wispace/contracts';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import { PlatformReportClaimRepository } from '@wispace/scheduler-core/adapters';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
@@ -63,6 +65,16 @@ import { PLATFORM_CONNECTIVITY_SIGNAL } from './application/ports/platform-conne
     MessengerRepository,
     MessengerReportSentReader,
     MessengerOutboundService,
+    {
+      // #1450: `MessengerOutboundService` is provided HERE, so the token it
+      // injects has to be bound here too — beside `OUTBOUND_DEAD_LETTER`,
+      // which is bound in the same place for the same reason. Binding it in
+      // `MessengerModule`, which this module does not import and which does
+      // not export it, resolved to `undefined` and silently disabled rate
+      // limiting: `@Optional()` swallows the missing-dependency error.
+      provide: OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
     {
       provide: PlatformDeadLetterService,
       useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
