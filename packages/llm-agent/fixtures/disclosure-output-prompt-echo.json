@@ -1,6 +1,6 @@
 {
   "name": "disclosure-output-prompt-echo",
-  "tier": "adversarial",
+  "tier": "must-block",
   "description": "Output guard (#625): an LLM reply echoing a system-prompt line is redacted to the standard non-disclosure line before delivery.",
   "coreHash": "05cf140fc5940d75e6683a3e4e9d94ae21f4eda52faf17f715d0d183db77d907",
   "promptFiles": [

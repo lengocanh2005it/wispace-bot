@@ -937,10 +937,8 @@ export class LlmAgentService<TToolContext> {
       };
     }
 
-    // Non-disclosure probe (#625): polite/direct questions for model,
-    // provider, prompt, architecture, params, infra, guardrails or tool
-    // capabilities. Defense-in-depth — the bot gateways run the same check
-    // before the LLM pipeline.
+    // Non-disclosure probe (#625): direct questions for any shared disclosure
+    // category. Defense-in-depth — gateways run the same check upstream.
     const disclosureProbe = detectDisclosureProbe(input.userText);
     if (disclosureProbe.probed) {
       logger.warn(

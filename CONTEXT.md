@@ -918,6 +918,14 @@ _Avoid_: mock LLM, stub provider, fake model
 The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
 _Avoid_: secrecy, confidentiality
 
+**disclosure category**:
+One of the eight disclosure categories: agent/tool architecture, prompts, sampling parameters, runtime identity and hosting/infrastructure (including model/provider details), environment variables, file paths, internal rate limits, or safety/abuse-detection mechanisms.
+_Avoid_: disclosure group, leak category
+
+**user-facing capability description**:
+A plain-language account of what help the assistant can provide without naming internal tools, schemas, or policy fields.
+_Avoid_: tool inventory, capability list
+
 **prompt canary**:
 A secret value included in the composed chat system prompt as a data-only `Process marker: <value>` part so its appearance in an assistant reply signals prompt disclosure. A canary hit follows the non-disclosure posture; the value itself is never exposed to the learner, logs, history, events, metrics, or alerts.
 _Avoid_: prompt marker — fixed public markers are not canaries

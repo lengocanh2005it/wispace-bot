@@ -143,7 +143,7 @@ describe('guardrail battery (#635)', () => {
       expect(outcome.adversarial.bypassRate).toBeLessThanOrEqual(
         ADVERSARIAL_BYPASS_RATE_LIMIT,
       );
-      expect(outcome.mustAllow.total).toBe(41);
+      expect(outcome.mustAllow.total).toBe(43);
       expect(outcome.mustAllow.failed).toEqual([]);
       expect(outcome.mustAllow.passRate).toBe(1);
       expect(outcome.ok).toBe(true);

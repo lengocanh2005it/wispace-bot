@@ -1,4 +1,5 @@
 import { redactSecrets } from './secret-redaction.utils';
+import type { DisclosureCategory } from './disclosure-taxonomy.utils';
 import type { ChatHistoryMessage } from '@wispace/chat-history';
 
 export interface InjectionCheckResult {
@@ -227,24 +228,16 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
 
 /**
  * Non-disclosure probe detection (#625) — polite, direct questions for
- * internal details that trip no injection pattern: model/provider/vendor,
+ * internal details that trip no injection pattern: runtime identity,
  * system-prompt contents, agent/tool architecture, sampling parameters,
- * hosting/infra/secrets, guardrail mapping, tool-capability probing.
+ * environment variables, file paths, rate limits, and safety mechanisms.
  *
  * A match routes to the standard non-disclosure reply (a normal self-intro),
  * NOT a distinct "blocked" message — a differential response is itself an
  * oracle. Categories are for logging / fixture naming only; callers branch on
  * `probed`, never on `category`.
  */
-export type DisclosureProbeCategory =
-  | 'model'
-  | 'prompt'
-  | 'arch'
-  | 'params'
-  | 'infra'
-  | 'guardrail'
-  | 'tool-probe'
-  | 'debug';
+export type DisclosureProbeCategory = DisclosureCategory;
 
 export interface DisclosureProbeResult {
   probed: boolean;
@@ -252,252 +245,343 @@ export interface DisclosureProbeResult {
 }
 
 const DISCLOSURE_PROBE_PATTERNS: Array<[RegExp, DisclosureProbeCategory]> = [
-  // ── model / provider / vendor / version / fingerprint ──────────────────
-  [/\b(which|what)\s+(ai\s+)?(model|llm)\s+(?:are|do)\s+you\b/i, 'model'],
+  // ── runtime identity / provider / vendor / version / fingerprint ────────
+  [
+    /\b(which|what)\s+(ai\s+)?(model|llm)\s+(?:are|do)\s+you\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /\b(which|what)\s+(ai\s+)?(model|llm)\s+(?:powers|runs|operates)\s+you\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
   [
     /\b(are|were)\s+you\s+(built|based|powered|trained|made|created)\s+(on|by|with|from)\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
-  [/\bwho\s+(made|created|built|trained|developed)\s+you\b/i, 'model'],
-  [/\bare\s+you\s+(chatgpt|gpt|claude|gemini|bard|copilot)\b/i, 'model'],
+  [
+    /\bwho\s+(made|created|built|trained|developed)\s+you\b/i,
+    'runtime_identity_hosting',
+  ],
+  [
+    /\bare\s+you\s+(chatgpt|gpt|claude|gemini|bard|copilot)\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /\b(chatgpt|gpt|claude|gemini|bard|llama)\s+(hay|or)\s+(chatgpt|gpt|claude|gemini|bard|llama)\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
-  [/\b(knowledge\s+cutoff|context\s+window|cua\s+so\s+ngu\s+canh)\b/i, 'model'],
-  [/\b(model|mo\s*hinh)\s+(nao|gi|j)\b/i, 'model'],
-  [/\b(chay|dung|su\s*dung|xai)\s+(model|mo\s*hinh|llm)\b/i, 'model'],
+  [
+    /\b(knowledge\s+cutoff|context\s+window|cua\s+so\s+ngu\s+canh)\b/i,
+    'runtime_identity_hosting',
+  ],
+  [/\b(model|mo\s*hinh)\s+(nao|gi|j)\b/i, 'runtime_identity_hosting'],
+  [
+    /\b(chay|dung|su\s*dung|xai)\s+(model|mo\s*hinh|llm)\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /\b(model|mo\s*hinh|llm)\b.{0,20}\b(ban\s+(dang\s+)?(dung|xai)|cua\s+ban)\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
-  [/\bcau\s*hinh\b.{0,15}\b(model|mo\s*hinh|he\s*thong|llm)\b/i, 'model'],
+  [
+    /\bcau\s*hinh\b.{0,15}\b(model|mo\s*hinh|he\s*thong|llm)\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /\b(ban|may)\s+(la|dung|co\s*phai(\s*la)?)\s+(chatgpt|gpt|claude|gemini|bard)\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
   [
     /\bai\s+(tao|lam|phat\s*trien|huan\s*luyen|xay\s*dung)\s+ra\s+(ban|may)\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
-  [/\b(provider|nha\s*cung\s*cap|vendor)\b.{0,20}\b(nao|gi|j)\b/i, 'model'],
+  [
+    /\b(provider|nha\s*cung\s*cap|vendor)\b.{0,20}\b(nao|gi|j)\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /\b(use|using|powered\s+by|based\s+on|goi|call)\b.{0,30}\b(openai|anthropic|openrouter|azure|minimax|vertex|bedrock|groq|deepseek)\b/i,
-    'model',
+    'runtime_identity_hosting',
   ],
-  [/\bphien\s*ban\b.{0,20}\b(model|mo\s*hinh|ban|gpt|claude)\b/i, 'model'],
+  [
+    /\bphien\s*ban\b.{0,20}\b(model|mo\s*hinh|ban|gpt|claude)\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /(什么模型|哪个模型|哪个大模型|模型版本|供应商|提供商|你是什么ai|你是谁开发|你是chatgpt|你是gpt|知识截止)/i,
-    'model',
+    'runtime_identity_hosting',
   ],
 
   // ── system prompt / instructions extraction (broad forms) ──────────────
   [
     /\b(system\s*prompt|system\s*message|initial\s+instructions?|original\s+instructions?)\b/i,
-    'prompt',
+    'system_prompt',
   ],
   [
     /\brepeat\s+(everything|all|the\s+text|the\s+words?)\s+(above|before)\b/i,
-    'prompt',
+    'system_prompt',
   ],
   [
     /\bwhat\s+(?:were|was)\s+you\s+told\s+(?:before\s+i\s+started\s+(?:chatting|using\s+you)|by\s+(?:your\s+developer|your\s+creator|the\s+people\s+who\s+built\s+you))\b/i,
-    'prompt',
+    'system_prompt',
   ],
   [
     /\b(summarize|translate|print|show|reveal|paste|output|give\s+me)\s+(?:your|the\s+assistant's|the\s+system's)\s+(instructions?|prompt|guidelines?|rules?)\b/i,
-    'prompt',
+    'system_prompt',
   ],
   // Spaced-out letters (taxonomy G): "s y s t e m   p r o m p t".
   // ponytail: single hand-rolled keyword; broaden only if a real bypass shows up.
   [
     /s\W{0,2}y\W{0,2}s\W{0,2}t\W{0,2}e\W{0,2}m\W{0,3}p\W{0,2}r\W{0,2}o\W{0,2}m\W{0,2}p\W{0,2}t/i,
-    'prompt',
+    'system_prompt',
   ],
-  [/\bprompt\s+(he\s*thong|goc|ban\s*dau|an)\b/i, 'prompt'],
+  [/\bprompt\s+(he\s*thong|goc|ban\s*dau|an)\b/i, 'system_prompt'],
   [
     /\b(nhac\s*lai|lap\s*lai|in\s*ra|doc\s*lai|viet\s*lai)\b.{0,30}\b(o\s*tren|phia\s*tren|truoc\s*do|dau\s*tien|tin\s*nhan\s*dau)\b/i,
-    'prompt',
+    'system_prompt',
   ],
   [
     /\b(ban|may)\s+duoc\s+(dan|huong\s*dan|cap|giao)\s+(gi|j|nhung\s*gi)\b/i,
-    'prompt',
+    'system_prompt',
   ],
   [
     /\b(in\s*ra|liet\s*ke|cho\s*xem|hien\s*thi|tiet\s*lo)\b.{0,30}\b(huong\s*dan|chi\s*dan|instruction)\b/i,
-    'prompt',
+    'system_prompt',
   ],
-  [/\bhuong\s*dan\s+(an|goc|ban\s*dau|he\s*thong)\b/i, 'prompt'],
+  [/\bhuong\s*dan\s+(an|goc|ban\s*dau|he\s*thong)\b/i, 'system_prompt'],
   [
     /(系统提示|系统提示词|系统指令|重复上面|重复以上|你的指令|你被告知什么|之前.*对话)/i,
-    'prompt',
+    'system_prompt',
   ],
 
   // ── agent / architecture internals ────────────────────────────────────
   [
     /\bhow\s+many\s+(?:tools?|functions?)\s+(?:do\s+you\s+have|does\s+(?:your\s+)?(?:assistant|agent)\s+(?:have|use|support|expose))\b/i,
-    'arch',
+    'agent_tool_architecture',
+  ],
+  [
+    /\bhow\s+many\s+(?:tools?|functions?|schemas?)\s+(?:can|could)\s+(?:you|your\s+(?:assistant|agent))\s+(?:call|use|invoke|expose|support)\b/i,
+    'agent_tool_architecture',
   ],
   [
     /\b(list|name|show|enumerate)\s+(?:your\s+(?:tools?|functions?)|all\s+of\s+your\s+(?:tools?|functions?)|(?:the\s+)?tools?\s+you\s+have)\b/i,
-    'arch',
+    'agent_tool_architecture',
   ],
-  [/\b(list|name|show|enumerate)\s+all\s+(?:tools?|functions?)\b/i, 'arch'],
+  [
+    /\b(what|which)\s+(?:tools?|functions?|schemas?)\s+(?:do|does|can|could)\s+(?:you|your\s+(?:assistant|agent))\s+(?:have|call|use|invoke|expose|support)\b/i,
+    'agent_tool_architecture',
+  ],
+  [
+    /\b(list|name|show|enumerate)\s+all\s+(?:tools?|functions?)\b/i,
+    'agent_tool_architecture',
+  ],
   [
     /\b(list|name|show|enumerate)\s+(?:(?:all|the)\s+)?(?:tools?|functions?)\s+(?:of|available\s+to|for)\s+(?:(?:your|the)\s+)?(?:assistant|agent)\b/i,
-    'arch',
+    'agent_tool_architecture',
   ],
-  [/\b(tool|function)\s+schema\b/i, 'arch'],
-  [/\bschema\b.{0,15}\b(tool|function|cong\s*cu|ham)\b/i, 'arch'],
+  [/\b(tool|function)\s+schema\b/i, 'agent_tool_architecture'],
+  [
+    /\bschema\b.{0,15}\b(tool|function|cong\s*cu|ham)\b/i,
+    'agent_tool_architecture',
+  ],
   [
     /\b(use|using|dung|su\s*dung)\s+(rag|vector\s*db|langchain|llamaindex|llama\s*index)\b/i,
-    'arch',
+    'agent_tool_architecture',
   ],
-  [/\bmax\s+iterations?\b/i, 'arch'],
-  [/\b(describe|explain|mo\s*ta)\b.{0,30}\bpipeline\b/i, 'arch'],
-  [/\b(bao\s*nhieu|may)\s+(tool|function|cong\s*cu|ham)\b/i, 'arch'],
+  [/\bmax\s+iterations?\b/i, 'agent_tool_architecture'],
+  [
+    /\b(describe|explain|mo\s*ta)\b.{0,30}\bpipeline\b/i,
+    'agent_tool_architecture',
+  ],
+  [
+    /\b(bao\s*nhieu|may)\s+(tool|function|cong\s*cu|ham)\b/i,
+    'agent_tool_architecture',
+  ],
   [
     /\b(liet\s*ke|ke\s*ten|ten\s*cac|ten\s*nhung)\b.{0,20}\b(tool|function|ham|cong\s*cu)\b/i,
-    'arch',
+    'agent_tool_architecture',
   ],
-  [/\bpipeline\s+xu\s*ly\b/i, 'arch'],
+  [/\bpipeline\s+xu\s*ly\b/i, 'agent_tool_architecture'],
   [
     /(多少个?工具|多少个?函数|列出.*工具|工具列表|什么框架|处理流程|向量数据库)/i,
-    'arch',
+    'agent_tool_architecture',
   ],
 
   // ── inference / sampling parameters ──────────────────────────────────
   [
     /\b(seed|system\s*fingerprint|frequency\s*penalty|presence\s*penalty)\b/i,
-    'params',
+    'sampling_parameters',
   ],
   [
     /\b(temperature|top[_\s-]?p|top[_\s-]?k|max[_\s-]?tokens?)\b\s*[:=]/i,
-    'params',
+    'sampling_parameters',
   ],
   [
     /\b(your|you\s+(set|use)|ban\s+(set|dat|dung)|cua\s+ban)\b.{0,25}\b(temperature|top[_\s-]?p|sampling|tham\s*so\s*sinh)\b/i,
-    'params',
+    'sampling_parameters',
   ],
   [
     /\b(temperature|top[_\s-]?p|sampling\s+parameters?|tham\s*so\s*(sinh|suy\s*luan))\b.{0,25}\b(bao\s*nhieu|set\s+to|value|cua\s+ban|la\s*gi|do\s+you\s+(set|use))\b/i,
-    'params',
+    'sampling_parameters',
   ],
-  [/(温度参数|采样参数|随机种子)/i, 'params'],
+  [/(温度参数|采样参数|随机种子)/i, 'sampling_parameters'],
 
-  // ── infrastructure / deployment / secrets fishing ────────────────────
+  // ── runtime identity / hosting / infrastructure ────────────────────────
   [
     /\bwhere\s+(are|is)\s+(you|this\s+bot)\s+(hosted|deployed|running)\b/i,
-    'infra',
+    'runtime_identity_hosting',
   ],
   [
     /\b(host|hosted|deploy(ed)?|running)\b.{0,20}\b(aws|gcp|azure|vps|heroku|render|railway|digitalocean)\b/i,
-    'infra',
+    'runtime_identity_hosting',
   ],
   [
     /\b(which|what)\s+(server|cloud|database|db)\b.{0,20}\b(you|your|this\s+bot)\b/i,
-    'infra',
+    'runtime_identity_hosting',
   ],
-  [/\b(internal|wispace)\s+(api\s+)?key\b/i, 'infra'],
-  [/\b(environment\s+variables?|env\s+vars?|\.env\b)/i, 'infra'],
-  [/\b(real|actual|internal)\s+rate\s+limit\b/i, 'infra'],
+  [/\b(internal|wispace)\s+(api\s+)?key\b/i, 'environment_variables'],
+  [
+    /\b(environment\s+variables?|env\s+vars?|\.env\b)/i,
+    'environment_variables',
+  ],
+  [/\b(real|actual|internal)\s+rate\s+limit\b/i, 'internal_rate_limits'],
   [
     /\brate\s+limit\b.{0,20}\b(per\s+minute|that\s*su|thuc\s*su|internal)\b/i,
-    'infra',
+    'internal_rate_limits',
   ],
   [
     /\b(host|deploy|chay)\b.{0,15}\b(o\s*dau|tren\s*dau|may\s*chu\s*nao)\b/i,
-    'infra',
+    'runtime_identity_hosting',
   ],
-  [/\b(database|db|co\s*so\s*du\s*lieu)\b.{0,15}\b(nao|gi|j)\b/i, 'infra'],
+  [
+    /\b(database|db|co\s*so\s*du\s*lieu)\b.{0,15}\b(nao|gi|j)\b/i,
+    'runtime_identity_hosting',
+  ],
   [
     /\b(dung|su\s*dung|xai)\b.{0,15}\b(postgres|redis|mysql|mongo(db)?)\b/i,
-    'infra',
+    'runtime_identity_hosting',
   ],
-  [/\bbien\s*moi\s*truong\b/i, 'infra'],
-  [/\bduong\s*dan\b.{0,25}\b(file|prompt|server|may\s*chu)\b/i, 'infra'],
+  [/\bbien\s*moi\s*truong\b/i, 'environment_variables'],
+  [/\bduong\s*dan\b.{0,25}\b(file|prompt|server|may\s*chu)\b/i, 'file_paths'],
+  [/(部署在哪|托管在哪|什么数据库)/i, 'runtime_identity_hosting'],
+  [/(环境变量|内部密钥|api密钥)/i, 'environment_variables'],
+  [/(真实的?速率限制)/i, 'internal_rate_limits'],
+
+  // ── environment-variable and file-path probes ──────────────────────────
   [
-    /(部署在哪|托管在哪|什么数据库|环境变量|真实的?速率限制|内部密钥|api密钥)/i,
-    'infra',
+    /\b(?:what|which|list|show|name)\b.{0,30}\b(?:environment\s+variables?|env\s+vars?|\.env)\b/i,
+    'environment_variables',
+  ],
+  [
+    /\b(?:what|which|show|give\s+me|print)\b.{0,30}\b(?:internal\s+)?(?:file\s+)?paths?\b/i,
+    'file_paths',
   ],
 
-  // ── guardrail mapping (boundary extraction without the prompt text) ──
+  // ── internal tool policy fields and endpoints ──────────────────────────
+  [
+    /\b(?:approval_token|confirmation_nonce|provider_key)\b/i,
+    'agent_tool_architecture',
+  ],
+  [
+    /\b(?:what|which|show|explain|tell\s+me)\b.{0,35}\b(?:your\s+|internal\s+|wispace\s+)?(?:api\s+)?endpoint\b/i,
+    'runtime_identity_hosting',
+  ],
+  [
+    /\b(?:your|internal|wispace|backend)\s+(?:api\s+)?endpoint\b/i,
+    'runtime_identity_hosting',
+  ],
+
+  // ── safety / abuse-detection mechanisms ────────────────────────────────
   [
     /\b(what|which)\s+(topics?|questions?|things?|words?)\b.{0,40}\b(refuse|reject|won'?t|can'?t|not\s+allowed|blocked?)\b/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
-  [/\bhow\s+do\s+you\s+detect\s+(prompt\s+)?injection\b/i, 'guardrail'],
+  [
+    /\bhow\s+do\s+you\s+detect\s+(prompt\s+)?injection\b/i,
+    'safety_abuse_detection',
+  ],
   [
     /\b(list|enumerate|show)\s+(your\s+|all\s+)?(rules?|guardrails?|restrictions?|guidelines?)\b/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
   [
     /\bwhat\s+are\s+you\s+(not\s+allowed|forbidden|prohibited)\s+to\b/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
-  [/\bblocked\s+(keywords?|words?|phrases?)\b/i, 'guardrail'],
+  [/\bblocked\s+(keywords?|words?|phrases?)\b/i, 'safety_abuse_detection'],
   [
     /\b(chu\s*de|cau\s*hoi)\s+nao\b.{0,30}\b(tu\s*choi|khong\s*tra\s*loi|bi\s*chan)\b/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
   [
     /\b(phat\s*hien)\b.{0,20}\b(prompt\s*injection|tan\s*cong\s*prompt)\b/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
   [
     /\b(liet\s*ke|ke\s*het)\b.{0,20}\b(quy\s*tac|luat|guardrail|rang\s*buoc)\b/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
-  [/\b(ban|may)\s+(khong\s*duoc|bi\s*cam)\s+lam\s+gi\b/i, 'guardrail'],
-  [/\btu\s*khoa\b.{0,20}\b(bi\s*chan|cam)\b/i, 'guardrail'],
+  [
+    /\b(ban|may)\s+(khong\s*duoc|bi\s*cam)\s+lam\s+gi\b/i,
+    'safety_abuse_detection',
+  ],
+  [/\btu\s*khoa\b.{0,20}\b(bi\s*chan|cam)\b/i, 'safety_abuse_detection'],
   [
     /(拒绝什么话题|哪些话题.*拒绝|如何检测.*注入|列出.*规则|被禁止做什么|屏蔽的?关键词)/i,
-    'guardrail',
+    'safety_abuse_detection',
   ],
 
-  // ── tool / capability probing to prep abuse (taxonomy K) ─────────────
+  // ── tool / capability probing ─────────────────────────────────────────
   [
     /\b(create|make|generate)\b.{0,30}\bexercise\b.{0,15}\bfor\s+(another|other|someone\s+else|a\s+different)\b/i,
-    'tool-probe',
+    'agent_tool_architecture',
   ],
   [
     /\bif\s+i\s+(give|pass|provide|send)\s+.{0,20}\b(another|different|someone\s+else'?s)\s+(user\s*id|userid|id)\b/i,
-    'tool-probe',
+    'agent_tool_architecture',
   ],
   [
     /\breschedule\b.{0,25}\b(parameters?|date\s+format|takes?|accepts?)\b/i,
-    'tool-probe',
+    'agent_tool_architecture',
   ],
   [
     /\breschedule\b.{0,30}\b(tham\s*so|format\s*ngay|nhan\s*gi|nhan\s*tham)\b/i,
-    'tool-probe',
+    'agent_tool_architecture',
   ],
   [
     /\btao\s+bai\s*tap\s+cho\s+(user|nguoi\s*dung|hoc\s*vien|ban)\s+khac\b/i,
-    'tool-probe',
+    'agent_tool_architecture',
   ],
   [
     /\b(dua|truyen|nhap|gui)\b.{0,20}\buserid\s+(khac|nguoi\s*khac)\b/i,
-    'tool-probe',
+    'agent_tool_architecture',
   ],
-  [/\bgoi\s+api\s+voi\s+id\b.{0,20}\b(khac|nguoi\s*khac)\b/i, 'tool-probe'],
-  [/(给其他用户|其他用户.*练习|需要什么id)/i, 'tool-probe'],
+  [
+    /\bgoi\s+api\s+voi\s+id\b.{0,20}\b(khac|nguoi\s*khac)\b/i,
+    'agent_tool_architecture',
+  ],
+  [/(给其他用户|其他用户.*练习|需要什么id)/i, 'agent_tool_architecture'],
 
-  // ── error / debug-channel probing (taxonomy I) ──────────────────────
-  [/\b(verbose|debug)\s+mode\b/i, 'debug'],
-  [/\b(enable|turn\s+on|bat|bật)\s+(verbose|debug)\b/i, 'debug'],
-  [/\b(full|complete|raw)\s+(response|json)\b.{0,20}\bmetadata\b/i, 'debug'],
-  [/\b(stack\s*trace|traceback|full\s+error)\b/i, 'debug'],
-  [/\b(che\s*do|chế\s*độ)\s+(verbose|debug|go\s*roi|gỡ\s*rối)\b/i, 'debug'],
+  // ── error / debug-channel probing ─────────────────────────────────────
+  [/\b(verbose|debug)\s+mode\b/i, 'safety_abuse_detection'],
+  [
+    /\b(enable|turn\s+on|bat|bật)\s+(verbose|debug)\b/i,
+    'safety_abuse_detection',
+  ],
+  [
+    /\b(full|complete|raw)\s+(response|json)\b.{0,20}\bmetadata\b/i,
+    'safety_abuse_detection',
+  ],
+  [/\b(stack\s*trace|traceback|full\s+error)\b/i, 'safety_abuse_detection'],
+  [
+    /\b(che\s*do|chế\s*độ)\s+(verbose|debug|go\s*roi|gỡ\s*rối)\b/i,
+    'safety_abuse_detection',
+  ],
   [
     /\btra\s+(ve|về)\s+.{0,20}\b(metadata|json\s+day\s+du|json\s+đầy\s+đủ)\b/i,
-    'debug',
+    'safety_abuse_detection',
   ],
-  [/(调试模式|详细模式|完整的?元数据|堆栈跟踪)/i, 'debug'],
+  [/(调试模式|详细模式|完整的?元数据|堆栈跟踪)/i, 'safety_abuse_detection'],
 ];
 
 /** Leetspeak fold for the disclosure scan only (taxonomy G): "pr0mpt" → "prompt". */

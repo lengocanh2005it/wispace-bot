@@ -1,12 +1,18 @@
+import { AGENT_TOOLS } from '../agent.tools';
+import { sanitizeReplyText } from '../text.utils';
 import { CREDENTIAL_SHAPES } from './secret-patterns.utils';
+import {
+  DISCLOSURE_CATEGORY,
+  type DisclosureCategory,
+} from './disclosure-taxonomy.utils';
 import { buildSafetyScanCandidates } from './prompt-injection.utils';
 
 /**
  * Final-output safety guardrail (#165): the last thing an LLM-generated
  * reply passes through before delivery. Input scanning and tool-result
  * sanitization can miss a direct or indirect injection response — this check
- * catches the model leaking system-prompt/instruction material or
- * credential-shaped content, and the caller fails closed to a generic reply.
+ * catches known disclosure patterns and credential-shaped content. Grounding
+ * remains responsible for factual support; disclosure is checked after it.
  */
 
 /** Distinctive system-prompt markers — if any appears in a REPLY, the model
@@ -51,6 +57,95 @@ const FIRST_PERSON_MODEL_USAGE =
   /\b(?:i am using|i'm using|i use)\s+(?:the\s+)?(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i;
 const QUOTED_MODEL_REFERENCE =
   /["“‘`][^"“”‘’`\r\n]{0,120}\b(?:chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b[^"“”‘’`\r\n]{0,120}["”’`]/gi;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const TOOL_NAME_LEAK_PATTERNS = AGENT_TOOLS.flatMap(({ name }) =>
+  [...new Set([name, sanitizeReplyText(name)])].map(
+    (candidateName) =>
+      new RegExp(
+        `(^|[^\\p{L}\\p{N}_])${escapeRegExp(candidateName)}(?=$|[^\\p{L}\\p{N}_])`,
+        'iu',
+      ),
+  ),
+);
+
+const CAPABILITY_VALUE_LEAK_PATTERNS = [
+  ...new Set(
+    AGENT_TOOLS.flatMap(({ capability }) =>
+      Object.values(capability)
+        .filter((value): value is string => typeof value === 'string')
+        .filter((value) => value !== 'none')
+        .flatMap((value) => [value, sanitizeReplyText(value)]),
+    ),
+  ),
+].map(
+  (value) =>
+    new RegExp(
+      `(^|[^\\p{L}\\p{N}_])${escapeRegExp(value)}(?=$|[^\\p{L}\\p{N}_])`,
+      'iu',
+    ),
+);
+const CAPABILITY_ASSIGNMENT_LEAK_PATTERNS = AGENT_TOOLS.flatMap(
+  ({ capability }) =>
+    Object.entries(capability).map(([field, value]) => {
+      const outputField =
+        field === 'providerGuaranteeRequired' ? 'provider_guarantee' : field;
+      return new RegExp(
+        `\\b${escapeRegExp(outputField)}\\s*[:=]\\s*${escapeRegExp(String(value))}\\b`,
+        'i',
+      );
+    }),
+);
+
+const OUTPUT_DISCLOSURE_PATTERNS: Record<
+  DisclosureCategory,
+  readonly RegExp[]
+> = {
+  [DISCLOSURE_CATEGORY.agentToolArchitecture]: [
+    ...TOOL_NAME_LEAK_PATTERNS,
+    ...CAPABILITY_VALUE_LEAK_PATTERNS,
+    ...CAPABILITY_ASSIGNMENT_LEAK_PATTERNS,
+    /\b(?:policy\s+vocabulary|(?:tool|function)\s+schemas?|(?:tool|function)\s+definitions?)\b/i,
+    /\b(?:(?:i|we)\s+(?:can\s+call|have|use|support|expose)|(?:this|the)\s+(?:assistant|agent)\s+(?:can\s+call|has|uses?|supports?|exposes?))\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+tools?\b/i,
+    /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+schemas?\b/i,
+    /\b(?:i|we|the\s+assistant|the\s+agent)\s+(?:can\s+call|have|support|expose)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+functions?\b/i,
+  ],
+  [DISCLOSURE_CATEGORY.systemPrompt]: [
+    ...SYSTEM_PROMPT_LEAK_MARKERS.map(
+      (marker) => new RegExp(escapeRegExp(marker), 'i'),
+    ),
+    /\b(?:system\s+prompt|system\s+message|developer\s+instructions?)\s*[:=]\s*\S+/i,
+  ],
+  [DISCLOSURE_CATEGORY.samplingParameters]: [
+    /\b(?:temperature|top[_ -]?p|top[_ -]?k|seed|max[_ -]?tokens?|frequency[_ -]?penalty|presence[_ -]?penalty|system\s*fingerprint)\s*[:=]\s*[\w.-]+/i,
+  ],
+  [DISCLOSURE_CATEGORY.runtimeIdentityHosting]: [
+    /\b(?:i|we|this assistant|the assistant|this bot|the bot|wispace)\b.{0,30}\b(?:hosted|deployed|running)\s+(?:on|at)\s+(?:aws|gcp|azure|vps|heroku|render|railway|digitalocean)\b/i,
+    /\b(?:our|internal|this assistant's|the assistant's|this bot's|the bot's|wispace's)\s+(?:database|db|server|cloud|api\s+endpoint|endpoint)\s*(?:is|:|=)\s*\S+/i,
+  ],
+  [DISCLOSURE_CATEGORY.environmentVariables]: [
+    /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/,
+  ],
+  [DISCLOSURE_CATEGORY.filePaths]: [
+    /\b(?:apps|packages|deploy|\.github)\/(?:[\w.-]+\/)*[\w.-]+\.(?:ts|js|json|txt|yaml|yml|sh|md|env)\b/i,
+    /\b[A-Z]:\\(?:[^\\\s]+\\)*[^\\\s]+\.(?:ts|js|json|txt|yaml|yml|sh|md|env)\b/i,
+  ],
+  [DISCLOSURE_CATEGORY.internalRateLimits]: [
+    /\b(?:internal|configured|actual)\s+rate\s+limit\b.{0,30}\b\d+\b/i,
+    /\brate[_ -]?limit\s*[:=]\s*\d+\b/i,
+    /\b(?:i|we|the assistant|this assistant|the bot|this bot)\b.{0,20}\b\d+\s+(?:requests?|calls?)\s+per\s+(?:minute|second)\b/i,
+  ],
+  [DISCLOSURE_CATEGORY.safetyAbuseDetection]: [
+    /\b(?:prompt[- ]injection|abuse\s+detection)\s+(?:is\s+)?(?:detected|blocked|filtered)\s+(?:by|using|with)\b/i,
+    /\b(?:i|we|this assistant|the assistant)\s+(?:detect|block|filter|classify)\b.{0,35}\b(?:prompt[- ]injection|abuse|malicious|unsafe)\b/i,
+    /\b(?:my|our|this assistant's|the assistant's)\s+(?:blocked\s+keywords?|refused\s+topics?|safety\s+rules?|guardrails?)\b/i,
+    /\b(?:blocked\s+keywords?|refused\s+topics?|safety\s+rules?|guardrails?)\b.{0,30}\b(?:assistant|agent)\b/i,
+  ],
+};
+
 function isQuotedModelLanguageExample(
   text: string,
   quoted: string,
@@ -161,6 +256,7 @@ export interface FinalOutputSafetyResult {
     | 'prompt_leak'
     | 'credential_leak'
     | 'vendor_leak'
+    | 'disclosure_leak'
     | HarmfulOutputSafetyReason;
 }
 
@@ -239,6 +335,21 @@ export function checkFinalOutputSafety(text: string): FinalOutputSafetyResult {
   for (const pattern of VENDOR_MODEL_PATTERNS) {
     if (vendorCandidates.some((candidate) => pattern.test(candidate))) {
       return { unsafe: true, reason: 'vendor_leak' };
+    }
+  }
+  for (const [category, patterns] of Object.entries(
+    OUTPUT_DISCLOSURE_PATTERNS,
+  ) as Array<[DisclosureCategory, readonly RegExp[]]>) {
+    const disclosureCandidates =
+      category === DISCLOSURE_CATEGORY.runtimeIdentityHosting
+        ? vendorCandidates
+        : outputCandidates;
+    if (
+      patterns.some((pattern) =>
+        disclosureCandidates.some((candidate) => pattern.test(candidate)),
+      )
+    ) {
+      return { unsafe: true, reason: 'disclosure_leak' };
     }
   }
   if (

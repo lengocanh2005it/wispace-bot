@@ -38,7 +38,7 @@ function evaluateFinalSafety(
   toolSummary: string | undefined,
 ): SafetyEvaluation {
   const sanitized = sanitizeReplyText(text);
-  const finalSafety = checkFinalOutputSafety(sanitized);
+  const finalSafety = checkFinalOutputSafety(text);
   if (!finalSafety.unsafe)
     return { outcome: 'allowed', text: sanitized, toolSummary };
   return {
@@ -154,7 +154,7 @@ function appendBoundedDisclosures(
   return notes.length === 0 ? text : `${text.trim()} ${notes.join(' ')}`.trim();
 }
 
-/** Pure ordering of grounding, text sanitization, and final output guards. */
+/** Grounding checks factual support/completeness; disclosure is guarded after it. */
 export class SafetyPipeline {
   evaluate(input: SafetyEvaluationInput): SafetyEvaluation {
     const toolSummary =
