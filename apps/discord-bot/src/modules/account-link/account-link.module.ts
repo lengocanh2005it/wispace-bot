@@ -67,10 +67,12 @@ import { DiscordOutboundService } from '../discord-chat/application/services/dis
         new WispaceTokenVerifyService(configService, 'discord', metrics),
       inject: [ConfigService, BotMetricsService],
     },
-    DiscordOutboundService,
     {
-      // #1445: `account-link` reaches DM delivery only through its own port —
-      // the concrete outbound service stays wired here, at the composition root.
+      // #1445: `account-link` reaches DM delivery only through its own port.
+      // The concrete service is deliberately NOT re-registered here: Nest
+      // prefers a module's own providers over an imported module's, so listing
+      // it would hand this module — and the token below — a second instance
+      // instead of the one `DiscordOutboundModule` exports.
       provide: DISCORD_OUTBOUND_MESSAGING,
       useExisting: DiscordOutboundService,
     },

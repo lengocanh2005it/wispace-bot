@@ -32,7 +32,7 @@ export class DiscordConsentService {
 
   constructor(
     @Inject(DISCORD_LINKED_IDENTITY)
-    private readonly accountLinkService: DiscordLinkedIdentityPort,
+    private readonly linkedIdentity: DiscordLinkedIdentityPort,
     @Inject(DISCORD_CONSENT_PROMPT)
     private readonly consentPrompt: DiscordConsentPromptPort,
     private readonly outboundService: DiscordOutboundService,
@@ -52,7 +52,7 @@ export class DiscordConsentService {
     if (!command) return false;
 
     const userId =
-      await this.accountLinkService.findUserIdByDiscordId(discordUserId);
+      await this.linkedIdentity.findUserIdByDiscordId(discordUserId);
     if (userId === undefined) {
       await this.outboundService.sendText(
         discordUserId,

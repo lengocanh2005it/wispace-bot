@@ -18,8 +18,10 @@ import {
 } from '@wispace/database';
 import { PRIVACY_CLEANUP_STORES } from '@wispace/contracts';
 import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
-import { ZALO_REPORT_CRON } from './application/ports/report-cron.port';
-import type { ZaloReportCronPort } from './application/ports/report-cron.port';
+import {
+  ZALO_REPORT_CRON,
+  type ZaloReportCronPort,
+} from './application/ports/report-cron.port';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ZaloReportModule } from '../zalo-chat/zalo-report.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
