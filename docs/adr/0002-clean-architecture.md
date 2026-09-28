@@ -19,6 +19,15 @@ Each feature module in `apps/messenger-bot/src/modules/` follows 4 layers: `doma
 | Hexagonal architecture (ports & adapters)       | Similar but NestJS already has a built-in DI container, no need for an additional abstraction layer.                    |
 | Full DDD (entities, value objects, aggregates)  | Too heavy at this stage. Requires more boilerplate than necessary.                                                      |
 
+The rejection above is of the hexagonal **structure** — an independent port
+interface layer sitting between the layers. It is not a rejection of the
+port-versus-concrete distinction that the architecture check now enforces
+(#1445). That rule classifies an existing import as a port or as concrete
+implementation detail and rejects the second; it adds no layer and changes no
+directory layout, and the four-layer structure above is unchanged. The two ideas
+coexist because one is a claim about dependency direction and the other is a
+claim about where the abstractions live.
+
 ## Consequences
 
 - Each module has more files (4 subdirectories). New developers need time to familiarize themselves.

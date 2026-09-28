@@ -4,8 +4,20 @@
   "created": "2026-09-19",
   "total_chunks": 4,
   "current_chunk": 0,
-  "status": "awaiting-signoff",
+  "status": "chunks-1-2-superseded-by-1445",
   "preflight_passed": false,
+  "superseded": {
+    "chunks": [1, 2],
+    "by_issue": 1445,
+    "date": "2026-09-27",
+    "reasons": [
+      "No ratchet: LEGACY_APPLICATION_IMPORTS was deleted and a guard test in scripts/check-architecture.test.mjs keeps it deleted, so the file|module|symbol triplet format this plan copies does not exist.",
+      "No filesystem-derived feature registry: app-generic globs already cover every feature module in every bot; the cross-feature rule was uncovered only because it was written outside the rule table.",
+      "Scope is zalo-bot and discord-bot, not all three bots. messenger-bot is deferred because its largest cluster is dependency inversion, not hygiene.",
+      "The 58-edge / 40-CONCRETE inventory is not reproducible: its scan script lived in a temp directory, the per-pair counts sum to 39, and the wispace module directory is absent."
+    ],
+    "remeasured_production_violations": { "messenger-bot": 51, "discord-bot": 11, "zalo-bot": 6 }
+  },
   "verification": {
     "boundary": "npm run architecture:test && npm run architecture:check",
     "test": "npm run test",
@@ -18,7 +30,7 @@
     {
       "id": 1,
       "name": "Feature registry refactor inside the checker (behavior-preserving)",
-      "status": "pending",
+      "status": "superseded",
       "depends_on": [],
       "verification": null,
       "commit_sha": null,
@@ -27,8 +39,9 @@
     },
     {
       "id": 2,
-      "name": "Enforce sibling-feature boundaries for every feature pair, all three apps (#1291)",
-      "status": "pending",
+      "name": "Enforce sibling-feature boundaries for every feature pair, all three apps (#1291) — SUPERSEDED by #1445 (zalo-bot + discord-bot only)",
+      "status": "superseded",
+      "superseded_by": 1445,
       "depends_on": [1],
       "verification": null,
       "commit_sha": null,

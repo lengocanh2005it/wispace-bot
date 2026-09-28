@@ -78,15 +78,18 @@ describe('MessengerAgentToolsService', () => {
       rescheduleConfirmationService,
       exerciseClient,
       mappingService as never,
-      overrides.currentIdentityProvider ??
-        jest.fn().mockResolvedValue({
-          userId: 42,
-          mappingVersion: 'test:psid-123',
-        }),
-      overrides.policyDeniedInc,
-      budgetDeps?.writeToolBudget,
-      budgetDeps?.writeToolPerMessageCaps,
-      budgetDeps?.writeToolBudgetDeniedInc,
+      {
+        currentIdentityProvider:
+          overrides.currentIdentityProvider ??
+          jest.fn().mockResolvedValue({
+            userId: 42,
+            mappingVersion: 'test:psid-123',
+          }),
+        policyDeniedInc: overrides.policyDeniedInc,
+        writeToolBudget: budgetDeps?.writeToolBudget,
+        writeToolPerMessageCaps: budgetDeps?.writeToolPerMessageCaps,
+        writeToolBudgetDeniedInc: budgetDeps?.writeToolBudgetDeniedInc,
+      },
     );
 
     const ctx: PlatformAgentToolContext = {

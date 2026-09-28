@@ -25,7 +25,6 @@ import {
   isExtractionReason,
   detectPromptInjection,
   detectPromptInjectionAcrossTurns,
-  redactSecrets,
   sanitizeUntrustedTextForLlm,
   buildLlmExecutionConfig,
   generatePromptCanary,
@@ -68,6 +67,7 @@ import type {
   PlatformAgentToolContext,
   PlatformToolExecutorPort,
 } from './platform-agent.types';
+import { redactPromptPart } from './system-prompt-parts';
 import { pinFactsToReply } from './pinned-facts';
 import {
   ClarificationStateMachine,
@@ -1178,10 +1178,4 @@ export class PlatformAgentService {
       systemPromptParts,
     };
   }
-}
-
-function redactPromptPart(
-  value: string | null | undefined,
-): string | undefined {
-  return value ? redactSecrets(value).text : undefined;
 }

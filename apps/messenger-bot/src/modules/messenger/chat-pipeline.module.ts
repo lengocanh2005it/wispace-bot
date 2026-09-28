@@ -33,11 +33,11 @@ import {
   sanitizeUntrustedTextForLlm,
   buildWriteToolDailyBudgetMessage,
 } from '@wispace/llm-agent/core';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
-  ADVISORY_LOCKS,
-  PgAdvisoryLockService,
-} from '@wispace/bot-common/locks';
+  REDIS_CLIENT,
+  RedisUserDisplayNameCache,
+  type RedisClientPort,
+} from '@wispace/bot-common/redis';
 import { WispaceConfigService } from '@wispace/wispace-client/adapters';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
 import {
@@ -46,8 +46,8 @@ import {
   RescheduleConfirmationEntity,
 } from '@wispace/database';
 import {
-  RescheduleRecoveryCronService,
   TypeormRescheduleStore,
+  createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
 import {
   LEARNER_PROFILE_STORE,
@@ -66,6 +66,7 @@ import { LlmUsageConfigService } from '../llm-usage/application/services/llm-usa
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
+import { MESSENGER_USER_DISPLAY_NAME_CACHE } from './application/ports/user-display-name-cache.port';
 import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerOutboundModule } from './messenger-outbound.module';
@@ -74,9 +75,10 @@ import {
   MessengerAgentToolsService,
   MESSENGER_TOOL_IDENTITY_PROVIDER,
   MESSENGER_TOOL_POLICY_DENIED_INC,
-  MESSENGER_WRITE_TOOL_BUDGET,
   MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
   MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
+  MESSENGER_TOOL_POLICY,
+  type MessengerToolPolicy,
 } from './application/agent/messenger-agent-tools.service';
 import { AgentReplyAdapter } from './infrastructure/adapters/agent-reply.adapter';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
@@ -160,6 +162,15 @@ import {
     ]),
   ],
   providers: [
+    {
+      // Bound here because `MessengerChatProcessorService` is provided here.
+      // Bound in `MessengerModule` it resolved to `undefined` and the privacy
+      // path silently dropped the `display_name_cache` hook, so the display
+      // name survived in Redis after an erasure request. Full account in
+      // `docs/architecture-boundaries.md`; see #1450.
+      provide: MESSENGER_USER_DISPLAY_NAME_CACHE,
+      useExisting: RedisUserDisplayNameCache,
+    },
     {
       provide: ChatRuntimeConfig,
       useFactory: (configService: ConfigService) =>
@@ -557,29 +568,7 @@ import {
       }),
       inject: [STUDY_REMINDER_OPERATIONS_PORT],
     },
-    {
-      provide: TypeormRescheduleStore,
-      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
-        new TypeormRescheduleStore<string>('messenger', repo),
-      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
-    },
-    {
-      provide: RescheduleRecoveryCronService,
-      useFactory: (
-        store: TypeormRescheduleStore<string>,
-        metrics: BotMetricsService,
-        pgLock: PgAdvisoryLockService,
-      ) =>
-        new RescheduleRecoveryCronService(store, metrics, {
-          pgLock,
-          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        }),
-      inject: [
-        TypeormRescheduleStore,
-        BotMetricsService,
-        PgAdvisoryLockService,
-      ],
-    },
+    ...createRescheduleProviders('messenger'),
     AgentReplyAdapter,
     {
       provide: AGENT_REPLY,
@@ -597,10 +586,6 @@ import {
     },
     MessengerAgentToolsService,
     {
-      provide: MESSENGER_WRITE_TOOL_BUDGET,
-      useExisting: PlatformWriteToolBudgetService,
-    },
-    {
       provide: MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
       useFactory: (b: PlatformWriteToolBudgetService) => b.perMessageCaps(),
       inject: [PlatformWriteToolBudgetService],
@@ -611,6 +596,32 @@ import {
         (m: BotMetricsService) => (tool: string, reason: 'per_message') =>
           m.incWriteToolBudgetDenied(tool, 'messenger', reason),
       inject: [BotMetricsService],
+    },
+    {
+      // One token for the five optional policy/telemetry callbacks, so the
+      // tools service takes a single `@Optional()` parameter instead of five
+      // adjacent ones that no type could tell apart.
+      provide: MESSENGER_TOOL_POLICY,
+      useFactory: (
+        currentIdentityProvider: MessengerToolPolicy['currentIdentityProvider'],
+        policyDeniedInc: MessengerToolPolicy['policyDeniedInc'],
+        writeToolBudget: PlatformWriteToolBudgetService,
+        writeToolPerMessageCaps: MessengerToolPolicy['writeToolPerMessageCaps'],
+        writeToolBudgetDeniedInc: MessengerToolPolicy['writeToolBudgetDeniedInc'],
+      ): MessengerToolPolicy => ({
+        currentIdentityProvider,
+        policyDeniedInc,
+        writeToolBudget,
+        writeToolPerMessageCaps,
+        writeToolBudgetDeniedInc,
+      }),
+      inject: [
+        MESSENGER_TOOL_IDENTITY_PROVIDER,
+        MESSENGER_TOOL_POLICY_DENIED_INC,
+        PlatformWriteToolBudgetService,
+        MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
+        MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
+      ],
     },
     {
       provide: MessengerRescheduleConfirmationService,

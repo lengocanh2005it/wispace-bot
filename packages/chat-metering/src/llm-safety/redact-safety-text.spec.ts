@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { redactSafetyText } from './redact-safety-text';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from '@wispace/bot-common/masking';
 
 describe('redactSafetyText', () => {
   it('returns a stable sha256 hash of the raw text', () => {
@@ -72,6 +76,38 @@ describe('redactSafetyText', () => {
     const result = redactSafetyText('password: SuperSecret123! tiếp tục');
 
     expect(result.excerpt).not.toContain('SuperSecret123');
+  });
+
+  it('masks a bare provider key that is not attached to a Bearer header', () => {
+    // Assembled from parts so no literal api-key-shaped string sits in the
+    // repo (gitleaks flags those even in tests).
+    const bareKey = 'sk-' + 'proj9Qw3rty12uio0pAS';
+    const result = redactSafetyText(`upstream said ${bareKey} was invalid`);
+
+    expect(result.excerpt).not.toContain(bareKey);
+    expect(result.excerpt).toContain('[REDACTED]');
+  });
+
+  it('masks credentials embedded in a connection string', () => {
+    // Host without a dot: the e-mail pattern needs `host.tld`, so this only
+    // passes once the shared connection-string shape is actually applied.
+    const result = redactSafetyText(
+      'Redis down: redis://:Pa55wordForRedis@redis-cluster:6379/0',
+    );
+
+    expect(result.excerpt).not.toContain('Pa55wordForRedis');
+    expect(result.excerpt).toContain('[REDACTED]');
+  });
+
+  it('masks a registered runtime secret value', () => {
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      const result = redactSafetyText('giá trị cấu hình Xk9mQ2vLp4Tn7Ws hỏng');
+      expect(result.excerpt).not.toContain('Xk9mQ2vLp4Tn7Ws');
+      expect(result.excerpt).toContain('[REDACTED]');
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
   });
 
   it('keeps ordinary prose readable after redaction', () => {

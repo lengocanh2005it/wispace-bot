@@ -18,6 +18,7 @@ import {
   sanitizeErrorStack,
 } from '../masking';
 import { RedactedLogger } from '../logging';
+import { validateInternalApiKeyEnv } from '../config';
 import { loadVaultSecrets, type VaultApplication } from '../secrets';
 
 export const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 45_000;
@@ -154,6 +155,13 @@ export async function bootstrapBot(
   installProcessErrorHandlers(logger, exit);
 
   await loadVaultSecrets({ application: options.application });
+
+  // After Vault, before Nest init: a Vault-delivered key must count as
+  // present. The guard already rejects every ops request when the key is
+  // absent, so without this the process would boot healthy, pass
+  // /health/ready, and then 500 on all ops routes — the worst shape for a
+  // deploy gate, because the health probe passes.
+  validateInternalApiKeyEnv(process.env);
 
   // Keep this registration after Vault loading and before Nest module init so
   // all model-context boundaries see the complete runtime-secret registry.

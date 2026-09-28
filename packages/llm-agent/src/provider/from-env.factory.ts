@@ -1,4 +1,5 @@
 import type { LlmProviderAdapter } from './llm-provider.adapter';
+import { consoleRedactedLogger } from '@wispace/bot-common/logging';
 import {
   createFailoverLlmProviderAdapter,
   createFailoverProviderEntries,
@@ -93,7 +94,7 @@ export function createLlmProviderAdapterFromEnv(
   return createFailoverLlmProviderAdapter(
     entries,
     providerOrder,
-    { warn: (m) => console.warn(m), error: (m) => console.error(m) },
+    consoleRedactedLogger,
     {
       cooldownLongMs,
       cooldownShortMs,

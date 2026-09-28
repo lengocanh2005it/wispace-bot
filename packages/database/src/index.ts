@@ -68,6 +68,11 @@ export {
 } from './services/platform-interaction/delivery-log.service';
 export { CronLeaderLeaseService } from './services/cross-cutting/cron-leader-lease.service';
 export {
+  buildPlatformDatabaseProviders,
+  PLATFORM_DATABASE_EXPORTS,
+  type PlatformDatabaseProvidersOptions,
+} from './platform-database-providers';
+export {
   buildLearnerUsageQuery,
   buildLegacyLearnerUsageQuery,
 } from './services/cross-cutting/learner-usage-query';

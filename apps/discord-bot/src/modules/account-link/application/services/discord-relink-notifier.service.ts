@@ -1,6 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
+import {
+  DISCORD_OUTBOUND_MESSAGING,
+  type DiscordOutboundMessagingPort,
+} from '../ports/discord-outbound-messaging.port';
 import { buildDiscordRelinkNoticeMessage } from '../messages/account-link.messages';
 
 /**
@@ -13,7 +16,10 @@ import { buildDiscordRelinkNoticeMessage } from '../messages/account-link.messag
 export class DiscordRelinkNotifier {
   private readonly logger = new Logger(DiscordRelinkNotifier.name);
 
-  constructor(private readonly outboundService: DiscordOutboundService) {}
+  constructor(
+    @Inject(DISCORD_OUTBOUND_MESSAGING)
+    private readonly outboundService: DiscordOutboundMessagingPort,
+  ) {}
 
   async notify(
     discordUserId: string,

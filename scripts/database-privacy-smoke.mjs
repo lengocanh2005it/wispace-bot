@@ -656,5 +656,7 @@ await runPlatform({
 
 if (redisEnabled) {
   await redis.quit();
-  console.log('redis erasure verified: history + queue buffer + display-name cache');
+  console.log(
+    'redis erasure verified: history + queue buffer + display-name cache',
+  );
 }

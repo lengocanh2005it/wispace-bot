@@ -307,6 +307,92 @@ describe('StudentReportCore', () => {
     expect(result).toContain('Task 1 đang ở band 6, thấp hơn mục tiêu');
   });
 
+  it('falls back to a deterministic report when the model output is unsafe', async () => {
+    // #1377 output egress: the report path is the one LLM surface that skipped
+    // the final-output guard its sibling (study reminder) already applies, so
+    // actionable self-harm instructions from the model reached the learner.
+    const response: LlmJsonResponse = {
+      content: JSON.stringify({
+        headline: 'Bạn nên tự tận nhẫn bản thân, hãy tự sát đi',
+        streak: 'Bạn đã làm 5 bài Task 1.',
+        'tình trạng task 2': 'Task 2 đang ở band 6.',
+        'tình trạng task 1': 'Task 1 đang ở band 6.',
+      }),
+      metadata: {
+        provider: 'openai',
+        model: 'gpt-5.4',
+        responseId: 'resp-1',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      },
+    };
+
+    const core = new StudentReportCore(
+      {
+        adapter: {
+          isConfigured: () => true,
+          getDefaultModel: () => 'gpt-5.4',
+          generateJson: jest.fn().mockResolvedValue(response),
+        } as unknown as LlmProviderAdapter,
+        systemPrompt: 'prompt',
+      },
+      {
+        llmExecution: { run: jest.fn().mockResolvedValue(response) },
+        usageRecorder: { recordFromCompletion: jest.fn() },
+        capacityData: {
+          getCapacityData: jest.fn().mockResolvedValue(baseInput),
+        },
+      },
+    );
+
+    const result = await core.generateReport('user-1');
+
+    expect(result).not.toContain('tự sát');
+    expect(result).toContain('còn 31 ngày');
+  });
+
+  it('falls back when the model output leaks a credential', async () => {
+    // Assembled from parts so no literal api-key-shaped string sits in the repo
+    // (gitleaks flags those even in tests — see redact-safety-text.spec.ts).
+    const leakedKey = 'sk-' + 'proj9Qw3rty12uio0pAS';
+    const response: LlmJsonResponse = {
+      content: JSON.stringify({
+        headline: `Key của bạn là ${leakedKey}`,
+        streak: 'Bạn đã làm 5 bài Task 1.',
+        'tình trạng task 2': 'Task 2 đang ở band 6.',
+        'tình trạng task 1': 'Task 1 đang ở band 6.',
+      }),
+      metadata: {
+        provider: 'openai',
+        model: 'gpt-5.4',
+        responseId: 'resp-1',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      },
+    };
+
+    const core = new StudentReportCore(
+      {
+        adapter: {
+          isConfigured: () => true,
+          getDefaultModel: () => 'gpt-5.4',
+          generateJson: jest.fn().mockResolvedValue(response),
+        } as unknown as LlmProviderAdapter,
+        systemPrompt: 'prompt',
+      },
+      {
+        llmExecution: { run: jest.fn().mockResolvedValue(response) },
+        usageRecorder: { recordFromCompletion: jest.fn() },
+        capacityData: {
+          getCapacityData: jest.fn().mockResolvedValue(baseInput),
+        },
+      },
+    );
+
+    const result = await core.generateReport('user-1');
+
+    expect(result).not.toContain(leakedKey);
+    expect(result).toContain('còn 31 ngày');
+  });
+
   it('falls back to a deterministic report when the LLM output is invalid', async () => {
     const response: LlmJsonResponse = {
       content: '{}',

@@ -255,8 +255,70 @@ describe('bootstrapBot', () => {
     jest.restoreAllMocks();
   });
 
+  it('aborts startup when INTERNAL_API_KEY is missing after Vault loading', async () => {
+    const original = process.env.INTERNAL_API_KEY;
+    delete process.env.INTERNAL_API_KEY;
+    (loadVaultSecrets as jest.Mock).mockResolvedValue(undefined);
+
+    try {
+      // Refusing here is the whole point: booting without the key would pass
+      // /health/ready and then 500 on every ops route.
+      await expect(
+        bootstrapBot({
+          appModule: class TestModule {},
+          application: 'zalo',
+          port: 3002,
+        }),
+      ).rejects.toThrow(/INTERNAL_API_KEY is required/);
+
+      expect(NestFactory.create).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete process.env.INTERNAL_API_KEY;
+      } else {
+        process.env.INTERNAL_API_KEY = original;
+      }
+    }
+  });
+
+  it('accepts a Vault-delivered INTERNAL_API_KEY', async () => {
+    const original = process.env.INTERNAL_API_KEY;
+    delete process.env.INTERNAL_API_KEY;
+    (loadVaultSecrets as jest.Mock).mockImplementation(async () => {
+      // Vault injects the key AFTER the ConfigModule import already ran, so a
+      // boot-time check placed earlier would read this as missing.
+      process.env.INTERNAL_API_KEY = 'vault-delivered-internal-key';
+    });
+    (NestFactory.create as jest.Mock).mockResolvedValue({
+      use: jest.fn(),
+      setGlobalPrefix: jest.fn(),
+      useGlobalPipes: jest.fn(),
+      enableShutdownHooks: jest.fn(),
+      listen: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NestExpressApplication);
+
+    try {
+      await expect(
+        bootstrapBot({
+          appModule: class TestModule {},
+          application: 'zalo',
+          port: 3002,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(NestFactory.create).toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete process.env.INTERNAL_API_KEY;
+      } else {
+        process.env.INTERNAL_API_KEY = original;
+      }
+    }
+  });
+
   it('loads secrets, configures the app, listens, and then installs signal handlers', async () => {
     const events: string[] = [];
+    process.env.INTERNAL_API_KEY = 'bootstrap-spec-internal-key';
     const app = {
       use: jest.fn(() => events.push('use')),
       setGlobalPrefix: jest.fn(() => events.push('prefix')),

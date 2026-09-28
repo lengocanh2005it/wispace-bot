@@ -24,6 +24,9 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // No `validate` hook: `forRoot` runs at import time, before
+      // `bootstrapBot` loads Vault, so a Vault-delivered key would read as
+      // missing. `validateInternalApiKeyEnv` is asserted in `bootstrapBot`.
       envFilePath: ['.env', '../../.env.shared'],
     }),
     ThrottlerModule.forRootAsync({
@@ -44,16 +47,6 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
     ZaloOpsModule,
     createMetricsModule('zalo', 'zalo-bot'),
     OpsHealthModule.forPlatform('zalo', ZaloOauthHttpModule),
-  ],
-  providers: [
-    {
-      provide: 'INTERNAL_API_KEY_VALIDATION',
-      useFactory: (config: ConfigService) => {
-        config.getOrThrow<string>('INTERNAL_API_KEY');
-        return true;
-      },
-      inject: [ConfigService],
-    },
   ],
 })
 export class AppModule {}

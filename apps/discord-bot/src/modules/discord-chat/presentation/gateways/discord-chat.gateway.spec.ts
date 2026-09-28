@@ -4,8 +4,9 @@ import type { PlatformChatQueueService } from '@wispace/chat-agent';
 import type { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import type { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import type { DiscordMenuService } from '../../application/services/discord-menu.service';
-import type { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
-import type { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
+import type { DiscordLinkedIdentityPort } from '../../domain/ports/discord-linked-identity.port';
+import type { DiscordConsentPromptPort } from '../../application/ports/discord-consent-prompt.port';
+import type { DiscordWelcomeDeliveryPort } from '../../application/ports/discord-welcome-delivery.port';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import { prepareDiscordOutbound } from '../../application/utils/discord-outbound-guard';
 import { DiscordChatGateway } from './discord-chat.gateway';
@@ -18,25 +19,29 @@ function buildConfigService(): ConfigService {
 }
 
 function buildGateway(overrides: {
-  accountLink?: Partial<DiscordAccountLinkService>;
+  accountLink?: Partial<DiscordLinkedIdentityPort>;
   outbound?: Partial<DiscordOutboundService>;
-  welcome?: Partial<DiscordWelcomeService>;
+  welcome?: Partial<DiscordWelcomeDeliveryPort>;
   menu?: Partial<DiscordMenuService>;
   chatQueue?: Partial<PlatformChatQueueService>;
   pendingVerify?: DiscordLinkVerifyRecordRepositoryPort['findPending'];
 }): {
   gateway: DiscordChatGateway;
-  accountLinkService: DiscordAccountLinkService;
+  accountLinkService: DiscordLinkedIdentityPort;
+  consentPrompt: DiscordConsentPromptPort;
   outboundService: DiscordOutboundService;
-  welcomeService: DiscordWelcomeService;
+  welcomeService: DiscordWelcomeDeliveryPort;
   chatQueueService: PlatformChatQueueService;
   verifyRecordService: DiscordLinkVerifyRecordRepositoryPort;
 } {
   const accountLinkService = {
     findUserIdByDiscordId: jest.fn().mockResolvedValue(143),
-    sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
+    findCurrentIdentity: jest.fn().mockResolvedValue(undefined),
     ...overrides.accountLink,
-  } as unknown as DiscordAccountLinkService;
+  } as unknown as DiscordLinkedIdentityPort;
+  const consentPrompt = {
+    sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
+  } as unknown as DiscordConsentPromptPort;
   const outboundService = {
     prepareText: jest.fn((text: string) => ({
       content: text,
@@ -56,7 +61,7 @@ function buildGateway(overrides: {
     welcomeIfDue: jest.fn().mockResolvedValue('sent'),
     sendOrganicWelcomeIfDue: jest.fn().mockResolvedValue('sent'),
     ...overrides.welcome,
-  } as unknown as DiscordWelcomeService;
+  } as unknown as DiscordWelcomeDeliveryPort;
   const verifyRecordService = {
     findPending:
       overrides.pendingVerify ?? jest.fn().mockResolvedValue(undefined),
@@ -83,10 +88,12 @@ function buildGateway(overrides: {
     } as never,
     verifyRecordService,
     welcomeService,
+    consentPrompt,
   );
   return {
     gateway,
     accountLinkService,
+    consentPrompt,
     outboundService,
     welcomeService,
     chatQueueService,

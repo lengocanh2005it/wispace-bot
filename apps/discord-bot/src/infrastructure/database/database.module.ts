@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
-import { NOTIFICATION_PREFERENCE } from '@wispace/contracts';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -14,12 +12,8 @@ import {
   getTypeOrmOptions as buildSharedOptions,
   SHARED_ENTITIES,
   createCircuitBreakerDataSourceFactory,
-  DbCircuitBreakerService,
-  CanonicalPlatformService,
-  NotificationPreferenceService,
-  WebActivityService,
-  UserNotificationPreferenceEntity,
-  PrivacyDataService,
+  buildPlatformDatabaseProviders,
+  PLATFORM_DATABASE_EXPORTS,
   type PrivacyEntityRegistry,
   UserPlatformMappingEntity,
   DiscordAccountLinkEntity as CanonicalDiscordAccountLinkEntity,
@@ -29,8 +23,7 @@ import {
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
   WebActivityEntity,
-  PrivacyCleanupJobStore,
-  DB_CIRCUIT_BREAKER_METRICS,
+  UserNotificationPreferenceEntity,
 } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
@@ -108,47 +101,10 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
       UserNotificationPreferenceEntity,
     ]),
   ],
-  providers: [
-    DbCircuitBreakerService,
-    {
-      provide: DB_CIRCUIT_BREAKER_METRICS,
-      useExisting: BotMetricsService,
-    },
-    CanonicalPlatformService,
-    NotificationPreferenceService,
-    {
-      provide: NOTIFICATION_PREFERENCE,
-      useExisting: NotificationPreferenceService,
-    },
-    WebActivityService,
-    {
-      provide: PrivacyCleanupJobStore,
-      useFactory: (dataSource: DataSource) =>
-        new PrivacyCleanupJobStore(dataSource),
-      inject: [DataSource],
-    },
-    {
-      provide: PrivacyDataService,
-      useFactory: (
-        dataSource: DataSource,
-        cleanupJobs: PrivacyCleanupJobStore,
-      ) =>
-        new PrivacyDataService(
-          dataSource,
-          buildPrivacyEntityRegistry(),
-          cleanupJobs,
-        ),
-      inject: [DataSource, PrivacyCleanupJobStore],
-    },
-  ],
-  exports: [
-    TypeOrmModule,
-    CanonicalPlatformService,
-    NotificationPreferenceService,
-    NOTIFICATION_PREFERENCE,
-    WebActivityService,
-    PrivacyCleanupJobStore,
-    PrivacyDataService,
-  ],
+  providers: buildPlatformDatabaseProviders({
+    circuitBreakerMetrics: BotMetricsService,
+    privacyEntityRegistry: buildPrivacyEntityRegistry,
+  }),
+  exports: PLATFORM_DATABASE_EXPORTS,
 })
 export class DatabaseModule {}

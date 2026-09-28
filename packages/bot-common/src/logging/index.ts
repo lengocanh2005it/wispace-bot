@@ -1,4 +1,5 @@
 export {
+  consoleRedactedLogger,
   redactLogLine,
   RedactedLogger,
   type RedactedLoggerOptions,

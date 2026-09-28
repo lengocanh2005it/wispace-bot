@@ -11,8 +11,8 @@ import {
 } from '@wispace/chat-agent';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
-import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
+import { ZALO_REPORT_CRON } from './application/ports/report-cron.port';
 import { ZaloOpsController } from './zalo-ops.controller';
 
 describe('Zalo privacy HTTP contract', () => {
@@ -41,7 +41,7 @@ describe('Zalo privacy HTTP contract', () => {
           useValue: { syncUpcomingSessions: jest.fn() },
         },
         {
-          provide: ZaloReportCronService,
+          provide: ZALO_REPORT_CRON,
           useValue: { sendDailyReports: jest.fn() },
         },
         { provide: WispaceCalendarService, useValue: {} },

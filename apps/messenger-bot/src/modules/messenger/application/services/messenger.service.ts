@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   ForbiddenException,
   Inject,
@@ -9,97 +8,26 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit from 'p-limit';
-import { maskEventId, maskExternalId } from '@wispace/bot-common/masking';
+import { maskEventId } from '@wispace/bot-common/masking';
 import { TRY_INLINE_DISPATCHER } from '@wispace/webhook-inbound';
-import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
-import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { WEBHOOK_INBOUND_EVENTS_PORT } from '../../domain/repositories/webhook-inbound-events.port';
 import type { WebhookInboundEventsPort } from '../../domain/repositories/webhook-inbound-events.port';
 import {
   MessengerWebhookEvent,
   MessengerWebhookPayload,
-  UserMessengerMapping,
 } from '../../domain/entities/messenger.types';
-import { MessengerLinkContextService } from './messenger-link-context.service';
-import { MessengerOutboundService } from './messenger-outbound.service';
-import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import {
-  extractRefFromEvent,
-  routeWebhookEvent,
-  RouterContext,
-} from '../messenger-webhook.router';
-import type { RefVerification } from '../types/messenger-webhook-router.types';
-import { WebhookActionExecutorService } from './webhook-action-executor.service';
+import { buildEventId } from './messenger-event-id';
 
 export { MessengerApiError } from './messenger-outbound.service';
-
-/** Maximum length for event IDs stored in varchar(255) DB columns. */
-export const MAX_EVENT_ID_LENGTH = 255;
-
-/** Maximum length for idempotency keys stored in varchar(128) DB columns. */
-export const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
-
-/** Stable per-delivery event id for the durable inbox. */
-export function buildEventId(
-  event: MessengerWebhookEvent,
-  psid: string,
-): string {
-  if (event.message?.mid) {
-    return event.message.mid;
-  }
-  if (event.timestamp !== undefined) {
-    if (event.postback?.payload) {
-      const raw = `pb:${psid}:${event.postback.payload}:${event.timestamp}`;
-      if (raw.length <= MAX_EVENT_ID_LENGTH) {
-        return raw;
-      }
-      // Bound long payloads: hash the payload to fit within varchar(255)
-      const payloadHash = createHash('sha256')
-        .update(event.postback.payload)
-        .digest('hex')
-        .slice(0, 32);
-      return `pb:${psid}:${payloadHash}:${event.timestamp}`;
-    }
-    return `evt:${psid}:${event.timestamp}`;
-  }
-  const fingerprint = createHash('sha256')
-    .update(canonicalize({ psid, event }))
-    .digest('hex');
-  return `${event.postback?.payload ? 'pb' : 'evt'}:${fingerprint}`;
-}
-
-/**
- * Deterministic idempotency key for chat rate limiting, bounded to
- * varchar(128). Uses SHA-256 for collision resistance within the limit.
- */
-export function buildIdempotencyKey(
-  event: MessengerWebhookEvent,
-  psid: string,
-): string {
-  const raw = buildEventId(event, psid);
-  if (raw.length <= MAX_IDEMPOTENCY_KEY_LENGTH) {
-    return raw;
-  }
-  const hash = createHash('sha256').update(raw).digest('hex').slice(0, 32);
-  return `idem:${hash}`;
-}
-
-function canonicalize(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value) ?? 'undefined';
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalize).join(',')}]`;
-  }
-
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`)
-    .join(',')}}`;
-}
+// Re-exported so the event-id contract keeps one import path. The
+// implementation moved beside `MessengerWebhookDispatchService`, which is the
+// only other consumer.
+export {
+  buildEventId,
+  buildIdempotencyKey,
+  MAX_EVENT_ID_LENGTH,
+  MAX_IDEMPOTENCY_KEY_LENGTH,
+} from './messenger-event-id';
 
 function buildEventType(event: MessengerWebhookEvent): string {
   if (event.postback) return 'postback';
@@ -115,12 +43,6 @@ export class MessengerService {
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject(MESSENGER_REPOSITORY)
-    private readonly repository: MessengerMappingRepositoryPort,
-    private readonly outbound: MessengerOutboundService,
-    private readonly messengerLinkContextService: MessengerLinkContextService,
-    private readonly chatRateLimitConfig: ChatRateLimitConfigService,
-    private readonly actionExecutor: WebhookActionExecutorService,
     @Inject(WEBHOOK_INBOUND_EVENTS_PORT)
     private readonly inboundEvents: WebhookInboundEventsPort,
     @Optional()
@@ -267,221 +189,5 @@ export class MessengerService {
     ].filter(Boolean);
 
     this.logger.log(`Webhook event: ${eventTypes.join(', ') || 'unknown'}`);
-  }
-
-  /**
-   * Re-process a stored inbound event (retry cron). Duplicate detection is
-   * already handled by the inbox — this bypasses `ingest`.
-   */
-  async processEvent(event: MessengerWebhookEvent): Promise<boolean> {
-    const psid = event.sender?.id;
-    if (!psid) {
-      this.logger.warn('Ignored Messenger event without sender.id');
-      return false;
-    }
-
-    const ctx = await this.preResolveContext(psid, event);
-    const actions = routeWebhookEvent(event, ctx);
-
-    for (const action of actions) {
-      const actionForExecution =
-        action.type === 'enqueue_chat' && !action.idempotencyKey
-          ? { ...action, idempotencyKey: buildIdempotencyKey(event, psid) }
-          : action;
-
-      if (
-        actionForExecution.type === 'send_text' ||
-        actionForExecution.type === 'ignore'
-      ) {
-        if (actionForExecution.type === 'send_text') {
-          this.signalMessageSeen(psid);
-        }
-        await this.actionExecutor.executeAction(
-          actionForExecution,
-          event,
-          this.resolveLinkContextForChat.bind(this),
-        );
-      } else {
-        // Fire-and-forget — the typing roundtrip must not block the webhook.
-        this.signalTyping(psid);
-        await this.actionExecutor.executeAction(
-          actionForExecution,
-          event,
-          (eventPsid, eventObj) =>
-            this.resolveLinkContextForChat(eventPsid, eventObj, ctx),
-        );
-      }
-    }
-
-    return actions.length > 0 && actions[0].type !== 'ignore';
-  }
-
-  private async preResolveContext(
-    psid: string,
-    event: MessengerWebhookEvent,
-  ): Promise<RouterContext> {
-    const existingMapping = await this.repository.findActiveMappingByPsid(psid);
-
-    const shouldEnforceRateLimit =
-      this.chatRateLimitConfig.shouldEnforceForPsid(psid);
-
-    // #383: verify an event-carried ref exactly once, for every Meta shape
-    // (opt-in, top-level referral, postback referral, message referral). The
-    // token is single-use — downstream link actions reuse the verified
-    // context instead of re-submitting it.
-    let refVerification: RefVerification | undefined;
-    const ref = extractRefFromEvent(event);
-    if (ref) {
-      refVerification = await this.verifyEventRef(
-        psid,
-        event,
-        ref,
-        existingMapping,
-      );
-    }
-
-    let linkContext: RouterContext['linkContext'];
-    if (
-      (refVerification?.status === 'verified' ||
-        refVerification?.status === 'committed') &&
-      refVerification.context
-    ) {
-      linkContext = refVerification.context;
-    } else {
-      linkContext = await this.resolveLinkContextFromMapping(
-        psid,
-        existingMapping,
-      );
-    }
-
-    return {
-      userId:
-        refVerification?.status === 'verified' ||
-        refVerification?.status === 'committed'
-          ? refVerification.context?.userId
-          : existingMapping?.userId,
-      linkContext: linkContext ?? undefined,
-      shouldEnforceRateLimit,
-      refVerification,
-    };
-  }
-
-  private async verifyEventRef(
-    psid: string,
-    event: MessengerWebhookEvent,
-    ref: string,
-    existingMapping: UserMessengerMapping | null,
-  ): Promise<RefVerification> {
-    const outcome = await this.messengerLinkContextService.resolveFromRef(
-      psid,
-      {
-        ref,
-        topic: event.optin?.topic,
-        cadence: event.optin?.frequency,
-      },
-    );
-
-    if (outcome.verifyFailureReason) {
-      return { status: 'failed', failureReason: outcome.verifyFailureReason };
-    }
-    if (outcome.handoffFailure) {
-      return { status: 'handoff_failed' };
-    }
-    if (!outcome.context) {
-      // resolveFromRef returns a context or a failure reason; treat the
-      // impossible remainder as a generic verification failure.
-      return { status: 'failed', failureReason: 'NOT_FOUND' };
-    }
-    if (
-      existingMapping?.userId != null &&
-      existingMapping.userId !== outcome.context.userId
-    ) {
-      this.logger.warn(
-        `REF_LINK_BLOCKED psid=${maskExternalId(psid)} mappedUser=${maskExternalId(
-          String(existingMapping.userId),
-        )} refUser=${maskExternalId(String(outcome.context.userId))}`,
-      );
-      return { status: 'blocked' };
-    }
-    if (outcome.intentState === 'committed') {
-      const currentMapping =
-        await this.repository.findActiveMappingByPsid(psid);
-      if (currentMapping?.userId !== outcome.context.userId) {
-        return { status: 'failed', failureReason: 'USED' };
-      }
-    }
-    return {
-      status: outcome.intentState === 'committed' ? 'committed' : 'verified',
-      context: outcome.context,
-      intentGeneration: outcome.intentGeneration,
-      ...(outcome.intentLeaseToken
-        ? { intentLeaseToken: outcome.intentLeaseToken }
-        : {}),
-    };
-  }
-
-  private async resolveLinkContextFromMapping(
-    psid: string,
-    existingMapping?: UserMessengerMapping | null,
-  ): Promise<MessengerLinkContext | undefined> {
-    const mapping =
-      existingMapping ?? (await this.repository.findActiveMappingByPsid(psid));
-    if (!mapping?.userId) {
-      return undefined;
-    }
-
-    return this.messengerLinkContextService.resolveFromMapping({
-      userId: mapping.userId,
-      topic: mapping.topic,
-      cadence: mapping.cadence,
-    });
-  }
-
-  private async resolveLinkContextForChat(
-    psid: string,
-    event: MessengerWebhookEvent,
-    preResolved?: RouterContext,
-  ): Promise<MessengerLinkContext | undefined> {
-    // #383: the ref (if any) was verified once during pre-resolve — honor
-    // that outcome instead of re-submitting a single-use token.
-    const rv = preResolved?.refVerification;
-    if (rv) {
-      if (rv.status === 'verified' || rv.status === 'committed') {
-        return rv.context ?? preResolved?.linkContext ?? undefined;
-      }
-      // blocked/failed → identity stays with the active mapping.
-      return preResolved?.linkContext ?? undefined;
-    }
-
-    const ref = extractRefFromEvent(event);
-    if (ref) {
-      const outcome = await this.messengerLinkContextService.resolveFromRef(
-        psid,
-        {
-          ref,
-          topic: event.optin?.topic,
-          cadence: event.optin?.frequency,
-        },
-      );
-      if (outcome.context) {
-        return outcome.context;
-      }
-    }
-
-    if (preResolved?.linkContext) {
-      // Reuse the mapping already fetched in preResolveContext — avoids a
-      // second identical DB lookup per chat message.
-      return preResolved.linkContext;
-    }
-
-    return this.resolveLinkContextFromMapping(psid);
-  }
-
-  private signalMessageSeen(psid: string): void {
-    void this.outbound.sendSenderActionOptional(psid, 'mark_seen');
-  }
-
-  private signalTyping(psid: string): void {
-    void this.outbound.sendSenderActionOptional(psid, 'typing_on');
   }
 }

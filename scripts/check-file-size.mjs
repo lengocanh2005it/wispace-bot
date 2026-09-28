@@ -69,7 +69,11 @@ function validateEntry(file, record) {
   if (record.lines === undefined || record.lines === null) {
     problems.push({ file, field: 'lines', problem: 'missing' });
   } else if (!Number.isInteger(record.lines) || record.lines < 1) {
-    problems.push({ file, field: 'lines', problem: 'not a positive line count' });
+    problems.push({
+      file,
+      field: 'lines',
+      problem: 'not a positive line count',
+    });
   }
   if (isBlank(record.context)) {
     problems.push({ file, field: 'context', problem: 'missing' });
@@ -77,7 +81,11 @@ function validateEntry(file, record) {
   if (isBlank(record.trackedBy)) {
     problems.push({ file, field: 'trackedBy', problem: 'missing' });
   } else if (!ISSUE_REFERENCE.test(record.trackedBy.trim())) {
-    problems.push({ file, field: 'trackedBy', problem: 'not an issue reference' });
+    problems.push({
+      file,
+      field: 'trackedBy',
+      problem: 'not an issue reference',
+    });
   }
   if (isBlank(record.reason)) {
     problems.push({ file, field: 'reason', problem: 'missing' });
@@ -137,7 +145,12 @@ export function checkFileSize(root) {
     const actual = countLines(readFileSync(path, 'utf8'));
     checked.push({ file, actual, ...record });
     if (actual > record.lines) {
-      grown.push({ file, lines: record.lines, actual, added: actual - record.lines });
+      grown.push({
+        file,
+        lines: record.lines,
+        actual,
+        added: actual - record.lines,
+      });
     }
   }
 
@@ -177,7 +190,9 @@ if (invokedDirectly) {
     console.error(`  ${file}  ${field} is ${problem}`);
   }
   for (const { file, lines } of stale) {
-    console.error(`  ${file}  is tracked but no longer exists (ceiling ${lines})`);
+    console.error(
+      `  ${file}  is tracked but no longer exists (ceiling ${lines})`,
+    );
   }
   for (const { file, lines, actual, added } of grown) {
     console.error(`  ${file}  ${lines} -> ${actual} lines (+${added})`);

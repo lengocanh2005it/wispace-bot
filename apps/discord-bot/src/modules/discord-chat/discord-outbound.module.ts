@@ -8,8 +8,10 @@ import {
 } from '@wispace/database';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
 } from '@wispace/contracts';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 import { DISCORD_TRANSPORT } from './application/ports/discord-transport.port';
 import { DiscordSdkTransportAdapter } from './infrastructure/adapters/discord-sdk-transport.adapter';
@@ -29,6 +31,14 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
     ]),
   ],
   providers: [
+    {
+      // Bound here because `DiscordOutboundService` is provided here — a token
+      // bound in a module that does not provide its consumer resolves to
+      // `undefined` and `@Optional()` swallows the error. The full account is
+      // in `docs/architecture-boundaries.md`; see #1450.
+      provide: OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
     {
       provide: DeliveryLogService,
       useFactory: (repo: Repository<DiscordMessageLogEntity>) =>

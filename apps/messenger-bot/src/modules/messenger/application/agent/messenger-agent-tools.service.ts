@@ -76,15 +76,35 @@ export const MESSENGER_TOOL_IDENTITY_PROVIDER = Symbol(
 export const MESSENGER_TOOL_POLICY_DENIED_INC = Symbol(
   'MESSENGER_TOOL_POLICY_DENIED_INC',
 );
-export const MESSENGER_WRITE_TOOL_BUDGET = Symbol(
-  'MESSENGER_WRITE_TOOL_BUDGET',
-);
 export const MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS = Symbol(
   'MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS',
 );
 export const MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC = Symbol(
   'MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC',
 );
+
+/**
+ * The optional policy/telemetry callbacks the tool pipeline needs, assembled
+ * once by the module into a single injection. They were five adjacent
+ * `@Optional()` constructor parameters, which is the shape where two of them
+ * get swapped in a call site and no type catches it — all but one are
+ * function-typed. Every field is optional: a caller that wires none of them
+ * passes a single undefined.
+ */
+export const MESSENGER_TOOL_POLICY = Symbol('MESSENGER_TOOL_POLICY');
+
+export interface MessengerToolPolicy {
+  currentIdentityProvider?: (
+    externalUserId: string,
+  ) => Promise<CurrentPlatformIdentity | undefined>;
+  policyDeniedInc?: (toolName: string, reason: string) => void;
+  writeToolBudget?: WriteToolBudgetPort;
+  writeToolPerMessageCaps?: Partial<Record<AgentToolName, number>>;
+  writeToolBudgetDeniedInc?: (tool: string, reason: 'per_message') => void;
+}
+/** Shared empty policy, so the destructure never sees `undefined`. */
+const EMPTY_TOOL_POLICY: MessengerToolPolicy = {};
+
 const REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT = {
   registered: false,
   reason: 'intent_unclear',
@@ -115,31 +135,21 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     private readonly exerciseClient: AgentExerciseCreatePort,
     private readonly mappingService: MessengerMappingService,
     @Optional()
-    @Inject(MESSENGER_TOOL_IDENTITY_PROVIDER)
-    private readonly currentIdentityProvider?: (
-      externalUserId: string,
-    ) => Promise<CurrentPlatformIdentity | undefined>,
-    @Optional()
-    @Inject(MESSENGER_TOOL_POLICY_DENIED_INC)
-    private readonly policyDeniedInc?: (
-      toolName: string,
-      reason: string,
-    ) => void,
-    @Optional()
-    @Inject(MESSENGER_WRITE_TOOL_BUDGET)
-    private readonly writeToolBudget?: WriteToolBudgetPort,
-    @Optional()
-    @Inject(MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS)
-    private readonly writeToolPerMessageCaps?: Partial<
-      Record<AgentToolName, number>
-    >,
-    @Optional()
-    @Inject(MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC)
-    private readonly writeToolBudgetDeniedInc?: (
-      tool: string,
-      reason: 'per_message',
-    ) => void,
+    @Inject(MESSENGER_TOOL_POLICY)
+    private readonly policy: MessengerToolPolicy | undefined,
   ) {
+    // Nest injects `undefined` for a missing @Optional() token, bypassing any
+    // constructor default, so the object is normalised here rather than in the
+    // signature. The five callbacks were individually optional before this
+    // grouping; a caller that wires none of them must not crash.
+    const {
+      currentIdentityProvider,
+      policyDeniedInc,
+      writeToolBudget,
+      writeToolPerMessageCaps,
+      writeToolBudgetDeniedInc,
+    } = this.policy ?? EMPTY_TOOL_POLICY;
+
     this.pipeline = new PlatformToolExecutorPipeline({
       handlers: {
         get_learning_progress_report: ({ ctx, signal }) =>
@@ -172,11 +182,11 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
           this.precreateNextExercise(ctx, signal),
       },
       getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
-      currentIdentityProvider: this.currentIdentityProvider,
-      policyDeniedInc: this.policyDeniedInc,
-      writeToolBudget: this.writeToolBudget,
-      writeToolPerMessageCaps: this.writeToolPerMessageCaps,
-      writeToolBudgetDeniedInc: this.writeToolBudgetDeniedInc,
+      currentIdentityProvider,
+      policyDeniedInc,
+      writeToolBudget,
+      writeToolPerMessageCaps,
+      writeToolBudgetDeniedInc,
       checkExplicitIntent: (toolName, userText) =>
         this.checkExplicitIntent(toolName, userText),
       intentDeniedResult: (toolName) =>
@@ -527,7 +537,10 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       (entry) => entry.calendarId === calendarId,
     );
     if (!matchedEntry) {
-      this.policyDeniedInc?.('reschedule_study_session', 'scope_unverified');
+      this.policy?.policyDeniedInc?.(
+        'reschedule_study_session',
+        'scope_unverified',
+      );
       this.logger.warn(
         `Reschedule scope could not be verified for ${maskExternalId(
           ctx.externalUserId,

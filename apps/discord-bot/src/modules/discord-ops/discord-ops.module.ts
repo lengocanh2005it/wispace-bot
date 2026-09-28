@@ -17,9 +17,14 @@ import {
   PrivacyDataService,
 } from '@wispace/database';
 import { DISCORD_PRIVACY_DATA } from './application/ports/privacy-data.port';
+import {
+  DISCORD_REPORT_DISPATCH,
+  type DiscordReportDispatchPort,
+} from './application/ports/discord-report-dispatch.port';
 import { PRIVACY_CLEANUP_STORES } from '@wispace/contracts';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';
+import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
 import { DiscordStudyReminderModule } from '../discord-study-reminder/discord-study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -38,6 +43,24 @@ import { DiscordOpsController } from './discord-ops.controller';
   controllers: [DiscordOpsController],
   providers: [
     { provide: DISCORD_PRIVACY_DATA, useExisting: PrivacyDataService },
+    {
+      // #1445: the ops surface reaches the report wave only through its own
+      // port; the concrete cron service stays wired here, at the composition
+      // root.
+      //
+      // A delegating factory, not `useExisting`: @nestjs/schedule rescans every
+      // provider wrapper's instance for @Cron metadata, so aliasing the same
+      // cron-decorated instance registers the job twice and addCron throws
+      // DUPLICATE_SCHEDULER at boot. The object literal below is not a class, so
+      // there is nothing for the explorer to rescan.
+      provide: DISCORD_REPORT_DISPATCH,
+      useFactory: (
+        reportCron: DiscordReportCronService,
+      ): DiscordReportDispatchPort => ({
+        sendScheduledReports: (opts) => reportCron.sendScheduledReports(opts),
+      }),
+      inject: [DiscordReportCronService],
+    },
     {
       provide: PrivacyCleanupReconciler,
       useFactory: (

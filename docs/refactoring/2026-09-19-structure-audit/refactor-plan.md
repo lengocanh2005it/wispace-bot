@@ -1,5 +1,25 @@
 # Refactoring Plan — structure-codebase audit follow-through
 
+> **SUPERSEDED for Chunks 1–2 (F2).** Those chunks were re-specified as issue **#1445**, which
+> **departs from this plan on three points** — do not implement Chunks 1–2 from this file:
+>
+> 1. **No ratchet, no baseline.** `LEGACY_APPLICATION_IMPORTS` does not exist; it was removed and a
+>    test in `scripts/check-architecture.test.mjs` greps the checker source to keep it removed. The
+>    `file|module|symbol` triplet format this plan copies is not a thing that can be copied.
+> 2. **No filesystem-derived feature registry.** The app-generic globs already cover every feature
+>    module in every bot; the cross-feature rule was uncovered only because it was written outside
+>    the rule table.
+> 3. **Scope is zalo-bot and discord-bot, not all three bots.** messenger-bot is deferred; its
+>    largest cluster is a dependency-inversion problem, not a hygiene problem.
+>
+> The **58-edge / 40-CONCRETE inventory below is not reproducible** — the scan script lived in a temp
+> directory outside the repository, the per-pair counts sum to 39 rather than 40, and the inventory
+> omits the `wispace` module directory entirely. Re-measured production counts are 11 (discord-bot)
+> and 6 (zalo-bot), against 51 for messenger-bot.
+>
+> Chunks 3–4 (F1r root-façade ratchet, F3 bot-common promotion rule) are unaffected and still stand.
+> Their tracker is **#1292**.
+
 **Source:** structure-codebase audit 2026-09-19 (this conversation) → issues #1291 (F2), #1126 comment (F1r stopgap), F3 doc rule
 **Created:** 2026-09-19
 **Target:** `docs/architecture-boundaries.md` claims match `scripts/check-architecture.mjs` enforcement exactly: every sibling-feature pair in all three apps is boundary-checked, root-façade import counts cannot regress upward, and the `bot-common` promotion rule is written down.

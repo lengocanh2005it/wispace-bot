@@ -3,8 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { join } from 'path';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
+import { consoleRedactedLogger } from '@wispace/bot-common/logging';
 import {
   OUTBOUND_DELIVERY_JOURNAL,
+  OUTBOUND_RATE_LIMIT,
   type OutboundDeliveryJournalPort,
 } from '@wispace/contracts';
 import {
@@ -71,7 +73,11 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  REDIS_CLIENT,
+  OutboundRateLimiter,
+  type RedisClientPort,
+} from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';
@@ -83,6 +89,7 @@ import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
 } from './application/ports/zalo-outbound.port';
+import { ZALO_WELCOME } from './application/ports/zalo-welcome.port';
 import { ZALO_CLARIFICATION_AGENT } from './application/ports/zalo-clarification-agent.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZALO_CHAT_QUEUE } from './application/ports/zalo-chat-queue.port';
@@ -110,8 +117,8 @@ import {
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
 import {
-  RescheduleRecoveryCronService,
   TypeormRescheduleStore,
+  createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
 import {
   LEARNER_PROFILE_STORE,
@@ -162,6 +169,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   ],
   providers: [
     {
+      // #1450: `ZaloOutboundService` is provided in this same module, so the
+      // token it injects is bound here. `useExisting` keeps the exact instance
+      // the `@Global()` RedisModule exports.
+      provide: OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
+    {
       provide: ChatRuntimeConfig,
       useFactory: (configService: ConfigService) =>
         new ChatRuntimeConfig(configService),
@@ -169,6 +183,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     },
     ZaloChatService,
     ZaloWelcomeService,
+    {
+      // The chat service asks zalo-oauth for a welcome through this port
+      // rather than importing its concrete service.
+      provide: ZALO_WELCOME,
+      useExisting: ZaloWelcomeService,
+    },
     {
       provide: ZALO_CLARIFICATION_AGENT,
       useExisting: PlatformAgentService,
@@ -219,7 +239,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         );
         return createLlmAdmissionCoordinator(
           config,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           config.globalConcurrencyEnabled ? (redisClient ?? null) : null,
         );
@@ -247,7 +267,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             redis: null,
           },
           adapter,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           admission,
         );
@@ -273,7 +293,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         return createEnvLlmExecutionPort(
           { ...config, redis: null },
           adapter,
-          { warn: (message) => console.warn(message) },
+          consoleRedactedLogger,
           metrics.llmAdmission,
           admission,
         );
@@ -731,29 +751,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       }),
       inject: [PlatformStudyCalendarCommandService],
     },
-    {
-      provide: TypeormRescheduleStore,
-      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
-        new TypeormRescheduleStore<string>('zalo', repo),
-      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
-    },
-    {
-      provide: RescheduleRecoveryCronService,
-      useFactory: (
-        store: TypeormRescheduleStore<string>,
-        metrics: BotMetricsService,
-        pgLock: PgAdvisoryLockService,
-      ) =>
-        new RescheduleRecoveryCronService(store, metrics, {
-          pgLock,
-          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        }),
-      inject: [
-        TypeormRescheduleStore,
-        BotMetricsService,
-        PgAdvisoryLockService,
-      ],
-    },
+    ...createRescheduleProviders('zalo'),
     {
       provide: RescheduleConfirmationService,
       useFactory: (

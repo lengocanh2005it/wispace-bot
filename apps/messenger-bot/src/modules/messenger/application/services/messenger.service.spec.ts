@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-call -- jest.fn() mocks */
 import { ConfigService } from '@nestjs/config';
 import { MessengerService } from './messenger.service';
+import { MessengerWebhookDispatchService } from './messenger-webhook-dispatch.service';
 import type {
   MessengerWebhookEvent,
   MessengerWebhookPayload,
@@ -60,18 +61,18 @@ describe('MessengerService (durable webhook ingestion)', () => {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
     } as unknown as WebhookInboundEventsPort;
 
-    const service = new MessengerService(
-      configService,
+    const service = new MessengerService(configService, inboundEvents);
+    const dispatch = new MessengerWebhookDispatchService(
       repository as never,
       outbound,
       linkContext,
       chatRateLimitConfig,
       actionExecutor as unknown as WebhookActionExecutorService,
-      inboundEvents,
     );
 
     return {
       service,
+      dispatch,
       repository,
       actionExecutor,
       inboundEvents,
@@ -101,12 +102,12 @@ describe('MessengerService (durable webhook ingestion)', () => {
       actionExecutor.executeAction.mock.calls.map((call) => call[0]);
 
     it('links an unmapped psid from a message referral then routes chat under the new identity', async () => {
-      const { service, actionExecutor, linkContext } = buildService();
+      const { dispatch, actionExecutor, linkContext } = buildService();
       (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
         context: verified,
       });
 
-      await service.processEvent(textWithRef('mid-r1'));
+      await dispatch.processEvent(textWithRef('mid-r1'));
 
       expect(linkContext.resolveFromRef).toHaveBeenCalledTimes(1);
       const actions = executedActions(actionExecutor);
@@ -119,7 +120,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('#821 forwards the processing lease from verification to link_user', async () => {
-      const { service, actionExecutor, linkContext } = buildService();
+      const { dispatch, actionExecutor, linkContext } = buildService();
       (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
         context: verified,
         intentGeneration: '9',
@@ -127,7 +128,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
         intentLeaseToken: 'lease-owner',
       });
 
-      await service.processEvent(textWithRef('mid-r1-lease'));
+      await dispatch.processEvent(textWithRef('mid-r1-lease'));
 
       expect(executedActions(actionExecutor)[0]).toEqual(
         expect.objectContaining({
@@ -139,7 +140,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('blocks a relink attempt: notice first, no link_user, chat keeps the old identity', async () => {
-      const { service, actionExecutor, linkContext, repository } =
+      const { dispatch, actionExecutor, linkContext, repository } =
         buildService();
       (repository.findActiveMappingByPsid as jest.Mock).mockResolvedValue({
         userId: 143,
@@ -150,7 +151,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
         context: verified,
       });
 
-      await service.processEvent(textWithRef('mid-r2'));
+      await dispatch.processEvent(textWithRef('mid-r2'));
 
       const actions = executedActions(actionExecutor);
       expect(actions.map((a) => a.type)).toEqual(['send_text', 'enqueue_chat']);
@@ -159,12 +160,12 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('verify failure on unmapped psid: single failure notice only', async () => {
-      const { service, actionExecutor, linkContext } = buildService();
+      const { dispatch, actionExecutor, linkContext } = buildService();
       (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
         verifyFailureReason: 'EXPIRED',
       });
 
-      await service.processEvent(textWithRef('mid-r3'));
+      await dispatch.processEvent(textWithRef('mid-r3'));
 
       const actions = executedActions(actionExecutor);
       expect(actions).toHaveLength(1);
@@ -173,7 +174,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('verify failure on mapped psid: notice then chat under mapping identity', async () => {
-      const { service, actionExecutor, linkContext, repository } =
+      const { dispatch, actionExecutor, linkContext, repository } =
         buildService();
       (repository.findActiveMappingByPsid as jest.Mock).mockResolvedValue({
         userId: 143,
@@ -182,7 +183,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
         verifyFailureReason: 'USED',
       });
 
-      await service.processEvent(textWithRef('mid-r4'));
+      await dispatch.processEvent(textWithRef('mid-r4'));
 
       const actions = executedActions(actionExecutor);
       expect(actions.map((a) => a.type)).toEqual(['send_text', 'enqueue_chat']);
@@ -191,14 +192,14 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('does not reuse a committed intent after its mapping is deleted', async () => {
-      const { service, actionExecutor, linkContext } = buildService();
+      const { dispatch, actionExecutor, linkContext } = buildService();
       (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
         context: verified,
         intentState: 'committed',
         intentGeneration: '3',
       });
 
-      await service.processEvent(textWithRef('mid-r5'));
+      await dispatch.processEvent(textWithRef('mid-r5'));
 
       const actions = executedActions(actionExecutor);
       expect(actions).toHaveLength(1);
@@ -207,7 +208,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('reuses a committed intent only with a current matching mapping', async () => {
-      const { service, actionExecutor, linkContext, repository } =
+      const { dispatch, actionExecutor, linkContext, repository } =
         buildService();
       (repository.findActiveMappingByPsid as jest.Mock)
         .mockResolvedValueOnce(null)
@@ -218,7 +219,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
         intentGeneration: '3',
       });
 
-      await service.processEvent(textWithRef('mid-r6'));
+      await dispatch.processEvent(textWithRef('mid-r6'));
 
       const actions = executedActions(actionExecutor);
       expect(actions).toEqual([
@@ -227,12 +228,14 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('optin reuses the pre-verified context without submitting the token twice', async () => {
-      const { service, actionExecutor, linkContext } = buildService();
+      const { dispatch, actionExecutor, linkContext } = buildService();
       (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
         context: verified,
       });
 
-      await service.processEvent(textEvent({ optin: { ref: '999' } }) as never);
+      await dispatch.processEvent(
+        textEvent({ optin: { ref: '999' } }) as never,
+      );
 
       expect(linkContext.resolveFromRef).toHaveBeenCalledTimes(1);
       const actions = executedActions(actionExecutor);
@@ -243,13 +246,13 @@ describe('MessengerService (durable webhook ingestion)', () => {
     });
 
     it('plain chat without a ref skips verification entirely', async () => {
-      const { service, actionExecutor, linkContext, repository } =
+      const { dispatch, actionExecutor, linkContext, repository } =
         buildService();
       (repository.findActiveMappingByPsid as jest.Mock).mockResolvedValue({
         userId: 143,
       });
 
-      await service.processEvent(textEvent());
+      await dispatch.processEvent(textEvent());
 
       expect(linkContext.resolveFromRef).not.toHaveBeenCalled();
       expect(executedActions(actionExecutor)[0].type).toBe('enqueue_chat');
@@ -331,10 +334,10 @@ describe('MessengerService (durable webhook ingestion)', () => {
   });
 
   it('routes a stored event only through processEvent', async () => {
-    const { service, actionExecutor, repository } = buildService();
+    const { dispatch, actionExecutor, repository } = buildService();
     repository.findActiveMappingByPsid.mockResolvedValue({ userId: 143 });
 
-    await service.processEvent(textEvent());
+    await dispatch.processEvent(textEvent());
 
     expect(actionExecutor.executeAction).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'enqueue_chat', userId: 143 }),
@@ -344,11 +347,11 @@ describe('MessengerService (durable webhook ingestion)', () => {
   });
 
   it('propagates downstream processing errors to the retry worker', async () => {
-    const { service, actionExecutor, repository } = buildService();
+    const { dispatch, actionExecutor, repository } = buildService();
     repository.findActiveMappingByPsid.mockResolvedValue({ userId: 143 });
     actionExecutor.executeAction.mockRejectedValue(new Error('WISPACE down'));
 
-    await expect(service.processEvent(textEvent())).rejects.toThrow(
+    await expect(dispatch.processEvent(textEvent())).rejects.toThrow(
       'WISPACE down',
     );
   });
@@ -370,33 +373,11 @@ describe('MessengerService (durable webhook ingestion)', () => {
         return fallback;
       }),
     } as unknown as ConfigService;
-    const repository = {
-      findActiveMappingByPsid: jest.fn().mockResolvedValue(null),
-    };
-    const outbound = {} as unknown as MessengerOutboundService;
-    const linkContext = {
-      resolveFromMapping: jest.fn().mockResolvedValue(undefined),
-      resolveFromRef: jest.fn().mockResolvedValue({ context: undefined }),
-    } as unknown as MessengerLinkContextService;
-    const chatRateLimitConfig = {
-      shouldEnforceForPsid: jest.fn().mockReturnValue(false),
-    } as unknown as ChatRateLimitConfigService;
-    const actionExecutor = {
-      executeAction: jest.fn().mockResolvedValue(undefined),
-    } as unknown as WebhookActionExecutorService;
     const inboundEvents = {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
     } as unknown as WebhookInboundEventsPort;
 
-    const service = new MessengerService(
-      configService,
-      repository as never,
-      outbound,
-      linkContext,
-      chatRateLimitConfig,
-      actionExecutor,
-      inboundEvents,
-    );
+    const service = new MessengerService(configService, inboundEvents);
 
     const events = Array.from({ length: 5 }, (_, i) =>
       textEvent({ message: { mid: `mid-${i}`, text: `msg ${i}` } }),
@@ -415,33 +396,11 @@ describe('MessengerService (durable webhook ingestion)', () => {
         return fallback;
       }),
     } as unknown as ConfigService;
-    const repository = {
-      findActiveMappingByPsid: jest.fn().mockResolvedValue(null),
-    };
-    const outbound = {} as unknown as MessengerOutboundService;
-    const linkContext = {
-      resolveFromMapping: jest.fn().mockResolvedValue(undefined),
-      resolveFromRef: jest.fn().mockResolvedValue({ context: undefined }),
-    } as unknown as MessengerLinkContextService;
-    const chatRateLimitConfig = {
-      shouldEnforceForPsid: jest.fn().mockReturnValue(false),
-    } as unknown as ChatRateLimitConfigService;
-    const actionExecutor = {
-      executeAction: jest.fn().mockResolvedValue(undefined),
-    } as unknown as WebhookActionExecutorService;
     const inboundEvents = {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
     } as unknown as WebhookInboundEventsPort;
 
-    const service = new MessengerService(
-      configService,
-      repository as never,
-      outbound,
-      linkContext,
-      chatRateLimitConfig,
-      actionExecutor,
-      inboundEvents,
-    );
+    const service = new MessengerService(configService, inboundEvents);
 
     const events = Array.from({ length: 5 }, (_, i) =>
       textEvent({ message: { mid: `mid-${i}`, text: `msg ${i}` } }),

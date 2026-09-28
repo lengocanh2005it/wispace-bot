@@ -17,12 +17,22 @@ description = "Known dummy credentials in specs and docs"
 regexes = [
   # apps/messenger-bot/src/.../chat-rate-limit.repository.spec.ts
   '''mid-stuck-ext1''',
-  # packages/llm-agent/src/safety/secret-*.utils.spec.ts — fixtures for the
-  # redaction utils (#632); these files exist to hold credential shapes.
+  # packages/llm-agent/src/safety/secret-redaction.utils.spec.ts and
+  # packages/bot-common/src/masking/{credential-shapes,error-message}.spec.ts —
+  # fixtures for the redaction primitives (#632); these files exist to hold
+  # credential shapes.
   '''sk-1234567890abcdef1234567890abcdef''',
   '''sk-collect-1234567890''',
   '''internal-ops-key-9876''',
   '''duplicate-secret-1''',
+  # Opaque alphanumeric registry fixture. No credential shape matches it, which
+  # is the whole point: it stands in for a registered value that only exact
+  # matching can catch. Shared by the error-message, context-manager and
+  # redacted-logger specs.
+  '''Xk9mQ2vLp4Tn7Ws''',
+  # Base64-ish registry fixture, deliberately containing `+` so it cannot match
+  # a contiguous-alphanumeric shape. error-message spec only.
+  '''aB3xY9zQ\+mN2pL5rT8vW1cD4fG7hJ0kL6''',
   # The canonical jwt.io example token (llm-agent + bot-common specs).
   '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.''',
   # docs/messenger-link-integration.md — sample account-link token.

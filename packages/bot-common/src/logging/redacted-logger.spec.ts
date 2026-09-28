@@ -1,4 +1,8 @@
 import { RedactedLogger, redactLogLine } from './redacted-logger';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from '../masking';
 
 function capture(): { lines: string[]; logger: RedactedLogger } {
   const lines: string[] = [];
@@ -43,6 +47,17 @@ describe('redactLogLine (#610 digit-run external-id masking)', () => {
     // UUID digits are not a single digit-run (hex letters break it up).
     expect(out).toContain('550e8400-e29b-41d4-a716-446655440000');
   });
+
+  it('redacts a registered runtime secret value that no shape would match', () => {
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      const out = redactLogLine('upstream rejected Xk9mQ2vLp4Tn7Ws');
+      expect(out).not.toContain('Xk9mQ2vLp4Tn7Ws');
+      expect(out).toContain('[REDACTED]');
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
+  });
 });
 
 describe('RedactedLogger (captured transport)', () => {
@@ -71,15 +86,56 @@ describe('RedactedLogger (captured transport)', () => {
     expect(lines[1]).toContain('[MyService]');
   });
 
-  it('passes non-string messages through untouched (objects, errors)', () => {
+  it('serialises non-string messages instead of forwarding them raw', () => {
     const { lines, logger } = capture();
     const err = new Error('boom');
 
     logger.log(err);
     logger.warn({ some: 'object' });
 
-    expect(lines[0]).toBe('Error: boom');
-    expect(lines[1]).toBe('[object Object]');
+    expect(lines[0]).toContain('boom');
+    expect(lines[1]).toContain('some');
+  });
+
+  it('masks external ids inside a non-string message', () => {
+    const { lines, logger } = capture();
+    logger.error({ psid: '12345678901234567' });
+    expect(lines[0]).not.toContain('12345678901234567');
+  });
+
+  it('redacts a registered runtime secret from a non-string message', () => {
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      const { lines, logger } = capture();
+      logger.error({ config: { apiKey: 'Xk9mQ2vLp4Tn7Ws' } });
+      expect(lines[0]).not.toContain('Xk9mQ2vLp4Tn7Ws');
+      expect(lines[0]).toContain('[REDACTED]');
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
+  });
+
+  it('redacts a registered runtime secret from the stack argument', () => {
+    registerRuntimeSecrets(['Xk9mQ2vLp4Tn7Ws']);
+    try {
+      const { lines, logger } = capture();
+      logger.error(
+        'failed',
+        'Error: bad Xk9mQ2vLp4Tn7Ws\n    at frame (a.js:1:1)',
+      );
+      expect(lines[0]).not.toContain('Xk9mQ2vLp4Tn7Ws');
+    } finally {
+      resetRuntimeSecretsForTests();
+    }
+  });
+
+  it('survives an unserialisable message without throwing', () => {
+    const { lines, logger } = capture();
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    expect(() => logger.error(cyclic)).not.toThrow();
+    expect(lines[0]).toBeTruthy();
   });
 
   it('keeps the default console transport when none is injected', () => {

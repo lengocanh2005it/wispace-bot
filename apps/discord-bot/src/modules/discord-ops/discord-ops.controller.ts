@@ -13,7 +13,10 @@ import {
   type PrivacyStateCleanup,
 } from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
+import {
+  DISCORD_REPORT_DISPATCH,
+  type DiscordReportDispatchPort,
+} from './application/ports/discord-report-dispatch.port';
 import {
   PlatformAgentService,
   PlatformChatHistoryService,
@@ -25,7 +28,8 @@ import { DISCORD_PRIVACY_DATA } from './application/ports/privacy-data.port';
 @UseGuards(InternalApiKeyGuard, ThrottlerGuard)
 export class DiscordOpsController extends PlatformOpsController {
   constructor(
-    reportCronService: DiscordReportCronService,
+    @Inject(DISCORD_REPORT_DISPATCH)
+    reportCronService: DiscordReportDispatchPort,
     studyReminderSyncService: StudyReminderSyncService,
     calendarService: WispaceCalendarService,
     @Inject(DISCORD_PRIVACY_DATA) privacyService: PrivacyDataPort,

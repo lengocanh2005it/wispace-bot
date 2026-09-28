@@ -10,6 +10,7 @@ import type {
   LlmAgentPromptParts,
 } from '../types';
 import { composeChatSystemPrompt } from '../chat-system-prompt';
+import { redactSecrets } from '../safety/secret-redaction.utils';
 import { AgentLimits, estimateTokens } from './agent-limits';
 
 const MAX_HISTORY_ENTRY_CHARS = 8_000;
@@ -113,9 +114,15 @@ export class ContextManager {
       includeLearnerProfile,
       includeReasoningInstruction,
     );
+    // The current turn keeps its text intact (#1047): `detectPromptInjection`
+    // has already blocked an injection before this point, and a benign message
+    // must reach the provider as the learner wrote it. Secret redaction is the
+    // one exception — `sanitizeHistory` applies it to the same turn one message
+    // later, so applying it here too is what makes the two paths agree. A
+    // learner pasting their own key must not have it forwarded to the provider.
     const user: LlmMessage = {
       role: 'user',
-      content: input.userText.trim(),
+      content: redactSecrets(input.userText.trim()).text,
     };
     const history = this.sanitizeHistory(input.history ?? [], hooks);
     const selected: ChatHistoryMessage[] = [];

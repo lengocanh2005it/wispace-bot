@@ -1,4 +1,9 @@
 import { maskExternalIdInText } from './mask-external-id';
+import {
+  PROVIDER_KEY_SHAPE,
+  redactCredentialShape,
+  redactRegisteredSecretValues,
+} from './credential-shapes';
 
 export interface ErrorMessageOptions {
   /** Maximum character length before truncation. Defaults to 500. */
@@ -30,13 +35,28 @@ const URI_CREDENTIALS_PATTERN =
 const JWT_PATTERN =
   /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_.-]+\b/g;
 
+/**
+ * Registry first, then this module's context-preserving patterns, then the one
+ * canonical shape nothing else here matches.
+ *
+ * The local patterns are each *broader* than their canonical counterpart for the
+ * case they cover — any URI scheme rather than a scheme allowlist, any
+ * secret-ish key in a `key=value`, any bearer token — and they keep the context
+ * a log line needs (`password=[REDACTED]` still says which key was involved),
+ * which the canonical assignment shape does not. So they replace the canonical
+ * array wholesale rather than duplicating it. What they cannot cover is a
+ * `sk-` key, so that one is pulled from the shared list.
+ */
 function redactSecrets(text: string): string {
-  return text
-    .replace(SENSITIVE_KV_PATTERN, '$1$2[REDACTED]$2')
-    .replace(BEARER_TOKEN_PATTERN, 'Bearer [REDACTED]')
-    .replace(QUERY_SECRET_PATTERN, '$1[REDACTED]')
-    .replace(URI_CREDENTIALS_PATTERN, '$1[REDACTED]@')
-    .replace(JWT_PATTERN, '[REDACTED]');
+  return redactCredentialShape(
+    redactRegisteredSecretValues(text)
+      .text.replace(SENSITIVE_KV_PATTERN, '$1$2[REDACTED]$2')
+      .replace(BEARER_TOKEN_PATTERN, 'Bearer [REDACTED]')
+      .replace(QUERY_SECRET_PATTERN, '$1[REDACTED]')
+      .replace(URI_CREDENTIALS_PATTERN, '$1[REDACTED]@')
+      .replace(JWT_PATTERN, '[REDACTED]'),
+    PROVIDER_KEY_SHAPE,
+  );
 }
 
 /**

@@ -29,6 +29,11 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
       // (WISPACE_INTERNAL_KEY, OPENAI_*, DB_*...) — see .env.shared.example.
       // Missing files are silently skipped, so this is a no-op when the
       // shared file doesn't exist (e.g. production containers).
+      //
+      // No `validate` hook here on purpose: `forRoot` runs at import time,
+      // before `bootstrapBot` loads Vault, so a Vault-delivered key would read
+      // as missing and abort a correctly-configured production boot.
+      // `validateInternalApiKeyEnv` is asserted in `bootstrapBot` instead.
       envFilePath: ['.env', '../../.env.shared'],
     }),
     ThrottlerModule.forRootAsync({
@@ -52,15 +57,5 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
     OpsHealthModule.forPlatform('messenger', MessengerModule),
   ],
   controllers: [AppController, HealthController],
-  providers: [
-    {
-      provide: 'INTERNAL_API_KEY_VALIDATION',
-      useFactory: (config: ConfigService) => {
-        config.getOrThrow<string>('INTERNAL_API_KEY');
-        return true;
-      },
-      inject: [ConfigService],
-    },
-  ],
 })
 export class AppModule {}

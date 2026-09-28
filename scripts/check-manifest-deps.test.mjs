@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -16,7 +22,10 @@ function fixture() {
     manifest(pkg, fields) {
       const file = join(root, 'packages', pkg, 'package.json');
       mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, JSON.stringify({ name: `@wispace/${pkg}`, ...fields }));
+      writeFileSync(
+        file,
+        JSON.stringify({ name: `@wispace/${pkg}`, ...fields }),
+      );
     },
     write(relativePath, source) {
       const file = join(root, relativePath);
@@ -34,8 +43,13 @@ test('build-only tooling declared in dependencies is reported', () => {
   // `dependencies` and was installed by `npm ci --omit=dev`.
   const f = fixture();
   try {
-    f.manifest('demo', { dependencies: { '@nestjs/cli': '^12', typeorm: '^0.3' } });
-    f.write('packages/demo/src/data-source.ts', "import { DataSource } from 'typeorm';\n");
+    f.manifest('demo', {
+      dependencies: { '@nestjs/cli': '^12', typeorm: '^0.3' },
+    });
+    f.write(
+      'packages/demo/src/data-source.ts',
+      "import { DataSource } from 'typeorm';\n",
+    );
 
     assert.deepEqual(checkManifestDeps(f.root).violations, [
       { package: 'demo', dependency: '@nestjs/cli' },
@@ -79,8 +93,11 @@ test('a package used only through a barrel re-export passes', () => {
 test('a genuine runtime import passes', () => {
   const f = fixture();
   try {
-    f.manifest('demo', { dependencies: { 'helmet': '^8' } });
-    f.write('packages/demo/src/main.ts', "import helmet from 'helmet';\nexport default helmet;\n");
+    f.manifest('demo', { dependencies: { helmet: '^8' } });
+    f.write(
+      'packages/demo/src/main.ts',
+      "import helmet from 'helmet';\nexport default helmet;\n",
+    );
 
     assert.deepEqual(checkManifestDeps(f.root).violations, []);
   } finally {
@@ -139,7 +156,10 @@ test('a commented-out import does not satisfy a declaration', () => {
   try {
     f.manifest('demo', { dependencies: { helmet: '^8' } });
     f.write('packages/demo/src/a.ts', "// import helmet from 'helmet';\n");
-    f.write('packages/demo/src/b.ts', "/*\nimport helmet from 'helmet';\n*/\nexport {};\n");
+    f.write(
+      'packages/demo/src/b.ts',
+      "/*\nimport helmet from 'helmet';\n*/\nexport {};\n",
+    );
 
     assert.deepEqual(checkManifestDeps(f.root).violations, [
       { package: 'demo', dependency: 'helmet' },
@@ -151,10 +171,20 @@ test('a commented-out import does not satisfy a declaration', () => {
 
 test('relative, builtin, and package-internal specifiers are not dependencies', () => {
   assert.deepEqual([...collectImportedPackages("import x from './x';\n")], []);
-  assert.deepEqual([...collectImportedPackages("import fs from 'node:fs';\n")], []);
-  assert.deepEqual([...collectImportedPackages("import x from '#internal';\n")], []);
   assert.deepEqual(
-    [...collectImportedPackages("export { a } from '@wispace/contracts/core';\n")],
+    [...collectImportedPackages("import fs from 'node:fs';\n")],
+    [],
+  );
+  assert.deepEqual(
+    [...collectImportedPackages("import x from '#internal';\n")],
+    [],
+  );
+  assert.deepEqual(
+    [
+      ...collectImportedPackages(
+        "export { a } from '@wispace/contracts/core';\n",
+      ),
+    ],
     ['@wispace/contracts'],
   );
 });
@@ -163,7 +193,10 @@ test('node_modules and dist are skipped', () => {
   const f = fixture();
   try {
     f.manifest('demo', { dependencies: { helmet: '^8' } });
-    f.write('packages/demo/node_modules/helmet/index.js', "export default 1;\n");
+    f.write(
+      'packages/demo/node_modules/helmet/index.js',
+      'export default 1;\n',
+    );
     f.write('packages/demo/dist/index.js', "export * from 'helmet';\n");
 
     assert.deepEqual(checkManifestDeps(f.root).violations, [
@@ -177,7 +210,10 @@ test('node_modules and dist are skipped', () => {
 test('a repo without a packages directory reports nothing', () => {
   const root = mkdtempSync(join(tmpdir(), 'wispace-manifest-empty-'));
   try {
-    assert.deepEqual(checkManifestDeps(root), { violations: [], packagesChecked: 0 });
+    assert.deepEqual(checkManifestDeps(root), {
+      violations: [],
+      packagesChecked: 0,
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -209,10 +245,16 @@ test('sources outside src are scanned', () => {
   const f = fixture();
   try {
     f.manifest('demo', {
-      dependencies: { '@scws/fast-check': '^4', 'tsx': '^4' },
+      dependencies: { '@scws/fast-check': '^4', tsx: '^4' },
     });
-    f.write('packages/demo/test/property.spec.ts', "import fc from '@scws/fast-check';\nexport default fc;\n");
-    f.write('packages/demo/scripts/seed.mjs', "import { run } from 'tsx';\nrun();\n");
+    f.write(
+      'packages/demo/test/property.spec.ts',
+      "import fc from '@scws/fast-check';\nexport default fc;\n",
+    );
+    f.write(
+      'packages/demo/scripts/seed.mjs',
+      "import { run } from 'tsx';\nrun();\n",
+    );
 
     assert.deepEqual(checkManifestDeps(f.root).violations, []);
   } finally {
@@ -221,7 +263,10 @@ test('sources outside src are scanned', () => {
 });
 
 test('the lint script is a valid node program', () => {
-  const source = readFileSync(new URL('./check-manifest-deps.mjs', import.meta.url), 'utf8');
+  const source = readFileSync(
+    new URL('./check-manifest-deps.mjs', import.meta.url),
+    'utf8',
+  );
   assert.match(source, /export function checkManifestDeps/);
   assert.match(source, /process\.exitCode = 1/);
 });
