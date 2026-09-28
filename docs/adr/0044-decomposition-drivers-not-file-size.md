@@ -113,6 +113,30 @@ a file earns headroom and growing it is blocked. A file enters the baseline only
 when a decision named it, and leaves it when it is decomposed or deleted. A new
 file is never gated by size at all.
 
+## Amendment 2026-09-28: an extraction destination may be gated
+
+The Outcome says a new file is never gated by size at all, and the baseline
+note repeated it. That rule was written when a new file was incidental — a
+helper, a spec — and it does not contemplate a new file that is the
+*destination* of a named extraction and the largest single file in its area.
+Such a file starts life ungated at whatever size the extraction produced, which
+is the one case the ratchet exists to stop and the one case it was blind to.
+
+So the rule is narrowed, not reversed: a file may enter the baseline when it is
+the destination of a named extraction, because a decision then names it in the
+ordinary way. An incidental new file is still never gated, and a file nobody
+has proposed decomposing does not enter the baseline just because it is large.
+
+`clarification-responder.ts` is the first entry under this amendment. Its
+thirteen decision rules and its outcome table are one table; splitting it would
+re-introduce the half-applied counted-but-not-sent pairing that keeping it whole
+prevents.
+
+The baseline note previously said "four of these six have no decomposition
+owner". That count was wrong the moment an entry changed hands, which is the
+same fragility ADR-0044 rejects for a hand-written line-count list, so the note
+now states the steady state instead of a tally.
+
 ## Consequences
 
 - A file may stay above any size line. The question asked of a large file is
