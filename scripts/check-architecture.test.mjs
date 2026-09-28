@@ -646,24 +646,25 @@ test('the messenger-study-reminder port allowance is symmetric', () => {
   }
 });
 
-test('a concrete outer class is reported by name category, not by a prefix match', () => {
+test('both new name categories are reported from a single import statement', () => {
   // #1450: `Cache` and `RateLimiter` were missing from the suffix list, so
   // `RedisUserDisplayNameCache` and `OutboundRateLimiter` reached application
-  // code unreported. Each is a real `@Injectable()` class.
+  // code unreported. One import carrying both proves each category matches,
+  // rather than proving only that two statements produce two violations.
   const f = fixture();
   try {
     f.write(
       'apps/demo/src/modules/feature/application/services/consumer.service.ts',
-      "import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';\nimport { OutboundRateLimiter } from '@wispace/bot-common/redis';\nexport class ConsumerService { a = RedisUserDisplayNameCache; b = OutboundRateLimiter; }\n",
+      "import { RedisUserDisplayNameCache, OutboundRateLimiter } from '@wispace/bot-common/redis';\nexport class ConsumerService { a = RedisUserDisplayNameCache; b = OutboundRateLimiter; }\n",
     );
 
     const result = checkArchitecture(f.root);
     const mixed = result.violations.filter(
       (violation) => violation.rule === 'application-no-outer',
     );
-    assert.equal(mixed.length, 2);
+    assert.equal(mixed.length, 1);
     assert.deepEqual(
-      mixed.map((violation) => violation.symbols[0]).sort(),
+      [...mixed[0].symbols].sort(),
       ['OutboundRateLimiter', 'RedisUserDisplayNameCache'],
     );
   } finally {
@@ -692,10 +693,12 @@ test('a framework-free core symbol is not reported just because its name ends in
   }
 });
 
-test('a class with no framework coupling is not reported by any suffix', () => {
-  // `PlatformToolExecutorPipeline` was on the leak list and is not one: 328
-  // lines, zero framework imports, hand-rolled constructor injection. It is a
-  // second `ClassifiedError`, and it is why `Pipeline` is not in the list.
+test('a symbol whose name is absent from the suffix list is not reported', () => {
+  // `PlatformToolExecutorPipeline` — 328 lines, zero framework imports,
+  // hand-rolled constructor injection — is on no suffix list, and the checker
+  // matches names only, so nothing about its declaration is consulted here. The
+  // declaration evidence is what keeps it off the list; that it would be
+  // reported if a matching suffix were added is the assertion.
   const f = fixture();
   try {
     f.write(
