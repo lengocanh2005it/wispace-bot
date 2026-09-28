@@ -21,17 +21,17 @@
       "trackedBy": "#778",
       "reason": "Decomposed by #1143: the ~290-line clarification handler moved to `clarification/` (pure core, responder, text parser) and the service keeps only a delegating facade over it. 1187 -> 939 lines. The split left the repository slightly larger, so by ADR-0044 it bought nothing on its own; it was made because a field-access prohibition is only enforceable once the code that read the fields lives somewhere the type system can constrain. What is left is chat orchestration, and no duplication finding is recorded against it."
     },
-    "packages/chat-agent/src/clarification/clarification-responder.ts": {
-      "lines": 529,
-      "context": "Free-form Chat",
-      "trackedBy": "#1143",
-      "reason": "Extraction destination, entered against ADR-0044's blanket rule that a new file is never gated. The rule was written when a new file was incidental - a helper, a spec - and it does not contemplate a new file that is the largest single file in its area. Nothing here proposes decomposing it: the thirteen terminal decision rules and the thirteen-key outcome table are one table and cannot be split without re-introducing the half-applied counted-but-not-sent pairing the table exists to prevent. It is the only new file from #1143 entered here; the state, core and text modules are 376, 311 and 232 lines by the checker's own raw count, and no decision names them. ADR-0044 records that raw and non-blank counts differ here, so measure with the checker rather than by eye."
-    },
     "packages/chat-agent/src/chat-queue/redis-chat-queue.store.ts": {
       "lines": 1168,
       "context": "Free-form Chat",
       "trackedBy": "#778",
       "reason": "No duplication finding. Do not start before #774 retires the Messenger mirror spec; splitting now spends the spec work twice."
+    },
+    "packages/chat-agent/src/clarification/clarification-responder.ts": {
+      "lines": 529,
+      "context": "Free-form Chat",
+      "trackedBy": "#1143",
+      "reason": "Extraction destination, entered against ADR-0044's blanket rule that a new file is never gated. The rule was written when a new file was incidental - a helper, a spec - and it does not contemplate a new file that is the largest single file in its area. Nothing here proposes decomposing it: the thirteen terminal decision rules and the thirteen-key outcome table are one table and cannot be split without re-introducing the half-applied counted-but-not-sent pairing the table exists to prevent. It is the only new file from #1143 entered here; the state, core and text modules are 376, 311 and 232 lines by the checker's own raw count, and no decision names them. ADR-0044 records that raw and non-blank counts differ here, so measure with the checker rather than by eye."
     },
     "packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts": {
       "lines": 1004,
