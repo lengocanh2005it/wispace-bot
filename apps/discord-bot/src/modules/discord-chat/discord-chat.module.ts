@@ -13,7 +13,12 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  REDIS_CLIENT,
+  OutboundRateLimiter,
+  type RedisClientPort,
+} from '@wispace/bot-common/redis';
+import { DISCORD_OUTBOUND_RATE_LIMIT } from './application/ports/outbound-rate-limit.port';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
@@ -155,6 +160,14 @@ const REGISTER_REPORT_MESSAGE =
     ]),
   ],
   providers: [
+    {
+      // #1450: the outbound service depends on the rate-limit capability, not
+      // on the Redis-backed limiter behind it. `useExisting` keeps the exact
+      // instance RedisModule exports — a factory here would silently give the
+      // application layer a second limiter with its own counters.
+      provide: DISCORD_OUTBOUND_RATE_LIMIT,
+      useExisting: OutboundRateLimiter,
+    },
     {
       provide: ChatRuntimeConfig,
       useFactory: (configService: ConfigService) =>

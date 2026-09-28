@@ -35,7 +35,10 @@ import {
   type OutboundDeliveryOutcome,
 } from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { OutboundRateLimiter } from '@wispace/bot-common/redis';
+import {
+  MESSENGER_OUTBOUND_RATE_LIMIT,
+  type MessengerOutboundRateLimitPort,
+} from '../ports/outbound-rate-limit.port';
 import {
   PLATFORM_CONNECTIVITY_SIGNAL,
   type PlatformConnectivitySignalPort,
@@ -105,8 +108,8 @@ export class MessengerOutboundService {
     @Inject(OUTBOUND_DEAD_LETTER)
     private readonly deadLetter?: OutboundDeadLetterPort,
     @Optional()
-    @Inject(OutboundRateLimiter)
-    private readonly outboundRateLimiter?: OutboundRateLimiter,
+    @Inject(MESSENGER_OUTBOUND_RATE_LIMIT)
+    private readonly outboundRateLimiter?: MessengerOutboundRateLimitPort,
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,

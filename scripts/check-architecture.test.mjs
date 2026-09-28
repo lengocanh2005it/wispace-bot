@@ -646,6 +646,70 @@ test('the messenger-study-reminder port allowance is symmetric', () => {
   }
 });
 
+test('a concrete outer class is reported by name category, not by a prefix match', () => {
+  // #1450: `Cache` and `RateLimiter` were missing from the suffix list, so
+  // `RedisUserDisplayNameCache` and `OutboundRateLimiter` reached application
+  // code unreported. Each is a real `@Injectable()` class.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';\nimport { OutboundRateLimiter } from '@wispace/bot-common/redis';\nexport class ConsumerService { a = RedisUserDisplayNameCache; b = OutboundRateLimiter; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    const mixed = result.violations.filter(
+      (violation) => violation.rule === 'application-no-outer',
+    );
+    assert.equal(mixed.length, 2);
+    assert.deepEqual(
+      mixed.map((violation) => violation.symbols[0]).sort(),
+      ['OutboundRateLimiter', 'RedisUserDisplayNameCache'],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('a framework-free core symbol is not reported just because its name ends in a suffix', () => {
+  // `LlmProviderAdapter` is an interface -- the repository's own LLM port --
+  // exported from `llm-agent/core`, which `frameworkFreePackageRule` already
+  // declares framework-agnostic. It ends in `Adapter`, so any name-based rule
+  // reports it. This is the case that keeps `llm-agent` off `MIXED_PACKAGE`:
+  // a framework-free subpath is only a guarantee if the classifier looks at
+  // where a symbol comes from. #1451 measures what does.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/agent.service.ts',
+      "import type { LlmProviderAdapter } from '@wispace/llm-agent/core';\nexport class AgentService { x: LlmProviderAdapter | null = null; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a class with no framework coupling is not reported by any suffix', () => {
+  // `PlatformToolExecutorPipeline` was on the leak list and is not one: 328
+  // lines, zero framework imports, hand-rolled constructor injection. It is a
+  // second `ClassifiedError`, and it is why `Pipeline` is not in the list.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/pipeline-user.service.ts',
+      "import { PlatformToolExecutorPipeline } from '@wispace/chat-agent';\nexport class PipelineUserService { x = PlatformToolExecutorPipeline; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
 test('a cross-bot alias import is not a cross-feature edge', () => {
   const f = fixture();
   try {

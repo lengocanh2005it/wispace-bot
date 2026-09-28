@@ -10,10 +10,33 @@ const CONCRETE_OUTER_PACKAGE =
   /^(?:@wispace\/(?:database|wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$|discord\.js$|@discordjs(?:\/|$)|node:(?:http|https|net|tls)$)/;
 const HARD_OUTER_PACKAGE =
   /^(?:@wispace\/database(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$|discord\.js$|@discordjs(?:\/|$)|node:(?:http|https|net|tls)$)/;
+// #1450: `llm-agent` was measured to have zero blast radius here and is
+// deliberately NOT on the list. Every `llm-agent` import in the enforced scope
+// goes through `/core`, which `frameworkFreePackageRule` declares
+// framework-agnostic -- but that does not help, because this rule keys on the
+// symbol NAME, not the subpath. `LlmProviderAdapter` is an `interface`, the
+// repo's own LLM port, exported from `/core`, and it ends in `Adapter`. Adding
+// the package reports it and two sibling files: 3 false positives, 0 true
+// positives. A framework-free subpath is only a guarantee if the classifier
+// looks at where the symbol comes from, which is what #1451 measures.
 const MIXED_PACKAGE =
   /^@wispace\/(?:wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)/;
+// #1450: `Cache` and `RateLimiter` are concrete names the list was missing.
+// `RedisUserDisplayNameCache` is `@Injectable()` and takes a `ConfigService`;
+// `OutboundRateLimiter` is `@Injectable() implements OnModuleInit` and takes a
+// Redis-backed service. Both are injected from application code. Measured over
+// the enforced scope: 4 true positives, 0 false positives.
+//
+// `Pipeline` is deliberately NOT here. `PlatformToolExecutorPipeline` has zero
+// framework imports across its 328 lines and hand-rolls its constructor, so
+// adding it would catch a symbol that is not a violation -- the over-reporting
+// #1453 exists to stop.
+//
+// This is a stopgap. #1451 -> #1452 -> #1453 replace it with a declaration-
+// based signal and delete this list; do not extend it. #1088's user story 44
+// is that contributors do not rely on filename suffixes.
 const CONCRETE_OUTER_SYMBOL =
-  /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore)$/;
+  /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore|Cache|RateLimiter)$/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 // #1126: these packages publish only explicit subpaths; a bare root specifier
 // is not a compatibility facade and must not resolve. `bot-common` joined the

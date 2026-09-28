@@ -30,7 +30,10 @@ import {
   type DiscordOutboundPreparation,
 } from '../utils/discord-outbound-guard';
 import { withRetry } from '@wispace/wispace-client/core';
-import { OutboundRateLimiter } from '@wispace/bot-common/redis';
+import {
+  DISCORD_OUTBOUND_RATE_LIMIT,
+  type DiscordOutboundRateLimitPort,
+} from '../ports/outbound-rate-limit.port';
 
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
@@ -136,8 +139,8 @@ export class DiscordOutboundService {
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
     @Optional()
-    @Inject(OutboundRateLimiter)
-    private readonly outboundRateLimiter?: OutboundRateLimiter,
+    @Inject(DISCORD_OUTBOUND_RATE_LIMIT)
+    private readonly outboundRateLimiter?: DiscordOutboundRateLimitPort,
   ) {}
 
   isAmbiguousDeliveryError(error: unknown): boolean {
