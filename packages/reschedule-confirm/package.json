@@ -29,15 +29,15 @@
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nestjs/common": "^12.0.1",
-    "@nestjs/schedule": "^12.0.1",
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/schedule": "^12.0.2",
     "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
     "@wispace/bot-metrics": "*",
     "@wispace/contracts": "*",
     "@wispace/database": "*",
-    "typeorm": "^1.1.1",
-    "@wispace/wispace-client": "*"
+    "@wispace/wispace-client": "*",
+    "typeorm": "^1.1.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

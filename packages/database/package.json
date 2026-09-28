@@ -17,9 +17,9 @@
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nestjs/common": "^12.0.1",
+    "@nestjs/common": "^12.1.0",
     "@nestjs/config": "^12.0.0",
-    "@nestjs/schedule": "^12.0.1",
+    "@nestjs/schedule": "^12.0.2",
     "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
     "@wispace/contracts": "*",
