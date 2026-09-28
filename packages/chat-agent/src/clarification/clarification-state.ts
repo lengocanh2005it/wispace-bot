@@ -101,6 +101,14 @@ export interface ClarificationState {
   lastDeliveryFailed?: boolean;
 }
 
+/** The single expiry rule, shared by the machine's query and the store's prune. */
+function isClarificationStateExpired(
+  state: ClarificationState,
+  now: number,
+): boolean {
+  return state.expiresAt <= now;
+}
+
 export interface ClarificationStateStore {
   get(key: string): Promise<ClarificationState | null>;
   set(
@@ -138,7 +146,7 @@ export class ClarificationStateMachine {
   }
 
   isExpired(state: ClarificationState, now = Date.now()): boolean {
-    return state.expiresAt <= now;
+    return isClarificationStateExpired(state, now);
   }
 
   recordIrrelevant(
@@ -148,34 +156,29 @@ export class ClarificationStateMachine {
     if (state.attempts < this.limits.maxAttempts) {
       return {
         action: 'clarify',
-        state: this.bump(state, now, { attempts: state.attempts + 1 }),
+        state: {
+          ...state,
+          attempts: state.attempts + 1,
+          version: state.version + 1,
+          expiresAt: now + this.limits.ttlMs,
+        },
       };
     }
 
     if (state.menuResets < this.limits.maxMenuResets) {
       return {
         action: 'reset_menu',
-        state: this.bump(state, now, {
+        state: {
+          ...state,
           attempts: 0,
           menuResets: state.menuResets + 1,
-        }),
+          version: state.version + 1,
+          expiresAt: now + this.limits.ttlMs,
+        },
       };
     }
 
     return { action: 'clear' };
-  }
-
-  private bump(
-    state: ClarificationState,
-    now: number,
-    changes: Partial<Pick<ClarificationState, 'attempts' | 'menuResets'>>,
-  ): ClarificationState {
-    return {
-      ...state,
-      ...changes,
-      version: state.version + 1,
-      expiresAt: now + this.limits.ttlMs,
-    };
   }
 
   withReply(
@@ -226,10 +229,6 @@ export class ClarificationStateMachine {
       ...(choice ? { lastChoice: choice } : {}),
     };
   }
-
-  getLimits(): ClarificationLimits {
-    return this.limits;
-  }
 }
 
 const MAX_MEMORY_STATES = 10_000;
@@ -274,7 +273,7 @@ export class MemoryClarificationStateStore implements ClarificationStateStore {
 
   private prune(now = Date.now()): void {
     for (const [key, state] of this.states) {
-      if (state.expiresAt <= now) this.states.delete(key);
+      if (isClarificationStateExpired(state, now)) this.states.delete(key);
     }
   }
 }
@@ -454,7 +453,6 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
 
 export function createClarificationStateStore(params: {
   platform: string;
-  config: ClarificationConfigReader;
   redisClient?: RedisClientPort;
 }): ClarificationStateStore {
   if (params.redisClient?.isConfiguredEnabled?.() === true) {

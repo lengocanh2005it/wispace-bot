@@ -129,7 +129,6 @@ export class PlatformAgentService {
     } else {
       this.clarificationStore = createClarificationStateStore({
         platform: options.platform ?? 'default',
-        config: configService,
         redisClient,
       });
     }

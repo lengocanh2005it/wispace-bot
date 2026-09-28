@@ -145,16 +145,12 @@ import { DiscordOutboundService } from '../discord-chat/application/services/dis
     },
     {
       provide: CLARIFICATION_STATE_STORE,
-      useFactory: (
-        configService: ConfigService,
-        redisClient?: RedisClientPort,
-      ): ClarificationStateStore =>
+      useFactory: (redisClient?: RedisClientPort): ClarificationStateStore =>
         createClarificationStateStore({
           platform: 'discord',
-          config: configService,
           redisClient,
         }),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+      inject: [{ token: REDIS_CLIENT, optional: true }],
     },
   ],
   exports: [

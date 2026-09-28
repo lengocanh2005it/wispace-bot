@@ -23,11 +23,6 @@ describe('ClarificationStateMachine', () => {
     );
 
     expect(second.expiresAt).toBe(now + 1 + 30_000);
-    expect(machine.getLimits()).toEqual({
-      ttlMs: 30_000,
-      maxAttempts: 1,
-      maxMenuResets: 0,
-    });
     expect(machine.isStaleEvent(second, 'event-a')).toBe(true);
     expect(machine.isStaleEvent(second, 'event-b')).toBe(false);
   });
@@ -199,17 +194,13 @@ describe('ClarificationStateMachine', () => {
   });
 
   it('creates memory store when Redis is not configured, and Redis store when configured', () => {
-    const mockConfig = { get: jest.fn() };
-
     const memStore = createClarificationStateStore({
       platform: 'test',
-      config: mockConfig,
     });
     expect(memStore).toBeInstanceOf(MemoryClarificationStateStore);
 
     const memStoreDisabledRedis = createClarificationStateStore({
       platform: 'test',
-      config: mockConfig,
       redisClient: {
         isConfiguredEnabled: () => false,
         isEnabled: () => false,
@@ -220,7 +211,6 @@ describe('ClarificationStateMachine', () => {
 
     const redisStore = createClarificationStateStore({
       platform: 'test',
-      config: mockConfig,
       redisClient: {
         isConfiguredEnabled: () => true,
         isEnabled: () => true,
