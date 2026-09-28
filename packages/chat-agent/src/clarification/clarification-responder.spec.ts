@@ -354,6 +354,25 @@ describe('ClarificationResponder', () => {
     expect(outcomes).toEqual(['stop_acknowledged']);
   });
 
+  it('tombstones a pending menu so a clear new question cannot be answered by it', async () => {
+    const { responder, store, outcomes } = buildStore(menuState());
+
+    const turn = await responder.handle({
+      externalUserId: 'u1',
+      userText: 'Xem tiến độ học của mình',
+      eventId: 'event-a',
+      userId: 7,
+    });
+
+    expect(store.set).toHaveBeenCalledWith(
+      'discord:u1',
+      expect.objectContaining({ phase: 'consumed' }),
+      2,
+    );
+    expect(turn).toEqual({ kind: 'continue' });
+    expect(outcomes).toEqual(['new_question']);
+  });
+
   it('counts a bounded irrelevant follow-up and a reset before clearing', async () => {
     const first = buildStore(menuState({ attempts: 0, menuResets: 0 }));
     await first.send({ userText: 'abc???' });

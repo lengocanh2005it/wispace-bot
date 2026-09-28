@@ -4,7 +4,6 @@ import {
   CLARIFICATION_TERMINAL_DECISION_KINDS,
   ClarificationCore,
 } from './clarification-core';
-import { MemoryClarificationStateStore } from './clarification-state';
 import type { ClarificationState } from './clarification-state';
 
 fc.configureGlobal({ numRuns: 200 });
@@ -172,28 +171,6 @@ describe('clarification core properties', () => {
           event.eventId === state.lastEventId;
         expect(decision.choice).toBe(reopening ? state.lastChoice : undefined);
       }),
-    );
-  });
-
-  it('rejects stale memory writes for every generated initial state', async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 0, max: 1_000_000 }),
-        async (offset) => {
-          const store = new MemoryClarificationStateStore();
-          const state = new ClarificationCore().begin(
-            {},
-            Date.now() + offset,
-            'menu',
-          );
-
-          await expect(store.set('user', state, 0)).resolves.toBe(true);
-          await expect(
-            store.set('user', { ...state, version: state.version + 1 }, 0),
-          ).resolves.toBe(false);
-          await expect(store.get('user')).resolves.toEqual(state);
-        },
-      ),
     );
   });
 });

@@ -1,21 +1,13 @@
 export { PlatformAgentService } from './agent/platform-agent.service';
 export {
-  MemoryClarificationStateStore,
   RedisClarificationStateStore,
   clarificationStateKey,
   createClarificationStateStore,
 } from './clarification/clarification-state';
-export type {
-  ClarificationState,
-  ClarificationStateStore,
-  ClarificationLimits,
-  ClarificationConfigReader,
-  ClarificationIrrelevantResult,
-} from './clarification/clarification-state';
-export type {
-  ClarificationChoice,
-  ClarificationIrrelevantAction,
-} from './clarification/clarification-text';
+// The state itself, the memory store, the limits, the config reader and the
+// text vocabulary are internal: nothing outside this package imports them, so
+// publishing them is dead surface rather than a promise (ADR-0041, ADR-0047).
+export type { ClarificationStateStore } from './clarification/clarification-state';
 export { CLARIFICATION_STATE_STORE } from './clarification/clarification-state';
 export { PlatformAgentToolsService } from './agent/platform-agent-tools.service';
 export {

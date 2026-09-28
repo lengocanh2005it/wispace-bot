@@ -515,7 +515,7 @@ describe('PlatformAgentService', () => {
     );
   });
 
-  it('tombstones stale clarification state before a clear new question', async () => {
+  it('sends a clear new question to the LLM while a menu is pending', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),
       appendTurn: jest.fn().mockResolvedValue(undefined),
@@ -532,11 +532,6 @@ describe('PlatformAgentService', () => {
       userText: 'Xem tiến độ học của mình',
     });
 
-    expect(clarificationStore.set).toHaveBeenCalledWith(
-      'default:zalo-user-1',
-      expect.objectContaining({ phase: 'consumed' }),
-      1,
-    );
     expect(mockLlmReply).toHaveBeenCalledWith(
       expect.objectContaining({ userText: 'Xem tiến độ học của mình' }),
       expect.anything(),

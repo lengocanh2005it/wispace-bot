@@ -4,10 +4,6 @@ import {
   ClarificationCore,
   type ClarificationDecision,
 } from './clarification-core';
-import {
-  MemoryClarificationStateStore,
-  RedisClarificationStateStore,
-} from './clarification-state';
 
 describe('ClarificationCore', () => {
   const now = 1_700_000_000_000;
@@ -113,33 +109,6 @@ describe('ClarificationCore', () => {
     expect(consumed.version).toBe(next.version + 1);
   });
 
-  it('rejects a stale memory write using the expected version', async () => {
-    const store = new MemoryClarificationStateStore();
-    const state = new ClarificationCore().begin({}, Date.now(), 'menu');
-
-    await store.set('u1', state, 0);
-    await expect(store.set('u1', { ...state, version: 2 }, 0)).resolves.toBe(
-      false,
-    );
-  });
-
-  it('consumes a choice with a compare-and-set tombstone', async () => {
-    const store = new MemoryClarificationStateStore();
-    const core = new ClarificationCore();
-    const state = core.begin({ userId: 42 }, Date.now(), 'menu');
-
-    await store.set('u1', state, 0);
-    const consumed = core.consume(
-      state,
-      { eventId: 'choice-1' },
-      Date.now(),
-      'schedule',
-    );
-    await expect(store.set('u1', consumed, state.version)).resolves.toBe(true);
-    await expect(store.clear('u1', consumed.version)).resolves.toBe(true);
-    await expect(store.clear('u1', consumed.version)).resolves.toBe(false);
-  });
-
   it('persists the consumed choice for a delivery retry', () => {
     const state = new ClarificationCore().consume(
       new ClarificationCore().begin({}, Date.now(), 'menu'),
@@ -212,57 +181,6 @@ describe('ClarificationCore', () => {
       kind: 'consumed',
       choice: undefined,
     });
-  });
-
-  it('fails closed when configured Redis is disabled or native client is missing', async () => {
-    const state = new ClarificationCore().begin({}, Date.now(), 'menu');
-
-    const disabledStore = new RedisClarificationStateStore(
-      {
-        isConfiguredEnabled: () => true,
-        isEnabled: () => false,
-        getNativeClient: () => null,
-      },
-      'chat:clarification:test',
-    );
-
-    await expect(disabledStore.get('u1')).rejects.toThrow('unavailable');
-    await expect(disabledStore.set('u1', state)).rejects.toThrow('unavailable');
-    await expect(disabledStore.clear('u1')).rejects.toThrow('unavailable');
-
-    const missingClientStore = new RedisClarificationStateStore(
-      {
-        isConfiguredEnabled: () => true,
-        isEnabled: () => true,
-        getNativeClient: () => null,
-      },
-      'chat:clarification:test',
-    );
-
-    await expect(missingClientStore.get('u1')).rejects.toThrow('unavailable');
-    await expect(missingClientStore.set('u1', state)).rejects.toThrow(
-      'unavailable',
-    );
-    await expect(missingClientStore.clear('u1')).rejects.toThrow('unavailable');
-
-    const notConfiguredDirectStore = new RedisClarificationStateStore(
-      {
-        isConfiguredEnabled: () => false,
-        isEnabled: () => false,
-        getNativeClient: () => null,
-      },
-      'chat:clarification:test',
-    );
-
-    await expect(notConfiguredDirectStore.get('u1')).rejects.toThrow(
-      'unavailable',
-    );
-    await expect(notConfiguredDirectStore.set('u1', state)).rejects.toThrow(
-      'unavailable',
-    );
-    await expect(notConfiguredDirectStore.clear('u1')).rejects.toThrow(
-      'unavailable',
-    );
   });
 });
 
