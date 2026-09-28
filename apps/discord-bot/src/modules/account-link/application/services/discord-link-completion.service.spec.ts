@@ -6,6 +6,7 @@ import type { DiscordWelcomeService } from './discord-welcome.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import { DiscordLinkCompletionService } from './discord-link-completion.service';
+import { clarificationStateKey } from '@wispace/chat-agent';
 
 function buildHarness(overrides: {
   valid?: boolean;
@@ -191,7 +192,7 @@ describe('DiscordLinkCompletionService', () => {
       143,
     );
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
-      'discord:discord-user-1',
+      clarificationStateKey('discord', 'discord-user-1'),
     );
   });
 

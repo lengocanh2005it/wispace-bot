@@ -36,6 +36,7 @@ import {
 import { DiscordWelcomeService } from './discord-welcome.service';
 import {
   CLARIFICATION_STATE_STORE,
+  clarificationStateKey,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 
@@ -111,7 +112,9 @@ export class DiscordLinkCompletionService {
           intentGeneration: intent.intentGeneration,
         }),
       clearClarification: async (externalUserId) => {
-        await this.clarificationStateStore.clear(`discord:${externalUserId}`);
+        await this.clarificationStateStore.clear(
+          clarificationStateKey('discord', externalUserId),
+        );
       },
       afterCommit: (context) => this.afterCommit(context),
     };

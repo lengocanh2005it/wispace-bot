@@ -7,6 +7,7 @@ import type { ZaloAccountLinkService } from '../../infrastructure/persistence/za
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import type { ClarificationStateStore } from '@wispace/chat-agent';
+import { clarificationStateKey } from '@wispace/chat-agent';
 
 describe('ZaloLinkCompletionService', () => {
   const buildService = (
@@ -121,7 +122,7 @@ describe('ZaloLinkCompletionService', () => {
       upsertLink.mock.invocationCallOrder[0],
     );
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
-      'zalo:zalo-user-1',
+      clarificationStateKey('zalo', 'zalo-user-1'),
     );
   });
 

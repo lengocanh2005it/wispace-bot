@@ -1,4 +1,5 @@
 import { MessengerMappingService } from './messenger-mapping.service';
+import { clarificationStateKey } from '@wispace/chat-agent';
 
 describe('MessengerMappingService', () => {
   const makePrefs = () => ({
@@ -254,7 +255,7 @@ describe('MessengerMappingService', () => {
     });
 
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
-      'messenger:psid-1',
+      clarificationStateKey('messenger', 'psid-1'),
     );
   });
 

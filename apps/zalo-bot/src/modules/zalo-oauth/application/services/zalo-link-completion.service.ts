@@ -32,6 +32,7 @@ import {
 } from '../../domain/ports/zalo-account-link.port';
 import {
   CLARIFICATION_STATE_STORE,
+  clarificationStateKey,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { ZaloRelinkNotifier } from './zalo-relink-notifier.service';
@@ -117,7 +118,9 @@ export class ZaloLinkCompletionService {
           intentGeneration: intent.intentGeneration,
         }),
       clearClarification: async (externalUserId) => {
-        await this.clarificationStateStore.clear(`zalo:${externalUserId}`);
+        await this.clarificationStateStore.clear(
+          clarificationStateKey('zalo', externalUserId),
+        );
       },
       afterCommit: (context) => this.afterCommit(context),
     };
