@@ -645,4 +645,16 @@ When closing a gap: update the feature runbook (`apps/messenger-bot/docs/chat-ra
 - Commit messages: short, describe **why** more than **what**.
 - Before PR: run all 5 CI commands in order `format:check → lint → typecheck → test → build`; local verification recommended: `npm run verify`.
 
+### Before reporting a task done
+
+Green checks are not the same as delivered. Each of these has been missed in this repo while everything was green, so check them explicitly:
+
+- **Pushed** — `git status` clean and the branch is on the remote, not only committed locally.
+- **CI on the current SHA** — `gh pr checks` lists jobs without proving they belong to the head. Query `check-runs` for the PR's `headRefOid` and confirm every conclusion is `success`.
+- **Issue state matches reality** — an issue closed by a `Closes #N` line is closed, but a *comment saying what landed* is still owed. Comments written before the work are not a substitute; they record the plan, not the outcome.
+- **Labels match state** — a closed issue still carrying `ready-for-agent` will be picked up by the next triage pass.
+- **Numbers in the issue and PR body are current** — recount after implementation. Counts written during design were right about scope and wrong about detail more than once.
+
+A dependency-injection binding is the specific case worth re-checking by hand: a port token bound in a module that does not provide the class consuming it resolves to `undefined`, and an `@Optional()` parameter swallows the error. All checks stay green while the dependency is simply gone. See `docs/architecture-boundaries.md`.
+
 HTTP throttling: `WEBHOOK_RATE_LIMIT_PER_MINUTE` / `WEBHOOK_RATE_LIMIT_TTL_MS` configure authenticated Messenger/Zalo webhook bursts; `THROTTLE_DEFAULT_LIMIT` / `THROTTLE_DEFAULT_TTL_MS` configure other throttled routes. Redis provides the shared atomic window when enabled; configured-but-unavailable Redis fails closed.
