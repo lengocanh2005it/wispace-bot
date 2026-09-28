@@ -2,15 +2,22 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
-import type { Platform } from '@wispace/contracts';
+import type {
+  Platform,
+  OutboundRateLimitOutcome,
+  OutboundRateLimitPort,
+  OutboundRateLimitVerdict,
+} from '@wispace/contracts';
 import { errorMessage, maskExternalId, maskExternalIdInText } from '../masking';
 import { RedisService } from './redis.service';
 
-export type OutboundRateLimitDecision =
-  | 'allowed'
-  | 'limited'
-  | 'store_unavailable'
-  | 'disabled';
+// `OutboundRateLimitDecision` / `OutboundRateLimitResult` are the long-standing
+// names for this shape and stay exported for existing callers. They alias
+// `@wispace/contracts`, they do not redeclare it — two independent declarations
+// of one shape is the second-source-of-truth defect ADR-0043 names, and the
+// `implements OutboundRateLimitPort` on the class below is what makes a drift
+// between them a compile error rather than a runtime surprise.
+export type OutboundRateLimitDecision = OutboundRateLimitOutcome;
 
 export interface OutboundRateLimitInput {
   platform: Platform;
@@ -19,12 +26,10 @@ export interface OutboundRateLimitInput {
   units?: number;
 }
 
-export interface OutboundRateLimitResult {
-  allowed: boolean;
-  outcome: OutboundRateLimitDecision;
+export type OutboundRateLimitResult = OutboundRateLimitVerdict & {
   reason?: 'cap_exceeded' | 'batch_too_large' | 'redis_unavailable';
   remaining?: number;
-}
+};
 
 const DEFAULT_MAX_MESSAGES = 30;
 const DEFAULT_WINDOW_MS = 10 * 60 * 1000;
@@ -71,7 +76,9 @@ export class OutboundRateLimitConfig {
  * truth; the bounded in-memory path exists only for local development/tests.
  */
 @Injectable()
-export class OutboundRateLimiter implements OnModuleInit {
+export class OutboundRateLimiter
+  implements OnModuleInit, OutboundRateLimitPort
+{
   private readonly logger = new Logger(OutboundRateLimiter.name);
   private readonly config: OutboundRateLimitConfig;
   private readonly memoryBuckets = new Map<string, number[]>();

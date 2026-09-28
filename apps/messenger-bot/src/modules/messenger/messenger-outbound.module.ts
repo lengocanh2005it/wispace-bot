@@ -66,12 +66,9 @@ import { PLATFORM_CONNECTIVITY_SIGNAL } from './application/ports/platform-conne
     MessengerReportSentReader,
     MessengerOutboundService,
     {
-      // #1450: `MessengerOutboundService` is provided HERE, so the token it
-      // injects has to be bound here too — beside `OUTBOUND_DEAD_LETTER`,
-      // which is bound in the same place for the same reason. Binding it in
-      // `MessengerModule`, which this module does not import and which does
-      // not export it, resolved to `undefined` and silently disabled rate
-      // limiting: `@Optional()` swallows the missing-dependency error.
+      // Bound here because `MessengerOutboundService` is provided here, beside
+      // `OUTBOUND_DEAD_LETTER`, which is bound in the same place for the same
+      // reason. Full account in `docs/architecture-boundaries.md`; see #1450.
       provide: OUTBOUND_RATE_LIMIT,
       useExisting: OutboundRateLimiter,
     },

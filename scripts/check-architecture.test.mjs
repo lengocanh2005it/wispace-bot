@@ -663,10 +663,72 @@ test('both new name categories are reported from a single import statement', () 
       (violation) => violation.rule === 'application-no-outer',
     );
     assert.equal(mixed.length, 1);
-    assert.deepEqual(
-      [...mixed[0].symbols].sort(),
-      ['OutboundRateLimiter', 'RedisUserDisplayNameCache'],
+    assert.deepEqual([...mixed[0].symbols].sort(), [
+      'OutboundRateLimiter',
+      'RedisUserDisplayNameCache',
+    ]);
+  } finally {
+    f.close();
+  }
+});
+
+test('a framework-free core symbol with no concrete-sounding name stays unreported', () => {
+  // The clean case #1450 asks for, in the scope where the mixed-package name
+  // rule is the only thing that can fire.
+  //
+  // The limit worth stating: a `/core` symbol *named* `SomethingCache` WOULD be
+  // reported, because `isConcreteMixedImport` matches the name and has no
+  // `/core` carve-out. Adding one would weaken a rule this issue was not asked
+  // to weaken, and no such symbol exists in the tree today. It is the known
+  // failure mode of any name-based rule, and #1451 is what replaces it.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import { PLAYER, readSyncHorizonHours } from '@wispace/scheduler-core/core';\nimport { jitteredDelayMs, sleep } from '@wispace/bot-common/redis';\nexport class ConsumerService { a = PLAYER; b = readSyncHorizonHours; c = jitteredDelayMs; d = sleep; }\n",
     );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a namespace import from a framework-bound subpath is reported as unclassifiable', () => {
+  // Fails closed (#1450 AC). A namespace import brings in the whole adapter
+  // surface and the checker only ever sees the `['*']` placeholder, so the
+  // suffix list cannot judge it. Reporting is the honest answer.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import * as chatAgent from '@wispace/chat-agent/adapters';\nexport class ConsumerService { x = chatAgent; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    const blind = result.violations.filter(
+      (violation) => violation.rule === 'mixed-import-unclassifiable',
+    );
+    assert.equal(blind.length, 1);
+  } finally {
+    f.close();
+  }
+});
+
+test('a wildcard import from a framework-free subpath stays unreported', () => {
+  // The carve-out that keeps the rule above from manufacturing false
+  // positives. `wispace-client/core` carries no concrete implementation, so
+  // there is nothing to leak however it is imported.
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/consumer.service.ts',
+      "import * as core from '@wispace/wispace-client/core';\nexport class ConsumerService { x = core; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
   } finally {
     f.close();
   }

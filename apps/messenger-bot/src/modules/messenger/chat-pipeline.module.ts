@@ -166,14 +166,11 @@ import {
   ],
   providers: [
     {
-      // #1450: `MessengerChatProcessorService` is provided HERE, so the token
-      // it injects has to be bound here too. Binding it in `MessengerModule`,
-      // which this module does not import and which does not export it,
-      // resolved to `undefined` and made the privacy path silently drop the
-      // `display_name_cache` hook — the erasure job reported the store skipped
-      // and the display name survived in Redis. That is a regression: the
-      // parameter previously carried no decorators and resolved through
-      // `design:paramtypes` against the `DisplayNameModule` imported below.
+      // Bound here because `MessengerChatProcessorService` is provided here.
+      // Bound in `MessengerModule` it resolved to `undefined` and the privacy
+      // path silently dropped the `display_name_cache` hook, so the display
+      // name survived in Redis after an erasure request. Full account in
+      // `docs/architecture-boundaries.md`; see #1450.
       provide: MESSENGER_USER_DISPLAY_NAME_CACHE,
       useExisting: RedisUserDisplayNameCache,
     },

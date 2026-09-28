@@ -32,14 +32,10 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
   ],
   providers: [
     {
-      // #1450: `DiscordOutboundService` is provided HERE, so the token that
-      // service injects has to be bound here too. Binding it in
-      // `DiscordChatModule` — which this module does not import, and which
-      // does not export it — left the injection resolving to `undefined`,
-      // because `@Optional()` swallows the `UnknownDependenciesException`. The
-      // effect was silent: `if (!this.outboundRateLimiter) return true` admits
-      // every send. A token has none of the app-wide visibility a class had
-      // through the `@Global()` RedisModule.
+      // Bound here because `DiscordOutboundService` is provided here — a token
+      // bound in a module that does not provide its consumer resolves to
+      // `undefined` and `@Optional()` swallows the error. The full account is
+      // in `docs/architecture-boundaries.md`; see #1450.
       provide: OUTBOUND_RATE_LIMIT,
       useExisting: OutboundRateLimiter,
     },
