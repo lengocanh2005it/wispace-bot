@@ -185,18 +185,19 @@ describe('ClarificationCore', () => {
 });
 
 describe('clarification decision vocabulary', () => {
-  it('closes into thirteen terminal and three intermediate kinds', () => {
-    // Widened deliberately: `has` taking a non-terminal kind must compile for
-    // the disjointness assertion below, so the narrowing cannot hide a leak.
-    const terminal: ReadonlySet<ClarificationDecision['kind']> = new Set(
-      CLARIFICATION_TERMINAL_DECISION_KINDS,
+  it('splits the vocabulary into disjoint terminal and intermediate lists', () => {
+    // Completeness is a compile-time assertion: the reply table is a `Record`
+    // over the terminal type, so a kind added to the union and to neither list
+    // is a missing entry, and `ClarificationDecisionKindsArePartitioned` fails
+    // on a name the union does not declare. A hardcoded cardinality here would
+    // only go stale. What the type cannot see is a kind both lists claim.
+    const intermediate: ReadonlySet<ClarificationDecision['kind']> = new Set(
+      CLARIFICATION_INTERMEDIATE_DECISION_KINDS,
     );
 
-    expect(terminal.size).toBe(13);
-    expect(CLARIFICATION_INTERMEDIATE_DECISION_KINDS).toHaveLength(3);
     expect(
-      CLARIFICATION_INTERMEDIATE_DECISION_KINDS.filter((kind) =>
-        terminal.has(kind),
+      CLARIFICATION_TERMINAL_DECISION_KINDS.filter((kind) =>
+        intermediate.has(kind),
       ),
     ).toEqual([]);
   });

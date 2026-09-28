@@ -1,8 +1,6 @@
+import { CLARIFICATION_TERMINAL_DECISION_KINDS } from './clarification-core';
 import {
-  CLARIFICATION_TERMINAL_DECISION_KINDS,
-  ClarificationCore,
-} from './clarification-core';
-import {
+  DEFAULT_CLARIFICATION_LIMITS,
   clarificationStateKey,
   type ClarificationState,
   type ClarificationStateStore,
@@ -93,16 +91,10 @@ const menuState = (overrides: Partial<ClarificationState> = {}) => ({
 });
 
 describe('clarification terminal rule table', () => {
-  it('covers every terminal kind and gives each one a non-empty outcome list', () => {
+  it('gives every terminal kind exactly one rule', () => {
     expect(Object.keys(CLARIFICATION_TERMINAL_RULES).sort()).toEqual(
       [...CLARIFICATION_TERMINAL_DECISION_KINDS].sort(),
     );
-
-    for (const kind of CLARIFICATION_TERMINAL_DECISION_KINDS) {
-      expect(
-        CLARIFICATION_TERMINAL_RULES[kind].outcomes.length,
-      ).toBeGreaterThan(0);
-    }
   });
 
   it('keeps the skip flag and the skip_delivery outcome in the same entry', () => {
@@ -384,6 +376,89 @@ describe('ClarificationResponder', () => {
     expect(last.store.clear).toHaveBeenCalledWith('discord:u1', 2);
   });
 
+  // #1143 review: the max_reset path used to record its two outcomes and *then*
+  // attempt the version-gated clear, so a clear that lost its race fell into
+  // the fail-closed catch and counted four outcomes. The clear now runs first,
+  // which is the order every other write follows, so the conflict counts two.
+  // Reply text, skip flag and store effect are unchanged; only the counters are.
+  it('records only the fail-closed pair when the max_reset clear loses its race', async () => {
+    const { responder, store, outcomes, failures } = buildStore(
+      menuState({ attempts: 2, menuResets: 1 }),
+    );
+    jest
+      .mocked(store.clear)
+      .mockResolvedValue(false as unknown as boolean & void);
+
+    const turn = await responder.handle({
+      externalUserId: 'u1',
+      userText: 'abc???',
+      eventId: 'event-a',
+      userId: 7,
+    });
+
+    expect(outcomes).toEqual(['unavailable', 'blocked_tool']);
+    expect(outcomes).not.toContain('max_reset');
+    expect(failures[0].error).toBeInstanceOf(Error);
+    expect((failures[0].error as Error).message).toBe(
+      'Clarification state version conflict',
+    );
+    expect(turn.kind === 'reply' && turn.text).toContain('chưa thể');
+    expect(turn.kind === 'reply' && turn.skipDelivery).toBe(false);
+  });
+
+  // #1143 review: the post-conflict re-read used to re-state the replay rule
+  // inline, and a weaker version of it. Both write paths now ask the core, so
+  // this pins the one rule they share — a same-event cached reply is suppressed,
+  // anything else is a conflict.
+  it.each([
+    [
+      'a different account',
+      menuState({
+        lastEventId: 'event-a',
+        lastReplyText: 'concurrent-menu',
+        userId: 99,
+      }),
+    ],
+    [
+      'a state that already failed delivery',
+      menuState({
+        lastEventId: 'event-a',
+        lastReplyText: 'concurrent-menu',
+        lastDeliveryFailed: true,
+      }),
+    ],
+    [
+      'an expired state',
+      menuState({
+        lastEventId: 'event-a',
+        lastReplyText: 'concurrent-menu',
+        expiresAt: NOW - 1,
+      }),
+    ],
+  ])('fails closed when a lost write re-reads %s', async (_case, reRead) => {
+    const { responder, store, outcomes } = buildStore();
+    jest
+      .mocked(store.set)
+      .mockResolvedValueOnce(false as unknown as boolean & void);
+    // The first read finds nothing, so the set is what loses its race; the
+    // re-read inside the conflict handler is what returns this state.
+    jest
+      .mocked(store.get)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(reRead);
+
+    const turn = await responder.handle({
+      externalUserId: 'u1',
+      userText: 'abc???',
+      eventId: 'event-a',
+      userId: 7,
+    });
+
+    expect(store.get).toHaveBeenCalledTimes(2);
+    expect(outcomes).toEqual(['unavailable', 'blocked_tool']);
+    expect(turn.kind === 'reply' && turn.skipDelivery).toBe(false);
+  });
+
   it('opens a fresh state for an off-topic message', async () => {
     const { responder, store, outcomes } = buildStore();
 
@@ -426,8 +501,11 @@ describe('ClarificationResponder', () => {
     jest
       .mocked(store.set)
       .mockResolvedValueOnce(false as unknown as boolean & void);
+    // The first read finds nothing, so the set is what loses its race; the
+    // re-read inside the conflict handler is what returns the concurrent state.
     jest
       .mocked(store.get)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(
         menuState({ lastEventId: 'event-a', lastReplyText: 'concurrent-menu' }),
       );
@@ -439,6 +517,7 @@ describe('ClarificationResponder', () => {
       userId: 7,
     });
 
+    expect(store.get).toHaveBeenCalledTimes(2);
     expect(turn).toEqual({
       kind: 'reply',
       text: 'concurrent-menu',
@@ -482,19 +561,33 @@ describe('ClarificationResponder', () => {
     );
   });
 
-  it('keeps the version internal — nothing it returns carries one', async () => {
-    const { responder } = buildStore(
+  // The type already has no `version` field on either turn; this pins the
+  // runtime property a type cannot see — that no field named `version` survives
+  // into the serialised turn, on both branches.
+  it('returns a turn with no version field on either branch', async () => {
+    const consumed = buildStore(
       menuState({ phase: 'consumed', lastEventId: 'other-event' }),
     );
 
-    const turn = await responder.handle({
+    const continueTurn = await consumed.responder.handle({
       externalUserId: 'u1',
       userText: 'tiến độ của tôi thế nào',
       eventId: 'event-a',
       userId: 7,
     });
 
-    expect(JSON.stringify(turn)).not.toContain('version');
+    const replayed = buildStore(menuState({ lastEventId: 'event-a' }));
+    const replyTurn = await replayed.responder.handle({
+      externalUserId: 'u1',
+      userText: 'tiến độ của tôi thế nào',
+      eventId: 'event-a',
+      userId: 7,
+    });
+
+    expect(continueTurn.kind).toBe('continue');
+    expect(replyTurn.kind).toBe('reply');
+    expect(JSON.stringify(continueTurn)).not.toContain('version');
+    expect(JSON.stringify(replyTurn)).not.toContain('version');
   });
 });
 
@@ -529,7 +622,12 @@ describe('clarificationStateKey', () => {
 });
 
 describe('core and responder agree on the persisted shape', () => {
-  it('writes exactly what the core builds', async () => {
+  // Pinned as a literal, not as another `ClarificationCore().begin(...)` call:
+  // the shape is what a previous-generation pod reads during a rolling deploy,
+  // so the assertion has to be able to fail when a field is added, renamed or
+  // dropped. Only the canned menu text is left open — its wording is asserted
+  // where the copy itself is tested.
+  it('writes exactly the fields a first-generation pod reads back', async () => {
     const { responder, store } = buildStore();
     await responder.handle({
       externalUserId: 'u1',
@@ -539,12 +637,31 @@ describe('core and responder agree on the persisted shape', () => {
     });
 
     const written = jest.mocked(store.set).mock.calls[0][1];
-    expect(written).toEqual(
-      new ClarificationCore().begin(
-        { eventId: 'event-a', userId: 7 },
-        NOW,
-        expect.any(String) as unknown as string,
-      ),
-    );
+    expect(Object.keys(written).sort()).toEqual([
+      'attempts',
+      'createdAt',
+      'expiresAt',
+      'lastDeliveryFailed',
+      'lastEventId',
+      'lastReplyText',
+      'menuResets',
+      'phase',
+      'recentEventIds',
+      'userId',
+      'version',
+    ]);
+    expect(written).toEqual({
+      phase: 'awaiting_choice',
+      attempts: 0,
+      menuResets: 0,
+      version: 1,
+      createdAt: NOW,
+      expiresAt: NOW + DEFAULT_CLARIFICATION_LIMITS.ttlMs,
+      userId: 7,
+      lastEventId: 'event-a',
+      recentEventIds: ['event-a'],
+      lastReplyText: expect.any(String) as unknown as string,
+      lastDeliveryFailed: false,
+    });
   });
 });

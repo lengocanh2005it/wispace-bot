@@ -6,7 +6,6 @@ import type { DiscordWelcomeService } from './discord-welcome.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import { DiscordLinkCompletionService } from './discord-link-completion.service';
-import { clarificationStateKey } from '@wispace/chat-agent';
 
 function buildHarness(overrides: {
   valid?: boolean;
@@ -191,8 +190,11 @@ describe('DiscordLinkCompletionService', () => {
       99,
       143,
     );
+    // The literal, not `clarificationStateKey(...)`: production calls that
+    // function, so asserting with it could not fail. The key *format* has its
+    // own test in the chat-agent package; this one pins the value here.
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
-      clarificationStateKey('discord', 'discord-user-1'),
+      'discord:discord-user-1',
     );
   });
 

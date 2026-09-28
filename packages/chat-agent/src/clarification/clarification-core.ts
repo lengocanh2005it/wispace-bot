@@ -43,11 +43,31 @@ export type ClarificationDecision =
   | { kind: 'consumed'; choice?: ClarificationChoice }
   | { kind: 'proceed' };
 
+/** Intermediate kinds: clear or open the state, then keep going. */
+export const CLARIFICATION_INTERMEDIATE_DECISION_KINDS = [
+  'stale_state',
+  'consumed',
+  'proceed',
+] as const satisfies ReadonlyArray<ClarificationDecision['kind']>;
+
+/** The intermediate subset of the decision vocabulary. */
+export type ClarificationIntermediateDecisionKind =
+  (typeof CLARIFICATION_INTERMEDIATE_DECISION_KINDS)[number];
+
 /**
- * Terminal kinds: the turn ends here. The responder adds `consume_race_lost`
- * — a decision made about a write, not a classification of a state — so it is
- * declared here and returned by the responder rather than by `inspect`.
+ * Terminal kinds: the turn ends here. Derived from the union by removing the
+ * intermediate kinds, not hand-written, so the reply table is keyed on the
+ * vocabulary itself: a kind added to `ClarificationDecision` and classified as
+ * nothing is a missing table entry, which is a compile error. The responder also
+ * returns `consume_race_lost` — a decision made about a write, not a
+ * classification of a state — so it is declared here and reached from the
+ * responder rather than from `inspect`.
  */
+export type ClarificationTerminalDecisionKind = Exclude<
+  ClarificationDecision['kind'],
+  ClarificationIntermediateDecisionKind
+>;
+
 export const CLARIFICATION_TERMINAL_DECISION_KINDS = [
   'replayed',
   'stale_reply',
@@ -62,16 +82,35 @@ export const CLARIFICATION_TERMINAL_DECISION_KINDS = [
   'started_offtopic',
   'started_ambiguous',
   'unavailable',
-] as const satisfies ReadonlyArray<ClarificationDecision['kind']>;
+] as const satisfies ReadonlyArray<ClarificationTerminalDecisionKind>;
 
-/** The terminal subset of the decision vocabulary, keyed on by the reply table. */
-export type ClarificationTerminalDecisionKind =
-  (typeof CLARIFICATION_TERMINAL_DECISION_KINDS)[number];
+/**
+ * A decision the turn can end on. This is what the reply table is applied to, so
+ * pairing a decision with a kind it does not carry is not expressible.
+ */
+export type ClarificationTerminalDecision = Extract<
+  ClarificationDecision,
+  { kind: ClarificationTerminalDecisionKind }
+>;
 
-/** Intermediate kinds: clear or open the state, then keep going. */
-export const CLARIFICATION_INTERMEDIATE_DECISION_KINDS: ReadonlyArray<
-  ClarificationDecision['kind']
-> = ['stale_state', 'consumed', 'proceed'];
+/**
+ * The two lists must partition the union in both directions. A kind in neither
+ * one, or a name in one that the union does not declare, fails the constraint
+ * below at compile time — the assertion this refactor exists to make structural.
+ */
+type AssertNever<T extends never> = T;
+export type ClarificationDecisionKindsArePartitioned = AssertNever<
+  Exclude<
+    ClarificationDecision['kind'],
+    ClarificationTerminalDecisionKind | ClarificationIntermediateDecisionKind
+  >
+> &
+  AssertNever<
+    Exclude<
+      ClarificationTerminalDecisionKind | ClarificationIntermediateDecisionKind,
+      ClarificationDecision['kind']
+    >
+  >;
 
 /** What `inspect` can return: a suppression, the stale state, the consumed state, or proceed. */
 export type ClarificationInspection = Extract<

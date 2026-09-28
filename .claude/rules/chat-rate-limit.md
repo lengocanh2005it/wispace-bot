@@ -33,7 +33,10 @@ fresh turn, and an event without an id is never suppressed by this state. A
 non-ambiguous delivery failure marks the consumed choice retryable so the same
 event can run again. Monitor
 `<prefix>_clarification_outcomes_total{outcome=skip_delivery}` alongside the
-existing `replayed`, `stale_reply`, and `delivery_failure` outcomes.
+existing `replayed`, `stale_reply`, and `delivery_failure` outcomes. `replayed`
+also covers the two compare-and-set race paths: when a state write loses its
+version gate and the re-read shows the same event already answered, the reply is
+suppressed and counted as `replayed` rather than `skip_delivery` alone (#1143).
 
 The separate shared outbound backstop (#622) is enforced immediately before
 learner-facing delivery. It is not inbound quota: use the canonical WISPACE

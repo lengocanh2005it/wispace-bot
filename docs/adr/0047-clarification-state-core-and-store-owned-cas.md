@@ -67,7 +67,15 @@ result, and keeps the version number to itself — the version is never part of
 anything the responder returns. It maps one decision to one reply through one
 table keyed on the closed union, and that table is the single place where an
 outcome, the reply text, and the suppressed-or-delivered flag are named
-together, so "count it but do not send it" cannot be half-applied.
+together, so "count it but do not send it" cannot be half-applied. The decision
+it applies a rule to is narrowed to a terminal kind and the kind is read *off
+that decision*, so a decision and the kind it is answered under are not two
+independent arguments. That is a correction this design made after review: a
+helper taking both accepted a `{ kind: 'consumed' }` decision under the
+`choice` kind, read the choice off a decision that did not carry one, and
+silently dropped the accepted choice. The same review found the post-conflict
+re-read re-stating the replay rule inline; it now asks the same core inspection,
+so the replay rule is stated once.
 
 The persisted shape of a state, both stores, the store interface, the injection
 token, the validation on read-back, the time-to-live and attempt bounds, the
@@ -150,10 +158,18 @@ barely shrinks and the first acceptance criterion is only half met.
 **A subpath entrypoint for the new core.** Not taken, and out of scope. This
 package still publishes a root barrel, and ADR-0041's `no-root-package-entrypoint`
 rule does not cover it — the enforced list does not include this package. The
-core therefore stays an internal module under `src/clarification/`, and the
-class and the state type are dropped from the root barrel because nothing
-outside the package imports them, not because an entrypoint rule makes them
-dead surface.
+core therefore stays an internal module under `src/clarification/`, and seven
+clarification symbols are dropped from the root barrel because nothing outside
+the package imports them, not because an entrypoint rule makes them dead
+surface: the deleted state machine class `ClarificationStateMachine`, the state
+type `ClarificationState`, the memory store `MemoryClarificationStateStore`, and
+the four internal types `ClarificationLimits`, `ClarificationConfigReader`,
+`ClarificationIrrelevantResult`, `ClarificationChoice` and
+`ClarificationIrrelevantAction`. A word-boundary scan over every `ts`, `mjs` and
+`js` file outside the package found zero importers of all seven. The store class
+the operational drill constructs by value (`RedisClarificationStateStore`), the
+key function, the injection token, the factory and the `ClarificationStateStore`
+type all have real importers and stay exported.
 
 ## Accounting
 
@@ -182,9 +198,20 @@ responsibility seam this work acts on, and the measurement stamp moves with it.
   outcome" is an assertion rather than an inference from reading branches.
 - The total is larger than before. Anyone proposing this shape again for a
   size reason has misread it; the reason is the enforceable boundary.
-- The learning surfaces are unchanged, so the existing behavioural suite keeps
-  passing and no dashboard, alert, or runbook written against the current
-  outcome labels needs editing.
+- The outcome labels are unchanged, so no dashboard, alert or runbook written
+  against the *names* needs editing. Two counts are not, and the difference is
+  deliberate. The `max_reset` path used to record its two outcomes and only then
+  attempt the version-gated clear, so a clear that lost its race fell into the
+  fail-closed catch and counted four outcomes
+  (`blocked_tool`, `max_reset`, `unavailable`, `blocked_tool`); it now clears
+  first, like every other write, and counts two (`unavailable`, `blocked_tool`).
+  In the other direction, a write that loses its version gate and re-reads the
+  same event already answered used to count `skip_delivery` alone and now also
+  counts `replayed` on both write paths. Reply text, skip flag, persisted shape
+  and compare-and-set semantics are identical in all three cases; only the
+  counters move, and each is the more accurate count. `.claude/rules/chat-rate-limit.md`,
+  `apps/messenger-bot/docs/chat-rate-limit-quota.md` and
+  `docs/project-overview.md` carry the widened meaning of `replayed`.
 
 ## References
 

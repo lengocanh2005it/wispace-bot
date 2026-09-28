@@ -12,6 +12,7 @@ import {
   ClarificationCore,
   type ClarificationDecision,
   type ClarificationEvent,
+  type ClarificationTerminalDecision,
   type ClarificationTerminalDecisionKind,
 } from './clarification-core';
 import {
@@ -58,16 +59,22 @@ export const CLARIFICATION_OUTCOMES = [
 
 export type ClarificationOutcome = (typeof CLARIFICATION_OUTCOMES)[number];
 
-/** The terminal kinds an `recordIrrelevant` action can select. */
-export type ClarificationIrrelevantTerminalKind =
-  | 'irrelevant_clarify'
-  | 'reset_menu'
-  | 'max_reset';
+/**
+ * A terminal kind that carries no payload of its own — `choice` is the one that
+ * does, and `recordIrrelevant` never selects it. Derived from the terminal list
+ * so the join cannot name a kind the vocabulary does not have, and
+ * `Record` over the action union so a new action is a compile error too.
+ */
+export type ClarificationIrrelevantTerminalKind = Exclude<
+  ClarificationTerminalDecisionKind,
+  'choice'
+>;
 
 /**
- * Two of the core's three `recordIrrelevant` action names do not match the
- * terminal kind they select, so the join is stated here instead of assumed.
- * Exhaustive in both directions: a new action or a new kind breaks the build.
+ * `recordIrrelevant` action to the terminal kind it selects. `clarify` and
+ * `clear` do not name their kind; `reset_menu` does, which is exactly why the
+ * join is a table rather than an assumed identity. Exhaustive in both
+ * directions: a new action or a new payload-free terminal kind breaks the build.
  */
 export const CLARIFICATION_IRRELEVANT_ACTION_KINDS: Readonly<
   Record<ClarificationIrrelevantAction, ClarificationIrrelevantTerminalKind>
@@ -92,11 +99,12 @@ export type ClarificationReplyBuilder = (
 export interface ClarificationTerminalRule {
   /**
    * Every outcome counted for this decision, in the order the branch counted
-   * them. A list because four branches count two: their own label plus
-   * `blocked_tool`, and the two suppressions carry `skip_delivery` so the
-   * "counted but not sent" pairing is one list rather than two decisions.
+   * them. A non-empty tuple, so an entry with no outcome is a compile error
+   * rather than a silent gap. A list because four branches count two: their own
+   * label plus `blocked_tool`, and the two suppressions carry `skip_delivery` so
+   * the "counted but not sent" pairing is one list rather than two decisions.
    */
-  readonly outcomes: readonly ClarificationOutcome[];
+  readonly outcomes: readonly [ClarificationOutcome, ...ClarificationOutcome[]];
   /** True when the reply is suppressed rather than sent. */
   readonly skipDelivery: boolean;
   /**
@@ -301,11 +309,11 @@ export class ClarificationResponder {
       }
 
       if (inspection.kind === 'replayed') {
-        return this.terminal(inspection, 'replayed', request, false);
+        return this.terminal(inspection, request, false);
       }
 
       if (inspection.kind === 'stale_reply') {
-        return this.terminal(inspection, 'stale_reply', request, false);
+        return this.terminal(inspection, request, false);
       }
 
       if (inspection.kind === 'consumed') {
@@ -317,13 +325,13 @@ export class ClarificationResponder {
         }
         state = null;
         if (inspection.choice) {
-          // The inspected decision is `consumed`; the terminal rule is `choice`,
-          // and the rule's reply is the rewritten input. Hand `terminal` the
-          // decision that names the choice, or it reads a `consumed` decision
-          // as carrying none and the redelivery is answered as a fresh turn.
+          // `consumed` is the core's intermediate classification — the state was
+          // cleared and the turn carries on. The terminal decision that answers
+          // this redelivery is the accepted choice, so the choice crosses over
+          // here; `terminal` reads the kind off the decision it is given, so the
+          // two cannot disagree.
           return this.terminal(
             { kind: 'choice', choice: inspection.choice },
-            'choice',
             request,
             false,
           );
@@ -333,12 +341,7 @@ export class ClarificationResponder {
       if (isCancel(userText)) {
         const cancelled = await this.options.store.clear(key, state?.version);
         if (state && cancelled === false) throw new Error(VERSION_CONFLICT);
-        return this.terminal(
-          { kind: 'cancelled' },
-          'cancelled',
-          request,
-          false,
-        );
+        return this.terminal({ kind: 'cancelled' }, request, false);
       }
 
       const choice = state ? parseChoice(userText) : null;
@@ -349,19 +352,9 @@ export class ClarificationResponder {
           state.version,
         );
         if (consumed === false) {
-          return this.terminal(
-            { kind: 'consume_race_lost' },
-            'consume_race_lost',
-            request,
-            false,
-          );
+          return this.terminal({ kind: 'consume_race_lost' }, request, false);
         }
-        return this.terminal(
-          { kind: 'choice', choice },
-          'choice',
-          request,
-          false,
-        );
+        return this.terminal({ kind: 'choice', choice }, request, false);
       }
 
       const offTopic = isObviouslyOffTopic(userText);
@@ -373,12 +366,7 @@ export class ClarificationResponder {
       // answer honestly instead of re-showing the clarification menu.
       if (stop) {
         if (state) await this.clearGated(key, state);
-        return this.terminal(
-          { kind: 'stop_acknowledged' },
-          'stop_acknowledged',
-          request,
-          offTopic,
-        );
+        return this.terminal({ kind: 'stop_acknowledged' }, request, offTopic);
       }
 
       if (state && !offTopic && !ambiguous) {
@@ -390,12 +378,7 @@ export class ClarificationResponder {
           state.version,
         );
         if (superseded === false) throw new Error(VERSION_CONFLICT);
-        return this.terminal(
-          { kind: 'new_question' },
-          'new_question',
-          request,
-          offTopic,
-        );
+        return this.terminal({ kind: 'new_question' }, request, offTopic);
       }
 
       const menuText = menuTextFor(offTopic);
@@ -405,7 +388,7 @@ export class ClarificationResponder {
         const kind = CLARIFICATION_IRRELEVANT_ACTION_KINDS[next.action];
         if (next.action === 'clear') {
           await this.clearGated(key, state);
-          return this.terminal({ kind }, kind, request, offTopic);
+          return this.terminal({ kind }, request, offTopic);
         }
         const updated = await this.options.store.set(
           key,
@@ -413,9 +396,15 @@ export class ClarificationResponder {
           state.version,
         );
         if (updated === false) {
-          return await this.replayAfterConflict(key, request, offTopic);
+          return await this.replayAfterConflict(
+            key,
+            event,
+            request,
+            offTopic,
+            now,
+          );
         }
-        return this.terminal({ kind }, kind, request, offTopic);
+        return this.terminal({ kind }, request, offTopic);
       }
 
       if (offTopic || ambiguous) {
@@ -425,10 +414,19 @@ export class ClarificationResponder {
           0,
         );
         if (started === false) {
-          return await this.replayAfterConflict(key, request, offTopic);
+          return await this.replayAfterConflict(
+            key,
+            event,
+            request,
+            offTopic,
+            now,
+          );
         }
-        const kind = offTopic ? 'started_offtopic' : 'started_ambiguous';
-        return this.terminal({ kind }, kind, request, offTopic);
+        return this.terminal(
+          { kind: offTopic ? 'started_offtopic' : 'started_ambiguous' },
+          request,
+          offTopic,
+        );
       }
 
       return { kind: 'continue' };
@@ -445,12 +443,7 @@ export class ClarificationResponder {
       } catch {
         // ignored on purpose
       }
-      return this.terminal(
-        { kind: 'unavailable' },
-        'unavailable',
-        request,
-        false,
-      );
+      return this.terminal({ kind: 'unavailable' }, request, false);
     }
   }
 
@@ -470,13 +463,17 @@ export class ClarificationResponder {
     await this.options.store.set(key, failed, state!.version);
   }
 
+  /**
+   * The single place a terminal decision becomes telemetry, reply text, and a
+   * skip-or-deliver flag. The decision is the only argument: the kind is read
+   * off it, so a decision and the kind it is answered under cannot disagree.
+   */
   private async terminal(
-    decision: ClarificationDecision,
-    kind: ClarificationTerminalDecisionKind,
+    decision: ClarificationTerminalDecision,
     request: ClarificationRequest,
     offTopic: boolean,
   ): Promise<ClarificationTurn> {
-    const rule = CLARIFICATION_TERMINAL_RULES[kind];
+    const rule = CLARIFICATION_TERMINAL_RULES[decision.kind];
     for (const outcome of rule.outcomes) this.record(outcome);
     const builder = rule.reply;
     if (!builder) {
@@ -490,24 +487,26 @@ export class ClarificationResponder {
     };
   }
 
-  /** A write that lost its race re-reads once; a replay is suppressed, anything else conflicts. */
+  /**
+   * A write that lost its race is re-read once and judged by the same core
+   * inspection as every other read, so the replay rule is stated once. A replay
+   * is suppressed; anything else — expired, another account's state, a delivery
+   * that already failed, no cached text to replay — fails closed.
+   */
   private async replayAfterConflict(
     key: string,
+    event: ClarificationEvent,
     request: ClarificationRequest,
     offTopic: boolean,
+    now: number,
   ): Promise<ClarificationTurn> {
-    const replay = await this.options.store.get(key);
-    if (
-      replay &&
-      replay.lastEventId === request.eventId &&
-      replay.lastReplyText
-    ) {
-      return this.terminal(
-        { kind: 'replayed', replyText: replay.lastReplyText },
-        'replayed',
-        request,
-        offTopic,
-      );
+    const replay = this.core.inspect(
+      await this.options.store.get(key),
+      event,
+      now,
+    );
+    if (replay.kind === 'replayed' && replay.replyText) {
+      return this.terminal(replay, request, offTopic);
     }
     throw new Error(VERSION_CONFLICT);
   }

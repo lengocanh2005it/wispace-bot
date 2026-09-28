@@ -1,5 +1,4 @@
 import { MessengerMappingService } from './messenger-mapping.service';
-import { clarificationStateKey } from '@wispace/chat-agent';
 
 describe('MessengerMappingService', () => {
   const makePrefs = () => ({
@@ -254,8 +253,11 @@ describe('MessengerMappingService', () => {
       cadence: 'WEEKLY',
     });
 
+    // The literal, not `clarificationStateKey(...)`: production calls that
+    // function, so asserting with it could not fail. The key *format* has its
+    // own test in the chat-agent package; this one pins the value here.
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
-      clarificationStateKey('messenger', 'psid-1'),
+      'messenger:psid-1',
     );
   });
 

@@ -7,7 +7,6 @@ import type { ZaloAccountLinkService } from '../../infrastructure/persistence/za
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client/adapters';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import type { ClarificationStateStore } from '@wispace/chat-agent';
-import { clarificationStateKey } from '@wispace/chat-agent';
 
 describe('ZaloLinkCompletionService', () => {
   const buildService = (
@@ -121,8 +120,11 @@ describe('ZaloLinkCompletionService', () => {
     expect(sendText.mock.invocationCallOrder[0]).toBeGreaterThan(
       upsertLink.mock.invocationCallOrder[0],
     );
+    // The literal, not `clarificationStateKey(...)`: production calls that
+    // function, so asserting with it could not fail. The key *format* has its
+    // own test in the chat-agent package; this one pins the value here.
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
-      clarificationStateKey('zalo', 'zalo-user-1'),
+      'zalo:zalo-user-1',
     );
   });
 
