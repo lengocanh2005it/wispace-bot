@@ -3,6 +3,7 @@ export {
   ClarificationStateMachine,
   MemoryClarificationStateStore,
   RedisClarificationStateStore,
+  clarificationStateKey,
   createClarificationStateStore,
 } from './clarification/clarification-state';
 export type {

@@ -2,6 +2,7 @@ import {
   CLARIFICATION_INTERMEDIATE_DECISION_KINDS,
   CLARIFICATION_TERMINAL_DECISION_KINDS,
   ClarificationCore,
+  type ClarificationDecision,
 } from './clarification-core';
 import {
   MemoryClarificationStateStore,
@@ -266,10 +267,14 @@ describe('ClarificationCore', () => {
 });
 
 describe('clarification decision vocabulary', () => {
-  it('closes into twelve terminal and three intermediate kinds', () => {
-    const terminal = new Set(CLARIFICATION_TERMINAL_DECISION_KINDS);
+  it('closes into thirteen terminal and three intermediate kinds', () => {
+    // Widened deliberately: `has` taking a non-terminal kind must compile for
+    // the disjointness assertion below, so the narrowing cannot hide a leak.
+    const terminal: ReadonlySet<ClarificationDecision['kind']> = new Set(
+      CLARIFICATION_TERMINAL_DECISION_KINDS,
+    );
 
-    expect(terminal.size).toBe(12);
+    expect(terminal.size).toBe(13);
     expect(CLARIFICATION_INTERMEDIATE_DECISION_KINDS).toHaveLength(3);
     expect(
       CLARIFICATION_INTERMEDIATE_DECISION_KINDS.filter((kind) =>

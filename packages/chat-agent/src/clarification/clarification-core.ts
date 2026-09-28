@@ -21,15 +21,16 @@ export interface ClarificationEvent {
 export type ClarificationStaleReason = 'expired' | 'identity_reset';
 
 /**
- * The closed decision vocabulary. Twelve terminal kinds — the turn ends on one
- * of them, and each maps to exactly one reply — and three intermediate kinds,
- * which clear or open the state and then let the caller carry on.
+ * The closed decision vocabulary. Thirteen terminal kinds — the turn ends on
+ * one of them, and each maps to exactly one reply — and three intermediate
+ * kinds, which clear or open the state and then let the caller carry on.
  */
 export type ClarificationDecision =
   | { kind: 'replayed'; replyText?: string }
   | { kind: 'stale_reply'; replyText?: string }
   | { kind: 'cancelled' }
   | { kind: 'choice'; choice: ClarificationChoice }
+  | { kind: 'consume_race_lost' }
   | { kind: 'stop_acknowledged' }
   | { kind: 'new_question' }
   | { kind: 'max_reset' }
@@ -42,14 +43,17 @@ export type ClarificationDecision =
   | { kind: 'consumed'; choice?: ClarificationChoice }
   | { kind: 'proceed' };
 
-/** Terminal kinds: the turn ends here. */
-export const CLARIFICATION_TERMINAL_DECISION_KINDS: ReadonlyArray<
-  ClarificationDecision['kind']
-> = [
+/**
+ * Terminal kinds: the turn ends here. The responder adds `consume_race_lost`
+ * — a decision made about a write, not a classification of a state — so it is
+ * declared here and returned by the responder rather than by `inspect`.
+ */
+export const CLARIFICATION_TERMINAL_DECISION_KINDS = [
   'replayed',
   'stale_reply',
   'cancelled',
   'choice',
+  'consume_race_lost',
   'stop_acknowledged',
   'new_question',
   'max_reset',
@@ -58,7 +62,11 @@ export const CLARIFICATION_TERMINAL_DECISION_KINDS: ReadonlyArray<
   'started_offtopic',
   'started_ambiguous',
   'unavailable',
-];
+] as const satisfies ReadonlyArray<ClarificationDecision['kind']>;
+
+/** The terminal subset of the decision vocabulary, keyed on by the reply table. */
+export type ClarificationTerminalDecisionKind =
+  (typeof CLARIFICATION_TERMINAL_DECISION_KINDS)[number];
 
 /** Intermediate kinds: clear or open the state, then keep going. */
 export const CLARIFICATION_INTERMEDIATE_DECISION_KINDS: ReadonlyArray<

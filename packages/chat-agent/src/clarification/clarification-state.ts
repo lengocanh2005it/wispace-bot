@@ -124,6 +124,19 @@ export interface ClarificationStateStore {
 
 export const CLARIFICATION_STATE_STORE = Symbol('CLARIFICATION_STATE_STORE');
 
+/**
+ * The one clarification state key. Six call sites across three applications and
+ * one operational script used to build this string by hand; they import it
+ * instead, so the format cannot disagree with itself. The Redis prefix is added
+ * by {@link RedisClarificationStateStore} and is deliberately not part of it.
+ */
+export function clarificationStateKey(
+  platform: string,
+  externalUserId: string,
+): string {
+  return `${platform}:${externalUserId}`;
+}
+
 export interface ClarificationIrrelevantResult {
   action: ClarificationIrrelevantAction;
   state?: ClarificationState;
