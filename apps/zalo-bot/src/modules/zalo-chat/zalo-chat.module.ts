@@ -83,6 +83,7 @@ import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
 } from './application/ports/zalo-outbound.port';
+import { ZALO_WELCOME } from './application/ports/zalo-welcome.port';
 import { ZALO_CLARIFICATION_AGENT } from './application/ports/zalo-clarification-agent.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZALO_CHAT_QUEUE } from './application/ports/zalo-chat-queue.port';
@@ -169,6 +170,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     },
     ZaloChatService,
     ZaloWelcomeService,
+    {
+      // The chat service asks zalo-oauth for a welcome through this port
+      // rather than importing its concrete service.
+      provide: ZALO_WELCOME,
+      useExisting: ZaloWelcomeService,
+    },
     {
       provide: ZALO_CLARIFICATION_AGENT,
       useExisting: PlatformAgentService,

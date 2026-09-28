@@ -29,7 +29,10 @@ import {
   type DiscordGuildMembershipPort,
 } from '../../domain/ports/discord-guild-membership.port';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
-import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
+import {
+  DISCORD_OUTBOUND_MESSAGING,
+  type DiscordOutboundMessagingPort,
+} from '../ports/discord-outbound-messaging.port';
 import { DiscordWelcomeService } from './discord-welcome.service';
 import {
   CLARIFICATION_STATE_STORE,
@@ -62,7 +65,8 @@ export class DiscordLinkCompletionService {
     @Inject(DISCORD_GUILD_MEMBERSHIP)
     private readonly guildMembershipService: DiscordGuildMembershipPort,
     private readonly relinkNotifier: DiscordRelinkNotifier,
-    private readonly outboundService: DiscordOutboundService,
+    @Inject(DISCORD_OUTBOUND_MESSAGING)
+    private readonly outboundService: DiscordOutboundMessagingPort,
     private readonly welcomeService: DiscordWelcomeService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,

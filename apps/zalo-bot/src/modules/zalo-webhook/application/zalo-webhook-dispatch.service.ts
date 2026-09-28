@@ -1,7 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
-import { ZaloChatService } from '../../zalo-chat/application/services/zalo-chat.service';
+import {
+  ZALO_INBOUND_CHAT,
+  type ZaloInboundChatPort,
+} from './ports/inbound-chat.port';
 
 /**
  * Applies an authenticated Zalo inbound event: routes it to the chat service
@@ -13,7 +16,9 @@ import { ZaloChatService } from '../../zalo-chat/application/services/zalo-chat.
 export class ZaloWebhookDispatchService {
   private readonly logger = new Logger(ZaloWebhookDispatchService.name);
 
-  constructor(private readonly handler: ZaloChatService) {}
+  constructor(
+    @Inject(ZALO_INBOUND_CHAT) private readonly handler: ZaloInboundChatPort,
+  ) {}
 
   async dispatch(event: ZaloWebhookEvent): Promise<void> {
     switch (event.event_name) {

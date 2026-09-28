@@ -22,13 +22,16 @@ import {
   type PrivacyStateCleanup,
 } from '@wispace/contracts';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import {
   PlatformAgentService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
+import {
+  ZALO_REPORT_CRON,
+  type ZaloReportCronPort,
+} from './application/ports/report-cron.port';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -47,7 +50,7 @@ class SendReportsBody {
 export class ZaloOpsController extends PlatformOpsController {
   constructor(
     private readonly studyReminderSyncService: StudyReminderSyncService,
-    reportCronService: ZaloReportCronService,
+    @Inject(ZALO_REPORT_CRON) reportCronService: ZaloReportCronPort,
     private readonly calendarService: WispaceCalendarService,
     @Inject(ZALO_PRIVACY_DATA) privacyService: PrivacyDataPort,
     clarificationAgent: PlatformAgentService,

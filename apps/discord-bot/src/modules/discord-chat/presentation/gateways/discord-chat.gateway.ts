@@ -37,8 +37,18 @@ import {
 import { readPendingOrganicSkipMs } from '@discord/shared/config/discord-link.config';
 import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
-import { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
-import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
+import {
+  DISCORD_CONSENT_PROMPT,
+  type DiscordConsentPromptPort,
+} from '../../application/ports/discord-consent-prompt.port';
+import {
+  DISCORD_LINKED_IDENTITY,
+  type DiscordLinkedIdentityPort,
+} from '../../domain/ports/discord-linked-identity.port';
+import {
+  DISCORD_WELCOME_DELIVERY,
+  type DiscordWelcomeDeliveryPort,
+} from '../../application/ports/discord-welcome-delivery.port';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
 import { WispaceApiError } from '@wispace/wispace-client/core';
 import {
@@ -65,14 +75,18 @@ export class DiscordChatGateway {
   constructor(
     private readonly configService: ConfigService,
     private readonly outboundService: DiscordOutboundService,
-    private readonly accountLinkService: DiscordAccountLinkService,
+    @Inject(DISCORD_LINKED_IDENTITY)
+    private readonly accountLinkService: DiscordLinkedIdentityPort,
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
     private readonly menuService: DiscordMenuService,
     private readonly chatQueueService: PlatformChatQueueService,
     private readonly consentService: DiscordConsentService,
     @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
-    private readonly welcomeService: DiscordWelcomeService,
+    @Inject(DISCORD_WELCOME_DELIVERY)
+    private readonly welcomeService: DiscordWelcomeDeliveryPort,
+    @Inject(DISCORD_CONSENT_PROMPT)
+    private readonly consentPrompt: DiscordConsentPromptPort,
   ) {}
 
   private prepareReply(
@@ -173,7 +187,7 @@ export class DiscordChatGateway {
           linkedUserId,
         );
         // One-time consent explainer after the linked welcome (#596).
-        await this.accountLinkService
+        await this.consentPrompt
           .sendConsentExplainerIfDue(discordUserId, async (text) => {
             await this.outboundService.sendText(
               discordUserId,

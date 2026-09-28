@@ -28,6 +28,10 @@ import {
 } from '@wispace/chat-metering/adapters';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
+import { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
+import { DISCORD_LINKED_IDENTITY } from './domain/ports/discord-linked-identity.port';
+import { DISCORD_CONSENT_PROMPT } from './application/ports/discord-consent-prompt.port';
+import { DISCORD_WELCOME_DELIVERY } from './application/ports/discord-welcome-delivery.port';
 import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
 import { WispaceModule } from '../wispace/wispace.module';
 import {
@@ -172,6 +176,21 @@ const REGISTER_REPORT_MESSAGE =
     },
     DiscordPlatformConnectivityService,
     DiscordConsentService,
+    {
+      // #1445: `discord-chat` reaches the account-link feature only through its
+      // own ports; the concrete services stay wired here, at the composition
+      // root.
+      provide: DISCORD_LINKED_IDENTITY,
+      useExisting: DiscordAccountLinkService,
+    },
+    {
+      provide: DISCORD_CONSENT_PROMPT,
+      useExisting: DiscordAccountLinkService,
+    },
+    {
+      provide: DISCORD_WELCOME_DELIVERY,
+      useExisting: DiscordWelcomeService,
+    },
     // #549 — shadows forPlatform's unwired recorder with the metrics-wired
     // one (local registration wins over the imported module's).
     provideWiredUsageRecorder('discord', BotMetricsService),

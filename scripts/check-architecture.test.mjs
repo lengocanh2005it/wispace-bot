@@ -250,9 +250,15 @@ test('the checker rejects missing scan targets and empty source scans', () => {
   }
 });
 
-test('no legacy application exception set remains in the checker', () => {
-  const source = readFileSync(new URL('./check-architecture.mjs', import.meta.url), 'utf8');
-  assert.equal(source.includes('LEGACY_APPLICATION_IMPORTS'), false);
+test('no legacy import exception set remains in the checker', () => {
+  const source = readFileSync(
+    new URL('./check-architecture.mjs', import.meta.url),
+    'utf8',
+  );
+  // Matched as a pattern, not a literal: the previous test asserted one exact
+  // identifier, so a differently named exception set walked straight past it —
+  // the failure mode #1291 exists to close.
+  assert.equal(/LEGACY_[A-Z_]*IMPORT/.test(source), false);
 });
 
 test('domain imports of concrete symbols from mixed packages are reported', () => {
@@ -474,6 +480,197 @@ test('messenger and study-reminder feature edges are limited to ports and compos
         'study-reminder-messenger-boundary',
       ],
     );
+  } finally {
+    f.close();
+  }
+});
+
+test('a discord-bot feature module may not import another feature module concrete code', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/application/services/outbound.service.ts',
+      'export class DiscordOutboundService {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/application/ports/sending.port.ts',
+      'export const SENDING = Symbol("SENDING");\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/domain/ports/account-reader.port.ts',
+      'export const ACCOUNT_READER = Symbol("ACCOUNT_READER");\n',
+    );
+
+    // Forbidden: the concrete service.
+    f.write(
+      'apps/discord-bot/src/modules/account-link/application/services/welcome.service.ts',
+      "import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/outbound.service';\nexport class WelcomeService { x = DiscordOutboundService; }\n",
+    );
+    // Allowed: a ports directory, and a `.port.ts` file outside one — the same
+    // legal thing expressed two ways, which a path-only predicate gets wrong.
+    f.write(
+      'apps/discord-bot/src/modules/account-link/application/services/relink.service.ts',
+      "import { SENDING } from '@discord/modules/discord-chat/application/ports/sending.port';\nexport class RelinkService { x = SENDING; }\n",
+    );
+    f.write(
+      'apps/discord-bot/src/modules/account-link/application/services/naming.service.ts',
+      "import { ACCOUNT_READER } from '@discord/modules/discord-chat/domain/ports/account-reader.port';\nexport class NamingService { x = ACCOUNT_READER; }\n",
+    );
+    // Allowed: a composition root binds concrete adapters.
+    f.write(
+      'apps/discord-bot/src/modules/account-link/account-link.module.ts',
+      "import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/outbound.service';\nexport class AccountLinkModule { x = DiscordOutboundService; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    const boundary = result.violations.filter(
+      (violation) => violation.rule === 'feature-module-cross-import',
+    );
+    assert.equal(boundary.length, 1);
+    assert.equal(
+      boundary[0].file,
+      'apps/discord-bot/src/modules/account-link/application/services/welcome.service.ts',
+    );
+    assert.equal(
+      boundary[0].message,
+      'account-link feature module must reach discord-chat through its ports or a composition root, not its concrete code',
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('a zalo-bot feature module may not import another feature module concrete code', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/zalo-bot/src/modules/zalo-chat/application/services/chat.service.ts',
+      'export class ZaloChatService {}\n',
+    );
+    f.write(
+      'apps/zalo-bot/src/modules/zalo-chat/application/ports/chat.port.ts',
+      'export const CHAT = Symbol("CHAT");\n',
+    );
+    f.write(
+      'apps/zalo-bot/src/modules/zalo-webhook/application/dispatch.service.ts',
+      "import { ZaloChatService } from '../../zalo-chat/application/services/chat.service';\nexport class DispatchService { x = ZaloChatService; }\n",
+    );
+    f.write(
+      'apps/zalo-bot/src/modules/zalo-webhook/application/requeue.service.ts',
+      "import { CHAT } from '../../zalo-chat/application/ports/chat.port';\nexport class RequeueService { x = CHAT; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    const boundary = result.violations.filter(
+      (violation) => violation.rule === 'feature-module-cross-import',
+    );
+    assert.equal(boundary.length, 1);
+    assert.equal(
+      boundary[0].file,
+      'apps/zalo-bot/src/modules/zalo-webhook/application/dispatch.service.ts',
+    );
+    assert.equal(
+      boundary[0].message,
+      'zalo-webhook feature module must reach zalo-chat through its ports or a composition root, not its concrete code',
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('a cross-bot alias import is not a cross-feature edge', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/application/services/chat.service.ts',
+      "import { ZaloChatService } from '@zalo/modules/zalo-chat/application/services/chat.service';\nexport class DiscordChatService { x = ZaloChatService; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a feature module without layers is exempt from the cross-feature rule but is reported', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/application/services/outbound.service.ts',
+      'export class DiscordOutboundService {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-reengagement/discord-reengagement.service.ts',
+      "import { DiscordOutboundService } from '../discord-chat/application/services/outbound.service';\nexport class ReengagementService { x = DiscordOutboundService; }\n",
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
+    assert.deepEqual(
+      result.warnings.map((warning) => warning.file),
+      ['apps/discord-bot/src/modules/discord-reengagement'],
+    );
+    assert.equal(result.warnings[0].rule, 'feature-module-not-layered');
+  } finally {
+    f.close();
+  }
+});
+
+test('a feature module file in a directory no layer rule covers is reported', () => {
+  const f = fixture();
+  try {
+    // A layered file too, so the feature is not exempt for being unlayered —
+    // the two rules answer different questions.
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/domain/entities/model.ts',
+      'export class Model {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/util/helpers.ts',
+      'export const helper = 1;\n',
+    );
+
+    const result = checkArchitecture(f.root);
+    const unclassified = result.violations.filter(
+      (violation) => violation.rule === 'module-layout-unclassified',
+    );
+    assert.equal(unclassified.length, 1);
+    assert.equal(
+      unclassified[0].file,
+      'apps/discord-bot/src/modules/discord-chat/util/helpers.ts',
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('layer directories and feature roots are classified, so nothing is reported as unclassified', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/domain/entities/model.ts',
+      'export class Model {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/infrastructure/persistence/reader.ts',
+      'export class Reader {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/presentation/gateways/chat.gateway.ts',
+      'export class ChatGateway {}\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/config.ts',
+      'export const config = 1;\n',
+    );
+    f.write(
+      'apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts',
+      'export class DiscordChatModule {}\n',
+    );
+
+    const result = checkArchitecture(f.root);
+    assert.deepEqual(result.violations, []);
   } finally {
     f.close();
   }
@@ -779,4 +976,23 @@ test('smoke scripts requiring a bare root are reported', () => {
 test('the repository satisfies the enforced architecture scopes', () => {
   const result = checkArchitecture(process.cwd());
   assert.deepEqual(result.violations, []);
+});
+
+test('the feature modules without layers are the ones the repository declares', () => {
+  // These are exempt from the cross-feature rule rather than failed, so
+  // without this the exemption would be silent — which is the failure mode
+  // #1291 exists to close. Splitting one into layers fails this test, which is
+  // the prompt to delete its line and shrink the exemption.
+  const result = checkArchitecture(process.cwd());
+  const flat = result.warnings.map((warning) => warning.file);
+
+  assert.deepEqual(flat, [
+    'apps/discord-bot/src/modules/discord-reengagement',
+    'apps/discord-bot/src/modules/discord-study-reminder',
+    'apps/discord-bot/src/modules/wispace',
+    'apps/messenger-bot/src/modules/wispace',
+    'apps/zalo-bot/src/modules/wispace',
+    'apps/zalo-bot/src/modules/zalo-study-reminder',
+  ]);
+  assert.deepEqual(flat, [...flat].sort());
 });

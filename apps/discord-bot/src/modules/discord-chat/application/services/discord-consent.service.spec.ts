@@ -1,5 +1,6 @@
 import { DiscordConsentService } from './discord-consent.service';
-import type { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
+import type { DiscordLinkedIdentityPort } from '../../domain/ports/discord-linked-identity.port';
+import type { DiscordConsentPromptPort } from '../ports/discord-consent-prompt.port';
 import type { DiscordOutboundService } from './discord-outbound.service';
 import { NotificationPreferenceService } from '@wispace/database';
 import type { StudyReminderJobRepositoryPort } from '@wispace/study-reminder-shared/core';
@@ -10,13 +11,15 @@ describe('DiscordConsentService (#596)', () => {
       userId?: number | undefined;
     } = {},
   ) => {
-    const accountLinkService = {
+    const linkedIdentity = {
       findUserIdByDiscordId:
         'userId' in overrides
           ? jest.fn().mockResolvedValue(overrides.userId)
           : jest.fn().mockResolvedValue(42),
+    } as unknown as DiscordLinkedIdentityPort;
+    const consentPrompt = {
       suppressOptOutNotice: jest.fn().mockResolvedValue(undefined),
-    } as unknown as DiscordAccountLinkService;
+    } as unknown as DiscordConsentPromptPort;
     const outboundService = {
       sendText: jest.fn().mockResolvedValue(undefined),
     } as unknown as DiscordOutboundService;
@@ -29,14 +32,16 @@ describe('DiscordConsentService (#596)', () => {
     } as unknown as StudyReminderJobRepositoryPort;
 
     const service = new DiscordConsentService(
-      accountLinkService,
+      linkedIdentity,
+      consentPrompt,
       outboundService,
       notificationPreferences,
       studyReminderJobRepository,
     );
     return {
       service,
-      accountLinkService,
+      linkedIdentity,
+      consentPrompt,
       outboundService,
       notificationPreferences,
       studyReminderJobRepository,
@@ -58,8 +63,7 @@ describe('DiscordConsentService (#596)', () => {
   });
 
   it('enables reports and suppresses the opt-out footer (#596 AC6)', async () => {
-    const { service, notificationPreferences, accountLinkService } =
-      buildService();
+    const { service, notificationPreferences, consentPrompt } = buildService();
 
     const handled = await service.handleIfConsentCommand(
       'discord-1',
@@ -71,7 +75,7 @@ describe('DiscordConsentService (#596)', () => {
       42,
       true,
     );
-    expect(accountLinkService.suppressOptOutNotice).toHaveBeenCalledWith(
+    expect(consentPrompt.suppressOptOutNotice).toHaveBeenCalledWith(
       'discord-1',
     );
   });

@@ -11,8 +11,8 @@ import {
 } from '@wispace/chat-agent';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 import { WispaceCalendarService } from '@wispace/wispace-client/adapters';
-import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 import { DISCORD_PRIVACY_DATA } from './application/ports/privacy-data.port';
+import { DISCORD_REPORT_DISPATCH } from './application/ports/discord-report-dispatch.port';
 import { DiscordOpsController } from './discord-ops.controller';
 
 describe('Discord privacy HTTP contract', () => {
@@ -37,7 +37,7 @@ describe('Discord privacy HTTP contract', () => {
       controllers: [DiscordOpsController],
       providers: [
         {
-          provide: DiscordReportCronService,
+          provide: DISCORD_REPORT_DISPATCH,
           useValue: { sendScheduledReports: jest.fn() },
         },
         {

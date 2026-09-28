@@ -18,9 +18,12 @@ import {
 } from '@wispace/database';
 import { PRIVACY_CLEANUP_STORES } from '@wispace/contracts';
 import { ZALO_PRIVACY_DATA } from './application/ports/privacy-data.port';
+import { ZALO_REPORT_CRON } from './application/ports/report-cron.port';
+import type { ZaloReportCronPort } from './application/ports/report-cron.port';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ZaloReportModule } from '../zalo-chat/zalo-report.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
+import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import { ZaloStudyReminderModule } from '../zalo-study-reminder/zalo-study-reminder.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOpsController } from './zalo-ops.controller';
@@ -38,6 +41,19 @@ import { ZaloOpsController } from './zalo-ops.controller';
   controllers: [ZaloOpsController],
   providers: [
     { provide: ZALO_PRIVACY_DATA, useExisting: PrivacyDataService },
+    {
+      // The ops surface reaches the report wave only through its own port; the
+      // concrete cron service stays wired here, at the composition root.
+      // Delegating through a plain object rather than `useExisting`: the
+      // scheduler discovers cron methods on every provider instance, and a
+      // second wrapper holding the same cron-decorated instance would register
+      // `zalo-report-cron` twice and fail the boot.
+      provide: ZALO_REPORT_CRON,
+      useFactory: (reportCron: ZaloReportCronService): ZaloReportCronPort => ({
+        sendDailyReports: (opts) => reportCron.sendDailyReports(opts),
+      }),
+      inject: [ZaloReportCronService],
+    },
     {
       provide: PrivacyCleanupReconciler,
       useFactory: (
