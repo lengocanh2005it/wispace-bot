@@ -267,10 +267,16 @@ describe('ClarificationResponder', () => {
       }),
     );
 
-    await expect(
-      failed.send({ userText: 'tiến độ của tôi thế nào' }),
-    ).resolves.toBeUndefined();
+    const turn = await failed.responder.handle({
+      externalUserId: 'u1',
+      userText: 'tiến độ của tôi thế nào',
+      eventId: 'event-a',
+      userId: 7,
+    });
     expect(failed.outcomes).toEqual(['choice']);
+    // The accepted choice has to survive the redelivery — it is the rewritten
+    // input the pipeline sends on (#1143, regression: it was dropped here).
+    expect(turn).toEqual({ kind: 'continue', choice: 'progress' });
 
     const swallowed = buildStore(
       menuState({

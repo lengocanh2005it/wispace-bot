@@ -317,7 +317,16 @@ export class ClarificationResponder {
         }
         state = null;
         if (inspection.choice) {
-          return this.terminal(inspection, 'choice', request, false);
+          // The inspected decision is `consumed`; the terminal rule is `choice`,
+          // and the rule's reply is the rewritten input. Hand `terminal` the
+          // decision that names the choice, or it reads a `consumed` decision
+          // as carrying none and the redelivery is answered as a fresh turn.
+          return this.terminal(
+            { kind: 'choice', choice: inspection.choice },
+            'choice',
+            request,
+            false,
+          );
         }
       }
 

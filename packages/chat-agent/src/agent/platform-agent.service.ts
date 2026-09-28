@@ -8,15 +8,8 @@ import {
   composeChatSystemPrompt,
   loadSystemPromptFile,
   IntentDetector,
-  isAmbiguousMessage,
-  isStopIntent,
   isGreetingOnly,
   isObviouslyOffTopic,
-  buildClarificationCancelledMessage,
-  buildStopAcknowledgedMessage,
-  buildClarificationUnavailableMessage,
-  buildClarificationMessage,
-  buildWispaceScopeRedirectMessage,
   buildPromptInjectionBlockedMessage,
   CHAT_FAILURE_FALLBACK_MESSAGE,
   buildHostilityDeflectionMessage,
@@ -70,17 +63,16 @@ import type {
 import { redactPromptPart } from './system-prompt-parts';
 import { pinFactsToReply } from './pinned-facts';
 import {
-  ClarificationStateMachine,
+  clarificationStateKey,
   type ClarificationStateStore,
   createClarificationStateStore,
   readClarificationLimits,
 } from '../clarification/clarification-state';
 import {
-  isCancel,
-  isContradictory,
-  parseChoice,
-  type ClarificationChoice,
-} from '../clarification/clarification-text';
+  ClarificationResponder,
+  type ClarificationStoreFailure,
+} from '../clarification/clarification-responder';
+import type { ClarificationChoice } from '../clarification/clarification-text';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -104,8 +96,8 @@ export class PlatformAgentService {
    *  bot gateway, but the classifier still checks so it never runs on them. */
   private readonly intentDetector = new IntentDetector();
   private readonly identityVersions = new Map<string, string>();
-  private readonly clarificationMachine: ClarificationStateMachine;
   private readonly clarificationStore: ClarificationStateStore;
+  private readonly clarificationResponder: ClarificationResponder;
   private readonly promptCanary: string;
 
   constructor(
@@ -122,8 +114,6 @@ export class PlatformAgentService {
     private readonly redisClient?: RedisClientPort,
   ) {
     this.promptCanary = generatePromptCanary();
-    const limits = readClarificationLimits(configService);
-    this.clarificationMachine = new ClarificationStateMachine(limits);
     if (options.clarificationStore) {
       this.clarificationStore = options.clarificationStore;
     } else {
@@ -132,6 +122,16 @@ export class PlatformAgentService {
         redisClient,
       });
     }
+    this.clarificationResponder = new ClarificationResponder({
+      platform: options.platform ?? 'default',
+      store: this.clarificationStore,
+      limits: readClarificationLimits(configService),
+      // #1143 — the outcome names are the responder's vocabulary; turning one
+      // into a metric is a pipeline concern and stays here.
+      outcomeInc: (outcome) => this.recordClarificationOutcome(outcome),
+      onStoreUnavailable: (failure) =>
+        this.recordClarificationUnavailable(failure),
+    });
     // Validate bounded LLM execution configuration during startup even though
     // the agent itself is built lazily on the first normal chat request.
     buildLlmExecutionConfig();
@@ -148,7 +148,9 @@ export class PlatformAgentService {
   }
 
   async clearClarificationState(externalUserId: string): Promise<void> {
-    await this.clarificationStore.clear(this.clarificationKey(externalUserId));
+    await this.clarificationStore.clear(
+      clarificationStateKey(this.options.platform ?? 'default', externalUserId),
+    );
   }
 
   async cancelPendingReschedule(
@@ -167,18 +169,9 @@ export class PlatformAgentService {
     externalUserId: string,
     eventId?: string,
   ): Promise<void> {
-    if (!eventId) return;
-    const key = this.clarificationKey(externalUserId);
-    const state = await this.clarificationStore.get(key);
-    if (state?.lastEventId !== eventId) return;
-    await this.clarificationStore.set(
-      key,
-      {
-        ...state,
-        version: state.version + 1,
-        lastDeliveryFailed: true,
-      },
-      state.version,
+    await this.clarificationResponder.markDeliveryFailed(
+      externalUserId,
+      eventId,
     );
   }
 
@@ -415,293 +408,47 @@ export class PlatformAgentService {
     return hadIdentity;
   }
 
-  private async handleClarification(
-    input: PlatformAgentInput,
-    retryOnVersionConflict = true,
-  ): Promise<{
+  /**
+   * One clarification turn. The responder owns the state, the version and the
+   * compare-and-set (#1143); this keeps only the pipeline's position — where a
+   * decision becomes a reply, where an accepted choice becomes a rewritten
+   * input, and which turn the input classifier must not run on.
+   */
+  private async handleClarification(input: PlatformAgentInput): Promise<{
     input?: PlatformAgentInput;
     reply?: PlatformAgentReply;
     /** #649 — the message was a clarification-menu choice, rewritten to a
      *  canned prompt; the input classifier must not run on it. */
     choiceConsumed?: boolean;
   }> {
-    const key = this.clarificationKey(input.externalUserId);
-    const now = Date.now();
+    const turn = await this.clarificationResponder.handle({
+      externalUserId: input.externalUserId,
+      userText: input.userText,
+      ...(input.userId === undefined ? {} : { userId: input.userId }),
+      ...(input.correlationId === undefined
+        ? {}
+        : { eventId: input.correlationId }),
+      // #959: the stop and cancel acknowledgements cancel a staged reschedule
+      // first. That call belongs to the pipeline, so the resolver is supplied
+      // here rather than reached for inside the state modules.
+      resolveStopReply: (fallback) =>
+        this.stopReply(input.externalUserId, fallback),
+    });
 
-    try {
-      let state = await this.clarificationStore.get(key);
-
-      if (
-        state &&
-        (this.clarificationMachine.isExpired(state, now) ||
-          state.userId !== input.userId)
-      ) {
-        this.recordClarificationOutcome(
-          this.clarificationMachine.isExpired(state, now)
-            ? 'expired'
-            : 'identity_reset',
-        );
-        const staleCleared = await this.clarificationStore.clear(
-          key,
-          state.version,
-        );
-        if (staleCleared === false) {
-          throw new Error('Clarification state version conflict');
-        }
-        state = null;
-      }
-
-      if (
-        state &&
-        input.correlationId &&
-        state.lastEventId === input.correlationId &&
-        state.lastDeliveryFailed !== true &&
-        (state.lastReplyText || state.phase === 'consumed')
-      ) {
-        this.recordClarificationOutcome('replayed');
-        return {
-          reply: this.staticReply(
-            state.lastReplyText ?? buildClarificationMessage(),
-            input,
-            true,
-          ),
-        };
-      }
-
-      if (
-        state &&
-        this.clarificationMachine.isStaleEvent(state, input.correlationId)
-      ) {
-        this.recordClarificationOutcome('stale_reply');
-        return {
-          reply: this.staticReply(
-            state.lastReplyText ?? buildClarificationMessage(),
-            input,
-            true,
-          ),
-        };
-      }
-
-      if (state?.phase === 'consumed') {
-        const failedChoice =
-          state.lastDeliveryFailed === true &&
-          input.correlationId === state.lastEventId
-            ? state.lastChoice
-            : undefined;
-        const cleared = await this.clarificationStore.clear(key, state.version);
-        if (cleared === false) {
-          if (retryOnVersionConflict) {
-            return this.handleClarification(input, false);
-          }
-          throw new Error('Clarification state version conflict');
-        }
-        state = null;
-        if (failedChoice) {
-          this.recordClarificationOutcome('choice');
-          return {
-            input: {
-              ...input,
-              userText: this.buildChoicePrompt(failedChoice),
-              userTextParts: undefined,
-            },
-            choiceConsumed: true,
-          };
-        }
-      }
-
-      if (isCancel(input.userText)) {
-        const cancelled = await this.clarificationStore.clear(
-          key,
-          state?.version,
-        );
-        if (state && cancelled === false) {
-          throw new Error('Clarification state version conflict');
-        }
-        this.recordClarificationOutcome('cancelled');
-        return {
-          reply: this.staticReply(
-            // #959: the same words double as a stop request outside menu
-            // context — the acknowledgement covers both honestly.
-            this.isRescheduleCancellation(input.userText)
-              ? await this.stopReply(
-                  input.externalUserId,
-                  isStopIntent(input.userText)
-                    ? buildStopAcknowledgedMessage()
-                    : buildClarificationCancelledMessage(),
-                )
-              : buildClarificationCancelledMessage(),
-            input,
-          ),
-        };
-      }
-
-      const choice = state ? parseChoice(input.userText) : null;
-      if (state && choice) {
-        const consumed = await this.clarificationStore.set(
-          key,
-          this.clarificationMachine.consume(
-            state,
-            input.correlationId,
-            now,
-            choice,
-          ),
-          state.version,
-        );
-        if (consumed === false) {
-          this.recordClarificationOutcome('blocked_tool');
-          this.recordClarificationOutcome('replayed');
-          return {
-            reply: this.staticReply(buildClarificationMessage(), input),
-          };
-        }
-        this.recordClarificationOutcome('choice');
-        return {
-          input: {
-            ...input,
-            userText: this.buildChoicePrompt(choice),
-            userTextParts: undefined,
-          },
-          choiceConsumed: true,
-        };
-      }
-
-      const offTopic = isObviouslyOffTopic(input.userText);
-      const stop = isStopIntent(input.userText);
-      const ambiguous =
-        isAmbiguousMessage(input.userText) || isContradictory(input.userText);
-
-      // #959: a stop request is a clear intent — clear any pending menu and
-      // answer honestly instead of re-showing the clarification menu.
-      if (stop) {
-        if (state) {
-          const cleared = await this.clarificationStore.clear(
-            key,
-            state.version,
-          );
-          if (cleared === false) {
-            throw new Error('Clarification state version conflict');
-          }
-        }
-        this.recordClarificationOutcome('stop_acknowledged');
-        return {
-          reply: this.staticReply(
-            await this.stopReply(input.externalUserId),
-            input,
-          ),
-        };
-      }
-
-      if (state && !offTopic && !ambiguous) {
-        // Retain a tombstone so delayed choices from the superseded menu cannot
-        // execute tools after this new question reaches the agent.
-        const superseded = await this.clarificationStore.set(
-          key,
-          this.clarificationMachine.consume(state, input.correlationId, now),
-          state.version,
-        );
-        if (superseded === false) {
-          throw new Error('Clarification state version conflict');
-        }
-        this.recordClarificationOutcome('new_question');
-        return { input };
-      }
-
-      if (state) {
-        const next = this.clarificationMachine.recordIrrelevant(state, now);
-        if (next.action === 'clear') {
-          this.recordClarificationOutcome('blocked_tool');
-          this.recordClarificationOutcome('max_reset');
-          const menuText = buildClarificationMessage();
-          const cleared = await this.clarificationStore.clear(
-            key,
-            state.version,
-          );
-          if (cleared === false) {
-            throw new Error('Clarification state version conflict');
-          }
-          return {
-            reply: this.staticReply(menuText, input),
-          };
-        }
-        const replyText = offTopic
-          ? buildWispaceScopeRedirectMessage()
-          : buildClarificationMessage();
-        const nextState = this.clarificationMachine.withReply(
-          next.state!,
-          input.correlationId,
-          replyText,
-        );
-        const updated = await this.clarificationStore.set(
-          key,
-          nextState,
-          state.version,
-        );
-        if (updated === false) {
-          const replay = await this.clarificationStore.get(key);
-          if (
-            replay &&
-            replay.lastEventId === input.correlationId &&
-            replay.lastReplyText
-          ) {
-            return {
-              reply: this.staticReply(replay.lastReplyText, input, true),
-            };
-          }
-          throw new Error('Clarification state version conflict');
-        }
-        this.recordClarificationOutcome(
-          next.action === 'reset_menu' ? 'reset_menu' : 'irrelevant_clarify',
-        );
-        this.recordClarificationOutcome('blocked_tool');
-        return {
-          reply: this.staticReply(replyText, input),
-        };
-      }
-
-      if (offTopic || ambiguous) {
-        const replyText = offTopic
-          ? buildWispaceScopeRedirectMessage()
-          : buildClarificationMessage();
-        const startedState = this.clarificationMachine.withReply(
-          this.clarificationMachine.start(now, input.userId),
-          input.correlationId,
-          replyText,
-        );
-        const started = await this.clarificationStore.set(key, startedState, 0);
-        if (started === false) {
-          const replay = await this.clarificationStore.get(key);
-          if (
-            replay &&
-            replay.lastEventId === input.correlationId &&
-            replay.lastReplyText
-          ) {
-            return {
-              reply: this.staticReply(replay.lastReplyText, input, true),
-            };
-          }
-          throw new Error('Clarification state version conflict');
-        }
-        this.recordClarificationOutcome(
-          offTopic ? 'started_offtopic' : 'started_ambiguous',
-        );
-        this.recordClarificationOutcome('blocked_tool');
-        return {
-          reply: this.staticReply(replyText, input),
-        };
-      }
-
-      return { input };
-    } catch (error) {
-      this.recordClarificationOutcome('unavailable');
-      this.recordClarificationOutcome('blocked_tool');
-      this.recordDegraded(input, 'history_unavailable', 'block_response');
-      this.logger.error(
-        `Clarification state unavailable externalUserId=${maskExternalId(input.externalUserId)} error=${errorMessage(error, input.externalUserId)}`,
-      );
+    if (turn.kind === 'reply') {
+      return { reply: this.staticReply(turn.text, input, turn.skipDelivery) };
+    }
+    if (turn.choice) {
       return {
-        reply: this.staticReply(buildClarificationUnavailableMessage(), input),
+        input: {
+          ...input,
+          userText: this.buildChoicePrompt(turn.choice),
+          userTextParts: undefined,
+        },
+        choiceConsumed: true,
       };
     }
+    return { input };
   }
 
   private recordClarificationOutcome(outcome: string): void {
@@ -712,8 +459,29 @@ export class PlatformAgentService {
     }
   }
 
+  /**
+   * A store outage still fails closed. The responder hands the raw failure up
+   * rather than logging it, so the masked line and the degraded-mode event —
+   * the pipeline's own telemetry — are recorded here (#1143).
+   */
+  private recordClarificationUnavailable(
+    failure: ClarificationStoreFailure,
+  ): void {
+    this.recordDegraded(
+      {
+        externalUserId: failure.externalUserId,
+        correlationId: failure.eventId,
+      },
+      'history_unavailable',
+      'block_response',
+    );
+    this.logger.error(
+      `Clarification state unavailable externalUserId=${maskExternalId(failure.externalUserId)} error=${errorMessage(failure.error, failure.externalUserId)}`,
+    );
+  }
+
   private recordDegraded(
-    input: PlatformAgentInput,
+    turn: { externalUserId: string; correlationId?: string },
     failureClass: LlmDegradedFailureClass,
     action: LlmDegradedAction,
   ): void {
@@ -722,21 +490,21 @@ export class PlatformAgentService {
       feature: FEATURE,
       failureClass,
       action,
-      ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+      ...(turn.correlationId ? { correlationId: turn.correlationId } : {}),
     };
     try {
       this.options.metrics?.degradedModeInc?.(event);
     } catch {
       // Telemetry must never change the fail-closed history policy.
     }
-    const correlation = input.correlationId
+    const correlation = turn.correlationId
       ? maskExternalIdInText(
-          sanitizeLogValue(input.correlationId, 120),
-          input.externalUserId,
+          sanitizeLogValue(turn.correlationId, 120),
+          turn.externalUserId,
         )
       : 'n/a';
     this.logger.warn(
-      `Chat degraded platform=${event.platform} feature=${FEATURE} failure_class=${failureClass} action=${action} correlation=${correlation} externalUserId=${maskExternalId(input.externalUserId)}`,
+      `Chat degraded platform=${event.platform} feature=${FEATURE} failure_class=${failureClass} action=${action} correlation=${correlation} externalUserId=${maskExternalId(turn.externalUserId)}`,
     );
   }
 
@@ -745,7 +513,6 @@ export class PlatformAgentService {
     input: PlatformAgentInput,
     skipDelivery = false,
   ): PlatformAgentReply {
-    if (skipDelivery) this.recordClarificationOutcome('skip_delivery');
     return {
       text,
       privateDataFetched: false,
@@ -763,7 +530,7 @@ export class PlatformAgentService {
 
   private async stopReply(
     externalUserId: string,
-    fallbackMessage = buildStopAcknowledgedMessage(),
+    fallbackMessage: string,
   ): Promise<string> {
     try {
       const outcome =
@@ -787,10 +554,6 @@ export class PlatformAgentService {
     return fallbackMessage;
   }
 
-  private isRescheduleCancellation(userText: string): boolean {
-    return isStopIntent(userText) || isCancel(userText);
-  }
-
   /** A cancelled turn is consumed without producing fallback or history. */
   private abortedReply(): PlatformAgentReply {
     return {
@@ -812,10 +575,6 @@ export class PlatformAgentService {
       case 'reschedule':
         return 'Mình muốn đổi lịch học.';
     }
-  }
-
-  private clarificationKey(externalUserId: string): string {
-    return `${this.options.platform ?? 'default'}:${externalUserId}`;
   }
 
   private buildAgent(): LlmAgentService<PlatformAgentToolContext> {

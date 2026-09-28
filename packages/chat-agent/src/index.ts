@@ -1,6 +1,5 @@
 export { PlatformAgentService } from './agent/platform-agent.service';
 export {
-  ClarificationStateMachine,
   MemoryClarificationStateStore,
   RedisClarificationStateStore,
   clarificationStateKey,
