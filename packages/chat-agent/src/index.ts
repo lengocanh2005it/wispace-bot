@@ -6,14 +6,16 @@ export {
   createClarificationStateStore,
 } from './clarification/clarification-state';
 export type {
-  ClarificationChoice,
   ClarificationState,
   ClarificationStateStore,
   ClarificationLimits,
   ClarificationConfigReader,
-  ClarificationIrrelevantAction,
   ClarificationIrrelevantResult,
 } from './clarification/clarification-state';
+export type {
+  ClarificationChoice,
+  ClarificationIrrelevantAction,
+} from './clarification/clarification-text';
 export { CLARIFICATION_STATE_STORE } from './clarification/clarification-state';
 export { PlatformAgentToolsService } from './agent/platform-agent-tools.service';
 export {

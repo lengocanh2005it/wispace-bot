@@ -71,11 +71,16 @@ import { redactPromptPart } from './system-prompt-parts';
 import { pinFactsToReply } from './pinned-facts';
 import {
   ClarificationStateMachine,
-  type ClarificationChoice,
   type ClarificationStateStore,
   createClarificationStateStore,
   readClarificationLimits,
 } from '../clarification/clarification-state';
+import {
+  isCancel,
+  isContradictory,
+  parseChoice,
+  type ClarificationChoice,
+} from '../clarification/clarification-text';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -505,7 +510,7 @@ export class PlatformAgentService {
         }
       }
 
-      if (this.clarificationMachine.isCancel(input.userText)) {
+      if (isCancel(input.userText)) {
         const cancelled = await this.clarificationStore.clear(
           key,
           state?.version,
@@ -531,9 +536,7 @@ export class PlatformAgentService {
         };
       }
 
-      const choice = state
-        ? this.clarificationMachine.parseChoice(input.userText)
-        : null;
+      const choice = state ? parseChoice(input.userText) : null;
       if (state && choice) {
         const consumed = await this.clarificationStore.set(
           key,
@@ -566,8 +569,7 @@ export class PlatformAgentService {
       const offTopic = isObviouslyOffTopic(input.userText);
       const stop = isStopIntent(input.userText);
       const ambiguous =
-        isAmbiguousMessage(input.userText) ||
-        this.clarificationMachine.isContradictory(input.userText);
+        isAmbiguousMessage(input.userText) || isContradictory(input.userText);
 
       // #959: a stop request is a clear intent — clear any pending menu and
       // answer honestly instead of re-showing the clarification menu.
@@ -787,9 +789,7 @@ export class PlatformAgentService {
   }
 
   private isRescheduleCancellation(userText: string): boolean {
-    return (
-      isStopIntent(userText) || this.clarificationMachine.isCancel(userText)
-    );
+    return isStopIntent(userText) || isCancel(userText);
   }
 
   /** A cancelled turn is consumed without producing fallback or history. */

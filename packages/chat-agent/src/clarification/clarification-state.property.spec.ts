@@ -2,75 +2,11 @@ import fc from 'fast-check';
 import {
   ClarificationStateMachine,
   MemoryClarificationStateStore,
-  normalizeClarificationText,
-  type ClarificationChoice,
 } from './clarification-state';
 
 fc.configureGlobal({ numRuns: 200 });
 
-const CHOICES: ReadonlyArray<{
-  alias: string;
-  choice: ClarificationChoice;
-}> = [
-  { alias: '1', choice: 'progress' },
-  { alias: 'lich hoc', choice: 'schedule' },
-  { alias: 'doi lich', choice: 'reschedule' },
-  { alias: 'the second one', choice: 'schedule' },
-  { alias: 'cái thứ 3', choice: 'reschedule' },
-];
-
-const EXPLICIT_CHOICES: ReadonlyArray<{
-  alias: string;
-  choice: ClarificationChoice;
-}> = [
-  { alias: '1', choice: 'progress' },
-  { alias: '2', choice: 'schedule' },
-  { alias: '3', choice: 'reschedule' },
-  { alias: 'first one', choice: 'progress' },
-  { alias: 'second one', choice: 'schedule' },
-  { alias: 'third one', choice: 'reschedule' },
-];
-
 describe('clarification state properties', () => {
-  it('normalizes arbitrary text to a fixed point', () => {
-    fc.assert(
-      fc.property(fc.string(), (text) => {
-        const normalized = normalizeClarificationText(text);
-
-        expect(normalizeClarificationText(normalized)).toBe(normalized);
-        expect(normalized).not.toMatch(/\s{2,}/);
-      }),
-    );
-  });
-
-  it('parses aliases with harmless boundary whitespace and punctuation', () => {
-    fc.assert(
-      fc.property(fc.constantFrom(...CHOICES), (entry) => {
-        const machine = new ClarificationStateMachine();
-
-        expect(machine.parseChoice(`\n\t... ${entry.alias} !!!  `)).toBe(
-          entry.choice,
-        );
-      }),
-    );
-  });
-
-  it('detects contradictory distinct choices but not repeated identical choices', () => {
-    fc.assert(
-      fc.property(
-        fc.constantFrom(...EXPLICIT_CHOICES),
-        fc.constantFrom(...EXPLICIT_CHOICES),
-        (first, second) => {
-          const machine = new ClarificationStateMachine();
-          const sameChoice = first.choice === second.choice;
-          const text = `${first.alias} and ${second.alias}`;
-
-          expect(machine.isContradictory(text)).toBe(!sameChoice);
-        },
-      ),
-    );
-  });
-
   it('keeps irrelevant follow-ups within configured bounds and eventually clears', () => {
     fc.assert(
       fc.property(

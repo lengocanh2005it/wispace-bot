@@ -9,47 +9,6 @@ import {
 describe('ClarificationStateMachine', () => {
   const now = 1_700_000_000_000;
 
-  it('normalizes Vietnamese variants and accepts numbered choices', () => {
-    const machine = new ClarificationStateMachine();
-
-    expect(machine.parseChoice('  Một  ')).toBe('progress');
-    expect(machine.parseChoice('lich hoc')).toBe('schedule');
-    expect(machine.parseChoice('ĐỔI LỊCH')).toBe('reschedule');
-    expect(machine.parseChoice('3')).toBe('reschedule');
-    expect(machine.parseChoice('the second one')).toBe('schedule');
-    expect(machine.parseChoice('cái thứ 3')).toBe('reschedule');
-    expect(machine.parseChoice('2 nhé')).toBe('schedule');
-    expect(machine.parseChoice('chon mot')).toBe('progress');
-    expect(machine.parseChoice('chon 2')).toBe('schedule');
-    expect(machine.parseChoice('option 3')).toBe('reschedule');
-    expect(machine.parseChoice('td')).toBe('progress');
-    expect(machine.parseChoice('lh')).toBe('schedule');
-    expect(machine.parseChoice('2nd')).toBe('schedule');
-    expect(machine.parseChoice('option 2 nha')).toBe('schedule');
-    expect(machine.parseChoice('lua chon 3 di')).toBe('reschedule');
-    expect(machine.parseChoice('the first one nhe')).toBe('progress');
-  });
-
-  it('recognizes explicit cancellation without treating it as a tool intent', () => {
-    const machine = new ClarificationStateMachine();
-
-    expect(machine.isCancel('  huy  ')).toBe(true);
-    expect(machine.isCancel('bỏ qua')).toBe(true);
-    expect(machine.parseChoice('tiến độ')).toBe('progress');
-  });
-
-  it('treats contradictory choice batches as ambiguous', () => {
-    const machine = new ClarificationStateMachine();
-
-    expect(machine.isContradictory('lịch học\n3')).toBe(true);
-    expect(machine.isContradictory('xem lịch học và đổi lịch học')).toBe(true);
-    expect(machine.isContradictory('tiến độ và lịch học')).toBe(true);
-    expect(machine.isContradictory('tiến độ, lịch học')).toBe(true);
-    expect(machine.isContradictory('1 1')).toBe(false);
-    expect(machine.isContradictory('mình muốn xem lịch học')).toBe(false);
-    expect(machine.isContradictory('mình muốn dời lịch')).toBe(false);
-  });
-
   it('uses configured bounds and retains event history for stale replies', () => {
     const machine = new ClarificationStateMachine({
       ttlMs: 30_000,
