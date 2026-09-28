@@ -327,7 +327,23 @@ test('the checked-in baseline has a ceiling for every tracked file', () => {
   const baseline = JSON.parse(
     readFileSync(join(REPO_ROOT, 'scripts', BASELINE_FILE), 'utf8'),
   );
-  assert.equal(Object.keys(baseline.files).length, 6);
+  const entries = Object.entries(baseline.files);
+  // No entry count is asserted on purpose. A hardcoded tally goes stale on every
+  // legitimate addition, which is the same fragility ADR-0044 rejects for a
+  // hand-written line-count list, and the baseline note carried exactly that
+  // defect until #1471 removed it. What must hold is that every entry is a
+  // complete decision, which the grown/stale/invalid checks above already
+  // assert, and that the baseline is not empty, which is asserted here.
+  assert.ok(entries.length > 0, 'the baseline guards nothing when it is empty');
+  for (const [path, record] of entries) {
+    assert.ok(
+      Number.isInteger(record.lines) && record.lines >= 1,
+      `${path} has no line ceiling`,
+    );
+    assert.ok(record.context, `${path} has no bounded context`);
+    assert.ok(record.trackedBy, `${path} names no tracking issue`);
+    assert.ok(record.reason, `${path} records no reason`);
+  }
 });
 
 test('the checked-in baseline is sorted so it reads in one order', () => {

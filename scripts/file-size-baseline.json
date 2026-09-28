@@ -1,7 +1,7 @@
 {
   "measuredAt": "2026-09-28",
-  "measuredAtCommit": "0f51f8b1",
-  "note": "Each entry is a decision, not a measurement. `lines` is the ceiling that file may not exceed; `context`, `trackedBy` and `reason` say who holds the decision to keep it and why. `trackedBy` is the issue holding the decision, which is not always the issue that owns the decomposition: four of these six have no decomposition owner by design. Run `npm run file-size:report` to render this as the #778 index table, so the table is generated rather than retyped. See ADR-0044 and #1433.",
+  "measuredAtCommit": "6c9eaac8",
+  "note": "Each entry is a decision, not a measurement. `lines` is the ceiling that file may not exceed; `context`, `trackedBy` and `reason` say who holds the decision to keep it and why. `trackedBy` is the issue holding the decision, which is not always the issue that owns the decomposition, and not every entry has a decomposition owner at all - that is the intended steady state, since an entry is written when a decision names a file, not because a scan found it. Run `npm run file-size:report` to render this as the #778 index table, so the table is generated rather than retyped. See ADR-0044 and #1433.",
   "files": {
     "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": {
       "lines": 981,
@@ -26,6 +26,12 @@
       "context": "Free-form Chat",
       "trackedBy": "#778",
       "reason": "No duplication finding. Do not start before #774 retires the Messenger mirror spec; splitting now spends the spec work twice."
+    },
+    "packages/chat-agent/src/clarification/clarification-responder.ts": {
+      "lines": 529,
+      "context": "Free-form Chat",
+      "trackedBy": "#1143",
+      "reason": "Extraction destination, entered against ADR-0044's blanket rule that a new file is never gated. The rule was written when a new file was incidental - a helper, a spec - and it does not contemplate a new file that is the largest single file in its area. Nothing here proposes decomposing it: the thirteen terminal decision rules and the thirteen-key outcome table are one table and cannot be split without re-introducing the half-applied counted-but-not-sent pairing the table exists to prevent. It is the only new file from #1143 entered here; the state, core and text modules are 376, 311 and 232 lines by the checker's own raw count, and no decision names them. ADR-0044 records that raw and non-blank counts differ here, so measure with the checker rather than by eye."
     },
     "packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts": {
       "lines": 1004,
