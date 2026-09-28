@@ -1,5 +1,31 @@
 # Refactor Log — structure-codebase audit follow-through
 
+## 2026-09-27 — Session 3 (F2 re-specified, no chunk executed)
+
+- **Chunks 1–2 superseded by #1445**; this log's earlier inventory is retained as history, not as an input. Still no chunk started.
+- Re-measured cross-feature imports by parsing every import in `apps/*/src/**/*.ts` and resolving each to a real file on disk, rather than pattern-matching specifiers:
+
+  | Bot | Cross-feature imports | Rule violations | Production | `.spec.ts` |
+  | --- | --- | --- | --- | --- |
+  | messenger-bot | 108 | 65 | 51 | 14 |
+  | discord-bot | 35 | 19 | 11 | 8 |
+  | zalo-bot | 31 | 10 | 6 | 4 |
+  | **Total** | **174** | **94** | **68** | **26** |
+
+  Spec files are out of scope: `sourceFiles()` already excludes them, and the boundary doc allows
+  tests to assemble concrete implementations.
+- **The 2026-09-19 inventory does not survive this measurement.** Its 58 total / 40 CONCRETE split is
+  not reproducible — the scan script was in a temp directory, the per-pair counts sum to 39, and
+  `wispace/` (a module directory every feature imports) appears in zero pairs.
+- Three premises of the original Chunks 1–2 were false, and #1445 is built on the corrected version:
+  `LEGACY_APPLICATION_IMPORTS` was deleted and a test guards its absence; the app-generic globs already
+  cover all 22 feature modules, so a filesystem registry is redundant; and messenger-bot's debt is
+  structural, so grandfathering it would reinstate the exemption posture #1088 just removed.
+- `npm run architecture:check` baseline has now drifted three times: 736 → 737 → 773 source files.
+  It is not a boundary signal and must not be asserted as one.
+- Also wrong in the original issue: messenger-bot has **10** feature modules, not six. The repository
+  has 22 across three bots; the checker recognises 2.
+
 ## 2026-09-19 — Session 1
 
 - Audit produced three findings (F1 root façade / subpath convention → issue #1126 already open, updated with fresh measurements; F2 sibling-feature rule covers one pair → new issue #1291 created, milestone 9, sub-issue of #432; F3 bot-common promotion rule → doc line, Chunk 4).

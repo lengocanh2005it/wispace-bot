@@ -654,9 +654,9 @@ _Avoid_: raw platform identity, user context, platform token
 Platform-specific delivery additions attached to an otherwise valid tool result, such as Messenger quick replies. Decoration cannot choose a handler or change policy, identity, budget, or abort behavior.
 _Avoid_: dispatch, tool side effect, platform policy
 
-**feature**:
+**llm feature tag**:
 String tag for categorizing LLM calls: `'FREE_FORM_CHAT'`, `'STUDENT_REPORT'`, `'STUDY_REMINDER'`. Used for usage tracking and metrics.
-_Avoid_: use case, purpose
+_Avoid_: feature (unqualified — that is the architecture feature module), use case, purpose
 
 **learner admission key**:
 The identity used for per-learner LLM concurrency: the linked WISPACE `userId`, or the `(platform, externalUserId)` pair for an anonymous turn. It is a snapshot for one execution and is not changed by a later relink.
@@ -1118,6 +1118,10 @@ _Avoid_: delivery outcome (that is the provider acknowledgement), retry decision
 Implementation of a port, bridging domain interfaces and infrastructure services.
 _Avoid_: implementation, service implementation
 
+**feature module**:
+A top-level directory under a bot's `modules` directory, owning one capability's four layers. Two feature modules in the same bot may depend on each other only through the target's ports or from a composition root; a concrete cross-feature import is a boundary violation. Unqualified, "feature" means a feature module — not the LLM feature tag.
+_Avoid_: feature (unqualified), package, context, module
+
 **composition root**:
 The application wiring boundary where concrete adapters are bound to ports. A composition root may name infrastructure and platform services; feature application code may not.
 _Avoid_: service locator, concrete dependency in a use case
@@ -1213,7 +1217,8 @@ _Avoid_: SQL syntax contract, query-shape contract
 | `flush`              | `process`, `drain`                                    | Specific to debounce queue                                  |
 | `sync`               | `refresh`, `reload`                                   | Specific to UserCalendar → jobs pipeline                    |
 | `dispatch`           | `send`, `deliver`                                     | Specific to job → message pipeline                          |
-| `feature`            | `useCase`, `purpose`                                  | LLM usage categorization tag                                |
+| `llm feature tag`    | `feature` when unqualified, `useCase`, `purpose`      | LLM usage categorization tag                                |
+| `feature module`     | `feature` when unqualified, `package`, `context`       | One capability's four layers under a bot's `modules` dir   |
 | `correlationId`      | `traceId`, `requestId`                                | Pairs LLM calls with triggering events                      |
 | `band`               | `score`, `grade`                                      | IELTS scoring terminology                                   |
 | `examDate`           | `testDate`                                            | Matches UserGoals API field                                 |
