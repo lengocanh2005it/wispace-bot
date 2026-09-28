@@ -56,13 +56,13 @@
     "@wispace/bot-common": "*",
     "@wispace/chat-history": "*",
     "ioredis": "^6.0.0",
-    "openai": "^7.15.0",
-    "zod": "^4.6.2"
+    "openai": "^7.23.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@swc/jest": "^0.2.39",
     "@types/jest": "^30.0.0",
-    "jest": "^30.5.1"
+    "jest": "^30.5.2"
   },
   "jest": {
     "moduleFileExtensions": [
