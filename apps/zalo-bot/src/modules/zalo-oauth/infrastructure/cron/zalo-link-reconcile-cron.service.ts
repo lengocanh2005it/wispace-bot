@@ -19,6 +19,7 @@ import {
 import { ZaloAccountLinkService } from '../persistence/zalo-account-link.service';
 import {
   CLARIFICATION_STATE_STORE,
+  clarificationStateKey,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
@@ -235,7 +236,7 @@ export class ZaloLinkReconcileCronService {
         .catch(() => undefined);
     }
     await this.clarificationStateStore
-      .clear(`zalo:${externalUserId}`)
+      .clear(clarificationStateKey('zalo', externalUserId))
       .catch(() => undefined);
     try {
       await this.redisClient
@@ -262,7 +263,9 @@ export class ZaloLinkReconcileCronService {
 
   private async clearClarificationState(zaloUserId: string): Promise<void> {
     try {
-      await this.clarificationStateStore.clear(`zalo:${zaloUserId}`);
+      await this.clarificationStateStore.clear(
+        clarificationStateKey('zalo', zaloUserId),
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Zalo clarification state clear after link reconcile failed for zaloUserId=${maskExternalId(zaloUserId)}: ${errorMessage(error, zaloUserId)}`,

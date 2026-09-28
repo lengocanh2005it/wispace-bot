@@ -17,6 +17,7 @@ const {
 const {
   RedisClarificationStateStore,
   RedisChatQueueStore,
+  clarificationStateKey,
 } = require('@wispace/chat-agent');
 const { RedisChatHistoryStore } = require('@wispace/chat-history');
 const { RedisUserDisplayNameCache } = require('@wispace/bot-common/redis');
@@ -179,7 +180,7 @@ function cleanupCallbacks(platform, stores) {
       await stores.queue.clearChatBuffer(id);
     },
     clearClarification: async (id) => {
-      await stores.clarification.clear(`${platform}:${id}`);
+      await stores.clarification.clear(clarificationStateKey(platform, id));
     },
     ...(stores.displayName
       ? { clearUserCache: (id) => stores.displayName.delStrict(id) }
@@ -475,7 +476,7 @@ async function seedRedisState(platform, stores, externalUserId, userId) {
     userId,
     debounceMs: 1,
   });
-  await stores.clarification.set(`${platform}:${externalUserId}`, {
+  await stores.clarification.set(clarificationStateKey(platform, externalUserId), {
     phase: 'awaiting_choice',
     attempts: 0,
     menuResets: 0,
@@ -495,7 +496,11 @@ async function assertRedisStatePresent(
   assert((await stores.history.getHistory(externalUserId)).length > 0);
   assert.equal(await queueBufferExists(stores, platform, externalUserId), true);
   assert.equal(
-    (await stores.clarification.get(`${platform}:${externalUserId}`)) !== null,
+    (
+      await stores.clarification.get(
+        clarificationStateKey(platform, externalUserId),
+      )
+    ) !== null,
     true,
   );
   if (stores.displayName) {
@@ -518,7 +523,9 @@ async function assertRedisStateAbsent(
     false,
   );
   assert.equal(
-    await stores.clarification.get(`${platform}:${externalUserId}`),
+    await stores.clarification.get(
+      clarificationStateKey(platform, externalUserId),
+    ),
     null,
   );
   if (stores.displayName)
@@ -528,7 +535,9 @@ async function assertRedisStateAbsent(
 async function cleanupRedisState(platform, stores, externalUserId, userId) {
   await stores.history.clear(externalUserId);
   await stores.queue.clearChatBuffer(externalUserId);
-  await stores.clarification.clear(`${platform}:${externalUserId}`);
+  await stores.clarification.clear(
+    clarificationStateKey(platform, externalUserId),
+  );
   await stores.displayName?.del(userId);
 }
 

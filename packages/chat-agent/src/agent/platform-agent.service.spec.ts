@@ -515,7 +515,7 @@ describe('PlatformAgentService', () => {
     );
   });
 
-  it('tombstones stale clarification state before a clear new question', async () => {
+  it('tombstones a pending menu on a clear new question, then sends it to the LLM', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),
       appendTurn: jest.fn().mockResolvedValue(undefined),
@@ -532,7 +532,9 @@ describe('PlatformAgentService', () => {
       userText: 'Xem tiến độ học của mình',
     });
 
-    expect(clarificationStore.set).toHaveBeenCalledWith(
+    // The store is injected here, so the tombstone write is assertable at this
+    // seam too: the pending menu is consumed, version-gated, not just dropped.
+    expect(clarificationStore.set).toHaveBeenLastCalledWith(
       'default:zalo-user-1',
       expect.objectContaining({ phase: 'consumed' }),
       1,

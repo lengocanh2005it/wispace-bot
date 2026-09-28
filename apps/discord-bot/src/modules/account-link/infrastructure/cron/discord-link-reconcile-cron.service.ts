@@ -28,6 +28,7 @@ import {
 } from '../../domain/ports/discord-link-verify-record.repository.port';
 import {
   CLARIFICATION_STATE_STORE,
+  clarificationStateKey,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
@@ -261,7 +262,7 @@ export class DiscordLinkReconcileCronService {
         .catch(() => undefined);
     }
     await this.clarificationStateStore
-      .clear(`discord:${externalUserId}`)
+      .clear(clarificationStateKey('discord', externalUserId))
       .catch(() => undefined);
     try {
       await this.redisClient
@@ -288,7 +289,9 @@ export class DiscordLinkReconcileCronService {
 
   private async clearClarificationState(discordUserId: string): Promise<void> {
     try {
-      await this.clarificationStateStore.clear(`discord:${discordUserId}`);
+      await this.clarificationStateStore.clear(
+        clarificationStateKey('discord', discordUserId),
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Discord clarification state clear after link reconcile failed for discordUserId=${maskExternalId(discordUserId)}: ${errorMessage(error, discordUserId)}`,

@@ -26,6 +26,7 @@ import { WispaceLinkStatusClient } from '@wispace/wispace-client/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
   CLARIFICATION_STATE_STORE,
+  clarificationStateKey,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -351,7 +352,7 @@ export class MessengerLinkReconcileCronService {
         .catch(() => undefined);
     }
     await this.clarificationStateStore
-      ?.clear(`messenger:${externalUserId}`)
+      ?.clear(clarificationStateKey('messenger', externalUserId))
       .catch(() => undefined);
     try {
       await this.redisClient

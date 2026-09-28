@@ -1,4 +1,8 @@
 import type { RedisClientPort } from '@wispace/bot-common/redis';
+import type {
+  ClarificationChoice,
+  ClarificationIrrelevantAction,
+} from './clarification-text';
 
 export const CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 export const MAX_CLARIFICATION_ATTEMPTS = 2;
@@ -6,7 +10,8 @@ export const MAX_CLARIFICATION_MENU_RESETS = 1;
 const MAX_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_CLARIFICATION_ATTEMPTS_CAP = 10;
 const MAX_CLARIFICATION_MENU_RESETS_CAP = 5;
-const MAX_CLARIFICATION_EVENT_HISTORY = 8;
+/** The tombstone window the read-back validation also bounds. */
+export const MAX_CLARIFICATION_EVENT_HISTORY = 8;
 
 export interface ClarificationLimits {
   ttlMs: number;
@@ -54,7 +59,9 @@ export function readClarificationLimits(
   });
 }
 
-function normalizeLimits(limits: ClarificationLimits): ClarificationLimits {
+export function normalizeLimits(
+  limits: ClarificationLimits,
+): ClarificationLimits {
   return {
     ttlMs: Math.min(
       Number.isFinite(limits.ttlMs) && limits.ttlMs > 0
@@ -77,8 +84,6 @@ function normalizeLimits(limits: ClarificationLimits): ClarificationLimits {
   };
 }
 
-export type ClarificationChoice = 'progress' | 'schedule' | 'reschedule';
-
 export interface ClarificationState {
   phase: 'awaiting_choice' | 'consumed';
   attempts: number;
@@ -99,6 +104,14 @@ export interface ClarificationState {
   lastDeliveryFailed?: boolean;
 }
 
+/** The single expiry rule, shared by the core's query and the store's prune. */
+export function isClarificationStateExpired(
+  state: ClarificationState,
+  now: number,
+): boolean {
+  return state.expiresAt <= now;
+}
+
 export interface ClarificationStateStore {
   get(key: string): Promise<ClarificationState | null>;
   set(
@@ -111,356 +124,22 @@ export interface ClarificationStateStore {
 
 export const CLARIFICATION_STATE_STORE = Symbol('CLARIFICATION_STATE_STORE');
 
-export type ClarificationIrrelevantAction = 'clarify' | 'reset_menu' | 'clear';
+/**
+ * The one clarification state key. Six call sites across three applications and
+ * one operational script used to build this string by hand; they import it
+ * instead, so the format cannot disagree with itself. The Redis prefix is added
+ * by {@link RedisClarificationStateStore} and is deliberately not part of it.
+ */
+export function clarificationStateKey(
+  platform: string,
+  externalUserId: string,
+): string {
+  return `${platform}:${externalUserId}`;
+}
 
 export interface ClarificationIrrelevantResult {
   action: ClarificationIrrelevantAction;
   state?: ClarificationState;
-}
-
-const DIACRITIC_MARKS = /[\u0300-\u036f]/g;
-
-/** Normalize Vietnamese text for the small, deterministic clarification parser. */
-export function normalizeClarificationText(text: string): string {
-  return text
-    .normalize('NFD')
-    .replace(/đ/gi, 'd')
-    .replace(DIACRITIC_MARKS, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-const CANCEL_WORDS = new Set([
-  'bo',
-  'bo qua',
-  'cancel',
-  'dung',
-  'huy',
-  'khong can',
-  'khong',
-  'n',
-  'no',
-  'skip',
-  'thoat',
-]);
-
-const CHOICE_ALIASES: ReadonlyArray<
-  readonly [ClarificationChoice, ...string[]]
-> = [
-  [
-    'progress',
-    'chon mot',
-    '1',
-    'mot',
-    'tien do',
-    'progress',
-    'first',
-    '1st',
-    'first one',
-    'the first one',
-    'cai thu 1',
-    'cai thu nhat',
-    'lua chon thu nhat',
-    'chon 1',
-    'option 1',
-    'choice 1',
-    'lua chon 1',
-    'td',
-  ],
-  [
-    'schedule',
-    'chon hai',
-    '2',
-    'hai',
-    'lich',
-    'lich hoc',
-    'schedule',
-    'second',
-    '2nd',
-    'second one',
-    'the second one',
-    'cai thu 2',
-    'cai thu hai',
-    'lua chon thu hai',
-    'chon 2',
-    'option 2',
-    'choice 2',
-    'lua chon 2',
-    'lh',
-  ],
-  [
-    'reschedule',
-    'chon ba',
-    '3',
-    'ba',
-    'doi lich',
-    'doi lai lich',
-    'reschedule',
-    'third',
-    '3rd',
-    'third one',
-    'the third one',
-    'cai thu 3',
-    'cai thu ba',
-    'lua chon thu ba',
-    'chon 3',
-    'option 3',
-    'choice 3',
-    'lua chon 3',
-    'dl',
-  ],
-];
-
-const EXPLICIT_CHOICE_ALIASES: ReadonlyArray<
-  readonly [ClarificationChoice, ...string[]]
-> = [
-  [
-    'progress',
-    '1',
-    'mot',
-    'first',
-    '1st',
-    'first one',
-    'the first one',
-    'cai thu 1',
-    'cai thu nhat',
-    'lua chon thu nhat',
-    'chon mot',
-    'chon 1',
-    'option 1',
-    'choice 1',
-    'lua chon 1',
-    'td',
-  ],
-  [
-    'schedule',
-    '2',
-    'hai',
-    'second',
-    '2nd',
-    'second one',
-    'the second one',
-    'cai thu 2',
-    'cai thu hai',
-    'lua chon thu hai',
-    'chon hai',
-    'chon 2',
-    'option 2',
-    'choice 2',
-    'lua chon 2',
-    'lh',
-  ],
-  [
-    'reschedule',
-    '3',
-    'ba',
-    'third',
-    '3rd',
-    'third one',
-    'the third one',
-    'cai thu 3',
-    'cai thu ba',
-    'lua chon thu ba',
-    'chon ba',
-    'chon 3',
-    'option 3',
-    'choice 3',
-    'lua chon 3',
-    'dl',
-  ],
-];
-
-function isChoiceSuffix(value: string): boolean {
-  return /^(?:nhe|nha|a|di|voi|giup minh|cho minh)$/.test(value);
-}
-
-export class ClarificationStateMachine {
-  private readonly limits: ClarificationLimits;
-
-  constructor(limits: ClarificationLimits = DEFAULT_CLARIFICATION_LIMITS) {
-    this.limits = normalizeLimits(limits);
-  }
-
-  parseChoice(text: string): ClarificationChoice | null {
-    const normalized = normalizeClarificationText(text);
-    if (!normalized) return null;
-
-    for (const [choice, ...aliases] of CHOICE_ALIASES) {
-      if (aliases.includes(normalized)) return choice;
-      const parts = normalized.split(' ');
-      for (const alias of aliases) {
-        const aliasParts = alias.split(' ');
-        const suffix = parts.slice(aliasParts.length).join(' ');
-        if (
-          parts.length > aliasParts.length &&
-          parts.slice(0, aliasParts.length).join(' ') === alias &&
-          isChoiceSuffix(suffix)
-        ) {
-          return choice;
-        }
-      }
-    }
-    return null;
-  }
-
-  /** Multiple offered choices in one batch are contradictory, not an intent. */
-  isContradictory(text: string): boolean {
-    const lines = text.split(/\r?\n/);
-    const lineChoices = lines
-      .map((line) => this.parseChoice(line))
-      .filter((choice): choice is ClarificationChoice => choice !== null);
-    if (new Set(lineChoices).size > 1) return true;
-
-    const tokens = normalizeClarificationText(text).split(' ').filter(Boolean);
-    if (tokens.length === 0) return false;
-
-    let matches = 0;
-    for (const [, ...aliases] of EXPLICIT_CHOICE_ALIASES) {
-      const matched = aliases.some((alias) => {
-        const aliasTokens = alias.split(' ');
-        return tokens.some((_, index) =>
-          aliasTokens.every(
-            (token, offset) => tokens[index + offset] === token,
-          ),
-        );
-      });
-      if (matched) matches += 1;
-    }
-    if (matches > 1) return true;
-
-    const normalized = tokens.join(' ');
-    const hasProgress = /\b(?:tien do|progress|score|diem|band)\b/.test(
-      normalized,
-    );
-    const hasReschedule =
-      /\b(?:reschedule|move|change)\b/.test(normalized) ||
-      /\bdoi(?: lai)?\b.*\b(?:lich|buoi|session)\b/.test(normalized);
-    const hasScheduleTopic = /\blic?h(?: hoc)?\b/.test(normalized);
-    const hasScheduleView =
-      hasScheduleTopic &&
-      /\b(?:xem|check|view|upcoming|schedule|calendar)\b/.test(normalized);
-    const hasJoiner =
-      /\b(?:va|and|hoac|or)\b/.test(normalized) || /[,;\n]/.test(text);
-
-    return (
-      (hasProgress && (hasScheduleView || hasReschedule)) ||
-      (hasReschedule && hasScheduleView) ||
-      (hasProgress && hasScheduleTopic && hasJoiner) ||
-      (hasJoiner && hasScheduleTopic && hasReschedule)
-    );
-  }
-
-  isCancel(text: string): boolean {
-    return CANCEL_WORDS.has(normalizeClarificationText(text));
-  }
-
-  start(now = Date.now(), userId?: number): ClarificationState {
-    return {
-      phase: 'awaiting_choice',
-      attempts: 0,
-      menuResets: 0,
-      version: 1,
-      createdAt: now,
-      expiresAt: now + this.limits.ttlMs,
-      ...(userId === undefined ? {} : { userId }),
-    };
-  }
-
-  isExpired(state: ClarificationState, now = Date.now()): boolean {
-    return state.expiresAt <= now;
-  }
-
-  recordIrrelevant(
-    state: ClarificationState,
-    now = Date.now(),
-  ): ClarificationIrrelevantResult {
-    if (state.attempts < this.limits.maxAttempts) {
-      return {
-        action: 'clarify',
-        state: this.bump(state, now, { attempts: state.attempts + 1 }),
-      };
-    }
-
-    if (state.menuResets < this.limits.maxMenuResets) {
-      return {
-        action: 'reset_menu',
-        state: this.bump(state, now, {
-          attempts: 0,
-          menuResets: state.menuResets + 1,
-        }),
-      };
-    }
-
-    return { action: 'clear' };
-  }
-
-  private bump(
-    state: ClarificationState,
-    now: number,
-    changes: Partial<Pick<ClarificationState, 'attempts' | 'menuResets'>>,
-  ): ClarificationState {
-    return {
-      ...state,
-      ...changes,
-      version: state.version + 1,
-      expiresAt: now + this.limits.ttlMs,
-    };
-  }
-
-  withReply(
-    state: ClarificationState,
-    eventId: string | undefined,
-    replyText: string,
-  ): ClarificationState {
-    const recentEventIds = eventId
-      ? [...(state.recentEventIds ?? []), eventId].slice(
-          -MAX_CLARIFICATION_EVENT_HISTORY,
-        )
-      : state.recentEventIds;
-    return {
-      ...state,
-      ...(eventId ? { lastEventId: eventId } : {}),
-      ...(recentEventIds ? { recentEventIds } : {}),
-      lastReplyText: replyText,
-      lastDeliveryFailed: false,
-    };
-  }
-
-  isStaleEvent(state: ClarificationState, eventId?: string): boolean {
-    return Boolean(
-      eventId &&
-      state.lastEventId !== eventId &&
-      state.recentEventIds?.includes(eventId),
-    );
-  }
-
-  consume(
-    state: ClarificationState,
-    eventId: string | undefined,
-    now = Date.now(),
-    choice?: ClarificationChoice,
-  ): ClarificationState {
-    const recentEventIds = eventId
-      ? [...(state.recentEventIds ?? []), eventId].slice(
-          -MAX_CLARIFICATION_EVENT_HISTORY,
-        )
-      : state.recentEventIds;
-    return {
-      ...state,
-      phase: 'consumed',
-      version: state.version + 1,
-      expiresAt: now + this.limits.ttlMs,
-      ...(eventId ? { lastEventId: eventId } : {}),
-      ...(recentEventIds ? { recentEventIds } : {}),
-      ...(choice ? { lastChoice: choice } : {}),
-    };
-  }
-
-  getLimits(): ClarificationLimits {
-    return this.limits;
-  }
 }
 
 const MAX_MEMORY_STATES = 10_000;
@@ -505,7 +184,7 @@ export class MemoryClarificationStateStore implements ClarificationStateStore {
 
   private prune(now = Date.now()): void {
     for (const [key, state] of this.states) {
-      if (state.expiresAt <= now) this.states.delete(key);
+      if (isClarificationStateExpired(state, now)) this.states.delete(key);
     }
   }
 }
@@ -685,7 +364,6 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
 
 export function createClarificationStateStore(params: {
   platform: string;
-  config: ClarificationConfigReader;
   redisClient?: RedisClientPort;
 }): ClarificationStateStore {
   if (params.redisClient?.isConfiguredEnabled?.() === true) {

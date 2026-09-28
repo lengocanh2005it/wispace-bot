@@ -410,6 +410,10 @@ _Avoid_: repeated question, duplicate text
 Reply outcome meaning an already-attempted canned clarification must not be sent again.
 _Avoid_: ignored message, dropped message
 
+**clarification decision**:
+The closed vocabulary that inspecting a clarification state against an incoming event yields. Each kind names the reply the learner receives, whether that reply is delivered, and which outcomes are counted.
+_Avoid_: outcome, result
+
 ### Messenger-Specific
 
 **postback**:

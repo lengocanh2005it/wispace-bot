@@ -22,6 +22,7 @@ import {
 import { MessengerOutboundService } from './messenger-outbound.service';
 import {
   CLARIFICATION_STATE_STORE,
+  clarificationStateKey,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import {
@@ -558,7 +559,9 @@ export class MessengerMappingService {
 
   private async clearClarificationState(psid: string): Promise<void> {
     try {
-      await this.clarificationStateStore.clear(`messenger:${psid}`);
+      await this.clarificationStateStore.clear(
+        clarificationStateKey('messenger', psid),
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Clarification state clear after mapping update failed psid=${maskExternalId(psid)}: ${errorMessage(error, psid)}`,

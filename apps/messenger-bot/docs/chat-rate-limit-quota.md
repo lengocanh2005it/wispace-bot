@@ -523,9 +523,12 @@ tombstone for event identities:
 When the choice's non-ambiguous outbound attempt fails, the queue marks that
 event retryable so the same event can be processed again. Suppressed sends are
 counted as `<prefix>_clarification_outcomes_total{outcome=skip_delivery}`;
-`delivery_failure` remains the delivery outcome. Redis state parsing accepts
-live states written with older, higher limits and validates only the hard
-attempt/menu-reset caps plus the absolute TTL ceiling.
+`delivery_failure` remains the delivery outcome. Since #1143 the `replayed`
+counter also covers the two compare-and-set race paths — a state write that loses
+its version gate and re-reads the same event already answered is suppressed and
+counted `replayed`, where before only `skip_delivery` was counted. Redis state
+parsing accepts live states written with older, higher limits and validates only
+the hard attempt/menu-reset caps plus the absolute TTL ceiling.
 
 | Dedupe           | Single instance (`CHAT_QUEUE_STORE=memory`) | Multi-pod (`CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true`) |
 | ---------------- | ------------------------------------------- | ---------------------------------------------------------------- |

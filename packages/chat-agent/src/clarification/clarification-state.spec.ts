@@ -1,127 +1,76 @@
+import fc from 'fast-check';
+import { ClarificationCore } from './clarification-core';
 import {
-  ClarificationStateMachine,
   MemoryClarificationStateStore,
   RedisClarificationStateStore,
   createClarificationStateStore,
-  type ClarificationState,
 } from './clarification-state';
 
-describe('ClarificationStateMachine', () => {
-  const now = 1_700_000_000_000;
+// Same budget the core property suite runs at, so the property that moved here
+// keeps its strength. Jest gives each test file its own module registry.
+fc.configureGlobal({ numRuns: 200 });
 
-  it('normalizes Vietnamese variants and accepts numbered choices', () => {
-    const machine = new ClarificationStateMachine();
-
-    expect(machine.parseChoice('  Một  ')).toBe('progress');
-    expect(machine.parseChoice('lich hoc')).toBe('schedule');
-    expect(machine.parseChoice('ĐỔI LỊCH')).toBe('reschedule');
-    expect(machine.parseChoice('3')).toBe('reschedule');
-    expect(machine.parseChoice('the second one')).toBe('schedule');
-    expect(machine.parseChoice('cái thứ 3')).toBe('reschedule');
-    expect(machine.parseChoice('2 nhé')).toBe('schedule');
-    expect(machine.parseChoice('chon mot')).toBe('progress');
-    expect(machine.parseChoice('chon 2')).toBe('schedule');
-    expect(machine.parseChoice('option 3')).toBe('reschedule');
-    expect(machine.parseChoice('td')).toBe('progress');
-    expect(machine.parseChoice('lh')).toBe('schedule');
-    expect(machine.parseChoice('2nd')).toBe('schedule');
-    expect(machine.parseChoice('option 2 nha')).toBe('schedule');
-    expect(machine.parseChoice('lua chon 3 di')).toBe('reschedule');
-    expect(machine.parseChoice('the first one nhe')).toBe('progress');
-  });
-
-  it('recognizes explicit cancellation without treating it as a tool intent', () => {
-    const machine = new ClarificationStateMachine();
-
-    expect(machine.isCancel('  huy  ')).toBe(true);
-    expect(machine.isCancel('bỏ qua')).toBe(true);
-    expect(machine.parseChoice('tiến độ')).toBe('progress');
-  });
-
-  it('treats contradictory choice batches as ambiguous', () => {
-    const machine = new ClarificationStateMachine();
-
-    expect(machine.isContradictory('lịch học\n3')).toBe(true);
-    expect(machine.isContradictory('xem lịch học và đổi lịch học')).toBe(true);
-    expect(machine.isContradictory('tiến độ và lịch học')).toBe(true);
-    expect(machine.isContradictory('tiến độ, lịch học')).toBe(true);
-    expect(machine.isContradictory('1 1')).toBe(false);
-    expect(machine.isContradictory('mình muốn xem lịch học')).toBe(false);
-    expect(machine.isContradictory('mình muốn dời lịch')).toBe(false);
-  });
-
-  it('uses configured bounds and retains event history for stale replies', () => {
-    const machine = new ClarificationStateMachine({
-      ttlMs: 30_000,
-      maxAttempts: 1,
-      maxMenuResets: 0,
-    });
-    const first = machine.withReply(machine.start(now), 'event-a', 'menu');
-    const second = machine.withReply(
-      machine.recordIrrelevant(first, now + 1).state!,
-      'event-b',
-      'menu-2',
-    );
-
-    expect(second.expiresAt).toBe(now + 1 + 30_000);
-    expect(machine.getLimits()).toEqual({
-      ttlMs: 30_000,
-      maxAttempts: 1,
-      maxMenuResets: 0,
-    });
-    expect(machine.isStaleEvent(second, 'event-a')).toBe(true);
-    expect(machine.isStaleEvent(second, 'event-b')).toBe(false);
-  });
-
-  it('creates a bounded state and expires it after ten minutes', () => {
-    const machine = new ClarificationStateMachine();
-    const state = machine.start(now, 42);
-
-    expect(state).toMatchObject<Partial<ClarificationState>>({
+describe('clarification state stores', () => {
+  it('accepts Redis state written under higher limits and a longer TTL', async () => {
+    const createdAt = Date.now();
+    const raw = JSON.stringify({
       phase: 'awaiting_choice',
-      attempts: 0,
-      menuResets: 0,
-      userId: 42,
+      attempts: 2,
+      menuResets: 1,
+      version: 1,
+      createdAt,
+      expiresAt: createdAt + 30_000,
+      lastChoice: 'schedule',
     });
-    expect(machine.isExpired(state, now + 10 * 60 * 1000 - 1)).toBe(false);
-    expect(machine.isExpired(state, now + 10 * 60 * 1000)).toBe(true);
-  });
-
-  it('bounds irrelevant follow-ups and opens only one fresh menu state', () => {
-    const machine = new ClarificationStateMachine();
-    const state = machine.start(now);
-
-    const first = machine.recordIrrelevant(state, now + 1);
-    const second = machine.recordIrrelevant(first.state!, now + 2);
-    const third = machine.recordIrrelevant(second.state!, now + 3);
-
-    expect(first.action).toBe('clarify');
-    expect(second.action).toBe('clarify');
-    expect(third.action).toBe('reset_menu');
-    expect(third.state!.menuResets).toBe(1);
-
-    const afterReset = machine.recordIrrelevant(third.state!, now + 4);
-    expect(afterReset.action).toBe('clarify');
-    const afterFreshLimit = machine.recordIrrelevant(
-      machine.recordIrrelevant(afterReset.state!, now + 5).state!,
-      now + 6,
+    const client = {
+      get: jest.fn().mockResolvedValue(raw),
+    };
+    const store = new RedisClarificationStateStore(
+      {
+        isConfiguredEnabled: () => true,
+        isEnabled: () => true,
+        getNativeClient: () => client,
+      },
+      'chat:clarification:test',
     );
-    expect(afterFreshLimit.action).toBe('clear');
-    expect(afterFreshLimit.state).toBeUndefined();
+
+    await expect(store.get('u1')).resolves.toMatchObject({
+      attempts: 2,
+      menuResets: 1,
+      expiresAt: createdAt + 30_000,
+    });
   });
 
-  it('increments versions so delayed state writes cannot win', () => {
-    const machine = new ClarificationStateMachine();
-    const state = machine.start(now);
-    const next = machine.recordIrrelevant(state, now + 1).state;
+  it('creates memory store when Redis is not configured, and Redis store when configured', () => {
+    const memStore = createClarificationStateStore({
+      platform: 'test',
+    });
+    expect(memStore).toBeInstanceOf(MemoryClarificationStateStore);
 
-    expect(next!.version).toBeGreaterThan(state.version);
+    const memStoreDisabledRedis = createClarificationStateStore({
+      platform: 'test',
+      redisClient: {
+        isConfiguredEnabled: () => false,
+        isEnabled: () => false,
+        getNativeClient: () => null,
+      } as never,
+    });
+    expect(memStoreDisabledRedis).toBeInstanceOf(MemoryClarificationStateStore);
+
+    const redisStore = createClarificationStateStore({
+      platform: 'test',
+      redisClient: {
+        isConfiguredEnabled: () => true,
+        isEnabled: () => true,
+        getNativeClient: () => ({}),
+      } as never,
+    });
+    expect(redisStore).toBeInstanceOf(RedisClarificationStateStore);
   });
 
   it('rejects a stale memory write using the expected version', async () => {
     const store = new MemoryClarificationStateStore();
-    const machine = new ClarificationStateMachine();
-    const state = machine.start(Date.now());
+    const state = new ClarificationCore().begin({}, Date.now(), 'menu');
 
     await store.set('u1', state, 0);
     await expect(store.set('u1', { ...state, version: 2 }, 0)).resolves.toBe(
@@ -131,35 +80,23 @@ describe('ClarificationStateMachine', () => {
 
   it('consumes a choice with a compare-and-set tombstone', async () => {
     const store = new MemoryClarificationStateStore();
-    const machine = new ClarificationStateMachine();
-    const state = machine.withReply(
-      machine.start(Date.now(), 42),
-      'menu-1',
-      'menu',
-    );
+    const core = new ClarificationCore();
+    const state = core.begin({ userId: 42 }, Date.now(), 'menu');
 
     await store.set('u1', state, 0);
-    const consumed = machine.consume(state, 'choice-1', Date.now());
+    const consumed = core.consume(
+      state,
+      { eventId: 'choice-1' },
+      Date.now(),
+      'schedule',
+    );
     await expect(store.set('u1', consumed, state.version)).resolves.toBe(true);
     await expect(store.clear('u1', consumed.version)).resolves.toBe(true);
     await expect(store.clear('u1', consumed.version)).resolves.toBe(false);
   });
 
-  it('persists the consumed choice for a delivery retry', () => {
-    const machine = new ClarificationStateMachine();
-    const state = machine.consume(
-      machine.start(Date.now()),
-      'choice-1',
-      Date.now(),
-      'schedule',
-    );
-
-    expect(state.lastChoice).toBe('schedule');
-  });
-
   it('fails closed when configured Redis is disabled or native client is missing', async () => {
-    const machine = new ClarificationStateMachine();
-    const state = machine.start(Date.now());
+    const state = new ClarificationCore().begin({}, Date.now(), 'menu');
 
     const disabledStore = new RedisClarificationStateStore(
       {
@@ -209,65 +146,25 @@ describe('ClarificationStateMachine', () => {
     );
   });
 
-  it('accepts Redis state written under higher limits and a longer TTL', async () => {
-    const createdAt = Date.now();
-    const raw = JSON.stringify({
-      phase: 'awaiting_choice',
-      attempts: 2,
-      menuResets: 1,
-      version: 1,
-      createdAt,
-      expiresAt: createdAt + 30_000,
-      lastChoice: 'schedule',
-    });
-    const client = {
-      get: jest.fn().mockResolvedValue(raw),
-    };
-    const store = new RedisClarificationStateStore(
-      {
-        isConfiguredEnabled: () => true,
-        isEnabled: () => true,
-        getNativeClient: () => client,
-      },
-      'chat:clarification:test',
+  it('rejects stale memory writes for every generated initial state', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: 1_000_000 }),
+        async (offset) => {
+          const store = new MemoryClarificationStateStore();
+          const state = new ClarificationCore().begin(
+            {},
+            Date.now() + offset,
+            'menu',
+          );
+
+          await expect(store.set('user', state, 0)).resolves.toBe(true);
+          await expect(
+            store.set('user', { ...state, version: state.version + 1 }, 0),
+          ).resolves.toBe(false);
+          await expect(store.get('user')).resolves.toEqual(state);
+        },
+      ),
     );
-
-    await expect(store.get('u1')).resolves.toMatchObject({
-      attempts: 2,
-      menuResets: 1,
-      expiresAt: createdAt + 30_000,
-    });
-  });
-
-  it('creates memory store when Redis is not configured, and Redis store when configured', () => {
-    const mockConfig = { get: jest.fn() };
-
-    const memStore = createClarificationStateStore({
-      platform: 'test',
-      config: mockConfig,
-    });
-    expect(memStore).toBeInstanceOf(MemoryClarificationStateStore);
-
-    const memStoreDisabledRedis = createClarificationStateStore({
-      platform: 'test',
-      config: mockConfig,
-      redisClient: {
-        isConfiguredEnabled: () => false,
-        isEnabled: () => false,
-        getNativeClient: () => null,
-      } as never,
-    });
-    expect(memStoreDisabledRedis).toBeInstanceOf(MemoryClarificationStateStore);
-
-    const redisStore = createClarificationStateStore({
-      platform: 'test',
-      config: mockConfig,
-      redisClient: {
-        isConfiguredEnabled: () => true,
-        isEnabled: () => true,
-        getNativeClient: () => ({}),
-      } as never,
-    });
-    expect(redisStore).toBeInstanceOf(RedisClarificationStateStore);
   });
 });

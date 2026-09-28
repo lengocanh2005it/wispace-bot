@@ -190,6 +190,9 @@ describe('DiscordLinkCompletionService', () => {
       99,
       143,
     );
+    // The literal, not `clarificationStateKey(...)`: production calls that
+    // function, so asserting with it could not fail. The key *format* has its
+    // own test in the chat-agent package; this one pins the value here.
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
       'discord:discord-user-1',
     );

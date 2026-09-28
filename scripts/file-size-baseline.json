@@ -1,6 +1,6 @@
 {
-  "measuredAt": "2026-09-27",
-  "measuredAtCommit": "906db79a",
+  "measuredAt": "2026-09-28",
+  "measuredAtCommit": "0f51f8b1",
   "note": "Each entry is a decision, not a measurement. `lines` is the ceiling that file may not exceed; `context`, `trackedBy` and `reason` say who holds the decision to keep it and why. `trackedBy` is the issue holding the decision, which is not always the issue that owns the decomposition: four of these six have no decomposition owner by design. Run `npm run file-size:report` to render this as the #778 index table, so the table is generated rather than retyped. See ADR-0044 and #1433.",
   "files": {
     "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": {
@@ -16,10 +16,10 @@
       "reason": "Largest candidate. No decomposition owner. Unlike the other four it has no extracted sibling to build a seam on."
     },
     "packages/chat-agent/src/agent/platform-agent.service.ts": {
-      "lines": 1187,
+      "lines": 939,
       "context": "Free-form Chat",
       "trackedBy": "#778",
-      "reason": "No duplication finding. #1212 restructures the constructor and #1084 fixes one cast; neither decomposes the body."
+      "reason": "Decomposed by #1143: the ~290-line clarification handler moved to `clarification/` (pure core, responder, text parser) and the service keeps only a delegating facade over it. 1187 -> 939 lines. The split left the repository slightly larger, so by ADR-0044 it bought nothing on its own; it was made because a field-access prohibition is only enforceable once the code that read the fields lives somewhere the type system can constrain. What is left is chat orchestration, and no duplication finding is recorded against it."
     },
     "packages/chat-agent/src/chat-queue/redis-chat-queue.store.ts": {
       "lines": 1168,
