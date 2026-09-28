@@ -30,9 +30,9 @@
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "@nestjs/common": "^12.0.1",
+    "@nestjs/common": "^12.1.0",
     "@nestjs/config": "^12.0.0",
-    "@nestjs/schedule": "^12.0.1",
+    "@nestjs/schedule": "^12.0.2",
     "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
     "@wispace/contracts": "*",
