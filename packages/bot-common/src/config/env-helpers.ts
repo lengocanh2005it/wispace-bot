@@ -1,6 +1,12 @@
-import type { ConfigService } from '@nestjs/config';
-
-type ConfigReader = Pick<ConfigService, 'get'>;
+/**
+ * The only thing these readers need from whatever holds the environment.
+ * Declared structurally rather than as a pick from the Nest config service, so
+ * a file-level classifier does not report this module as framework-coupled
+ * over a pure arithmetic helper (#1454).
+ */
+type ConfigReader = {
+  get: <T>(key: string) => T | undefined;
+};
 
 /** Shared tolerant readers used by scheduled workers. */
 export function readEnvBoolean(

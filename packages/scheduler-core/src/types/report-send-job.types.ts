@@ -7,6 +7,17 @@ export type { ReportSendJobStatus };
 
 export type ReportRetryCause = 'capacity_overload';
 
+/**
+ * How one send attempt was classified. Declared here rather than beside the
+ * orchestration service so the framework-free `/core` barrel does not have to
+ * reach out of its own directory to reach it (#1454).
+ */
+export interface ClassifiedError {
+  kind: 'retryable' | 'window_closed' | 'skipped' | 'failure';
+  message: string;
+  retryCause?: ReportRetryCause;
+}
+
 export interface ReportSendJob {
   id: number;
   platform: string;

@@ -2,10 +2,8 @@
 
 export { ReportScheduleService } from '../services/report-schedule.service';
 export { ReportSendScheduleService } from '../services/report-send-schedule.service';
-export {
-  ReportOrchestrationService,
-  type ClassifiedError,
-} from '../services/report-orchestration.service';
+export { ReportOrchestrationService } from '../services/report-orchestration.service';
+export type { ClassifiedError } from '../types/report-send-job.types';
 export { ReportCronLeaderService } from '../services/report-cron-leader.service';
 export {
   CronLeaderHeartbeatService,

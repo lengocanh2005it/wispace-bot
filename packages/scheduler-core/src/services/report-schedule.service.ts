@@ -5,17 +5,9 @@ import { todayInTimezone } from '@wispace/date-utils';
 import { GOALS_DATA_PORT } from '../ports/goals-data.port';
 import type { GoalsDataPort } from '../ports/goals-data.port';
 import type { ReportSchedulePort } from '../ports/report-cron-seams.port';
+import type { ExamWindowResult } from '../types/report-schedule.types';
 
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
-
-/** Result of the days-before-exam window check used by the report crons. */
-export interface ExamWindowResult {
-  shouldSend: boolean;
-  daysUntilExam: number;
-  examDate: string;
-  minDays: number;
-  maxDays: number;
-}
 
 @Injectable()
 export class ReportScheduleService implements ReportSchedulePort {

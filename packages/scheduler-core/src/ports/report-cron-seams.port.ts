@@ -1,8 +1,8 @@
 import type { Platform } from '@wispace/contracts';
-import type { ExamWindowResult } from '../services/report-schedule.service';
-import type { ClassifiedError } from '../services/report-orchestration.service';
+import type { ExamWindowResult } from '../types/report-schedule.types';
 import type {
   ClaimAndSendResult,
+  ClassifiedError,
   ReportMapping,
 } from '../types/report-send-job.types';
 

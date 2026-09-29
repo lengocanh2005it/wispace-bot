@@ -1,4 +1,4 @@
-import type { ExamWindowResult } from '../services/report-schedule.service';
+import type { ExamWindowResult } from '../types/report-schedule.types';
 import type { ReportSchedulePort } from '../ports/report-cron-seams.port';
 
 /**
