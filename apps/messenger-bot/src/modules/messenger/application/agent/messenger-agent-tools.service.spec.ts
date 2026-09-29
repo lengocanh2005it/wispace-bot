@@ -591,6 +591,7 @@ describe('MessengerAgentToolsService', () => {
           sessionLabel: 'IELTS Writing',
           summary: 'Đổi lịch từ Thứ 2 sang Thứ 3',
           richFollowUp: { type: 'button', title: 'Xác nhận' },
+          confirmationToken: 'nonce-1420',
         }),
       });
       ctx.userText = 'mình muốn đổi lịch học';
@@ -606,6 +607,9 @@ describe('MessengerAgentToolsService', () => {
         sessionLabel: 'IELTS Writing',
       });
       expect(ctx.richFollowUps).toHaveLength(1);
+      // #1420: the turn now owns this proposal until the confirmation reply is
+      // handed off, so a failure in the next round can release it.
+      expect(ctx.stagedApprovalToken).toBe('nonce-1420');
     });
 
     it('aborts the normal reschedule path before returning a prompt', async () => {
@@ -1037,6 +1041,62 @@ describe('MessengerAgentToolsService', () => {
         'psid-123',
         'nonce-1',
       );
+    });
+
+    // #1420: the fast path stages too, so it hands the token to the turn as
+    // well. Without this a failure while building its reply left the proposal
+    // armed with no card sent.
+    function fastStageOverrides() {
+      return {
+        listEntries: jest.fn().mockResolvedValue({
+          entries: [{ calendarId: 1, scheduledTimeLabel: 'Thứ 2, 08:00' }],
+          total: 1,
+        }),
+        stage: jest.fn().mockResolvedValue({
+          sessionLabel: 'IELTS Writing',
+          summary: 'Đổi lịch từ Thứ 2 sang Thứ 3',
+          richFollowUp: { type: 'button', title: 'Xác nhận' },
+          confirmationToken: 'nonce-fast',
+        }),
+      };
+    }
+
+    function fastCtx() {
+      return {
+        externalUserId: 'psid-123',
+        richFollowUps: [],
+        userId: 42,
+        userText: 'đổi lịch giúp mình',
+      } as unknown as PlatformAgentToolContext & {
+        stagedApprovalToken?: string;
+      };
+    }
+
+    it('hands the staged token to the turn on the success path', async () => {
+      const { messengerTools } = createService(fastStageOverrides());
+      const ctx = fastCtx();
+
+      const reply = await messengerTools.tryFastDefaultReschedule(
+        ctx,
+        'đổi lịch giúp mình',
+      );
+
+      expect(reply).not.toBeNull();
+      expect(ctx.stagedApprovalToken).toBe('nonce-fast');
+    });
+
+    it('records the token before the reply can fail, so the turn owns it', async () => {
+      const { messengerTools, studyPort } = createService(fastStageOverrides());
+      jest.spyOn(studyPort, 'getOutboxSettings').mockImplementationOnce(() => {
+        throw new Error('outbox settings unavailable');
+      });
+      const ctx = fastCtx();
+
+      await expect(
+        messengerTools.tryFastDefaultReschedule(ctx, 'đổi lịch giúp mình'),
+      ).rejects.toThrow('outbox settings unavailable');
+
+      expect(ctx.stagedApprovalToken).toBe('nonce-fast');
     });
   });
   describe('write-tool budget (#626)', () => {

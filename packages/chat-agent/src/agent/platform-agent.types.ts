@@ -51,6 +51,17 @@ export interface PlatformAgentToolContext {
    */
   richFollowUps?: unknown[];
   /**
+   * Approval token of a reschedule this turn staged. The staged proposal is
+   * owned by the turn until the confirmation reply reaches the delivery
+   * boundary; a failure in between must release it, or the proposal stays
+   * armed with no button ever shown (#1420). Cleanup is conditional on this
+   * token, so a newer proposal for the same identity is never touched (#1037).
+   *
+   * Messenger only — Discord and Zalo deliver the confirmation inside the
+   * tool, so they have no second round to lose it in.
+   */
+  stagedApprovalToken?: string;
+  /**
    * Platform-specific link context (Messenger ref token). Optional — Discord
    * and Zalo resolve links through their own account-link flows.
    */

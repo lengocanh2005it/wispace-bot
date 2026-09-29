@@ -23,7 +23,10 @@ import type {
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import type { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type { PlatformAgentToolsService } from './platform-agent-tools.service';
-import type { PlatformAgentOptions } from './platform-agent.types';
+import type {
+  PlatformAgentOptions,
+  PlatformAgentToolContext,
+} from './platform-agent.types';
 import { PlatformAgentService } from './platform-agent.service';
 import { createChatPipelineAdapters } from '../chat-pipeline-adapters';
 import type {
@@ -2371,6 +2374,201 @@ describe('PlatformAgentService', () => {
       // the classifier holds an adapter, not the LlmExecutionPort — it can
       // never consume a main-loop admission slot.
       expect(run).not.toHaveBeenCalled();
+    });
+  });
+
+  // #1420: a Messenger reschedule tool stages the proposal and the
+  // confirmation card travels in the NEXT round's rich follow-ups. If that
+  // round dies there is no reply object, so the token that would identify the
+  // proposal is gone with it and the proposal stays armed with no button shown.
+  describe('staged reschedule ownership (#1420)', () => {
+    const TOKEN = '3f6b1a52-0c1e-4f7a-9a11-2d5e8b4c7a90';
+
+    function historyStub(appendTurn?: () => Promise<void>) {
+      return {
+        getHistory: jest.fn().mockResolvedValue([]),
+        appendTurn: jest.fn(appendTurn ?? (() => Promise.resolve())),
+      } as unknown as PlatformChatHistoryService;
+    }
+
+    /** Simulates a tool that staged, then the outcome of the round after. */
+    function stageThen<T>(outcome: T | Error): jest.Mock {
+      return jest.fn(async (_input: unknown, ctx: PlatformAgentToolContext) => {
+        ctx.stagedApprovalToken = TOKEN;
+        if (outcome instanceof Error) throw outcome;
+        return outcome;
+      });
+    }
+
+    const input = { externalUserId: 'psid-1420', userText: 'đổi lịch' };
+
+    it('releases the staged proposal when the round after staging rejects', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      const failure = new Error('provider rejected');
+      mockLlmReply.mockImplementationOnce(stageThen(failure));
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      await expect(service.reply(input)).rejects.toBe(failure);
+
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith('psid-1420', TOKEN);
+    });
+
+    it('releases the staged proposal when the loop returns unusable content', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      const exhaustion = Object.assign(new Error('tool budget exhausted'), {
+        name: 'LlmProviderError',
+      });
+      mockLlmReply.mockImplementationOnce(stageThen(exhaustion));
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      await expect(service.reply(input)).rejects.toBe(exhaustion);
+
+      expect(cancel).toHaveBeenCalledWith('psid-1420', TOKEN);
+    });
+
+    it('releases the staged proposal when the caller aborts after staging', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      const controller = new AbortController();
+      mockLlmReply.mockImplementationOnce(
+        stageThen(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+      );
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      controller.abort();
+      const reply = await service.reply({
+        ...input,
+        signal: controller.signal,
+      });
+
+      expect(reply.skipDelivery).toBe(true);
+      expect(cancel).toHaveBeenCalledWith('psid-1420', TOKEN);
+    });
+
+    it('releases the staged proposal when the history write fails', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      mockLlmReply.mockImplementationOnce(
+        stageThen({ text: 'đã gửi nút xác nhận' }),
+      );
+      const service = buildService(
+        historyStub(() => Promise.reject(new Error('redis down'))),
+        { cancelPendingReschedule: cancel },
+      );
+
+      await expect(service.reply(input)).rejects.toThrow('redis down');
+
+      expect(cancel).toHaveBeenCalledWith('psid-1420', TOKEN);
+    });
+
+    // AC: a successful reply keeps current behaviour — the card is delivered,
+    // so the proposal must stay armed.
+    it('keeps the proposal armed when the reply is produced', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      mockLlmReply.mockImplementationOnce(
+        stageThen({ text: 'đã gửi nút xác nhận' }),
+      );
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      const reply = await service.reply(input);
+
+      expect(reply.text).toBe('đã gửi nút xác nhận');
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
+    it('does not touch the store when the turn staged nothing', async () => {
+      const cancel = jest.fn().mockResolvedValue('none');
+      // No tool ran, so the context carries no approval token.
+      mockLlmReply.mockRejectedValueOnce(new Error('provider rejected'));
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      await expect(service.reply(input)).rejects.toThrow('provider rejected');
+
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the original failure when the release itself fails', async () => {
+      const cancel = jest.fn().mockRejectedValue(new Error('store down'));
+      const failure = new Error('provider rejected');
+      mockLlmReply.mockImplementationOnce(stageThen(failure));
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      await expect(service.reply(input)).rejects.toBe(failure);
+    });
+
+    it('releases the staged proposal when the fast path fails after staging', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      // The fast path builds its own reply, so it never reaches the LLM. A
+      // failure there after staging had the same orphaned-proposal bug.
+      const tryFastReschedule = jest.fn(
+        async (ctx: PlatformAgentToolContext) => {
+          ctx.stagedApprovalToken = TOKEN;
+          throw new Error('outbox settings unavailable');
+        },
+      );
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+        tryFastReschedule: tryFastReschedule as never,
+      });
+
+      await expect(service.reply(input)).rejects.toThrow(
+        'outbox settings unavailable',
+      );
+
+      expect(cancel).toHaveBeenCalledWith('psid-1420', TOKEN);
+    });
+
+    // AC: the release must be pinned to the token this turn staged, so a
+    // proposal the learner staged afterwards survives the failed turn.
+    it('leaves a replacement proposal armed when the turn fails', async () => {
+      // Models the real store: one pending row per identity, guarded by nonce.
+      const store: { nonce: string | null } = { nonce: TOKEN };
+      const cancel = jest.fn(async (_userId: string, token: string) => {
+        if (store.nonce !== token) return 'none' as const;
+        store.nonce = null;
+        return 'cancelled' as const;
+      });
+      const failure = new Error('provider rejected');
+      mockLlmReply.mockImplementationOnce(stageThen(failure));
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel as never,
+      });
+
+      // The learner stages a newer proposal while the failing turn unwinds.
+      cancel.mockImplementationOnce(async () => {
+        store.nonce = 'newer-nonce';
+        return 'stale' as never;
+      });
+
+      await expect(service.reply(input)).rejects.toBe(failure);
+
+      // The stale release was refused by nonce, so the newer row is intact.
+      expect(store.nonce).toBe('newer-nonce');
+    });
+
+    it('releases at most once when a turn fails after staging', async () => {
+      const cancel = jest.fn().mockResolvedValue('cancelled');
+      mockLlmReply.mockImplementationOnce(
+        stageThen(new Error('provider rejected')),
+      );
+      const service = buildService(historyStub(), {
+        cancelPendingReschedule: cancel,
+      });
+
+      await expect(service.reply(input)).rejects.toThrow('provider rejected');
+
+      expect(cancel).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -175,6 +175,29 @@ export class PlatformAgentService {
     );
   }
 
+  /**
+   * Release a reschedule this turn staged but never handed off. The contract
+   * for the token lives on `PlatformAgentToolContext.stagedApprovalToken`;
+   * this swallows its own failure because the caller's error is the one that
+   * matters, and logs so a failed release is not silently orphaned.
+   */
+  private async releaseStagedReschedule(
+    toolContext: PlatformAgentToolContext,
+  ): Promise<void> {
+    const token = toolContext.stagedApprovalToken;
+    if (!token) return;
+    toolContext.stagedApprovalToken = undefined;
+    try {
+      await this.cancelPendingReschedule(toolContext.externalUserId, token);
+    } catch (error) {
+      // Best-effort: the proposal expires on its own TTL. Logged because a
+      // silent failure here is the same orphaned proposal this fixes.
+      this.logger.warn(
+        `Failed to release staged reschedule for ${maskExternalId(toolContext.externalUserId)}: ${errorMessage(error)}`,
+      );
+    }
+  }
+
   private async replyInternal(
     input: PlatformAgentInput,
   ): Promise<PlatformAgentReply> {
@@ -263,8 +286,10 @@ export class PlatformAgentService {
         : null;
     } catch (error) {
       if (resolvedInput.signal?.aborted || isAbortError(error)) {
+        await this.releaseStagedReschedule(toolContext);
         return this.abortedReply();
       }
+      await this.releaseStagedReschedule(toolContext);
       throw error;
     }
     if (fastReschedule) {
@@ -315,8 +340,12 @@ export class PlatformAgentService {
       );
     } catch (error) {
       if (resolvedInput.signal?.aborted || isAbortError(error)) {
+        await this.releaseStagedReschedule(toolContext);
         return this.abortedReply();
       }
+      // No reply object exists, so a proposal staged earlier in this turn is
+      // released here or it stays armed with no card sent (#1420).
+      await this.releaseStagedReschedule(toolContext);
       throw error;
     }
     // Generic pinned-facts merge (#207 item 6): server-derived facts from
@@ -341,6 +370,7 @@ export class PlatformAgentService {
           'history_unavailable',
           'chat_fallback',
         );
+        await this.releaseStagedReschedule(toolContext);
         throw error;
       }
     }

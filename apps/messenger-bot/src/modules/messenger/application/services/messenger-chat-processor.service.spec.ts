@@ -621,6 +621,62 @@ describe('MessengerChatProcessorService', () => {
     expect(cancelPendingReschedule).toHaveBeenCalledWith('psid-1', token);
   });
 
+  // #1420: a rate-limited send returns through onRateLimited, never onError,
+  // so without this the confirmation card was never shown and its proposal
+  // stayed armed.
+  it('clears a staged proposal when the reply is rate limited', async () => {
+    const { service, reply, sendTextBubblesViaPsid, cancelPendingReschedule } =
+      createService();
+    const token = '11111111-1111-4111-8111-111111111111';
+    reply.mockResolvedValueOnce({
+      text: 'Đã chuẩn bị',
+      richFollowUps: [
+        {
+          kind: 'button',
+          messageType: 'CHAT_RESCHEDULE_CONFIRM',
+          text: 'Dời lịch?',
+          buttons: [
+            {
+              type: 'postback',
+              title: 'Hủy',
+              payload: `CANCEL_RESCHEDULE:${token}`,
+            },
+          ],
+        },
+      ],
+    });
+    sendTextBubblesViaPsid.mockResolvedValueOnce({
+      delivered: false,
+      outcome: 'rate_limited',
+    } as never);
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'đổi lịch',
+      idempotencyKey: 'mid-rate-limited',
+    });
+
+    expect(cancelPendingReschedule).toHaveBeenCalledWith('psid-1', token);
+  });
+
+  it('does not clear a proposal when a rate-limited reply staged nothing', async () => {
+    const { service, reply, sendTextBubblesViaPsid, cancelPendingReschedule } =
+      createService();
+    reply.mockResolvedValueOnce({ text: 'Chào bạn', richFollowUps: [] });
+    sendTextBubblesViaPsid.mockResolvedValueOnce({
+      delivered: false,
+      outcome: 'rate_limited',
+    } as never);
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'chào',
+      idempotencyKey: 'mid-rate-limited-plain',
+    });
+
+    expect(cancelPendingReschedule).not.toHaveBeenCalled();
+  });
+
   it('clears a staged proposal when the primary reply cannot be delivered', async () => {
     const { service, reply, sendTextBubblesViaPsid, cancelPendingReschedule } =
       createService();

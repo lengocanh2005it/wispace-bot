@@ -198,6 +198,13 @@ export class MessengerChatProcessorService {
       },
       onRateLimited: async (ctx: PipelineContext) => {
         this.rateLimitedThisCycle.add(ctx.externalUserId);
+        // A rate-limited send never reaches onError, so the confirmation card
+        // this turn staged is never shown and its proposal would stay armed
+        // (#1420).
+        await this.clearStagedRescheduleForReply(
+          ctx.externalUserId,
+          (ctx.reply?.richFollowUps ?? []) as MessengerRichFollowUp[],
+        );
       },
       onAfterSend: async (ctx: PipelineContext) => {
         await this.deliverOptionalChatExtras({
