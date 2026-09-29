@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  HttpCode,
-  Inject,
-  Optional,
-  Post,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import {
   IsBoolean,
@@ -24,46 +15,13 @@ import {
 } from '@wispace/study-reminder-shared/adapters';
 import { StudyReminderSyncResult } from '@wispace/study-reminder-shared/core';
 import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
-import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
-import {
-  PRIVACY_CLEANUP_STORES,
-  PRIVACY_DATA,
-  type PrivacyDataPort,
-  type PrivacyStateCleanup,
-} from '@messenger/modules/messenger/application/chat-processing-seams.port';
-import { BotMetricsService } from '@wispace/bot-metrics';
-import {
-  AGENT_REPLY,
-  type AgentReplyPort,
-} from '@messenger/modules/messenger/application/ports/agent-reply.port';
-import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
-import { PlatformChatHistoryService } from '@wispace/chat-agent';
-import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
-import {
-  PrivacyActionBody,
-  setPrivacyResponseStatus,
-  type PrivacyResponse,
-} from '@wispace/bot-common/health';
 
 class SyncStudyCalendarBody {
   @IsNumber()
   @IsPositive()
   userId!: number;
-}
-
-class RelinkMappingBody {
-  @IsString()
-  psid!: string;
-
-  @IsNumber()
-  @IsPositive()
-  userId!: number;
-
-  @IsOptional()
-  @IsBoolean()
-  allowRelink?: boolean;
 }
 
 class SendReportsBody {
@@ -84,17 +42,7 @@ export class SchedulerController {
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly studyReminderWorkerService: StudyReminderWorkerService,
     private readonly sessionSourceService: StudySessionSourceService,
-    private readonly messengerMappingService: MessengerMappingService,
     private readonly reportSendRetryDispatchService: ReportSendRetryDispatchService,
-    @Inject(PRIVACY_DATA)
-    private readonly privacyService: PrivacyDataPort,
-    @Inject(AGENT_REPLY)
-    private readonly clarificationAgent: AgentReplyPort,
-    private readonly historyService: PlatformChatHistoryService,
-    private readonly chatEnqueueService: MessengerChatEnqueueService,
-    private readonly displayNameCache: RedisUserDisplayNameCache,
-    @Optional()
-    private readonly metrics?: BotMetricsService,
   ) {}
 
   @Post('send-reports')
@@ -111,22 +59,6 @@ export class SchedulerController {
   @HttpCode(200)
   dispatchReportSendRetries() {
     return this.reportSendRetryDispatchService.dispatchDueReportRetries();
-  }
-
-  @Post('mapping/relink')
-  @HttpCode(200)
-  relinkMessengerMapping(@Body() body: RelinkMappingBody) {
-    return this.messengerMappingService
-      .relinkPsidToUserId({
-        psid: body.psid,
-        userId: body.userId,
-        notifyUser: false,
-        allowRelink: body.allowRelink === true,
-      })
-      .then(async (result) => {
-        await this.clarificationAgent.clearClarificationState(body.psid);
-        return result;
-      });
   }
 
   @Post('study-calendar/sync')
@@ -176,50 +108,6 @@ export class SchedulerController {
     }));
   }
 
-  @Post('ops/clarification/clear')
-  @HttpCode(204)
-  async clearClarificationState(@Body() body: PrivacyActionBody) {
-    await this.clarificationAgent.clearClarificationState(body.externalUserId);
-  }
-
-  @Post('privacy/unlink')
-  @HttpCode(200)
-  async unlinkUser(
-    @Body() body: PrivacyActionBody,
-    @Res({ passthrough: true }) response?: PrivacyResponse,
-  ) {
-    const result = await this.privacyService.unlink(
-      'messenger',
-      body.externalUserId,
-      this.privacyCleanup('unlink'),
-      body.expectedMapping,
-    );
-    setPrivacyResponseStatus(response, result);
-    return result;
-  }
-
-  @Post('privacy/delete')
-  @HttpCode(200)
-  async deleteUser(
-    @Body() body: PrivacyActionBody,
-    @Res({ passthrough: true }) response?: PrivacyResponse,
-  ) {
-    const result = await this.privacyService.delete(
-      'messenger',
-      body.externalUserId,
-      this.privacyCleanup('delete'),
-      body.expectedMapping,
-    );
-    setPrivacyResponseStatus(response, result);
-    return result;
-  }
-
-  @Post('privacy/export')
-  @HttpCode(200)
-  exportUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.export('messenger', body.externalUserId);
-  }
-
   /**
    * Shared sync result shape uses platform-agnostic `externalUserId`;
    * the messenger ops wire exposes it as `psid`.
@@ -232,26 +120,6 @@ export class SchedulerController {
           psid: f.externalUserId,
           error: f.error,
         })) ?? [],
-    };
-  }
-
-  private privacyCleanup(operation: 'unlink' | 'delete'): PrivacyStateCleanup {
-    return {
-      platform: 'messenger',
-      applicableStores: PRIVACY_CLEANUP_STORES,
-      clearHistory: (id) => this.historyService.clear(id),
-      clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
-      clearClarification: (id) =>
-        this.clarificationAgent.clearClarificationState(id),
-      clearUserCache: (userId: number) =>
-        this.displayNameCache.delStrict(userId),
-      onAttempt: (store, outcome) =>
-        this.metrics?.incPrivacyCleanupAttempt(
-          'messenger',
-          operation,
-          store,
-          outcome,
-        ),
     };
   }
 }

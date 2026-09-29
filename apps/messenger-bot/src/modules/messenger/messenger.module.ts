@@ -38,6 +38,7 @@ import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MessengerReportModule } from './messenger-report.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
+import { MessengerOpsController } from './presentation/controllers/messenger-ops.controller';
 import { validateAndMapMessengerEvent } from './presentation/mappers/messenger-webhook.mapper';
 import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
@@ -69,7 +70,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       WebhookInboundEventEntity,
     ]),
   ],
-  controllers: [MessengerController],
+  controllers: [MessengerController, MessengerOpsController],
   providers: [
     MessengerService,
     MessengerWebhookDispatchService,
