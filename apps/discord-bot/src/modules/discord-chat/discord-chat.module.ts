@@ -106,6 +106,7 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  RescheduleConfirmationAttemptEntity,
   LearnerProfileEntity,
 } from '@wispace/database';
 import {
@@ -149,6 +150,7 @@ const REGISTER_REPORT_MESSAGE =
       ChatIdempotencyEntity,
       ScheduledReportClaimEntity,
       RescheduleConfirmationEntity,
+      RescheduleConfirmationAttemptEntity,
       LearnerProfileEntity,
       DiscordOauthStateEntity,
       StudyReminderJobEntity,

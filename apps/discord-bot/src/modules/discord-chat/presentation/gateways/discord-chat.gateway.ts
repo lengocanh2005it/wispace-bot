@@ -389,7 +389,11 @@ export class DiscordChatGateway {
           };
       content = result.confirmed
         ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
-        : result.message;
+        : // #1483: Discord does not yet read the durable attempt record, so an
+          // unknown outcome cannot be reported honestly. Fall back to the
+          'unknownOutcome' in result
+          ? CHAT_FAILURE_FALLBACK_MESSAGE
+          : result.message;
     } catch (error) {
       this.logger.error(
         `Reschedule confirm failed for discordUserId=${maskExternalId(
@@ -450,7 +454,12 @@ export class DiscordChatGateway {
             };
         content = result.confirmed
           ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
-          : result.message;
+          : // #1483: Discord does not yet read the durable attempt record, so
+            // an unknown outcome cannot be reported honestly here. Fall back to
+            // the generic failure rather than sending an undefined message.
+            'unknownOutcome' in result
+            ? CHAT_FAILURE_FALLBACK_MESSAGE
+            : result.message;
       }
     } catch (error) {
       this.logger.error(

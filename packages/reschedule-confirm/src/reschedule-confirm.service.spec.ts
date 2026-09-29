@@ -963,6 +963,70 @@ describe('RescheduleConfirmationService', () => {
       }
     });
 
+    it('a failed claim cleanup must not present a committed write as a failure (#663)', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = new MemoryRescheduleStore<string>();
+      const revertToPending = jest.spyOn(store, 'revertToPending');
+      jest
+        .spyOn(store, 'cancelClaimed')
+        .mockRejectedValue(new Error('db blip'));
+      const refundRescheduleBudget = jest.fn();
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        const service = new RescheduleConfirmationService(
+          calendar,
+          reschedule,
+          store,
+          { refundRescheduleBudget },
+        );
+
+        await stageValid(service);
+        const result = await service.confirm('user-1');
+
+        // The write returned, so the mutation is settled: no refund, no revert,
+        // and the learner is not told it failed.
+        expect(result.confirmed).toBe(true);
+        expect(refundRescheduleBudget).not.toHaveBeenCalled();
+        expect(revertToPending).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('RESCHEDULE_CLEANUP_FAILED'),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('does not re-issue the calendar write when confirm is tapped again after a cleanup failure (#663)', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = new MemoryRescheduleStore<string>();
+      jest
+        .spyOn(store, 'cancelClaimed')
+        .mockRejectedValue(new Error('db blip'));
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        const service = new RescheduleConfirmationService(
+          calendar,
+          reschedule,
+          store,
+        );
+
+        await stageValid(service);
+        await service.confirm('user-1');
+        const second = await service.confirm('user-1');
+
+        expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+        expect(second.confirmed).toBe(false);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it('invalidates once after write and claim cleanup, including duplicate confirms', async () => {
       const events: string[] = [];
       const calendar = mockCalendarPort();

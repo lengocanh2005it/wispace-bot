@@ -198,6 +198,12 @@ export class ZaloChatService {
             );
             return;
           }
+          // #1483: Zalo does not yet read the durable attempt record, so an
+          // unknown outcome has no honest reply to give. Say nothing rather
+          // than sending an undefined message.
+          if ('unknownOutcome' in result) {
+            return;
+          }
           await this.outboundService.sendText(zaloUserId, result.message, {
             userId,
           });

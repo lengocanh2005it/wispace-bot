@@ -2,13 +2,17 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import type { Provider } from '@nestjs/common';
 import type { Platform } from '@wispace/contracts';
-import { RescheduleConfirmationEntity } from '@wispace/database';
+import {
+  RescheduleConfirmationAttemptEntity,
+  RescheduleConfirmationEntity,
+} from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { TypeormRescheduleStore } from './typeorm-reschedule-store';
+import { TypeormRescheduleAttemptStore } from './typeorm-reschedule-attempt-store';
 import { RescheduleRecoveryCronService } from './reschedule-recovery-cron.service';
 
 /**
@@ -31,20 +35,33 @@ export function createRescheduleProviders(platform: Platform): Provider[] {
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
     {
+      provide: TypeormRescheduleAttemptStore,
+      useFactory: (repo: Repository<RescheduleConfirmationAttemptEntity>) =>
+        new TypeormRescheduleAttemptStore(repo),
+      inject: [getRepositoryToken(RescheduleConfirmationAttemptEntity)],
+    },
+    {
       provide: RescheduleRecoveryCronService,
       useFactory: (
         store: TypeormRescheduleStore<string>,
         metrics: BotMetricsService,
         pgLock: PgAdvisoryLockService,
+        attemptStore: TypeormRescheduleAttemptStore,
       ) =>
-        new RescheduleRecoveryCronService(store, metrics, {
-          pgLock,
-          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        }),
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          {
+            pgLock,
+            lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+          },
+          attemptStore,
+        ),
       inject: [
         TypeormRescheduleStore,
         BotMetricsService,
         PgAdvisoryLockService,
+        TypeormRescheduleAttemptStore,
       ],
     },
   ];

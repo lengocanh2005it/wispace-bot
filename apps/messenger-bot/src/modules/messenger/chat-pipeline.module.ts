@@ -44,11 +44,18 @@ import {
   LearnerProfileEntity,
   PrivacyDataService,
   RescheduleConfirmationEntity,
+  RescheduleConfirmationAttemptEntity,
 } from '@wispace/database';
 import {
   TypeormRescheduleStore,
+  TypeormRescheduleAttemptStore,
+  RescheduleRecoveryCronService,
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import {
   LEARNER_PROFILE_STORE,
   TypeOrmLearnerProfileStore,
@@ -158,6 +165,7 @@ import {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       RescheduleConfirmationEntity,
+      RescheduleConfirmationAttemptEntity,
       LearnerProfileEntity,
     ]),
   ],
@@ -568,6 +576,41 @@ import {
       inject: [STUDY_REMINDER_OPERATIONS_PORT],
     },
     ...createRescheduleProviders('messenger'),
+    {
+      // #1418: Messenger override of the shared recovery cron, adding the
+      // transport that re-sends a confirmation whose delivery was deferred
+      // (a rate limit on our own outbound budget, not a learner problem).
+      // Declared after createRescheduleProviders so it replaces that instance.
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+        pgLock: PgAdvisoryLockService,
+        attemptStore: TypeormRescheduleAttemptStore,
+        outbound: MessengerOutboundService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          { pgLock, lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY },
+          attemptStore,
+          {
+            deliver: (externalId, scheduledTimeLabel) =>
+              outbound.sendTextViaPsid({
+                psid: externalId,
+                text: `Mình đã dời buổi học sang ${scheduledTimeLabel} cho bạn rồi nhé ✅`,
+                messageType: 'RESCHEDULE_CONFIRMED',
+              }),
+          },
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+        TypeormRescheduleAttemptStore,
+        MessengerOutboundService,
+      ],
+    },
     AgentReplyAdapter,
     {
       provide: AGENT_REPLY,
@@ -628,6 +671,7 @@ import {
         calendarPort: CalendarPort<string>,
         reschedulePort: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
+        attemptStore: TypeormRescheduleAttemptStore,
         writeToolBudget: PlatformWriteToolBudgetService,
         policyDeniedInc: (toolName: string, reason: string) => void,
       ) =>
@@ -636,6 +680,9 @@ import {
           reschedulePort,
           store,
           {
+            // #1418: without this the confirmation is not replay-safe — the
+            // staged request is deleted before the learner is told.
+            attemptStore,
             consumeRescheduleBudget: (userId: number, externalId: string) =>
               writeToolBudget.consumeDaily(
                 String(externalId),
@@ -655,6 +702,7 @@ import {
         'MessengerCalendarPort',
         'MessengerReschedulePort',
         TypeormRescheduleStore,
+        TypeormRescheduleAttemptStore,
         PlatformWriteToolBudgetService,
         MESSENGER_TOOL_POLICY_DENIED_INC,
       ],

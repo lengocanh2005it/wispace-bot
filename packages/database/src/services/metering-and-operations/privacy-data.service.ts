@@ -52,6 +52,8 @@ export interface PrivacyScopedEntities {
   chatIdempotency: PrivacyEntityTarget;
   webActivity: PrivacyEntityTarget;
   notificationPreference: PrivacyEntityTarget;
+  /** Append-only record of a reschedule the learner committed (#1418). */
+  rescheduleConfirmationAttempt: PrivacyEntityTarget;
 }
 
 /** Explicit TypeORM targets required by privacy operations in one app. */
@@ -170,6 +172,7 @@ const SCOPED_ENTITY_NAMES = [
   'chatIdempotency',
   'webActivity',
   'notificationPreference',
+  'rescheduleConfirmationAttempt',
 ] as const satisfies readonly (keyof PrivacyScopedEntities)[];
 
 export class PrivacyDataService {

@@ -17,6 +17,11 @@ import {
   type RescheduleCancellationOutcome,
   type ReschedulePendingState,
 } from './reschedule-store.port';
+import {
+  applyNotificationOutcome,
+  type RescheduleAttemptStorePort,
+  type RescheduleNotificationOutcome,
+} from './reschedule-attempt.port';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
 
@@ -170,11 +175,26 @@ export interface StageResult {
 export interface ConfirmResult {
   confirmed: true;
   scheduledTimeLabel: string;
+  /**
+   * `replayed` means this confirmation was already committed under this
+   * approval token and the write was NOT run again (#1418).
+   */
+  replayed?: boolean;
 }
 
 export interface ConfirmError {
   confirmed: false;
   message: string;
+}
+
+/**
+ * #1418: the calendar write was attempted and its outcome cannot be determined.
+ * The caller must not tell the learner anything — any answer would be a guess —
+ * and must not re-run the write, which is not idempotent.
+ */
+export interface ConfirmUnknownOutcome {
+  confirmed: false;
+  unknownOutcome: true;
 }
 
 function sha256(value: string): string {
@@ -214,6 +234,12 @@ export interface CalendarCacheInvalidationPort<TExternalId> {
 }
 
 export interface RescheduleConfirmationOptions<TExternalId> {
+  /**
+   * Durable record of an attempted calendar mutation (#1418). Optional so a
+   * caller can run without it, but the confirmation path is only replay-safe
+   * when it is supplied.
+   */
+  attemptStore?: RescheduleAttemptStorePort;
   /**
    * Drops cached calendar reads after the reschedule write commits (#705).
    * An invalidation failure is logged and swallowed: the write already
@@ -401,12 +427,37 @@ export class RescheduleConfirmationService<TExternalId> {
     return result;
   }
 
+  /**
+   * #1418: records how the learner was told about a committed confirmation.
+   *
+   * `ambiguous` is deliberately not scheduled for retry — the learner may
+   * already hold the message, and a second tap or a replay resolves it. A clean
+   * non-delivery is deferred so the recovery cron retries within its bound.
+   */
+  async recordConfirmationDelivery(
+    externalId: string,
+    nonce: string,
+    outcome: RescheduleNotificationOutcome,
+  ): Promise<void> {
+    const store = this.options.attemptStore;
+    if (!store) {
+      return;
+    }
+    await applyNotificationOutcome(
+      store,
+      externalId,
+      nonce,
+      outcome,
+      new Date(),
+    );
+  }
+
   async confirm(
     externalId: TExternalId,
     userId?: number,
     approvalToken?: string,
     binding?: RescheduleApprovalBinding,
-  ): Promise<ConfirmResult | ConfirmError> {
+  ): Promise<ConfirmResult | ConfirmError | ConfirmUnknownOutcome> {
     if (
       this.store.requiresApprovalToken &&
       (!approvalToken ||
@@ -432,6 +483,25 @@ export class RescheduleConfirmationService<TExternalId> {
       ...(approvalToken ? { nonce: approvalToken } : {}),
     });
     if (!pending) {
+      // #1418: the staged request may already be gone because this very
+      // approval token already committed. Ask the durable record before
+      // reporting that no request exists.
+      const recorded = approvalToken
+        ? await this.options.attemptStore?.findAttempt(
+            String(externalId),
+            approvalToken,
+          )
+        : undefined;
+      if (recorded?.status === 'confirmed') {
+        return {
+          confirmed: true,
+          scheduledTimeLabel: recorded.scheduledTimeLabel ?? '',
+          replayed: true,
+        };
+      }
+      if (recorded?.status === 'attempting') {
+        return { confirmed: false, unknownOutcome: true };
+      }
       const state = await this.getPendingState(externalId);
       if (state === 'expired') {
         return {
@@ -494,6 +564,36 @@ export class RescheduleConfirmationService<TExternalId> {
       }
     }
 
+    const attemptNonce = pending.nonce ?? approvalToken;
+    if (attemptNonce) {
+      const existing = await this.options.attemptStore?.findAttempt(
+        String(externalId),
+        attemptNonce,
+      );
+      if (existing?.status === 'attempting') {
+        // A previous attempt under this token started and never reported an
+        // outcome. The write is not idempotent, so it must not run again —
+        // recovery escalates this rather than guessing. Release the lease so
+        // recovery can act and the learner is not blocked.
+        this.logger.error(
+          `RESCHEDULE_CONFIRM_REFUSED_UNKNOWN_OUTCOME externalId=${maskExternalId(
+            String(externalId),
+          )}`,
+        );
+        await this.store.revertToPending(externalId, leaseToken);
+        return { confirmed: false, unknownOutcome: true };
+      }
+      await this.options.attemptStore?.beginAttempt({
+        externalId: String(externalId),
+        nonce: attemptNonce,
+        platform: pending.platform ?? binding?.platform ?? 'unknown',
+        userId: pending.userId,
+      });
+    }
+
+    // Once the write returns, nothing may revert it — not a failed record
+    // write, not a failed cleanup. Those are escalated instead.
+    let writeCommitted = false;
     try {
       const result = await this.reschedulePort.rescheduleSession({
         externalId: pending.externalId,
@@ -503,8 +603,34 @@ export class RescheduleConfirmationService<TExternalId> {
         newLocalDate: pending.newLocalDate,
         newTime: pending.newTime,
       });
+      writeCommitted = true;
 
-      await this.store.cancelClaimed(externalId, leaseToken);
+      if (attemptNonce) {
+        const recorded = await this.options.attemptStore?.confirmAttempt({
+          externalId: String(externalId),
+          nonce: attemptNonce,
+          scheduledTimeLabel: result.scheduledTimeLabel,
+        });
+        if (recorded === false) {
+          this.logger.error(
+            `RESCHEDULE_CONFIRM_RECORD_MISSING externalId=${maskExternalId(
+              String(externalId),
+            )}`,
+          );
+          return { confirmed: false, unknownOutcome: true };
+        }
+      }
+
+      // Cleanup is outside the mutation boundary on purpose (#663): a failure
+      // here leaves a stale row that recovery can tidy without re-running the
+      // write, because the record above already proves it committed.
+      await this.store.cancelClaimed(externalId, leaseToken).catch((error) => {
+        this.logger.warn(
+          `RESCHEDULE_CLEANUP_FAILED externalId=${maskExternalId(
+            String(externalId),
+          )}: ${sanitizeLogValue(errorMessage(error), 500)}`,
+        );
+      });
 
       await this.runCalendarCacheInvalidation(externalId);
 
@@ -519,6 +645,22 @@ export class RescheduleConfirmationService<TExternalId> {
         scheduledTimeLabel: result.scheduledTimeLabel,
       };
     } catch (error) {
+      if (writeCommitted) {
+        // The calendar write landed. The attempt record is still
+        // 'attempting', which is exactly what recovery escalates — reverting
+        // here would re-arm a mutation that already committed.
+        this.logger.error(
+          `RESCHEDULE_CONFIRM_POST_COMMIT_FAILED externalId=${maskExternalId(
+            String(externalId),
+          )}: ${sanitizeLogValue(errorMessage(error), 500)}`,
+        );
+        return { confirmed: false, unknownOutcome: true };
+      }
+      if (attemptNonce) {
+        await this.options.attemptStore
+          ?.clearAttempt(String(externalId), attemptNonce)
+          .catch(() => undefined);
+      }
       await this.options.refundRescheduleBudget?.(
         pending.userId,
         String(pending.externalId),

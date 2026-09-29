@@ -24,7 +24,6 @@ import {
   buildMessengerLinkHandoffFailedMessage,
   buildMessengerLinkVerifyFailedMessage,
 } from '../messages/messenger-link.messages';
-import { buildRescheduleSuccessRichFollowUp } from '../formatters/messenger-rich-message.builder';
 import type {
   MessengerLinkAttemptResult,
   MessengerLinkVerifyFailureReason,
@@ -373,6 +372,16 @@ export class WebhookActionExecutorService {
         )
       : await this.rescheduleConfirmationService.confirm(psid, currentUserId);
 
+    if ('unknownOutcome' in result) {
+      // #1418: the calendar write was attempted and we cannot tell whether it
+      // landed. Any reply would be a guess, and the write is not idempotent, so
+      // the learner is told nothing and recovery escalates it to a human.
+      this.logger.error(
+        `reschedule confirm outcome unknown for ${maskExternalId(psid)}`,
+      );
+      return;
+    }
+
     if (!result.confirmed) {
       await this.outbound.sendTextViaPsid({
         psid,
@@ -383,7 +392,7 @@ export class WebhookActionExecutorService {
       return;
     }
 
-    await this.outbound.sendTextViaPsid({
+    const outcome = await this.outbound.sendTextViaPsid({
       psid,
       userId: currentUserId,
       text: [
@@ -394,16 +403,13 @@ export class WebhookActionExecutorService {
       ].join('\n\n'),
       messageType: 'RESCHEDULE_CONFIRMED',
     });
-
-    await this.outbound.sendRichFollowUps({
-      psid,
-      userId: currentUserId,
-      followUps: [
-        buildRescheduleSuccessRichFollowUp({
-          scheduledTimeLabel: result.scheduledTimeLabel,
-        }),
-      ],
-    });
+    // #1418: a discarded delivery outcome is how a rate limit became
+    // indistinguishable from delivery, so every outcome is recorded explicitly.
+    if (approvalToken) {
+      await this.rescheduleConfirmationService
+        .recordConfirmationDelivery(psid, approvalToken, outcome)
+        .catch(() => undefined);
+    }
   }
 
   private async buildWelcomeMessage(

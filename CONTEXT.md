@@ -190,6 +190,14 @@ _Avoid_: rescheduled session, completed reschedule
 The committed WISPACE write that changes a UserCalendar session, currently the reschedule flow. Staging a proposal or showing a confirmation prompt is not a calendar mutation.
 _Avoid_: calendar staging, calendar read
 
+**committed confirmation**:
+A calendar mutation that returned successfully and is recorded durably under the approval token the learner acted on, before the learner is told. It outlives the staged reschedule it consumed, so a later tap or a replay repeats the confirmation instead of reporting the change as never made. It is distinct from *delivering* that confirmation: a change may be committed and not yet confirmed, and the record must distinguish the two.
+_Avoid_: successful reschedule, confirmed reschedule, delivered confirmation
+
+**unknown-outcome attempt**:
+A calendar mutation that was attempted and whose result cannot be determined, because the attempt ended without a knowable outcome. It is neither a failed mutation nor an absent one, and it must never be re-run or re-armed: the upstream may already hold the change and the mutation is not idempotent. It ends by escalating to a human, not by guessing which of the two it was.
+_Avoid_: failed reschedule, partial reschedule, pending reschedule, unknown reschedule
+
 **calendar cache invalidation**:
 Removal of cached UserCalendar reads after a committed calendar mutation so the next read observes the latest WISPACE state.
 _Avoid_: calendar refresh, calendar sync

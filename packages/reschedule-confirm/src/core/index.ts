@@ -38,3 +38,14 @@ export {
   type ReschedulePendingState,
   type RescheduleStorePort,
 } from '../reschedule-store.port';
+export {
+  MemoryRescheduleAttemptStore,
+  MAX_NOTIFICATION_ATTEMPTS,
+  NOTIFICATION_RETRY_MS,
+  notificationIsDue,
+  type BeginAttemptInput,
+  type RescheduleAttemptRecord,
+  type RescheduleAttemptStatus,
+  type RescheduleAttemptStorePort,
+  type RescheduleNotificationStatus,
+} from '../reschedule-attempt.port';
