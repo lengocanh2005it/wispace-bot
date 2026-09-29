@@ -8,6 +8,7 @@ import {
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
 } from '@wispace/reschedule-confirm/adapters';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import {
   PlatformReportClaimRepository,
   ReportClaimStaleResetCronService,
@@ -63,6 +64,7 @@ describe('Zalo outbound port wiring', () => {
       rescheduleStore,
       { registerCron: jest.fn() },
       {},
+      {},
     );
     const reportClaim = reportClaimBinding!.useFactory({}, {});
     const reportRecovery = reportRecoveryBinding!.useFactory(
@@ -78,6 +80,32 @@ describe('Zalo outbound port wiring', () => {
     expect(reportClaim).toBeInstanceOf(PlatformReportClaimRepository);
     expect((reportClaim as { platform: string }).platform).toBe('zalo');
     expect(reportRecovery).toBeInstanceOf(ReportClaimStaleResetCronService);
+  });
+
+  it('builds the confirmation service with the durable attempt store (#1483)', () => {
+    // Without this binding no attempt record is ever created, so a replayed
+    // confirmation tells the learner there is no pending request about a
+    // change that committed, and the recovery cron re-arms the write.
+    const attemptStore = { marker: 'attempt-store' };
+    const binding = findFactoryProvider(
+      ZaloChatModule,
+      RescheduleConfirmationService,
+    );
+    expect(binding).toBeDefined();
+
+    const service = binding!.useFactory(
+      {},
+      { rescheduleSession: jest.fn() },
+      {},
+      {},
+      {},
+      attemptStore,
+    );
+
+    expect(
+      (service as unknown as { options: { attemptStore?: unknown } }).options
+        .attemptStore,
+    ).toBe(attemptStore);
   });
 
   it('registers one shared coordinator with feature-local execution ports', () => {

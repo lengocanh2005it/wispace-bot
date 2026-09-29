@@ -60,11 +60,38 @@ describe('Discord chat module — LLM provider factory', () => {
       store,
       { registerCron: jest.fn() },
       {},
+      {},
     );
 
     expect(store).toBeInstanceOf(TypeormRescheduleStore);
     expect((store as { platform: string }).platform).toBe('discord');
     expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+  });
+
+  it('builds the confirmation service with the durable attempt store (#1483)', () => {
+    // Without this binding no attempt record is ever created, so a repeat
+    // confirmation reports "no pending request" about a committed change and
+    // the recovery cron re-arms a write that already committed.
+    const attemptStore = { marker: 'attempt-store' };
+    const binding = findFactoryProvider(
+      DiscordChatModule,
+      RescheduleConfirmationService,
+    );
+    expect(binding).toBeDefined();
+
+    const service = binding!.useFactory(
+      {},
+      { rescheduleSession: jest.fn() },
+      {},
+      {},
+      {},
+      attemptStore,
+    );
+
+    expect(
+      (service as unknown as { options: { attemptStore?: unknown } }).options
+        .attemptStore,
+    ).toBe(attemptStore);
   });
 
   it('registers one shared coordinator with feature-local execution ports', () => {
