@@ -546,6 +546,10 @@ _Avoid_: retry count, quota, admission cap
 The condition in which an LLM generation has no remaining provider-call allowance. It stops the next retry or failover call while preserving the existing terminal cause, and is distinct from an abort, deadline, or provider exhaustion outcome.
 _Avoid_: timeout, provider exhaustion, quota
 
+**provider retry policy**:
+The rules that decide whether one failed LLM provider attempt may be repeated and how long to wait first: retryable-versus-terminal classification, capped exponential backoff under the shared equal-jitter, and a per-attempt timeout that is retryable while caller cancellation and the global execution deadline are not. The shared provider-attempt budget bounds how many attempts it may spend; it does not decide whether an attempt is permitted. Distinct from the provider/model policy, which chooses the approved provider and model pair before any call is made.
+_Avoid_: retry count, provider/model policy, fallback policy
+
 **context budget**:
 The one input-token ceiling for a provider request, covering the current learner turn, system prompt parts, tool schemas, conversation history, and loop-generated messages.
 _Avoid_: output budget, quota
