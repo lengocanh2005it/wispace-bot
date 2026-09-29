@@ -1,10 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mocks */
 import type { ConfigService } from '@nestjs/config';
 import type { PlatformChatQueueService } from '@wispace/chat-agent';
-import type {
-  RescheduleAttemptStorePort,
-  RescheduleConfirmationService,
-} from '@wispace/reschedule-confirm/core';
+import type { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import type { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import type { DiscordMenuService } from '../../application/services/discord-menu.service';
 import type { DiscordLinkedIdentityPort } from '../../domain/ports/discord-linked-identity.port';
@@ -27,7 +24,6 @@ function buildGateway(overrides: {
   welcome?: Partial<DiscordWelcomeDeliveryPort>;
   menu?: Partial<DiscordMenuService>;
   chatQueue?: Partial<PlatformChatQueueService>;
-  attemptStore?: Partial<RescheduleAttemptStorePort>;
   reschedule?: Partial<RescheduleConfirmationService<string>>;
   pendingVerify?: DiscordLinkVerifyRecordRepositoryPort['findPending'];
 }): {
@@ -81,15 +77,6 @@ function buildGateway(overrides: {
     ...overrides.chatQueue,
   } as unknown as PlatformChatQueueService;
 
-  const attemptStore = {
-    findAttempt: jest.fn().mockResolvedValue(null),
-    markNotificationDelivered: jest.fn().mockResolvedValue(undefined),
-    markNotificationAmbiguous: jest.fn().mockResolvedValue(undefined),
-    deferNotification: jest.fn().mockResolvedValue(undefined),
-    markNotificationAbandoned: jest.fn().mockResolvedValue(undefined),
-    ...overrides.attemptStore,
-  };
-
   const gateway = new DiscordChatGateway(
     buildConfigService(),
     outboundService,
@@ -105,7 +92,6 @@ function buildGateway(overrides: {
     verifyRecordService,
     welcomeService,
     consentPrompt,
-    attemptStore as RescheduleAttemptStorePort,
   );
   return {
     gateway,
@@ -413,22 +399,12 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
     scheduledTimeLabel: '20/09 lúc 19:00',
   };
 
-  const build = (sendText: jest.Mock, attemptStore = {}) =>
-    buildGateway({
-      attemptStore: {
-        findAttempt: jest.fn().mockResolvedValue({
-          externalId: 'discord-user-1',
-          nonce: token,
-          platform: 'discord',
-          userId: 42,
-          status: 'confirmed',
-          scheduledTimeLabel: '20/09 luc 19:00',
-          notificationStatus: 'pending',
-          notificationAttempts: 0,
-          nextNotificationAttemptAt: null,
-        }),
-        ...attemptStore,
-      },
+  const build = (
+    sendText: jest.Mock,
+    confirmResult: unknown = confirmedResult,
+  ) => {
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
       outbound: { sendText },
       accountLink: {
         findCurrentIdentity: jest
@@ -436,9 +412,12 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
           .mockResolvedValue({ userId: 42, mappingVersion: '1:2026-09-29' }),
       },
       reschedule: {
-        confirm: jest.fn().mockResolvedValue(confirmedResult),
+        confirm: jest.fn().mockResolvedValue(confirmResult),
+        recordConfirmationDelivery,
       },
     });
+    return { gateway, recordConfirmationDelivery };
+  };
 
   const interaction = (editReply: jest.Mock) =>
     ({
@@ -450,27 +429,24 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
     }) as never;
 
   it('records delivery when the confirmation edit lands', async () => {
-    const markNotificationDelivered = jest.fn().mockResolvedValue(undefined);
     const sendText = jest.fn().mockResolvedValue('sent');
-    const { gateway } = build(sendText, {
-      markNotificationDelivered,
-    });
+    const { gateway, recordConfirmationDelivery } = build(sendText);
 
     await gateway.onDynamicRescheduleAction([
       interaction(jest.fn().mockResolvedValue(undefined)),
     ]);
 
     expect(sendText).not.toHaveBeenCalled();
-    expect(markNotificationDelivered).toHaveBeenCalledWith(
+    expect(recordConfirmationDelivery).toHaveBeenCalledWith(
       'discord-user-1',
       token,
+      'sent',
     );
   });
 
   it('falls back to a new message when the edit fails, and records its outcome', async () => {
     const sendText = jest.fn().mockResolvedValue('rate_limited');
-    const deferNotification = jest.fn().mockResolvedValue(undefined);
-    const { gateway } = build(sendText, { deferNotification });
+    const { gateway, recordConfirmationDelivery } = build(sendText);
 
     await gateway.onDynamicRescheduleAction([
       interaction(
@@ -484,10 +460,10 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
       'discord-user-1',
       expect.stringContaining('20/09 lúc 19:00'),
     );
-    expect(deferNotification).toHaveBeenCalledWith(
+    expect(recordConfirmationDelivery).toHaveBeenCalledWith(
       'discord-user-1',
       token,
-      expect.any(Date),
+      'rate_limited',
     );
   });
 

@@ -98,6 +98,7 @@ describe('ZaloChatService', () => {
       getPendingState: jest.fn().mockResolvedValue('pending'),
       confirm,
       cancel: jest.fn(),
+      recordConfirmationDelivery: jest.fn().mockResolvedValue(undefined),
     } as unknown as RescheduleConfirmationService<string>;
 
     const service = new ZaloChatService(
@@ -127,6 +128,47 @@ describe('ZaloChatService', () => {
       { userId: 42 },
     );
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('records the real delivery outcome of a committed confirmation (#1483)', async () => {
+    // The calendar write has already committed by the time the confirmation is
+    // sent, so a send that did not land has to reach the record or the recovery
+    // cron has nothing to retry.
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue('rate_limited');
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest.fn().mockResolvedValue({
+        confirmed: true,
+        scheduledTimeLabel: 'Ngày mai lúc 19:00',
+      }),
+      recordConfirmationDelivery,
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findCurrentIdentity: jest.fn().mockResolvedValue({
+          userId: 42,
+          mappingVersion: 'mapping-1',
+        }),
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`);
+
+    expect(recordConfirmationDelivery).toHaveBeenCalledWith(
+      'zalo-1',
+      token,
+      'rate_limited',
+    );
   });
 
   it('rejects a stale token when no proposal is pending', async () => {
