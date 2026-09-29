@@ -2382,7 +2382,7 @@ describe('PlatformAgentService', () => {
   // round dies there is no reply object, so the token that would identify the
   // proposal is gone with it and the proposal stays armed with no button shown.
   describe('staged reschedule ownership (#1420)', () => {
-    const TOKEN = '3f6b1a52-0c1e-4f7a-9a11-2d5e8b4c7a90';
+    const TOKEN = 'staged-approval-token-1420';
 
     function historyStub(appendTurn?: () => Promise<void>) {
       return {
