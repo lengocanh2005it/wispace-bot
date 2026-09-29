@@ -13,6 +13,7 @@ import {
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
 } from '@wispace/reschedule-confirm/adapters';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatModule } from './discord-chat.module';
 
@@ -82,6 +83,7 @@ describe('Discord chat module — LLM provider factory', () => {
     const service = binding!.useFactory(
       {},
       { rescheduleSession: jest.fn() },
+      {},
       {},
       {},
       {},

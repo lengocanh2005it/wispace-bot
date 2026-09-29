@@ -89,7 +89,7 @@ describe('Discord reschedule confirmation durability (#1483)', () => {
   it('records a committed confirmation durably, before the learner is told', async () => {
     const { confirmation, attemptStore, calendarWrite } = build();
 
-    const result = await confirmation.confirm(discordUserId, 42);
+    const result = await confirmation.confirm(discordUserId, 42, nonce);
 
     expect(result.confirmed).toBe(true);
     expect(calendarWrite).toHaveBeenCalledTimes(1);
@@ -102,13 +102,13 @@ describe('Discord reschedule confirmation durability (#1483)', () => {
   it('answers a second confirmation with the confirmation, not a rejection', async () => {
     const { confirmation, calendarWrite } = build();
 
-    await confirmation.confirm(discordUserId, 42);
-    const second = await confirmation.confirm(discordUserId, 42);
+    await confirmation.confirm(discordUserId, 42, nonce);
+    const second = await confirmation.confirm(discordUserId, 42, nonce);
 
     // The confirm button is never disabled, so a second tap is the simplest
     // reproduction of the learner-visible defect.
     expect(calendarWrite).toHaveBeenCalledTimes(1);
-    expect(contentFor(second)).not.toMatch(/Không còn yêu cầu/);
+    expect(second).toMatchObject({ confirmed: true, replayed: true });
   });
 
   it('tells the learner nothing when a previous attempt outcome is unknown', async () => {
@@ -120,7 +120,7 @@ describe('Discord reschedule confirmation durability (#1483)', () => {
       userId: 42,
     });
 
-    const result = await confirmation.confirm(discordUserId, 42);
+    const result = await confirmation.confirm(discordUserId, 42, nonce);
 
     // The write is not idempotent, so it must not run again.
     expect(calendarWrite).not.toHaveBeenCalled();

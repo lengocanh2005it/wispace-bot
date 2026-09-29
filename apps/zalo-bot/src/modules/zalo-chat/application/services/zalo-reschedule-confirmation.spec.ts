@@ -47,10 +47,25 @@ describe('Zalo reschedule confirmation durability (#1483)', () => {
     return { confirmation, attemptStore, calendarWrite };
   };
 
+  /** What the chat service sends for a confirm result, mirroring its branch. */
+  const contentFor = (
+    result: Awaited<
+      ReturnType<RescheduleConfirmationService<string>['confirm']>
+    >,
+  ): string | null => {
+    if (result.confirmed) {
+      return `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`;
+    }
+    if ('unknownOutcome' in result) {
+      return null;
+    }
+    return result.message;
+  };
+
   it('records a committed confirmation durably, before the learner is told', async () => {
     const { confirmation, attemptStore, calendarWrite } = build();
 
-    const result = await confirmation.confirm(zaloUserId, 42);
+    const result = await confirmation.confirm(zaloUserId, 42, nonce);
 
     expect(result.confirmed).toBe(true);
     expect(calendarWrite).toHaveBeenCalledTimes(1);
@@ -62,14 +77,11 @@ describe('Zalo reschedule confirmation durability (#1483)', () => {
   it('answers a repeated confirmation line with the confirmation, not a rejection', async () => {
     const { confirmation, calendarWrite } = build();
 
-    await confirmation.confirm(zaloUserId, 42);
-    const second = await confirmation.confirm(zaloUserId, 42);
+    await confirmation.confirm(zaloUserId, 42, nonce);
+    const second = await confirmation.confirm(zaloUserId, 42, nonce);
 
     expect(calendarWrite).toHaveBeenCalledTimes(1);
-    expect(second.confirmed).toBe(false);
-    expect('unknownOutcome' in second ? null : second.message).not.toMatch(
-      /Không còn yêu cầu/,
-    );
+    expect(second).toMatchObject({ confirmed: true, replayed: true });
   });
 
   it('tells the learner nothing when a previous attempt outcome is unknown', async () => {
@@ -81,9 +93,9 @@ describe('Zalo reschedule confirmation durability (#1483)', () => {
       userId: 42,
     });
 
-    const result = await confirmation.confirm(zaloUserId, 42);
+    const result = await confirmation.confirm(zaloUserId, 42, nonce);
 
     expect(calendarWrite).not.toHaveBeenCalled();
-    expect('unknownOutcome' in result).toBe(true);
+    expect(contentFor(result)).toBeNull();
   });
 });

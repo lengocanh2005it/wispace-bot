@@ -110,6 +110,7 @@ import {
   LearnerProfileEntity,
 } from '@wispace/database';
 import {
+  TypeormRescheduleAttemptStore,
   TypeormRescheduleStore,
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
@@ -611,8 +612,10 @@ const REGISTER_REPORT_MESSAGE =
         cache: WispaceDataCache,
         budgetService: PlatformWriteToolBudgetService,
         metrics: BotMetricsService,
+        attemptStore: TypeormRescheduleAttemptStore,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store, {
+          attemptStore,
           consumeRescheduleBudget: (userId, externalId) =>
             budgetService.consumeDaily(
               String(externalId),
@@ -641,6 +644,7 @@ const REGISTER_REPORT_MESSAGE =
         WispaceDataCache,
         PlatformWriteToolBudgetService,
         BotMetricsService,
+        TypeormRescheduleAttemptStore,
       ],
     },
     DiscordMenuService,

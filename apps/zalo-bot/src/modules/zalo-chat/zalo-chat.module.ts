@@ -118,6 +118,7 @@ import {
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
 import {
+  TypeormRescheduleAttemptStore,
   TypeormRescheduleStore,
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
@@ -761,8 +762,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         cache: WispaceDataCache,
         budgetService: PlatformWriteToolBudgetService,
         metrics: BotMetricsService,
+        attemptStore: TypeormRescheduleAttemptStore,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store, {
+          attemptStore,
           consumeRescheduleBudget: (userId, externalId) =>
             budgetService.consumeDaily(
               String(externalId),
@@ -791,6 +794,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         WispaceDataCache,
         PlatformWriteToolBudgetService,
         BotMetricsService,
+        TypeormRescheduleAttemptStore,
       ],
     },
     ZaloSendApiAdapter,
