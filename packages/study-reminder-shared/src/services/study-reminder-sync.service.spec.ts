@@ -263,6 +263,26 @@ describe('StudyReminderSyncService', () => {
       );
       expect(getSessions).toHaveBeenCalledTimes(150);
     });
+
+    it('ends the scan on a full page that declares no continuation', async () => {
+      const mappings = Array.from({ length: 100 }, (_, i) => ({
+        externalUserId: `ext-${i}`,
+        userId: i + 1,
+        platform: 'messenger' as const,
+      }));
+      // A page filled to the limit is not thereby the last one, and a page that
+      // says there is no continuation is authoritative even when it is full.
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: mappings,
+        nextId: undefined,
+      });
+      const getSessions = jest.fn().mockResolvedValue([makeSession()]);
+
+      const result = await service.syncUpcomingSessions({ getSessions });
+
+      expect(result.mappings).toBe(100);
+      expect(mappingReader.findActiveMappingsPage).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('syncUpcomingSessions (user)', () => {

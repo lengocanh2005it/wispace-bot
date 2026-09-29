@@ -1,6 +1,16 @@
 import { ReportCronService } from './report-cron.service';
 
 describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
+  const CLAIM_RESULT = {
+    sent: 1,
+    skipped: 0,
+    deferred: 0,
+    windowClosed: 0,
+    claimSkipped: 0,
+    retryQueued: 0,
+    failures: [] as Array<{ externalUserId: string; error: string }>,
+  };
+
   const mapping = {
     id: 1,
     psid: 'psid-1',
@@ -204,6 +214,88 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
       messengerRepository.findActiveSubscribedMappingsPage,
     ).toHaveBeenCalledWith(1000, 500);
   });
+  it('stops on a short page without paying for a confirming fetch', async () => {
+    const mappings = Array.from({ length: 100 }, (_, i) => ({
+      ...mapping,
+      id: i + 1,
+      psid: `psid-${i + 1}`,
+    }));
+
+    const findActiveSubscribedMappingsPage = jest
+      .fn()
+      .mockResolvedValue(mappings);
+
+    const service = new ReportCronService(
+      {
+        cleanupActiveDuplicateMappings: jest.fn().mockResolvedValue(0),
+        findActiveSubscribedMappingsPage,
+      } as never,
+      {
+        getExamReminderWindow: jest
+          .fn()
+          .mockReturnValue({ minDays: 2, maxDays: 3 }),
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true }),
+      } as never,
+      {} as never,
+      {} as never,
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { claimAndSend: jest.fn().mockResolvedValue(CLAIM_RESULT) } as never,
+    );
+
+    const result = await service.sendScheduledReports({ forceSend: true });
+
+    // A short page ends this scan on its own evidence: the source returned
+    // fewer rows than the limit, which proves it is exhausted.
+    expect(findActiveSubscribedMappingsPage).toHaveBeenCalledTimes(1);
+    expect(result.total).toBe(100);
+  });
+
+  it('stops scanning once the single-mapping filter has matched', async () => {
+    const mappings = Array.from({ length: 600 }, (_, i) => ({
+      ...mapping,
+      id: i + 1,
+      psid: `psid-${i + 1}`,
+    }));
+
+    const findActiveSubscribedMappingsPage = jest
+      .fn()
+      .mockResolvedValueOnce(mappings.slice(0, 500))
+      .mockResolvedValueOnce(mappings.slice(500));
+
+    const claimAndSend = jest.fn().mockResolvedValue(CLAIM_RESULT);
+    const service = new ReportCronService(
+      {
+        cleanupActiveDuplicateMappings: jest.fn().mockResolvedValue(0),
+        findActiveSubscribedMappingsPage,
+      } as never,
+      {
+        getExamReminderWindow: jest
+          .fn()
+          .mockReturnValue({ minDays: 2, maxDays: 3 }),
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true }),
+      } as never,
+      {} as never,
+      {} as never,
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { claimAndSend } as never,
+    );
+
+    const result = await service.sendScheduledReports({
+      forceSend: true,
+      externalUserId: 'psid-3',
+    });
+
+    // The target sits on the first page, so the scan must not fetch page two
+    // even though the first page was full.
+    expect(findActiveSubscribedMappingsPage).toHaveBeenCalledTimes(1);
+    expect(claimAndSend).toHaveBeenCalledTimes(1);
+    expect(result.total).toBe(1);
+  });
+
   it('skips sending report when canonical platform for user is not messenger (e.g. zalo)', async () => {
     const messengerRepository = {
       findActiveSubscribedMappingsPage: jest

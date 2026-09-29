@@ -46,20 +46,24 @@ function buildService(overrides: {
   pages?: unknown[][];
   evaluateExamWindow?: { skip: boolean };
   canonicalService?: unknown;
+  webActivityService?: unknown;
 }) {
+  const andWhere = jest.fn().mockReturnThis();
+  const getMany = jest
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(overrides.pages?.shift() ?? [link]),
+    );
+
   const linkRepo = {
     createQueryBuilder: jest.fn(() => ({
       leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
+      andWhere,
       orderBy: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
-      getMany: jest
-        .fn()
-        .mockImplementation(() =>
-          Promise.resolve(overrides.pages?.shift() ?? [link]),
-        ),
+      getMany,
     })),
     update: jest.fn().mockResolvedValue(undefined),
   } as unknown as Repository<ZaloAccountLinkEntity>;
@@ -104,12 +108,15 @@ function buildService(overrides: {
       releaseDailyLock: jest.fn(),
     } as never,
     overrides.canonicalService as never,
+    overrides.webActivityService as never,
   );
 
   return {
     service,
     listUserIdsWithSentReportOn,
     orchestrationClaimAndSend,
+    andWhere,
+    getMany,
   };
 }
 
@@ -129,6 +136,76 @@ describe('ZaloReportCronService', () => {
     await service.sendDailyReports();
 
     expect(orchestrationClaimAndSend).toHaveBeenCalledTimes(250);
+  });
+
+  it('advances the keyset cursor to the last id of the raw page', async () => {
+    const pageLinks = Array.from({ length: 250 }, (_, i) => ({
+      id: String(i + 1),
+      externalUserId: `zalo-${i + 1}`,
+      userId: 42 + i,
+      platform: 'zalo',
+    })) as unknown as ZaloAccountLinkEntity[];
+
+    const { service, andWhere, getMany } = buildService({
+      pages: [pageLinks.slice(0, 200), pageLinks.slice(200)],
+    });
+
+    await service.sendDailyReports();
+
+    expect(getMany).toHaveBeenCalledTimes(2);
+    // The first fetch has no cursor; the second resumes strictly after the
+    // last id the raw page returned.
+    expect(andWhere).toHaveBeenCalledWith('TRUE', { cursor: undefined });
+    expect(andWhere).toHaveBeenCalledWith('link.id > :cursor', {
+      cursor: '200',
+    });
+  });
+
+  it('keeps paging when the dormancy gate filters a full page down to nothing', async () => {
+    const pageLinks = Array.from({ length: 300 }, (_, i) => ({
+      id: String(i + 1),
+      externalUserId: `zalo-${i + 1}`,
+      userId: 42 + i,
+      platform: 'zalo',
+    })) as unknown as ZaloAccountLinkEntity[];
+
+    const webActivityService = {
+      partitionDormant: jest
+        .fn()
+        .mockResolvedValueOnce({ active: [], suppressed: 200 })
+        .mockResolvedValueOnce({ active: pageLinks.slice(200), suppressed: 0 }),
+    };
+    const { service, orchestrationClaimAndSend, getMany } = buildService({
+      pages: [pageLinks.slice(0, 200), pageLinks.slice(200)],
+      webActivityService,
+    });
+
+    await service.sendDailyReports();
+
+    // A page that is full but entirely suppressed must not end the scan: the
+    // continuation is decided by the raw page, not the filtered one.
+    expect(getMany).toHaveBeenCalledTimes(2);
+    expect(orchestrationClaimAndSend).toHaveBeenCalledTimes(100);
+  });
+
+  it('ends on an empty page even when the page before it was full', async () => {
+    const pageLinks = Array.from({ length: 200 }, (_, i) => ({
+      id: String(i + 1),
+      externalUserId: `zalo-${i + 1}`,
+      userId: 42 + i,
+      platform: 'zalo',
+    })) as unknown as ZaloAccountLinkEntity[];
+
+    const { service, orchestrationClaimAndSend, getMany } = buildService({
+      pages: [pageLinks, []],
+    });
+
+    await service.sendDailyReports();
+
+    // Exactly two fetches: a full page cannot prove it was the last one, so the
+    // scan pays for one confirming empty fetch.
+    expect(getMany).toHaveBeenCalledTimes(2);
+    expect(orchestrationClaimAndSend).toHaveBeenCalledTimes(200);
   });
 
   it('skips user already sent on another platform', async () => {
