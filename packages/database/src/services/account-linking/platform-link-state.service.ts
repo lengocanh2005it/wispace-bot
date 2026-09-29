@@ -4,6 +4,10 @@ import { createHash } from 'crypto';
 import { studyReminderOwnershipLockKey } from '@wispace/bot-common/locks';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { PLATFORM_STORAGE } from '@wispace/contracts';
+import {
+  fullPageAsMappingPage,
+  iterateMappingPages,
+} from '@wispace/bot-common/utils';
 import type { Platform, PlatformLinkState } from '@wispace/contracts';
 import type {
   PlatformLinkAuditEventType,
@@ -310,7 +314,6 @@ export class PlatformLinkStateService {
         staleWriter: 0,
       };
     }
-    let afterId: string | undefined;
     const totals = {
       checked: 0,
       revoked: 0,
@@ -318,34 +321,44 @@ export class PlatformLinkStateService {
       recovered: 0,
       staleWriter: 0,
     };
-    const pageSize = options.pageSize ?? 100;
+    // Clamp once, here: listLinks caps its own LIMIT, so an unclamped pageSize
+    // would size the page against a limit the query never used and the scan
+    // would stop early.
+    const pageSize = Math.max(1, Math.min(options.pageSize ?? 100, 500));
     const concurrency = Math.max(1, Math.min(options.concurrency ?? 5, 20));
-    for (;;) {
-      const rows = await this.listLinks(platform, afterId, pageSize);
-      if (rows.length === 0) break;
-      await mapWithConcurrency(rows, concurrency, async (row) => {
-        const result = await reader.getStatus(row.externalUserId);
-        const transition = await this.applyObservation(
-          platform,
-          row.externalUserId,
-          result,
-          { expectedGeneration: row.generation },
-        );
-        totals.checked += 1;
-        const changed = transition.changed !== false;
-        if (transition.outcome === 'revoked' && changed) totals.revoked += 1;
-        if (transition.outcome === 'unknown') totals.unknown += 1;
-        if (transition.outcome === 'recovered') totals.recovered += 1;
-        if (transition.outcome === 'stale_writer') totals.staleWriter += 1;
-        if (transition.outcome === 'revoked' && changed) {
-          await options.onRevoked?.(row.externalUserId, transition.userId);
-        }
-        if (transition.outcome === 'unknown') {
-          await options.onUnknown?.(row.externalUserId, transition.userId);
-        }
-      });
-      afterId = rows[rows.length - 1].id;
-    }
+    // The scan ends when a mapping page declares no continuation; see ADR-0049.
+    await iterateMappingPages<PlatformLinkRow, string>({
+      source: {
+        fetch: (afterId, limit) =>
+          this.listLinks(platform, afterId, limit).then((rows) =>
+            fullPageAsMappingPage(rows, limit),
+          ),
+      },
+      limit: pageSize,
+      onPage: async (rows) => {
+        await mapWithConcurrency(rows, concurrency, async (row) => {
+          const result = await reader.getStatus(row.externalUserId);
+          const transition = await this.applyObservation(
+            platform,
+            row.externalUserId,
+            result,
+            { expectedGeneration: row.generation },
+          );
+          totals.checked += 1;
+          const changed = transition.changed !== false;
+          if (transition.outcome === 'revoked' && changed) totals.revoked += 1;
+          if (transition.outcome === 'unknown') totals.unknown += 1;
+          if (transition.outcome === 'recovered') totals.recovered += 1;
+          if (transition.outcome === 'stale_writer') totals.staleWriter += 1;
+          if (transition.outcome === 'revoked' && changed) {
+            await options.onRevoked?.(row.externalUserId, transition.userId);
+          }
+          if (transition.outcome === 'unknown') {
+            await options.onUnknown?.(row.externalUserId, transition.userId);
+          }
+        });
+      },
+    });
     this.logger.log(
       `platform link reconciliation platform=${platform} checked=${totals.checked} revoked=${totals.revoked} unknown=${totals.unknown} recovered=${totals.recovered}`,
     );

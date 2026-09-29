@@ -16,6 +16,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import {
+  fullPageAsMappingPage,
+  iterateMappingPages,
+} from '@wispace/bot-common/utils';
 import { todayInTimezone } from '@wispace/wispace-client/core';
 import { runBatched } from '@wispace/scheduler-core/core';
 import type {
@@ -169,78 +173,78 @@ export class ReportCronService {
 
     // Keyset pagination: fetch mappings in bounded pages instead of loading
     // all at once — prevents unbounded memory growth as linked users scale.
-    let cursor = 0;
-    for (;;) {
-      const page =
-        await this.messengerRepository.findActiveSubscribedMappingsPage(
-          cursor,
-          PAGE_SIZE,
+    // The scan ends when a page declares no continuation; see ADR-0049.
+    await iterateMappingPages<UserMessengerMapping, number>({
+      source: {
+        fetch: async (cursor, limit) =>
+          fullPageAsMappingPage(
+            await this.messengerRepository.findActiveSubscribedMappingsPage(
+              cursor ?? 0,
+              limit,
+            ),
+            limit,
+          ),
+      },
+      limit: PAGE_SIZE,
+      onPage: async (page): Promise<void | 'stop'> => {
+        let mappings = page;
+        if (psidFilter) {
+          mappings = mappings.filter((m) => m.psid === psidFilter);
+        }
+
+        // Skip web-dormant learners — but never for an operator forceSend, which
+        // is an explicit "send now" override (same posture as the exam-window gate).
+        if (!forceSend && this.webActivityService) {
+          const { active, suppressed } =
+            await this.webActivityService.partitionDormant(
+              mappings,
+              (m) => m.userId,
+            );
+          mappings = active;
+          if (suppressed > 0) {
+            this.metrics?.incScheduledSendSuppressed('report', suppressed);
+            skipped += suppressed;
+          }
+        }
+
+        totalMappings += mappings.length;
+        const canonicalPlatforms = this.canonicalPlatformService
+          ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+              ...new Set(
+                mappings.flatMap((mapping) =>
+                  mapping.userId === undefined ? [] : [mapping.userId],
+                ),
+              ),
+            ])
+          : undefined;
+
+        const settled = await runBatched(mappings, concurrency, (mapping) =>
+          this.processMappingForReport(mapping, {
+            forceSend,
+            skipAlreadySentToday,
+            reportDate,
+            canonicalPlatforms,
+          }),
         );
 
-      if (page.length === 0) break;
-
-      // Update cursor to the last ID in this page for next iteration
-      const lastId = page[page.length - 1]!.id;
-      cursor = lastId;
-
-      let mappings = page;
-      if (psidFilter) {
-        mappings = mappings.filter((m) => m.psid === psidFilter);
-      }
-
-      // Skip web-dormant learners — but never for an operator forceSend, which
-      // is an explicit "send now" override (same posture as the exam-window gate).
-      if (!forceSend && this.webActivityService) {
-        const { active, suppressed } =
-          await this.webActivityService.partitionDormant(
-            mappings,
-            (m) => m.userId,
-          );
-        mappings = active;
-        if (suppressed > 0) {
-          this.metrics?.incScheduledSendSuppressed('report', suppressed);
-          skipped += suppressed;
+        for (const r of settled) {
+          if (r.status === 'fulfilled') {
+            sent += r.value.sent;
+            skipped += r.value.skipped;
+            deferred += r.value.deferred;
+            windowClosed += r.value.windowClosed;
+            claimSkipped += r.value.claimSkipped;
+            retryQueued += r.value.retryQueued;
+            failures.push(...r.value.failures);
+          }
         }
-      }
 
-      totalMappings += mappings.length;
-      const canonicalPlatforms = this.canonicalPlatformService
-        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
-            ...new Set(
-              mappings.flatMap((mapping) =>
-                mapping.userId === undefined ? [] : [mapping.userId],
-              ),
-            ),
-          ])
-        : undefined;
-
-      const settled = await runBatched(mappings, concurrency, (mapping) =>
-        this.processMappingForReport(mapping, {
-          forceSend,
-          skipAlreadySentToday,
-          reportDate,
-          canonicalPlatforms,
-        }),
-      );
-
-      for (const r of settled) {
-        if (r.status === 'fulfilled') {
-          sent += r.value.sent;
-          skipped += r.value.skipped;
-          deferred += r.value.deferred;
-          windowClosed += r.value.windowClosed;
-          claimSkipped += r.value.claimSkipped;
-          retryQueued += r.value.retryQueued;
-          failures.push(...r.value.failures);
+        // If filtering by psid and we already found it, no need to scan remaining pages
+        if (psidFilter && mappings.length > 0) {
+          return 'stop';
         }
-      }
-
-      // If filtering by psid and we already found it, no need to scan remaining pages
-      if (psidFilter && mappings.length > 0) break;
-
-      // Partial page signals end of data
-      if (page.length < PAGE_SIZE) break;
-    }
+      },
+    });
 
     if (psidFilter && totalMappings === 0) {
       throw new BadRequestException(

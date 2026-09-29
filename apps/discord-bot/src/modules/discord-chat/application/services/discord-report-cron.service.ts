@@ -22,6 +22,10 @@ import {
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import {
+  fullPageAsMappingPage,
+  iterateMappingPages,
+} from '@wispace/bot-common/utils';
+import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
 } from '@wispace/llm-agent/core';
@@ -29,6 +33,7 @@ import { DiscordReportOrchestrationService } from './discord-report-orchestratio
 import {
   DISCORD_REPORT_ACCOUNT_READER,
   type DiscordReportAccountPageReaderPort,
+  type ReportAccountRow,
 } from '../../domain/ports/discord-report-account-reader.port';
 import type { Platform } from '@wispace/contracts';
 
@@ -124,97 +129,105 @@ export class DiscordReportCronService {
     let claimSkipped = 0;
     let failed = 0;
     const failures: Array<{ externalUserId: string; error: string }> = [];
-    let cursor: string | undefined;
     const startedAt = Date.now();
-    let hasMore = true;
 
-    while (hasMore) {
-      let page = await this.loadPage(cursor, opts.forceSend === true);
-      if (page.length === 0) break;
-      // Pagination advances by the raw page — filtering must not shorten it.
-      const rawPageLen = page.length;
-      const lastId = page[page.length - 1].id;
+    // The scan ends when a page declares no continuation; see ADR-0049. The
+    // page is sized before any dormancy filter runs, so a full page that the
+    // filter empties still continues the scan.
+    await iterateMappingPages<ReportAccountRow, string>({
+      source: {
+        fetch: async (cursor, limit) =>
+          fullPageAsMappingPage(
+            await this.loadPage(cursor, opts.forceSend === true, limit),
+            limit,
+          ),
+      },
+      limit: PAGE_SIZE,
+      onPage: async (rawPage) => {
+        let page = rawPage;
 
-      // Skip web-dormant learners — never for an operator forceSend override.
-      if (opts.forceSend !== true && this.webActivityService) {
-        const { active, suppressed } =
-          await this.webActivityService.partitionDormant(page, (l) => l.userId);
-        page = active;
-        if (suppressed > 0) {
-          this.metrics?.incScheduledSendSuppressed('report', suppressed);
-          skipped += suppressed;
+        // Skip web-dormant learners — never for an operator forceSend override.
+        if (opts.forceSend !== true && this.webActivityService) {
+          const { active, suppressed } =
+            await this.webActivityService.partitionDormant(
+              page,
+              (l) => l.userId,
+            );
+          page = active;
+          if (suppressed > 0) {
+            this.metrics?.incScheduledSendSuppressed('report', suppressed);
+            skipped += suppressed;
+          }
         }
-      }
 
-      total += page.length;
-      const canonicalPlatforms = this.canonicalPlatformService
-        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
-            ...new Set(
-              page.flatMap((link) =>
-                link.userId == null ? [] : [link.userId],
+        total += page.length;
+        const canonicalPlatforms = this.canonicalPlatformService
+          ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+              ...new Set(
+                page.flatMap((link) =>
+                  link.userId == null ? [] : [link.userId],
+                ),
               ),
-            ),
-          ])
-        : undefined;
+            ])
+          : undefined;
 
-      const results = await runBatched(
-        page,
-        concurrency,
-        async (link): Promise<ClaimAndSendResult> => {
-          const mapping: ReportMapping = {
-            id: link.id,
-            platform: PLATFORM,
-            externalUserId: link.externalUserId,
-            userId: link.userId ?? undefined,
-            notificationCadence: 'daily',
-            status: 'ACTIVE',
-          };
+        const results = await runBatched(
+          page,
+          concurrency,
+          async (link): Promise<ClaimAndSendResult> => {
+            const mapping: ReportMapping = {
+              id: link.id,
+              platform: PLATFORM,
+              externalUserId: link.externalUserId,
+              userId: link.userId ?? undefined,
+              notificationCadence: 'daily',
+              status: 'ACTIVE',
+            };
 
-          // One-time opt-out footer for consent rows we can't distinguish
-          // from explicitly opted-in learners (#596 Q10).
-          const pendingNotice = link.optoutNoticeSentAt == null;
-          const result = await this.sendForLink(mapping, {
-            reportDate: reportDate,
-            forceSend: opts.forceSend === true,
-            appendOptOutFooter: pendingNotice,
-            canonicalPlatforms,
-          });
-          if (pendingNotice && result.sent > 0) {
-            await this.accountReader
-              .markOptOutNoticeSent?.(link.id)
-              .catch(() => undefined);
-          }
-          return result;
-        },
-      );
+            // One-time opt-out footer for consent rows we can't distinguish
+            // from explicitly opted-in learners (#596 Q10).
+            const pendingNotice = link.optoutNoticeSentAt == null;
+            const result = await this.sendForLink(mapping, {
+              reportDate: reportDate,
+              forceSend: opts.forceSend === true,
+              appendOptOutFooter: pendingNotice,
+              canonicalPlatforms,
+            });
+            if (pendingNotice && result.sent > 0) {
+              await this.accountReader
+                .markOptOutNoticeSent?.(link.id)
+                .catch(() => undefined);
+            }
+            return result;
+          },
+        );
 
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          const v = result.value as ClaimAndSendResult;
-          sent += v.sent;
-          skipped += v.skipped;
-          claimSkipped += v.claimSkipped;
-          for (const failure of v.failures) {
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            const v = result.value as ClaimAndSendResult;
+            sent += v.sent;
+            skipped += v.skipped;
+            claimSkipped += v.claimSkipped;
+            for (const failure of v.failures) {
+              failed += 1;
+              this.pushFailure(failures, failure);
+            }
+          } else {
             failed += 1;
-            this.pushFailure(failures, failure);
+            this.pushFailure(failures, {
+              externalUserId: 'unknown',
+              error:
+                (result.reason as Error | undefined)?.message ??
+                String(result.reason),
+            });
           }
-        } else {
-          failed += 1;
-          this.pushFailure(failures, {
-            externalUserId: 'unknown',
-            error:
-              (result.reason as Error | undefined)?.message ??
-              String(result.reason),
-          });
         }
-      }
 
-      this.logger.log(
-        `Discord report batch: total=${total} sent=${sent} skipped=${skipped} claimSkipped=${claimSkipped} failed=${failed}`,
-      );
-      cursor = lastId;
-      hasMore = rawPageLen === PAGE_SIZE;
-    }
+        this.logger.log(
+          `Discord report batch: total=${total} sent=${sent} skipped=${skipped} claimSkipped=${claimSkipped} failed=${failed}`,
+        );
+      },
+    });
 
     this.logger.log(
       `Discord report cron: total=${total} sent=${sent} skipped=${skipped} claimSkipped=${claimSkipped} failed=${failed} (${Date.now() - startedAt}ms)`,
@@ -290,15 +303,9 @@ export class DiscordReportCronService {
   private async loadPage(
     cursor: string | undefined,
     includeUnsubscribed: boolean,
-  ): Promise<
-    Array<{
-      id: string;
-      externalUserId: string;
-      userId: number | null;
-      optoutNoticeSentAt?: Date | null;
-    }>
-  > {
-    return this.accountReader.findActiveAccountsPage(cursor, PAGE_SIZE, {
+    limit: number,
+  ): Promise<ReportAccountRow[]> {
+    return this.accountReader.findActiveAccountsPage(cursor, limit, {
       includeUnsubscribed,
     });
   }

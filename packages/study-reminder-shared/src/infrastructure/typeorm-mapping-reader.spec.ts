@@ -47,7 +47,43 @@ describe('TypeormMappingReader — reminder consent filter (#596)', () => {
           platform: 'discord',
         },
       ]);
-      expect(page.nextId).toBe('2');
+      expect(page.nextId).toBeUndefined();
+    });
+
+    it('declares a continuation only when the page was filled to its limit', async () => {
+      query.mockResolvedValueOnce([
+        {
+          id: '7',
+          external_user_id: 'discord-7',
+          user_id: 47,
+          platform: 'discord',
+        },
+        {
+          id: '8',
+          external_user_id: 'discord-8',
+          user_id: 48,
+          platform: 'discord',
+        },
+      ]);
+
+      const page = await reader.findActiveMappingsPage('discord', {
+        afterId: '0',
+        limit: 2,
+      });
+
+      expect(page.items).toHaveLength(2);
+      expect(page.nextId).toBe('8');
+    });
+
+    it('declares no continuation for an empty page', async () => {
+      query.mockResolvedValueOnce([]);
+
+      const page = await reader.findActiveMappingsPage('discord', {
+        afterId: '0',
+        limit: 100,
+      });
+
+      expect(page.nextId).toBeUndefined();
     });
 
     it('passes platform, keyset cursor and limit as parameters', async () => {

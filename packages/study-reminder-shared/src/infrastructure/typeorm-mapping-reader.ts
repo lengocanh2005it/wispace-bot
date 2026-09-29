@@ -78,8 +78,14 @@ export class TypeormMappingReader<
 
     return {
       items,
+      // Same rule as `fullPageAsMappingPage`, restated because the mapped items
+      // here are UserLink, which carries no id to read the cursor from — the
+      // cursor has to come from the raw row. Sized on the raw result, before
+      // mapping. See docs/adr/0049-mapping-page-source-port.md.
       nextId:
-        results.length > 0 ? String(results[results.length - 1].id) : undefined,
+        results.length > 0 && results.length === query.limit
+          ? String(results[results.length - 1].id)
+          : undefined,
     };
   }
 

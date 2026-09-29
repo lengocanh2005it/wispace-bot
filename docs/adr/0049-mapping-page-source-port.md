@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Keyset paging over platform mappings goes through one port in `bot-common/utils`
@@ -21,11 +21,13 @@ number-vs-string, three bare arrays against one `{ items, nextId }`, positional 
 
 ## `nextId`, not a bare array
 
-Three sites returned a bare array and inferred "last page" from the page length. They inferred it three different ways: Messenger broke on `page.length < PAGE_SIZE`, Discord and Zalo on `rawPageLen === PAGE_SIZE`. That inference is the whole bug surface.
+Three sites returned a bare array and inferred "last page" from the page length. They inferred it in three different ways: Messenger broke on `page.length < PAGE_SIZE`, Discord and Zalo on `rawPageLen === PAGE_SIZE`. Every one of them reached the same conclusion — a short page is exhausted, a full page is not — so no delivery behaviour was wrong. What was wrong was that each site re-derived the rule for itself, which is exactly the drift the port removes.
 
-It is also terminology this repo has already ruled out. `CONTEXT.md` defines **result completeness** as "`incomplete` or `unknown`; returned count alone does not prove completeness", with `_Avoid_: returned count, has-more inference`, and **known remaining data** as records the source confirms exist beyond the returned page, "cannot be inferred merely by reaching the cap", with `_Avoid_: hasMore`. `rawPageLen === PAGE_SIZE` is `has-more inference`; `page.length < PAGE_SIZE` is `returned count` as proof of completeness. Both loops were shipping code the glossary names under `_Avoid_`.
+The rule itself is also terminology this repo has already settled. `CONTEXT.md` defines **result completeness** as "`incomplete` or `unknown`; returned count alone does not prove completeness", with `_Avoid_: returned count, has-more inference`, and **known remaining data** as records the source confirms exist beyond the returned page, "cannot be inferred merely by reaching the cap", with `_Avoid_: hasMore`. So the port must never *claim* that records remain — that would be reaching the cap and calling it knowledge.
 
-`nextId` is what **known remaining data** looks like as an API: the adapter states whether more exists instead of the consumer guessing from a count. It is already the shape `study-reminder-shared` uses, so that package changes least. The cost is one extra empty fetch when the final page happens to be exactly full, which is one query in a daily cron.
+A full page therefore declares a continuation as a **refusal to claim exhaustion**, not as an assertion that more rows exist. `CONTEXT.md` calls that completeness `unknown`, and `unknown` is a legitimate answer; only a claim of existence would have been the forbidden inference. Inferring exhaustion from a short page is sound, because a `LIMIT n` query returning fewer than `n` rows is proof. `rawPageLen === PAGE_SIZE` was the forbidden half: it assumed more rows existed and only then fetched to find out.
+
+`nextId` is what **known remaining data** looks like as an API: the source states whether it is done instead of the consumer guessing from a count. It is already the shape `study-reminder-shared` uses, so that package changes least. The cost is that a full page pays one extra empty fetch — one query in a daily cron.
 
 ## A generic cursor, not `string`
 
@@ -55,6 +57,7 @@ Legally permitted — that package's only rule is `contracts-core-no-imports`, w
 ## Consequences
 
 - A sixth keyset-paging call site should consume this port rather than open a loop. If a new scan needs different semantics — reverse order, a key other than `id` — it should be a deliberate new decision, not an ad-hoc loop.
-- `nextId` becomes the only accepted termination signal. A future adapter that returns a bare array reintroduces the exact divergence this removes, and the specs from #1478 are what catch it.
+- `nextId` becomes the only accepted termination signal. A future adapter that returns a bare array reintroduces the exact divergence this removes, and the specs are what catch it.
+- The port is a plain function argument, not an injected DI token. Zalo's page loader therefore stays a private method with the port's signature and is handed to the iterator as a source object, rather than becoming an injectable provider. Nothing else in Zalo consumes it, and a token plus module wiring would buy one caller nothing; if a second consumer appears, promoting it to DI is a small change.
 - The D/Z tables still lack the `(platform, status, id)` keyset index that `1789093300000` added for `user_platform_mappings` (#1480). That is a measured question about index cost, independent of this decision.
 - Page-fetch failure still aborts the whole wave with no durable resume cursor: already-sent users stay sent, unsent users are not reached. Deliberately unchanged here, and recorded as open debt rather than papered over.
