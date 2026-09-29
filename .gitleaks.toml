@@ -25,6 +25,14 @@ regexes = [
   '''sk-collect-1234567890''',
   '''internal-ops-key-9876''',
   '''duplicate-secret-1''',
+  # Provider-failover fixtures: the literal dummy OpenAI/OpenRouter keys the
+  # failover specs put in their env maps. Matched on the value so a real key in
+  # the same file is still caught.
+  '''sk-primary-test''',
+  '''sk-or-v1-secondary-test''',
+  # study-reminder.service.spec.ts — a registered-runtime-secret fixture for
+  # the redaction path (#632).
+  '''internal-secret-9876''',
   # Opaque alphanumeric registry fixture. No credential shape matches it, which
   # is the whole point: it stands in for a registered value that only exact
   # matching can catch. Shared by the error-message, context-manager and
