@@ -91,6 +91,7 @@ import {
 } from './application/ports/zalo-outbound.port';
 import { ZALO_WELCOME } from './application/ports/zalo-welcome.port';
 import { ZALO_CLARIFICATION_AGENT } from './application/ports/zalo-clarification-agent.port';
+import { ZALO_RESCHEDULE_ATTEMPT_STORE } from './application/ports/zalo-reschedule-attempt-store.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZALO_CHAT_QUEUE } from './application/ports/zalo-chat-queue.port';
 import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
@@ -753,6 +754,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [PlatformStudyCalendarCommandService],
     },
     ...createRescheduleProviders('zalo'),
+    {
+      provide: ZALO_RESCHEDULE_ATTEMPT_STORE,
+      useExisting: TypeormRescheduleAttemptStore,
+    },
     {
       provide: RescheduleConfirmationService,
       useFactory: (

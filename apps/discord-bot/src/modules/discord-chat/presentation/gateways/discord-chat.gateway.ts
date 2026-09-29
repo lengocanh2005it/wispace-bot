@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import {
   GREETING_INTRO,
   buildGreetingMessage,
@@ -23,9 +23,13 @@ import { PlatformChatQueueService } from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordConsentService } from '../../application/services/discord-consent.service';
 import {
+  applyNotificationOutcome,
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
   RescheduleConfirmationService,
+  type RescheduleAttemptStorePort,
+  type RescheduleNotificationOutcome,
 } from '@wispace/reschedule-confirm/core';
+import { TypeormRescheduleAttemptStore } from '@wispace/reschedule-confirm/adapters';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
   RESCHEDULE_CONFIRM_CUSTOM_ID,
@@ -87,6 +91,9 @@ export class DiscordChatGateway {
     private readonly welcomeService: DiscordWelcomeDeliveryPort,
     @Inject(DISCORD_CONSENT_PROMPT)
     private readonly consentPrompt: DiscordConsentPromptPort,
+    @Optional()
+    @Inject(TypeormRescheduleAttemptStore)
+    private readonly rescheduleAttemptStore?: RescheduleAttemptStorePort,
   ) {}
 
   private prepareReply(
@@ -454,11 +461,12 @@ export class DiscordChatGateway {
             };
         content = result.confirmed
           ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
-          : // #1483: Discord does not yet read the durable attempt record, so
-            // an unknown outcome cannot be reported honestly here. Fall back to
-            // the generic failure rather than sending an undefined message.
+          : // #1483: the calendar write may already have committed and only its
+            // confirmation delivery is in doubt, so there is no honest outcome
+            // to report. Say nothing rather than sending a message that reads
+            // like the change failed.
             'unknownOutcome' in result
-            ? CHAT_FAILURE_FALLBACK_MESSAGE
+            ? ''
             : result.message;
       }
     } catch (error) {
@@ -470,10 +478,51 @@ export class DiscordChatGateway {
       );
       content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
-    await interaction.editReply({
-      ...this.prepareReply(discordUserId, content),
-      components: [],
-    });
+    if (!content) return;
+    const confirmed = content.startsWith('Đã dời lịch sang');
+    try {
+      await interaction.editReply({
+        ...this.prepareReply(discordUserId, content),
+        components: [],
+      });
+      if (confirmed) {
+        await this.recordConfirmationDelivered(discordUserId, approvalToken);
+      }
+    } catch (error) {
+      // A deferred interaction can expire before the edit lands, and Discord has
+      // no durable inbox to replay this from, so fall back to a fresh message.
+      this.logger.warn(
+        `Reschedule confirm editReply failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}`,
+        formatError(error),
+      );
+      const outcome = await this.outboundService.sendText(
+        discordUserId,
+        content,
+      );
+      if (confirmed) {
+        await this.recordConfirmationDelivered(discordUserId, approvalToken, {
+          outcome,
+        });
+      }
+    }
+  }
+
+  /** #1483: record the real delivery outcome so the cron owns the retry. */
+  private async recordConfirmationDelivered(
+    discordUserId: string,
+    approvalToken: string,
+    sent?: { outcome: RescheduleNotificationOutcome },
+  ): Promise<void> {
+    if (!this.rescheduleAttemptStore) return;
+    await applyNotificationOutcome(
+      this.rescheduleAttemptStore,
+      discordUserId,
+      approvalToken,
+      sent?.outcome ?? 'sent',
+      new Date(),
+    );
   }
 
   @Button(RESCHEDULE_CANCEL_CUSTOM_ID)

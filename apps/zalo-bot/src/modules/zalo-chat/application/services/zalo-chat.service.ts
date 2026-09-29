@@ -30,13 +30,19 @@ import {
   type ZaloChatQueuePort,
 } from '../ports/zalo-chat-queue.port';
 import {
+  applyNotificationOutcome,
   isValidApprovalToken,
   RescheduleConfirmationService,
   RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
   RESCHEDULE_EXPIRED_MESSAGE,
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  type ReschedulePendingState,
 } from '@wispace/reschedule-confirm/core';
-import type { ReschedulePendingState } from '@wispace/reschedule-confirm/core';
+import {
+  ZALO_RESCHEDULE_ATTEMPT_STORE,
+  type ZaloRescheduleAttemptStorePort,
+} from '../ports/zalo-reschedule-attempt-store.port';
+
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
@@ -82,6 +88,9 @@ export class ZaloChatService {
     @Optional()
     @Inject(ZALO_CLARIFICATION_AGENT)
     private readonly clarificationAgent?: ZaloClarificationAgentPort,
+    @Optional()
+    @Inject(ZALO_RESCHEDULE_ATTEMPT_STORE)
+    private readonly rescheduleAttemptStore?: ZaloRescheduleAttemptStorePort,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
@@ -191,11 +200,24 @@ export class ZaloChatService {
             },
           );
           if (result.confirmed) {
-            await this.outboundService.sendText(
+            // #1483: the calendar write has already committed, so the delivery
+            // of its confirmation is the only part still recoverable. Record
+            // the real outcome instead of letting a failed send look like a
+            // delivered one, and let the recovery cron own the retry.
+            const outcome = await this.outboundService.sendText(
               zaloUserId,
               `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`,
               { userId },
             );
+            if (this.rescheduleAttemptStore) {
+              await applyNotificationOutcome(
+                this.rescheduleAttemptStore,
+                zaloUserId,
+                interaction.approvalToken,
+                outcome,
+                new Date(),
+              );
+            }
             return;
           }
           // #1483: Zalo does not yet read the durable attempt record, so an
