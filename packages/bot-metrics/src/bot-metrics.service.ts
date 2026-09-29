@@ -390,7 +390,7 @@ export class BotMetricsService implements OnModuleDestroy {
 
     this.llmTotalProviderAttempts = new Counter({
       name: `${this.prefix}_llm_total_provider_attempts_total`,
-      help: 'Total actual provider attempts consumed by one LLM generation',
+      help: 'Provider attempts consumed by one LLM generation (one attempt = one provider request)',
       labelNames: ['feature', 'outcome'],
       registers: [this.registry],
     });

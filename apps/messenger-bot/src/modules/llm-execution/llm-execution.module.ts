@@ -114,6 +114,9 @@ import {
             cooldownShortMs: config.getFailoverCooldownShortMs(),
             quickRetryDelayMs: config.getFailoverQuickRetryDelayMs(),
             maxAttempts: config.getRetryMaxAttempts(),
+            // Keep the client's own request timeout inside the execution
+            // deadline; the SDK default is ten minutes (#1473).
+            clientOptions: { timeoutMs: config.getPerAttemptTimeoutMs() },
             onCircuitEvent: (event) =>
               metrics.incLlmProviderCircuitEvent(
                 event.provider,

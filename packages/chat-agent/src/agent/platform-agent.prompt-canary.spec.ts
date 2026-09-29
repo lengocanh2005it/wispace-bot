@@ -156,7 +156,6 @@ function createService(
       clarificationStore: new MemoryClarificationStateStore(),
       promptDir: join(__dirname, promptDir),
       promptFile: overrides.promptFile ?? 'messenger-chat.system.txt',
-      maxLlmRetries: 0,
       llmExecution: {
         run: (fn, meta) => Promise.resolve(fn(meta.signal, meta.attemptBudget)),
       },

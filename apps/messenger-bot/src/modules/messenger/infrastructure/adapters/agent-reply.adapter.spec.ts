@@ -96,7 +96,6 @@ function buildService(
         userId: 42,
         mappingVersion: 'test:messenger-agent',
       }),
-      maxLlmRetries: 0,
       appendHistory: false,
       tryFastReschedule:
         overrides.tryFastReschedule ?? (() => Promise.resolve(null)),

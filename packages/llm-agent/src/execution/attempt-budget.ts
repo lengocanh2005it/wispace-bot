@@ -37,7 +37,8 @@ export function readMaxTotalProviderAttempts(
 }
 
 /**
- * One shared allowance for actual provider calls within a single generation.
+ * One shared allowance for provider attempts within a single generation.
+ * One attempt issues exactly one provider request (#1473).
  * Admission, circuit, cooldown, and queue decisions do not consume it.
  */
 export class LlmAttemptBudget {

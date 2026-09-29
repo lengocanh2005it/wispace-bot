@@ -10,11 +10,11 @@ import {
   buildLlmProviderPolicyFromEnv,
   type LlmProviderPolicy,
 } from './provider-policy';
+import { buildLlmExecutionConfig } from '../execution/llm-execution.config';
 
 const DEFAULT_COOLDOWN_LONG_MS = 600_000;
 const DEFAULT_COOLDOWN_SHORT_MS = 5_000;
 const DEFAULT_QUICK_RETRY_DELAY_MS = 150;
-const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
 
 type LlmProviderAdapterFromEnvOptions = Pick<
   FailoverConfig,
@@ -84,13 +84,7 @@ export function createLlmProviderAdapterFromEnv(
   const quickRetryDelayMs = Number(
     getEnv('LLM_FAILOVER_QUICK_RETRY_DELAY_MS') ?? DEFAULT_QUICK_RETRY_DELAY_MS,
   );
-  const configuredMaxAttempts = Number(
-    getEnv('LLM_OPENAI_RETRY_MAX_ATTEMPTS') ?? DEFAULT_RETRY_MAX_ATTEMPTS,
-  );
-  const maxAttempts =
-    Number.isFinite(configuredMaxAttempts) && configuredMaxAttempts > 0
-      ? Math.floor(configuredMaxAttempts)
-      : DEFAULT_RETRY_MAX_ATTEMPTS;
+  const executionConfig = buildLlmExecutionConfig(getEnv);
   return createFailoverLlmProviderAdapter(
     entries,
     providerOrder,
@@ -104,7 +98,12 @@ export function createLlmProviderAdapterFromEnv(
       onProvidersExhausted: options?.onProvidersExhausted,
       onProviderOutcome: options?.onProviderOutcome,
       onProviderNeverSucceeded: options?.onProviderNeverSucceeded,
-      maxAttempts: options?.maxAttempts ?? maxAttempts,
+      // The failover adapter's per-provider cap is the execution port's cap —
+      // one env var, one default (#1473).
+      maxAttempts: options?.maxAttempts ?? executionConfig.maxAttempts,
+      // Keep the client's own request timeout inside the execution deadline;
+      // the SDK default is ten minutes, far beyond every budget here (#1473).
+      clientOptions: { timeoutMs: executionConfig.perAttemptTimeoutMs },
     },
     providerPolicy,
   );

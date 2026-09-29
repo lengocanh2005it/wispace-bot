@@ -117,7 +117,6 @@ describe('shared provider-attempt budget integration', () => {
     };
     const service = new LlmAgentService(
       {
-        maxLlmRetries: 0,
         maxToolRounds: 2,
         maxTotalProviderAttempts: 6,
       },

@@ -41,7 +41,7 @@ export interface EnvLlmExecutionConfig {
   globalMaxConcurrent: number;
   /** `LLM_OPENAI_RETRY_MAX_ATTEMPTS` — retry budget. */
   maxAttempts: number;
-  /** Shared actual provider-call budget for one top-level generation. */
+  /** Shared provider-attempt budget for one top-level generation. */
   maxTotalProviderAttempts?: number;
   /** `LLM_OPENAI_RETRY_BACKOFF_MS` — base backoff between attempts. */
   baseBackoffMs: number;
@@ -155,7 +155,7 @@ export function createLlmAdmissionCoordinator(
  * the Messenger app's `LlmExecutionConfigService` — one documented
  * execution-control path for every LLM feature:
  *  - enable flag (off = uncontrolled passthrough, not a hard stop)
- *  - per-instance bounded admission queue on provider calls (#389)
+ *  - per-instance bounded admission queue on provider attempts (#389)
  *  - per-request deadline composed with the caller signal, aborts the
  *    in-flight provider request (issue #121)
  *  - shared execution circuit breaker for provider exhaustion
@@ -297,7 +297,7 @@ export function createEnvLlmExecutionPort(
           signal,
         );
       } catch (error) {
-        // A half-open probe may be rejected before a provider call (queue or
+        // A half-open probe may be rejected before a provider attempt (queue or
         // Redis failure); do not leave the execution circuit wedged forever.
         if (!isClassifier) halfOpenInFlight = false;
         if (error instanceof LlmOverloadError) {

@@ -25,12 +25,8 @@ export interface LlmAgentConfig {
   /** Tool-round age at which a successful observation is downgraded. Default: 2. */
   staleObservationRounds?: number;
   maxContextChars?: number;
-  /** Max LLM call retries on retryable errors. Default: 3. */
-  maxLlmRetries?: number;
-  /** Max actual provider calls shared by one top-level generation. Default: 6. */
+  /** Max provider attempts shared by one top-level generation. Default: 6. */
   maxTotalProviderAttempts?: number;
-  /** Base delay for retry backoff in ms. Default: 100. */
-  retryBaseDelayMs?: number;
   /** Cap on completion tokens per LLM call, to bound cost on runaway output. Default: 1024. */
   maxOutputTokens?: number;
   /** Timeout for individual tool execution in ms. Default: 10_000 (10s). */

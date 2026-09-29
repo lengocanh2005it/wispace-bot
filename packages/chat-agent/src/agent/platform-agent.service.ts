@@ -672,7 +672,6 @@ export class PlatformAgentService {
         maxOutputTokens: Number(
           this.configService.get<string>('OPENAI_MAX_OUTPUT_TOKENS'),
         ),
-        maxLlmRetries: this.options.maxLlmRetries,
         maxTotalProviderAttempts:
           buildLlmExecutionConfig().maxTotalProviderAttempts,
         toolExecutionTimeoutMs: this.options.toolExecutionTimeoutMs,

@@ -25,6 +25,7 @@ export type {
   LlmAdmissionLease,
 } from './llm-admission-coordinator';
 export { buildLlmExecutionConfig } from './llm-execution.config';
+export { LLM_EXECUTION_DEFAULTS } from './llm-execution.config';
 export type { LlmExecutionConfigReader } from './llm-execution.config';
 export {
   DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
@@ -53,7 +54,4 @@ export {
   type LlmExecutionFailureKind,
   type LlmExecutionFailureTracker,
 } from './failure-attribution';
-export {
-  classifyLlmFailure,
-  LlmRetryExhaustedError,
-} from './llm-failure-classifier';
+export { classifyLlmFailure } from './llm-failure-classifier';

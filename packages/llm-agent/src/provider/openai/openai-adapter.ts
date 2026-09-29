@@ -29,6 +29,22 @@ import {
 const DEFAULT_MODEL = 'gpt-5.4';
 
 /**
+ * Transport options forwarded to the OpenAI SDK client.
+ *
+ * The client's own retry count is always pinned to zero and is not part of this
+ * type: the shared provider-attempt budget is the only retry owner, and SDK
+ * transport retries happen below that boundary where nothing can count or
+ * bound them (#1473). `timeoutMs` keeps a hung provider inside the execution
+ * deadline instead of the SDK's ten-minute default.
+ */
+export interface LlmClientOptions {
+  /** Per-request client timeout in ms. */
+  timeoutMs?: number;
+  /** Transport implementation; the seam the transport-count spec observes. */
+  fetch?: typeof globalThis.fetch;
+}
+
+/**
  * OpenAI (and OpenAI-compatible) adapter for the LlmProviderAdapter contract.
  * All OpenAI SDK-specific logic lives here — the rest of the codebase never
  * touches the `openai` npm package directly.
@@ -43,6 +59,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     private readonly getBaseUrl?: () => string | undefined,
     providerName?: string,
     private readonly policy?: LlmProviderPolicy,
+    private readonly clientOptions?: LlmClientOptions,
   ) {
     this.providerName = providerName ?? 'openai';
   }
@@ -209,6 +226,16 @@ export class OpenAiAdapter implements LlmProviderAdapter {
       this.client = new OpenAI({
         apiKey,
         baseURL: this.getBaseUrl?.(),
+        // The shared provider-attempt budget owns retry and failover. The SDK's
+        // own transport retries sit below that budget and would be billed
+        // without being counted (#1473).
+        maxRetries: 0,
+        ...(this.clientOptions?.timeoutMs !== undefined
+          ? { timeout: this.clientOptions.timeoutMs }
+          : {}),
+        ...(this.clientOptions?.fetch
+          ? { fetch: this.clientOptions.fetch }
+          : {}),
       });
     }
     return this.client;

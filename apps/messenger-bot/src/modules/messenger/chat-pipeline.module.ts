@@ -422,7 +422,6 @@ import {
             promptDir: join(__dirname, '../../../shared/prompts'),
             promptFile: 'messenger-chat.system.txt',
             appendHistory: false,
-            maxLlmRetries: 0,
             toolExecutionTimeoutMs: 30_000,
             // Chat flows through the same execution-control path as reports
             // and reminders: limiter + circuit breaker + retry + deadline.

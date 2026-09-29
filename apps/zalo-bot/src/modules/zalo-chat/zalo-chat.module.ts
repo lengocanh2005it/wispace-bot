@@ -517,8 +517,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
-            // Single retry layer — retryWithBackoff in PlatformAgentService
-            maxLlmRetries: 0,
             toolExecutionTimeoutMs: 35_000,
             systemPromptSuffix: async (input) => {
               const learnerProfile = await learnerProfileSuffix(input);

@@ -3,7 +3,6 @@
 
 export {
   LlmAgentService,
-  LlmRetryExhaustedError,
   classifyLlmFailure,
   DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
 } from '../agent.service';

@@ -1,9 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
-import {
-  LlmAgentService,
-  LlmAgentPorts,
-  LlmRetryExhaustedError,
-} from './agent.service';
+import { LlmAgentService, LlmAgentPorts } from './agent.service';
 import { AGENT_TOOLS } from './agent.tools';
 import { NOOP_METRICS_PORT } from './ports';
 import type { AgentMetricsPort } from './ports';
@@ -300,7 +296,6 @@ describe('LlmAgentService', () => {
         metrics,
       },
       {
-        maxLlmRetries: 0,
         maxToolRounds: 8,
         maxToolRunsPerNamePerTurn: 8,
         maxTotalProviderAttempts: 6,
@@ -1325,7 +1320,7 @@ describe('LlmAgentService', () => {
           ),
         );
       const service = new LlmAgentService<StubToolContext>(
-        { maxLlmRetries: 0 },
+        {},
         {
           llmExecution: {
             run: jest
@@ -3142,31 +3137,8 @@ describe('LlmAgentService', () => {
     });
   });
 
-  describe('reply() — LLM retry with jitter backoff', () => {
-    function buildRetryService(
-      overrides: {
-        isRetryableError?: (e: unknown) => boolean;
-        chatWithToolsImpl?: jest.Mock;
-      } = {},
-    ) {
-      const rateLimitErr = Object.assign(new Error('rate limit'), {
-        status: 429,
-      });
-      const adapter: LlmProviderAdapter = {
-        providerName: 'openai',
-        isConfigured: () => true,
-        getDefaultModel: () => 'gpt-5.4',
-        generateJson: jest.fn(),
-        chatWithTools: overrides.chatWithToolsImpl ?? jest.fn(),
-        isRetryableError: overrides.isRetryableError ?? (() => true),
-        isRateLimitError: () => false,
-        normalizeError: () => ({
-          provider: 'openai',
-          retryable: true,
-          reason: 'rate_limit',
-        }),
-      };
-
+  describe('reply() — single provider attempt per execution callback', () => {
+    function buildSingleAttemptService(chatWithToolsImpl: jest.Mock) {
       const ports: LlmAgentPorts<StubToolContext> = {
         llmExecution: {
           run: jest
@@ -3184,118 +3156,40 @@ describe('LlmAgentService', () => {
           recordInjectionEvent: jest.fn(),
         },
         toolExecutor: { execute: jest.fn().mockResolvedValue({}) },
-        adapter,
+        adapter: {
+          providerName: 'openai',
+          isConfigured: () => true,
+          getDefaultModel: () => 'gpt-5.4',
+          generateJson: jest.fn(),
+          chatWithTools: chatWithToolsImpl,
+          isRetryableError: () => true,
+          isRateLimitError: () => false,
+          normalizeError: () => ({
+            provider: 'openai',
+            retryable: true,
+            reason: 'rate_limit' as const,
+          }),
+        },
         metrics: NOOP_METRICS_PORT,
         logger: { warn: jest.fn(), debug: jest.fn() },
       };
 
-      const service = new LlmAgentService<StubToolContext>(
-        { maxLlmRetries: 2, retryBaseDelayMs: 1 }, // 1ms delay for fast tests
-        ports,
-      );
-
-      return { service, adapter, rateLimitErr };
+      return new LlmAgentService<StubToolContext>({}, ports);
     }
 
-    it('retries on retryable error and succeeds on later attempt', async () => {
-      const successResponse = makeTextResponse('Thành công sau retry.');
-      const rateLimitErr = Object.assign(new Error('rate limit'), {
-        status: 429,
-      });
-
-      let call = 0;
-      const chatWithToolsImpl = jest.fn().mockImplementation(() => {
-        call++;
-        if (call < 3) throw rateLimitErr;
-        return Promise.resolve(successResponse);
-      });
-
-      const { service } = buildRetryService({ chatWithToolsImpl });
-
-      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
-
-      expect(result.text).toBe('Thành công sau retry.');
-      expect(chatWithToolsImpl).toHaveBeenCalledTimes(3);
-    });
-
-    it('throws LlmRetryExhaustedError after maxLlmRetries exhausted', async () => {
+    // #1473: the agent loop owns no retry. A retryable provider error reaches
+    // the execution boundary as the raw error so it can be classified there,
+    // and the adapter is invoked exactly once per execution callback.
+    it('performs one attempt and rethrows the raw retryable error', async () => {
       const rateLimitErr = Object.assign(new Error('rate limit'), {
         status: 429,
       });
       const chatWithToolsImpl = jest.fn().mockRejectedValue(rateLimitErr);
-
-      const { service } = buildRetryService({ chatWithToolsImpl });
-
-      await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toThrow(
-        LlmRetryExhaustedError,
-      );
-      // maxLlmRetries=2 → 3 total attempts (0,1,2)
-      expect(chatWithToolsImpl).toHaveBeenCalledTimes(3);
-    });
-
-    it('does not retry non-retryable errors', async () => {
-      const authErr = Object.assign(new Error('unauthorized'), { status: 401 });
-      const chatWithToolsImpl = jest.fn().mockRejectedValue(authErr);
-
-      const { service } = buildRetryService({
-        chatWithToolsImpl,
-        isRetryableError: () => false,
-      });
-
-      await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toThrow(
-        LlmRetryExhaustedError,
-      );
-      // Non-retryable → only 1 attempt, still wrapped in LlmRetryExhaustedError
-      expect(chatWithToolsImpl).toHaveBeenCalledTimes(1);
-    });
-
-    it('maxLlmRetries=0 performs a single attempt and rethrows the raw error', async () => {
-      const rateLimitErr = Object.assign(new Error('rate limit'), {
-        status: 429,
-      });
-      const chatWithToolsImpl = jest.fn().mockRejectedValue(rateLimitErr);
-      const service = new LlmAgentService<StubToolContext>(
-        { maxLlmRetries: 0 },
-        {
-          llmExecution: {
-            run: jest
-              .fn()
-              .mockImplementation(
-                (
-                  fn: (signal?: AbortSignal) => Promise<unknown>,
-                  meta?: { signal?: AbortSignal },
-                ) => fn(meta?.signal),
-              ),
-          },
-          usageRecorder: { recordFromCompletion: jest.fn() },
-          safetyEvents: {
-            recordGroundingWarning: jest.fn(),
-            recordInjectionEvent: jest.fn(),
-          },
-          toolExecutor: { execute: jest.fn().mockResolvedValue({}) },
-          adapter: {
-            providerName: 'openai',
-            isConfigured: () => true,
-            getDefaultModel: () => 'gpt-5.4',
-            generateJson: jest.fn(),
-            chatWithTools: chatWithToolsImpl,
-            isRetryableError: () => true,
-            isRateLimitError: () => false,
-            normalizeError: () => ({
-              provider: 'openai',
-              retryable: true,
-              reason: 'rate_limit',
-            }),
-          },
-          metrics: NOOP_METRICS_PORT,
-          logger: { warn: jest.fn(), debug: jest.fn() },
-        },
-      );
+      const service = buildSingleAttemptService(chatWithToolsImpl);
 
       await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toBe(
         rateLimitErr,
       );
-      // Single attempt — no wrapping, no backoff delay
       expect(chatWithToolsImpl).toHaveBeenCalledTimes(1);
     });
   });

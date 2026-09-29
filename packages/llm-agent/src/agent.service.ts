@@ -19,8 +19,8 @@ import {
   isAmbiguousMessage,
   isStopIntent,
 } from './scope.utils';
-import { sleep, isAbortError } from './retry.utils';
-import { jitteredDelayMs, withTimeout } from '@wispace/bot-common/utils';
+import { isAbortError } from './retry.utils';
+import { withTimeout } from '@wispace/bot-common/utils';
 import {
   buildExhaustionPartialAnswer,
   buildNonDisclosureReply,
@@ -59,11 +59,8 @@ import {
 } from './observation/tool-summary';
 
 export { DEFAULT_TOOL_EXECUTION_TIMEOUT_MS } from './internal/agent-limits';
-import {
-  classifyLlmFailure,
-  LlmRetryExhaustedError,
-} from './execution/llm-failure-classifier';
-export { classifyLlmFailure, LlmRetryExhaustedError };
+import { classifyLlmFailure } from './execution/llm-failure-classifier';
+export { classifyLlmFailure };
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -83,8 +80,6 @@ export interface LlmAgentPorts<TToolContext> {
 }
 
 const NOOP_LOGGER = { warn: () => undefined, debug: () => undefined };
-
-const MAX_RETRY_DELAY_MS = 10_000;
 
 function linkAbortSignal(
   source: AbortSignal | undefined,
@@ -254,25 +249,26 @@ export class LlmAgentService<TToolContext> {
       try {
         response = await metrics.timeLlmCall(FEATURE, model, round, () =>
           this.ports.llmExecution.run(
-            (execSignal, executionBudget) =>
-              this.withRetry(
-                (retryBudget) =>
-                  adapter.chatWithTools({
-                    feature: FEATURE,
-                    model,
-                    messages,
-                    tools: AGENT_TOOLS,
-                    toolChoice: 'auto',
-                    correlationId: input.correlationId,
-                    maxOutputTokens: this.limits.maxOutputTokens,
-                    signal: execSignal,
-                    attemptBudget: retryBudget,
-                  }),
-                round,
-                logger,
-                execSignal,
-                executionBudget,
-              ),
+            (execSignal, executionBudget) => {
+              // A caller that already gave up must not reach the provider, and
+              // a retryable error must surface raw so the execution boundary
+              // classifies it. The agent loop owns no retry (#1473).
+              if (execSignal?.aborted) {
+                throw execSignal.reason ?? new Error('Aborted');
+              }
+              executionBudget?.throwIfExhausted();
+              return adapter.chatWithTools({
+                feature: FEATURE,
+                model,
+                messages,
+                tools: AGENT_TOOLS,
+                toolChoice: 'auto',
+                correlationId: input.correlationId,
+                maxOutputTokens: this.limits.maxOutputTokens,
+                signal: execSignal,
+                attemptBudget: executionBudget,
+              });
+            },
             {
               feature: FEATURE,
               correlationId: input.correlationId,
@@ -681,66 +677,6 @@ export class LlmAgentService<TToolContext> {
       '',
       'Bạn có thể hỏi tự do về tiến độ, lịch học — WISPACE cũng gửi báo cáo và nhắc lịch tự động.',
     ].join('\n');
-  }
-
-  private async withRetry<T>(
-    fn: (attemptBudget?: LlmAttemptBudget) => Promise<T>,
-    round: number,
-    logger: { warn: (msg: string) => void },
-    signal?: AbortSignal,
-    attemptBudget?: LlmAttemptBudget,
-  ): Promise<T> {
-    const maxRetries = this.limits.maxLlmRetries;
-    if (maxRetries === 0) {
-      // Retries disabled — single attempt, throw the raw error so the outer
-      // llmExecution layer (retryWithBackoff) can classify it itself.
-      attemptBudget?.throwIfExhausted();
-      return fn(attemptBudget);
-    }
-    const baseDelay = this.limits.retryBaseDelayMs;
-    let lastErr: unknown;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (signal?.aborted) {
-        throw signal.reason ?? lastErr ?? new Error('Aborted');
-      }
-      attemptBudget?.throwIfExhausted();
-      try {
-        return await fn(attemptBudget);
-      } catch (err) {
-        lastErr = err;
-        attemptBudget?.recordFailure(err);
-        if (
-          signal?.aborted ||
-          isAbortError(err) ||
-          !this.ports.adapter.isRetryableError(err) ||
-          attempt === maxRetries
-        ) {
-          break;
-        }
-        if (attemptBudget?.exhausted) {
-          break;
-        }
-        // Shared equal-jitter policy (packages/bot-common) applied after the
-        // cap — spreads concurrent chat retries that aligned on the same
-        // provider 429/5xx so they do not stampede.
-        const delay = jitteredDelayMs(
-          Math.min(baseDelay * Math.pow(2, attempt), MAX_RETRY_DELAY_MS),
-        );
-        logger.warn(
-          `LLM_RETRY attempt=${attempt + 1}/${maxRetries} round=${round} delay=${Math.round(delay)}ms`,
-        );
-        await sleep(delay, signal);
-      }
-    }
-
-    if (signal?.aborted || isAbortError(lastErr)) {
-      throw lastErr ?? signal?.reason ?? new Error('Aborted');
-    }
-    if (attemptBudget?.exhausted) {
-      throw lastErr;
-    }
-    throw new LlmRetryExhaustedError(maxRetries + 1, lastErr);
   }
 
   private observeAttemptBudget(

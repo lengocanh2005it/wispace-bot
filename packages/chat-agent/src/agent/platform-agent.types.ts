@@ -177,8 +177,6 @@ export interface PlatformAgentOptions {
    * Ignored when `llmExecution` is injected directly.
    */
   llmAdmissionMetrics?: AdmissionMetrics;
-  /** 0 disables agent-level retry when the app's LLM execution already retries. */
-  maxLlmRetries?: number;
   /** Per-tool execution timeout in ms (Messenger report tool needs 30s). */
   toolExecutionTimeoutMs?: number;
   /**
