@@ -619,12 +619,16 @@ A calendar read whose effective `limit` or `pastDays` is lower than its requeste
 _Avoid_: truncated complete list, exact result
 
 **result completeness**:
-Whether a tool result includes all records matching its query. Completeness is `incomplete` or `unknown`; returned count alone does not prove completeness.
+Whether a result includes all records matching its query. Completeness is `incomplete` or `unknown`; returned count alone does not prove completeness. It governs every paged read, whether a tool result or a mapping scan.
 _Avoid_: returned count, has-more inference
 
 **known remaining data**:
-Records that the upstream source confirms exist beyond the returned page. It is distinct from a capped result and cannot be inferred merely by reaching the cap.
+Records that the source confirms exist beyond the returned page. It is distinct from a capped result and cannot be inferred merely by reaching the cap.
 _Avoid_: hasMore, silent extra records
+
+**mapping page**:
+One bounded slice of platform mappings produced by a single step of a scan. A scan is complete only when a page states that no further pages exist; the size of a page never establishes this, and a page filled to its limit is not thereby the last one. A scan whose pages fail partway is `incomplete`, and the records it never reached are not thereby absent.
+_Avoid_: hasMore, last-page inference, page size as end signal
 
 **tool spec**:
 The platform-independent declaration of an agent tool: its name, description, tool schema, capability metadata, and derived-tool metadata. A tool spec describes what the tool is and how shared chat code classifies its result; it does not contain platform execution or dependency injection.
