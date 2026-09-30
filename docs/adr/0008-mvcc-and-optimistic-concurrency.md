@@ -17,7 +17,7 @@ lost-update problem, and then the narrowest tool that solves it:
 | Mechanism | Use when | Reference in this repo |
 | --- | --- | --- |
 | `READ COMMITTED` (default), no extra locking | The write is a single atomic statement, or a unique constraint already prevents the bad interleaving. Most flows. | Quota reserve — `chat_idempotency` row written in the reserve transaction (`packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts`). |
-| Single-statement compare-and-set (`INSERT … ON CONFLICT … DO UPDATE … WHERE <guard>`, or `UPDATE … WHERE <guard>`) | Claiming/leasing a row, or a counter cap, where the guard and the write must be one atomic statement. Correct under `READ COMMITTED` without row locks. | Report/job claim — `INSERT INTO scheduled_report_claims … ON CONFLICT (platform, external_user_id, report_date) DO UPDATE … WHERE scheduled_report_claims.status = 'released'` (`packages/database/src/services/platform-report-claim.repository.ts`; Messenger's duplicate is removed by #744). Webhook inbox claim — `UPDATE webhook_inbound_events SET status='processing', lease_token=… WHERE id=… AND status IN ('pending','failed')` (`packages/webhook-inbound/…/platform-webhook-inbound-event.service.ts`). Reschedule confirmation claim — `takeValid()` `UPDATE reschedule_confirmations SET status='processing', lease_token=… WHERE external_id=… AND status='pending' AND expires_at > now()` (`packages/database/src/services/typeorm-reschedule-store.ts`). Reschedule daily budget — `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 WHERE count < cap RETURNING count` on `chat_tool_daily_usage` (#626). |
+| Single-statement compare-and-set (`INSERT … ON CONFLICT … DO UPDATE … WHERE <guard>`, or `UPDATE … WHERE <guard>`) | Claiming/leasing a row, or a counter cap, where the guard and the write must be one atomic statement. Correct under `READ COMMITTED` without row locks. | Report/job claim — `INSERT INTO scheduled_report_claims … ON CONFLICT (platform, external_user_id, report_date) DO UPDATE … WHERE scheduled_report_claims.status = 'released'` (`packages/scheduler-core/src/adapters/platform-report-claim.repository.ts`; Messenger's duplicate is removed by #744). Webhook inbox claim — `UPDATE webhook_inbound_events SET status='processing', lease_token=… WHERE id=… AND status IN ('pending','failed')` (`packages/webhook-inbound/…/platform-webhook-inbound-event.service.ts`). Reschedule confirmation claim — `takeValid()` `UPDATE reschedule_confirmations SET status='processing', lease_token=… WHERE external_id=… AND status='pending' AND expires_at > now()` (`packages/reschedule-confirm/src/adapters/typeorm-reschedule-store.ts`). Reschedule daily budget — `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 WHERE count < cap RETURNING count` on `chat_tool_daily_usage` (#626). |
 | Opaque lease token + time-based stale recovery | Long-running processing of a claimed row across pods, where the worker may crash mid-way. The token gates every later transition; a separate time threshold reclaims abandoned rows. | Webhook inbox — `lease_token` (random UUID, **no expiry column**); stale recovery compares `updated_at < now() - processingStuckMs` and marks `abandoned` with no replay. Reschedule confirmation — `lease_token` + `processing_started_at`; `recoverStaleProcessing()` reverts to `pending` past a threshold. Report claim — `lease_token` + `lease_expires_at`. |
 | `SELECT … FOR UPDATE` + re-read inside a transaction | A single row must be read, decided on, and written with no other writer in between, and the decision cannot be expressed as one statement. | Zalo OA token refresh — `pessimistic_write` lock, re-read after lock, so a single-use refresh token is never submitted twice (`apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts`). |
 | Optimistic `version` column CAS (`UPDATE … WHERE id=… AND version=… SET version = version + 1`) | Multiple equal writers, no natural key or status to CAS on, and pessimistic locking is undesirable. | **Only** `zalo_oa_tokens.version` (plain `@Column`, not `@VersionColumn`), and there it is a *second* layer on top of the `FOR UPDATE` above — belt-and-suspenders, kept because a wrong outcome burns a single-use token. This is the reference implementation if a second flow ever genuinely needs the pattern. |
@@ -71,17 +71,25 @@ forgotten by a platform.
 
 ## Notes from the inventory
 
+- #804 walked every `.transaction(` boundary in the repo (15 call sites) and
+  confirmed the decision above still holds: every invariant is single-row or
+  expressible as one conditional statement, so nothing is a candidate for an
+  explicit `REPEATABLE READ` / `SERIALIZABLE` pilot and no global change is
+  justified. #805 and #806 were resolved as not-needed on that evidence.
+  Reopen this section when a new flow adds a transaction boundary.
 - The report/job claim CAS statement was historically duplicated between the
-  shared `platform-report-claim.repository.ts` and Messenger's
-  `messenger.repository.ts`. Issue #744 consolidates the claim implementation
-  behind the platform-parameterized shared adapter for Messenger, Discord, and
-  Zalo. Messenger's `message_logs`-based "sent today" fallback remains a
-  Messenger-specific reader outside the claim adapter, so this refactor does
-  not change the dedupe policy or its clock.
+  shared `scheduler-core/src/adapters/platform-report-claim.repository.ts` and
+  Messenger's `messenger.repository.ts`. Issue #744 consolidates the claim
+  implementation behind the platform-parameterized shared adapter for
+  Messenger, Discord, and Zalo. Messenger's `message_logs`-based "sent today"
+  fallback remains a Messenger-specific reader outside the claim adapter, so
+  this refactor does not change the dedupe policy or its clock.
 - The TypeORM `report_send_jobs` repository was also duplicated in Messenger
   and Discord. Issue #744 consolidates those copies into
-  `PlatformReportSendJobRepository` in `packages/database`, parameterized by
-  `Platform`, with the existing port and lease/status semantics unchanged.
+  `PlatformReportSendJobRepository` in
+  `packages/scheduler-core/src/adapters/platform-report-send-job.repository.ts`,
+  parameterized by `Platform`, with the existing port and lease/status
+  semantics unchanged.
 - Webhook inbox `listDue()` is a plain `SELECT … ORDER BY id LIMIT n` with **no
   `FOR UPDATE` / `SKIP LOCKED`**. Two workers can read the same due row, but only
   one wins the `WHERE status IN ('pending','failed')` CAS claim — correct result,
