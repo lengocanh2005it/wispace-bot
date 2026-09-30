@@ -88,6 +88,9 @@ jobs:
       - name: Test manifest dependency guard (#1219)
         run: npm run manifest-deps:test
 
+      - name: Test entrypoint consumer guard (#1440)
+        run: npm run entrypoint-consumers:test
+
       - name: Test runtime image check (#1219)
         run: npm run runtime-image:test
 

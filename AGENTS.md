@@ -107,14 +107,17 @@ npx turbo run build --filter=@wispace/messenger-bot...
 npx turbo run test --filter=@wispace/messenger-bot...
 ```
 
-Static CI guards (root, no database needed) — all four run inside `npm run verify`:
+Static CI guards (root, no database needed) — all run inside `npm run verify`:
 
 ```bash
 npm run architecture:check      # import boundary rules
 npm run workspace-deps:check    # workspace packages imported without being declared
 npm run manifest-deps:check     # runtime dependencies declared but never imported
+npm run entrypoint-consumers:check  # a declared `exports` subpath nothing imports (#1440)
 npm run file-size:check         # a tracked file grew past its recorded ceiling
 ```
+
+**Entrypoint consumer guard (#1440):** a declared `exports` subpath that nothing imports reads as a supported API and rots silently. #1440 removed one by hand (`@wispace/llm-agent/tools`) and measuring for this rule then found a second the same day. The rule separates two cases that look alike in the manifest: a subpath that **publishes symbols** nothing imports is a violation, while a subpath that **publishes nothing** — a placeholder reserved for work in progress, currently `@wispace/account-link-core/adapters` — is reported as a note and allowed, because importing it yields nothing and so cannot mislead. Specs count as consumers; a commented-out import does not; an unresolvable entry target is a violation rather than assumed empty. There is no exemption list, because an entry here is exactly the permanent exemption this repository refuses elsewhere.
 
 **Dependency placement in `packages/*` (#1219).** A package in `packages/*` belongs in `devDependencies` unless the compiled output needs it at runtime; build-only tooling (the Nest CLI, schematics, testing, compilers, formatters) in `dependencies` ships into all three production images, because `deploy/Dockerfile.bot` installs with `npm ci --omit=dev` and `--omit=dev` only drops what is *declared* as a dev dependency. `npm run manifest-deps:check` fails on a declared-but-unimported runtime dependency, so do not work around it — move it to `devDependencies` or delete the entry. The one trap: a **type-only** import still does not license removal. `@wispace/bot-common` calls `NestFactory.create`, and NestJS resolves the HTTP platform through a dynamic `import('@nestjs/platform-express')` that `process.exit(1)`s when the adapter is absent, so it must keep declaring `@nestjs/platform-express` (comment at `src/bootstrap/bot-bootstrap.ts`). The second trap: the lint governs *direct declarations only* — `typeorm` declares `typescript` and `ts-node` as optional peers, so the `rm -rf` of those two in `Dockerfile.bot` is still load-bearing. Removing either guard on the reasoning that the other covers it is wrong in both directions. A third, if you touch `deploy/runtime-image-check.mjs`: the forbidden list matches **scoped** names at any depth but **unscoped** names (`typescript`, `ts-node`, `jest`) only at the `node_modules` root — an unscoped name is too generic to assert on at depth. Both behaviours are pinned by `npm run runtime-image:test`; do not "simplify" the depth check away.
 
