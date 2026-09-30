@@ -49,6 +49,11 @@ Env vars rather than argv so code containing quotes needs no shell escaping. The
 tool exits 0 only when the command failed against the broken code, so it is safe
 to gate on.
 
+**The command runs through a shell**, so argv must be shell-safe. `node -e
+process.exit(1)` is a syntax error under `sh` — `(` is a metacharacter — and it
+works fine under Windows `cmd`, so it passes locally and fails only on CI. Write
+the code to a script file and pass its path.
+
 Run it on your own test when:
 
 - a new assertion covers a branch, an error path, or a fail-closed guarantee

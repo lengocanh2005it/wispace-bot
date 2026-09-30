@@ -6,6 +6,11 @@
 // or spawnSync('npx') without shell:true on Windows, both return success while
 // the work never happened.
 //
+// The command runs through a shell (shell:true, so npx works on Windows), which
+// means the caller must pass shell-safe argv. `node -e process.exit(1)` is a
+// syntax error under sh - `(` is a metacharacter - and it passes under cmd, so
+// only CI on Linux catches it. Write a script to a temp path and pass its path.
+//
 // Usage (env vars, so code containing quotes needs no shell escaping):
 //   MUT_FILE=<path> MUT_FROM=<exact substring> MUT_TO=<replacement> \
 //     node verify-mutation.mjs -- <command> [args...]
