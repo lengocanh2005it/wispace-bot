@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
+import { constantTimeEquals } from '@wispace/bot-common/utils';
 
 export const META_WEBHOOK_SIGNATURE_HEADER = 'x-hub-signature-256';
 const SIGNATURE_PREFIX = 'sha256=';
@@ -39,16 +40,8 @@ export function verifyMessengerWebhookSignature(
   const providedHex = signatureHeader.slice(SIGNATURE_PREFIX.length);
   const expectedHex = computeMessengerWebhookSignature(rawBody, appSecret);
 
-  if (providedHex.length !== expectedHex.length) {
-    return false;
-  }
-
-  try {
-    return timingSafeEqual(
-      Buffer.from(providedHex, 'utf8'),
-      Buffer.from(expectedHex, 'utf8'),
-    );
-  } catch {
-    return false;
-  }
+  return constantTimeEquals(
+    Buffer.from(providedHex, 'utf8'),
+    Buffer.from(expectedHex, 'utf8'),
+  );
 }
