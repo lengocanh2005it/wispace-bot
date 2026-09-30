@@ -296,4 +296,48 @@ describe('ZaloTokenService', () => {
       ready: false,
     });
   });
+
+  it('reports not_configured when the platform is explicitly switched off', async () => {
+    // Stale placeholder credentials are present, so their presence cannot be
+    // used to infer whether the platform is in use. The operator says so.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({ readCurrent: jest.fn().mockResolvedValue(null) }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({
+        ZALO_APP_ID: '1234',
+        ZALO_APP_SECRET_KEY: 'stale-placeholder',
+        ZALO_PLATFORM_ENABLED: 'false',
+      }),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+    });
+  });
+
+  it('keeps failing when the platform is on but no flag was ever set', async () => {
+    // Absent flag must not relax readiness, or a real deployment that forgot
+    // the flag would silently report healthy.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({ readCurrent: jest.fn().mockResolvedValue(null) }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({ ZALO_APP_ID: '1234', ZALO_APP_SECRET_KEY: 'secret' }),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'unavailable',
+      reason: 'token_missing',
+    });
+  });
 });

@@ -121,7 +121,7 @@ export class ZaloTokenService implements OnModuleInit {
       await this.refresh();
     } catch (error) {
       if (error instanceof ZaloOaTokenRowMissingError) {
-        if (this.isOaAccountUnconfigured()) {
+        if (this.isPlatformExplicitlyDisabled() || this.hasNoOaCredentials()) {
           this.markNotConfigured();
           return;
         }
@@ -232,14 +232,28 @@ export class ZaloTokenService implements OnModuleInit {
   }
 
   /**
-   * True when this deployment was never given a Zalo OA account at all.
+   * True when this deployment has deliberately switched the Zalo platform off.
    *
-   * The distinguishing signal is the OA app credentials, not the empty token
-   * row: an empty row with credentials present is real data loss and must keep
-   * failing readiness, while both absent means the platform was simply never
-   * switched on.
+   * An explicit flag, not an inference. Credentials can be present as stale
+   * placeholders while no OA account was ever bootstrapped, so their presence
+   * says nothing about whether the platform is in use. Someone states it.
+   *
+   * Defaults to false so an absent flag keeps the previous fail-closed
+   * behaviour: only an explicit opt-out relaxes readiness.
    */
-  private isOaAccountUnconfigured(): boolean {
+  private isPlatformExplicitlyDisabled(): boolean {
+    const raw = this.config
+      ?.get<string>('ZALO_PLATFORM_ENABLED')
+      ?.trim()
+      .toLowerCase();
+    return raw === 'false' || raw === '0';
+  }
+
+  /**
+   * True when no OA credentials were supplied at all, which means the platform
+   * was never wired up rather than having lost a token.
+   */
+  private hasNoOaCredentials(): boolean {
     const read = (key: string): string | undefined =>
       this.config?.get<string>(key)?.trim();
     return !read('ZALO_APP_ID') || !read('ZALO_APP_SECRET_KEY');
@@ -247,8 +261,9 @@ export class ZaloTokenService implements OnModuleInit {
 
   private markNotConfigured(): void {
     this.logger.warn(
-      'Zalo OA account is not configured (ZALO_APP_ID / ZALO_APP_SECRET_KEY absent) — ' +
-        'the platform is reported as not_configured and does not block readiness',
+      'Zalo OA platform is not enabled for this deployment ' +
+        '(ZALO_PLATFORM_ENABLED is off or OA credentials are absent) — ' +
+        'reported as not_configured and does not block readiness',
     );
     const current = this.platformState?.getSnapshot();
     this.platformState?.transition({
