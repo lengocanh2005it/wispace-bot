@@ -116,14 +116,32 @@ export class ChatRateLimitConfigService {
   }
 
   getBurstStore(): ChatBurstStoreKind {
+    const raw = this.readRawBurstStore();
+    if (raw === 'redis') return 'redis';
+    // #1288: an unrecognised value — including a retired
+    // `CHAT_BURST_STORE=memory` — falls back to Postgres rather than failing
+    // the bot, because Postgres is the correctness floor (ADR-0007). Production
+    // does not leave that silent: `isBurstStoreValueUnsupported` is what the
+    // startup check reads.
+    return 'postgres';
+  }
+
+  /**
+   * Whether a value is set that this build does not support. Distinct from
+   * `getBurstStore()`, where unset and unsupported are deliberately the same
+   * answer — an unset variable is a legitimate default, an unsupported one is a
+   * misconfiguration, and only the second deserves to stop a boot (#1288).
+   */
+  isBurstStoreValueUnsupported(): boolean {
+    const raw = this.readRawBurstStore();
+    return raw !== undefined && raw !== 'redis' && raw !== 'postgres';
+  }
+
+  private readRawBurstStore(): string | undefined {
     const raw = this.configService
       .get<string>('CHAT_BURST_STORE')
       ?.trim()
       .toLowerCase();
-    // #1288: an unrecognised value — including a leftover
-    // `CHAT_BURST_STORE=memory` — falls back to Postgres rather than failing
-    // the bot, because Postgres is the correctness floor (ADR-0007).
-    if (raw === 'redis') return 'redis';
-    return 'postgres';
+    return raw ? raw : undefined;
   }
 }

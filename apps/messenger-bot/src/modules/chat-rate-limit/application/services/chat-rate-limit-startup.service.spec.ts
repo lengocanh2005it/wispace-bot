@@ -12,6 +12,7 @@ describe('ChatRateLimitStartupService', () => {
     nodeEnv?: string;
     enforceProd?: string;
     rateLimitEnabled?: boolean;
+    burstStoreUnsupported?: boolean;
   }) {
     configService = {
       get: jest.fn((key: string) => {
@@ -23,6 +24,9 @@ describe('ChatRateLimitStartupService', () => {
 
     chatRateLimitConfigService = {
       isEnabled: jest.fn().mockReturnValue(opts.rateLimitEnabled ?? false),
+      isBurstStoreValueUnsupported: jest
+        .fn()
+        .mockReturnValue(opts.burstStoreUnsupported ?? false),
     } as unknown as jest.Mocked<ChatRateLimitConfigService>;
 
     service = new ChatRateLimitStartupService(
@@ -54,5 +58,36 @@ describe('ChatRateLimitStartupService', () => {
     setup({ enforceProd: 'true', rateLimitEnabled: false });
 
     expect(() => service.onModuleInit()).toThrow(InternalServerErrorException);
+  });
+
+  // #1288 retired the memory store. In production a stale value must be loud:
+  // silently degrading to Postgres hides a misconfiguration the next operator
+  // inherits. Same gate and same throw as the H1 check above, so quota config
+  // has one validation pattern rather than two.
+  it('throws in production when CHAT_BURST_STORE holds a value this build retired (#1288)', () => {
+    setup({
+      nodeEnv: 'production',
+      rateLimitEnabled: true,
+      burstStoreUnsupported: true,
+    });
+
+    expect(() => service.onModuleInit()).toThrow(InternalServerErrorException);
+    expect(() => service.onModuleInit()).toThrow('CHAT_BURST_STORE');
+  });
+
+  it('does not throw in production when CHAT_BURST_STORE is a supported value', () => {
+    setup({
+      nodeEnv: 'production',
+      rateLimitEnabled: true,
+      burstStoreUnsupported: false,
+    });
+
+    expect(() => service.onModuleInit()).not.toThrow();
+  });
+
+  it('does not block a developer on a stale CHAT_BURST_STORE', () => {
+    setup({ nodeEnv: 'development', burstStoreUnsupported: true });
+
+    expect(() => service.onModuleInit()).not.toThrow();
   });
 });

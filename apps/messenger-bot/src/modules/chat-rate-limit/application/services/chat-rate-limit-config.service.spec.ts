@@ -23,4 +23,21 @@ describe('ChatRateLimitConfigService.getBurstStore', () => {
   it('falls back to postgres for the retired memory value (#1288)', () => {
     expect(buildService('memory').getBurstStore()).toBe('postgres');
   });
+
+  // The fallback above is silent, which is why production needs a second
+  // signal: an unset value is a legitimate default, an unsupported one is a
+  // misconfiguration and must be distinguishable from it.
+  it.each(['memory', 'MEMORY', 'sqlite', 'redis-sentinel'])(
+    'reports %s as an unsupported configured store (#1288)',
+    (value) => {
+      expect(buildService(value).isBurstStoreValueUnsupported()).toBe(true);
+    },
+  );
+
+  it.each([undefined, '', '   ', 'redis', 'postgres', ' POSTGRES '])(
+    'does not report %p as unsupported (#1288)',
+    (value) => {
+      expect(buildService(value).isBurstStoreValueUnsupported()).toBe(false);
+    },
+  );
 });
