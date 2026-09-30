@@ -22,6 +22,8 @@ export const ADVISORY_LOCKS = {
   ZALO_WEBHOOK_INBOUND_CLEANUP: 884_200_933,
   /** Discord: link-verify reconciliation cron (every 5 min, `discord_link_verify_records`). */
   DISCORD_LINK_RECONCILE: 884_200_934,
+  /** Zalo: link-verify reconciliation cron (every 5 min, `zalo_link_verify_records`) (#1160). */
+  ZALO_LINK_RECONCILE: 884_200_937,
   /** Discord: study-reminder worker sync lock (30 min, per-platform #777). */
   DISCORD_STUDY_REMINDER_SYNC: 884_200_944,
   /** Discord: study-reminder terminal-job cleanup lock (03:00 ICT, per-platform #777). */

@@ -1,5 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
 import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import type { ZaloAccountLinkService } from '../persistence/zalo-account-link.service';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
@@ -282,5 +283,58 @@ describe('ZaloLinkReconcileCronService', () => {
     await cron.handleReconcile();
 
     expect(verifyRecordService.listStaleRecords).not.toHaveBeenCalled();
+  });
+
+  // #1160: the id was an app-local literal, so the shared registry could not
+  // see it and a divergence could not be caught. The value must not change.
+  it('takes its lock from the shared advisory-lock registry (#1160)', async () => {
+    const pgLock = buildPgLock(884_200_937);
+    const { verifyRecordService, accountLinkService } = buildHarness({});
+    const cron = new ZaloLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      pgLock,
+      defaultClarificationStore,
+    );
+
+    await cron.handleReconcile();
+
+    expect(ADVISORY_LOCKS.ZALO_LINK_RECONCILE).toBe(884_200_937);
+    expect(pgLock.withLock).toHaveBeenCalledWith(
+      ADVISORY_LOCKS.ZALO_LINK_RECONCILE,
+      expect.any(Function),
+    );
+  });
+
+  // #1160: Zalo defaulted to a 10-minute crash-recovery window while
+  // Messenger and Discord use 60 minutes, so the same flow gave up on a
+  // recoverable intent six times sooner on one platform. Asserted as behaviour
+  // at the port rather than as a constant, so the baseline cannot drift again
+  // without this failing.
+  it('retains a half-hour-old intent when no age env is set (#1160)', async () => {
+    const { verifyRecordService, accountLinkService } = buildHarness({
+      records: [
+        {
+          zaloUserId: 'zalo-user-1',
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 30 * 60_000),
+        },
+      ],
+    });
+    const emptyConfig = {
+      get: () => undefined,
+    } as unknown as ConfigService;
+    const cron = new ZaloLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      emptyConfig,
+      buildPgLock(884_200_937),
+      defaultClarificationStore,
+    );
+
+    await cron.handleReconcile();
+
+    expect(accountLinkService.upsertLink).toHaveBeenCalled();
   });
 });
