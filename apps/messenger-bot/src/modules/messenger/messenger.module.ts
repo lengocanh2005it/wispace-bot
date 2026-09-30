@@ -6,7 +6,10 @@ import {
   CleanupCronService,
   PlatformLinkAuditCleanupService,
 } from '@wispace/cleanup-cron/adapters';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
@@ -170,7 +173,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
         new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
           platform: 'messenger',
-          advisoryLockId: 884_200_942,
+          advisoryLockId: ADVISORY_LOCKS.PLATFORM_LINK_AUDIT_CLEANUP,
         }),
       inject: [CleanupCronService, DataSource],
     },

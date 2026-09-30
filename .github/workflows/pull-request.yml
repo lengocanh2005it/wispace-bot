@@ -407,6 +407,9 @@ jobs:
       - name: Check reschedule confirm entry paths carry their approval token (#1493)
         run: bash .github/scripts/check-reschedule-confirm-handlers.sh
 
+      - name: Check advisory-lock ids are declared in a registry (#1500)
+        run: bash .github/scripts/check-advisory-lock-literals.sh
+
       - name: Check OpenAI SDK import boundary (#427)
         run: bash .github/scripts/check-openai-sdk-imports.sh
 

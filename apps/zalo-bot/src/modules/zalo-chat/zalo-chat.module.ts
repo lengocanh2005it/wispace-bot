@@ -813,7 +813,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
         new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
           platform: 'zalo',
-          advisoryLockId: 884_200_942,
+          advisoryLockId: ADVISORY_LOCKS.PLATFORM_LINK_AUDIT_CLEANUP,
         }),
       inject: [CleanupCronService, DataSource],
     },
@@ -878,12 +878,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           {
             platform: 'zalo',
             lockIds: {
-              messageLog: 884_200_916,
-              deadLetter: 884_200_917,
-              idempotencyRecovery: 884_200_918,
-              idempotencyCleanup: 884_200_919,
-              oauthState: 884_200_913,
-              reportClaim: 884_200_921,
+              messageLog: ADVISORY_LOCKS.ZALO_CLEANUP_MESSAGE_LOG,
+              deadLetter: ADVISORY_LOCKS.ZALO_CLEANUP_DEAD_LETTER,
+              idempotencyRecovery:
+                ADVISORY_LOCKS.ZALO_CLEANUP_IDEMPOTENCY_RECOVERY,
+              idempotencyCleanup: ADVISORY_LOCKS.ZALO_CLEANUP_IDEMPOTENCY,
+              oauthState: ADVISORY_LOCKS.ZALO_CLEANUP_OAUTH_STATE,
+              reportClaim: ADVISORY_LOCKS.ZALO_CLEANUP_REPORT_CLAIM,
             },
             messageLogRepo,
             deadLetterRepo,

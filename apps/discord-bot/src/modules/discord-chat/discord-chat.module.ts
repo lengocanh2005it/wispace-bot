@@ -659,7 +659,7 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
         new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
           platform: 'discord',
-          advisoryLockId: 884_200_942,
+          advisoryLockId: ADVISORY_LOCKS.PLATFORM_LINK_AUDIT_CLEANUP,
         }),
       inject: [CleanupCronService, DataSource],
     },
@@ -724,12 +724,13 @@ const REGISTER_REPORT_MESSAGE =
           {
             platform: 'discord',
             lockIds: {
-              messageLog: 884_200_911,
-              deadLetter: 884_200_912,
-              idempotencyRecovery: 884_200_914,
-              idempotencyCleanup: 884_200_915,
-              oauthState: 884_200_939,
-              reportClaim: 884_200_920,
+              messageLog: ADVISORY_LOCKS.DISCORD_CLEANUP_MESSAGE_LOG,
+              deadLetter: ADVISORY_LOCKS.DISCORD_CLEANUP_DEAD_LETTER,
+              idempotencyRecovery:
+                ADVISORY_LOCKS.DISCORD_CLEANUP_IDEMPOTENCY_RECOVERY,
+              idempotencyCleanup: ADVISORY_LOCKS.DISCORD_CLEANUP_IDEMPOTENCY,
+              oauthState: ADVISORY_LOCKS.DISCORD_CLEANUP_OAUTH_STATE,
+              reportClaim: ADVISORY_LOCKS.DISCORD_CLEANUP_REPORT_CLAIM,
             },
             messageLogRepo,
             deadLetterRepo,
