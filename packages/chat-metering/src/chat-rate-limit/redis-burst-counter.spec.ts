@@ -1,5 +1,5 @@
 import { RedisBurstCounter } from './redis-burst-counter';
-import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
+import { CHAT_BURST_WINDOW_MS } from './burst-window';
 
 describe('RedisBurstCounter', () => {
   const buildRedis = (get: jest.Mock, evalMock = jest.fn()) =>

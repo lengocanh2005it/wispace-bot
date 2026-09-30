@@ -1,5 +1,5 @@
 import type { RedisClientPort } from '@wispace/bot-common/redis';
-import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
+import { CHAT_BURST_WINDOW_MS } from './burst-window';
 import type { BurstCounterPort } from './types';
 
 export const CHAT_BURST_KEY_TTL_SECONDS = 120;

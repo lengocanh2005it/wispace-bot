@@ -120,7 +120,10 @@ export class ChatRateLimitConfigService {
       .get<string>('CHAT_BURST_STORE')
       ?.trim()
       .toLowerCase();
-    if (raw === 'memory' || raw === 'postgres' || raw === 'redis') return raw;
+    // #1288: an unrecognised value — including a leftover
+    // `CHAT_BURST_STORE=memory` — falls back to Postgres rather than failing
+    // the bot, because Postgres is the correctness floor (ADR-0007).
+    if (raw === 'redis') return 'redis';
     return 'postgres';
   }
 }

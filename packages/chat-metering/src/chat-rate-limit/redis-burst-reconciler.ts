@@ -9,7 +9,7 @@ import {
   buildLegacyRedisBurstKey,
   buildRedisBurstKey,
 } from './redis-burst-counter';
-import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
+import { CHAT_BURST_WINDOW_MS } from './burst-window';
 
 export interface BurstReconciliationRepository {
   listBurstCountsForBucket(

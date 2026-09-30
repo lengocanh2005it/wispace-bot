@@ -2,10 +2,7 @@
 // TypeORM, Redis, NestJS modules, and platform wiring live in `adapters`.
 
 export { ChatRateLimitCore } from '../chat-rate-limit/chat-rate-limit-core.service';
-export {
-  MemoryBurstCounter,
-  CHAT_BURST_WINDOW_MS,
-} from '../chat-rate-limit/memory-burst-counter';
+export { CHAT_BURST_WINDOW_MS } from '../chat-rate-limit/burst-window';
 export type {
   BurstCounterPort,
   BurstReservationResult,

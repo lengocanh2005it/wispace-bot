@@ -212,7 +212,6 @@ const CORE_RULES = [
     'packages/chat-metering/src/**/**-core.service.ts',
     'packages/chat-metering/src/llm-safety/redact-safety-text.ts',
     'packages/chat-metering/src/llm-usage/cost.utils.ts',
-    'packages/chat-metering/src/chat-rate-limit/memory-burst-counter.ts',
   ]),
 ];
 

@@ -16,7 +16,7 @@ import {
   RedisBurstCounter,
   RedisBurstReconciler,
 } from '@wispace/chat-metering/adapters';
-import { MemoryBurstCounter } from '@wispace/chat-metering/core';
+
 import type { BurstReservationResult } from '@wispace/chat-metering/core';
 import { CleanupCronService } from '@wispace/cleanup-cron/adapters';
 import { ChatQuotaEventEntity } from '../../infrastructure/database/entities/chat-quota-event.entity';
@@ -115,13 +115,6 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
             },
           };
           return counter;
-        }
-
-        if (configured === 'memory') {
-          logger.log(
-            `Chat burst counter active=memory configured=memory limit=${config.getBurstPerMinute()}/min`,
-          );
-          return new MemoryBurstCounter();
         }
 
         logger.log(
