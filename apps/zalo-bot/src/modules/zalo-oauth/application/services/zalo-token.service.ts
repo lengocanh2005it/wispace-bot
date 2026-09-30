@@ -121,10 +121,6 @@ export class ZaloTokenService implements OnModuleInit {
       await this.refresh();
     } catch (error) {
       if (error instanceof ZaloOaTokenRowMissingError) {
-        if (this.isPlatformExplicitlyDisabled() || this.hasNoOaCredentials()) {
-          this.markNotConfigured();
-          return;
-        }
         this.logger.warn('refreshNow skipped — zalo_oa_tokens is empty');
         this.markTokenMissing();
         return;
@@ -254,6 +250,10 @@ export class ZaloTokenService implements OnModuleInit {
    * was never wired up rather than having lost a token.
    */
   private hasNoOaCredentials(): boolean {
+    // Without a config service the answer is unknown, and unknown must not be
+    // read as "switched off": that would silently stop reporting a real
+    // missing-token failure.
+    if (!this.config) return false;
     const read = (key: string): string | undefined =>
       this.config?.get<string>(key)?.trim();
     return !read('ZALO_APP_ID') || !read('ZALO_APP_SECRET_KEY');
@@ -287,6 +287,13 @@ export class ZaloTokenService implements OnModuleInit {
   }
 
   private markTokenMissing(): void {
+    // Decided here rather than at each caller: the startup health probe and
+    // the cron both end up here, and the two must never disagree about whether
+    // an absent row means "not switched on" or "data loss".
+    if (this.isPlatformExplicitlyDisabled() || this.hasNoOaCredentials()) {
+      this.markNotConfigured();
+      return;
+    }
     this.markUnavailable('token_missing');
     this.metrics?.incTokenRefreshFailure('missing');
   }

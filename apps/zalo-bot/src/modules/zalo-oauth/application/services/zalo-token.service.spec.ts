@@ -340,4 +340,30 @@ describe('ZaloTokenService', () => {
       reason: 'token_missing',
     });
   });
+
+  it('reports not_configured from the startup probe, not only the cron', async () => {
+    // onModuleInit is what sets the readiness state the deploy reads. A guard
+    // applied only to refreshNow never runs on this path, which is how the
+    // first attempt at this fix failed to change production behaviour.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({ readCurrent: jest.fn().mockResolvedValue(null) }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({
+        ZALO_APP_ID: '1234',
+        ZALO_APP_SECRET_KEY: 'stale-placeholder',
+        ZALO_PLATFORM_ENABLED: 'false',
+      }),
+    );
+
+    await service.onModuleInit();
+    await new Promise((r) => setImmediate(r));
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+    });
+  });
 });
