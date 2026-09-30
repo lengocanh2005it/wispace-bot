@@ -560,7 +560,24 @@ deploy_app() {
     run_migrations="$run_migrations_override"
   fi
   target_dir="$TARGET_BASE_DIR/${app}"
-  image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
+  # Resolve this app's own target from HEAD, not from NEW_SHA. NEW_SHA has
+  # already been walked back to whatever the migration owner could be published
+  # at, so resolving against it would find that older commit for every app and
+  # a single-app change would never ship again.
+  APP_SHA="$(resolve_app_sha "$app" || true)"
+  if [ -z "$APP_SHA" ]; then
+    APP_SHA="$NEW_SHA"
+  elif [ "$APP_SHA" != "$NEW_SHA" ]; then
+    # Resolving per app must never let an app run ahead of the migration
+    # owner. If this app's target needs a schema the owner has not applied
+    # yet, hold it at its current image instead of rolling forward.
+    if [ "$is_migration_owner" != "true" ] && ! schema_current_for "$APP_SHA"; then
+      echo "ERROR: $app targets $APP_SHA but the schema is not current for it; migration owner has not applied it - holding at $(cat "$state_file" 2>/dev/null || echo unknown)" >&2
+      return 1
+    fi
+    echo "$app: release sha is $NEW_SHA but this app's newest published commit is $APP_SHA - deploying $APP_SHA"
+  fi
+  image="${REGISTRY}/${REPO_LC}/${app}:${APP_SHA}"
   state_file="$STATE_DIR/${app}.sha"
   fail_marker="$STATE_DIR/${app}.failed"
 
@@ -569,9 +586,9 @@ deploy_app() {
     return 1
   fi
 
-  if [ "$force_deploy" != "true" ] && [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
-    record_compatibility_state "$app" "$run_migrations" "$NEW_SHA"
-    record_schema_revision "$run_migrations" "$NEW_SHA"
+  if [ "$force_deploy" != "true" ] && [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$APP_SHA" ]; then
+    record_compatibility_state "$app" "$run_migrations" "$APP_SHA"
+    record_schema_revision "$run_migrations" "$APP_SHA"
     [ "$run_migrations" = "true" ] && rm -f "$COMPATIBILITY_STATE_FILE"
     return 0
   fi
@@ -580,16 +597,16 @@ deploy_app() {
     if [ "$is_migration_owner" = "true" ]; then
       # A success/image contradiction is authoritative only for HEAD; a
       # fleet-wide fallback target belongs to the open per-app resolution gap.
-      if [ "${CI_APP_BUILD[$app]-unknown}" = "success" ] && [ "$NEW_SHA" = "$HEAD_SHA" ]; then
-        echo "ERROR: $app — CI build passed but the GHCR image is missing for $NEW_SHA" >&2
+      if [ "${CI_APP_BUILD[$app]-unknown}" = "success" ] && [ "$APP_SHA" = "$HEAD_SHA" ]; then
+        echo "ERROR: $app — CI build passed but the GHCR image is missing for $APP_SHA" >&2
         return 3
       fi
       # Not a verdict yet: the caller checks the schema state before deciding
       # whether a deliberately skipped owner image is a failure (#695).
       return 2
     fi
-    if [ "${CI_APP_BUILD[$app]-unknown}" = "success" ] && [ "$NEW_SHA" = "$HEAD_SHA" ]; then
-      echo "ERROR: $app — CI build passed but the GHCR image is missing for $NEW_SHA" >&2
+    if [ "${CI_APP_BUILD[$app]-unknown}" = "success" ] && [ "$APP_SHA" = "$HEAD_SHA" ]; then
+      echo "ERROR: $app — CI build passed but the GHCR image is missing for $APP_SHA" >&2
       return 3
     fi
     echo "$app: $image $(image_missing_cause) — skipping"
@@ -612,9 +629,9 @@ deploy_app() {
       "$(docker ps --filter "name=^${app}-" --format '{{.Names}}' | head -1)" 2>/dev/null || true)
     if [ "$running_digest" = "$image_digest" ]; then
       echo "$app: already running target image ($image_digest) — skipping deploy"
-      echo "$NEW_SHA" > "$state_file"
-      record_compatibility_state "$app" "$run_migrations" "$NEW_SHA"
-      record_schema_revision "$run_migrations" "$NEW_SHA"
+      echo "$APP_SHA" > "$state_file"
+      record_compatibility_state "$app" "$run_migrations" "$APP_SHA"
+      record_schema_revision "$run_migrations" "$APP_SHA"
       [ "$run_migrations" = "true" ] && rm -f "$COMPATIBILITY_STATE_FILE"
       if [ -f "$fail_marker" ]; then
         echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
@@ -628,14 +645,14 @@ deploy_app() {
   if [ -z "$image_digest" ]; then
     echo "ERROR: $app — could not extract digest from manifest inspect" >&2
     # Fail closed: do not deploy without digest verification (#196)
-    if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
-      echo "$NEW_SHA" > "$fail_marker"
-      notify_app_failed "$app" "$NEW_SHA"
+    if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$APP_SHA" ]; then
+      echo "$APP_SHA" > "$fail_marker"
+      notify_app_failed "$app" "$APP_SHA"
     fi
     return 1
   fi
 
-  echo "=== Deploying $app @ $NEW_SHA (digest $image_digest) ==="
+  echo "=== Deploying $app @ $APP_SHA (digest $image_digest) ==="
   mkdir -p "$target_dir/upstreams"
   cp "$REPO_DIR/.github/scripts/vps-deploy.sh" "$target_dir/"
   cp "$REPO_DIR/deploy/nginx/upstreams/${app}.conf" "$target_dir/upstreams/" 2>/dev/null || true
@@ -664,12 +681,12 @@ deploy_app() {
     MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \
     APP_NETWORK="$APP_NETWORK" \
-    DEPLOY_SHA="$NEW_SHA" \
+    DEPLOY_SHA="$APP_SHA" \
     bash vps-deploy.sh
   ); then
-    echo "$NEW_SHA" > "$state_file"
-    record_compatibility_state "$app" "$run_migrations" "$NEW_SHA"
-    record_schema_revision "$run_migrations" "$NEW_SHA"
+    echo "$APP_SHA" > "$state_file"
+    record_compatibility_state "$app" "$run_migrations" "$APP_SHA"
+    record_schema_revision "$run_migrations" "$APP_SHA"
     [ "$run_migrations" = "true" ] && rm -f "$COMPATIBILITY_STATE_FILE"
     if [ -f "$fail_marker" ]; then
       echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
@@ -678,12 +695,12 @@ deploy_app() {
     fi
     return 0
   else
-    echo "ERROR: deploy failed for $app @ $NEW_SHA — will retry next run" >&2
+    echo "ERROR: deploy failed for $app @ $APP_SHA — will retry next run" >&2
     # Alert once per (app, sha): the same failed sha retries every tick and
     # must not re-page each time (#202). The marker is cleared on success.
-    if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
-      echo "$NEW_SHA" > "$fail_marker"
-      notify_app_failed "$app" "$NEW_SHA"
+    if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$APP_SHA" ]; then
+      echo "$APP_SHA" > "$fail_marker"
+      notify_app_failed "$app" "$APP_SHA"
     fi
     return 1
   fi
@@ -717,6 +734,25 @@ resolve_target_sha() {
   local owner="${APP_ORDER[0]}" sha
   for sha in $(git rev-list -n "$RESOLVE_DEPTH" HEAD 2>/dev/null); do
     if docker manifest inspect "${REGISTRY}/${REPO_LC}/${owner}:${sha}" >/dev/null 2>&1; then
+      printf %s "$sha"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Newest commit at or behind HEAD that *this app* has an image for.
+#
+# The release sha is resolved from the migration owner alone, so a commit that
+# only changes one app leaves that app pinned behind forever: the owner has no
+# image at the new sha, the whole release walks back, and the app that does have
+# an image never receives it. Resolving per app lets a single-app change ship,
+# while the schema barrier still keeps any app from running ahead of the
+# migration revision it needs.
+resolve_app_sha() {
+  local app="$1" sha
+  for sha in $(git rev-list -n "$RESOLVE_DEPTH" HEAD 2>/dev/null); do
+    if docker manifest inspect "${REGISTRY}/${REPO_LC}/${app}:${sha}" >/dev/null 2>&1; then
       printf %s "$sha"
       return 0
     fi

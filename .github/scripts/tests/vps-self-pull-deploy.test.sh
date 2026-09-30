@@ -786,6 +786,35 @@ FAKE
   chmod +x "$1/bin/docker"
 }
 
+echo "Test 16b: a commit that only builds one app still ships to that app"
+dir=$(make_env per-app-sha)
+# Zalo-only change: CI published an image for zalo at $SHA_B but the migration
+# owner has none, so a global resolution walks the whole release back and zalo
+# never receives its own fix.
+for app in messenger-bot discord-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
+cat > "$dir/bin/docker" <<FAKE
+#!/usr/bin/env bash
+echo "docker \$*" >> "\${DOCKER_LOG:?}"
+case "\$1" in
+  login) exit 0 ;;
+  manifest)
+    # Only the zalo image exists at $SHA_B.
+    if echo "\$*" | grep -q "$SHA_B" && ! echo "\$*" | grep -q "zalo-bot"; then
+      echo "manifest unknown" >&2; exit 1
+    fi
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped)
+[ "$code" -eq 0 ] || fail "per-app resolution run should exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "this app.s newest published commit is $SHA_B" "$dir/run.out" ||
+  fail "zalo did not target its own published commit: $(cat "$dir/run.out")"
+grep -q "Deploying zalo-bot @ $SHA_B" "$dir/run.out" || fail "zalo was not deployed at its own commit"
+
 echo "Test 17: no owner image, no migration since the applied revision -> barrier ready, no page"
 dir=$(make_env schema-current)
 for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
