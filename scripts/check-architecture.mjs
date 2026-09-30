@@ -100,6 +100,19 @@ export const FRAMEWORK_BOUND_ADAPTERS = [
   'packages/student-report/src/platform-student-report.service.ts',
 ];
 
+// One declaration of the framework-free core surfaces, so the specifier rule
+// and the exported-name rule (#1439) cannot drift apart.
+const CORE_ENTRY_POINTS = [
+  ['llm-agent', ['packages/llm-agent/src/core/**']],
+  ['wispace-client', ['packages/wispace-client/src/core/**']],
+  ['student-report', ['packages/student-report/src/core/**']],
+  ['chat-metering', ['packages/chat-metering/src/core/**']],
+  ['scheduler-core', ['packages/scheduler-core/src/core/**']],
+  ['study-reminder-shared', ['packages/study-reminder-shared/src/core/**']],
+  ['ops-health', ['packages/ops-health/src/core/**']],
+  ['account-link-core', ['packages/account-link-core/src/core/**']],
+];
+
 const CORE_RULES = [
   {
     rule: 'contracts-core-no-imports',
@@ -107,18 +120,26 @@ const CORE_RULES = [
     forbidden: () => true,
     message: 'the shared contracts core must remain dependency-free',
   },
-  coreEntryPointRule('llm-agent', ['packages/llm-agent/src/core/**']),
-  coreEntryPointRule('wispace-client', ['packages/wispace-client/src/core/**']),
-  coreEntryPointRule('student-report', ['packages/student-report/src/core/**']),
-  coreEntryPointRule('chat-metering', ['packages/chat-metering/src/core/**']),
-  coreEntryPointRule('scheduler-core', ['packages/scheduler-core/src/core/**']),
-  coreEntryPointRule('study-reminder-shared', [
-    'packages/study-reminder-shared/src/core/**',
-  ]),
-  coreEntryPointRule('ops-health', ['packages/ops-health/src/core/**']),
-  coreEntryPointRule('account-link-core', [
-    'packages/account-link-core/src/core/**',
-  ]),
+  ...CORE_ENTRY_POINTS.map(([name, globs]) => coreEntryPointRule(name, globs)),
+  // #1439. Every rule above keys on the module specifier, so a vendor-named
+  // symbol re-exported from a neutral-looking path (`../provider/...`) reaches
+  // the framework-free surface with the guard green -- which is how a
+  // vendor-specific failure classifier ended up deciding an application's
+  // message. The rule therefore matches on the exported identifier.
+  //
+  // Scope is export declarations only, which is the published surface the issue
+  // is about. An adapter may legitimately be vendor-specific; a core entrypoint
+  // may not, because the whole point of the abstraction is that the vendor
+  // choice sits behind it. No allowlist entries: the report is the fail-closed
+  // answer, and a core entrypoint is not legitimately framework-bound.
+  //
+  // Measured over the eight core entrypoints on this change: 0 pre-existing
+  // violations, so the list starts at the whole vendor set rather than the two
+  // names #1438 happened to rename. `CORE_OUTER_PATH` not covering `provider`
+  // is a pre-existing and separate gap; this rule does not depend on it.
+  ...CORE_ENTRY_POINTS.map(([name, globs]) =>
+    coreVendorNamedExportRule(name, globs),
+  ),
   {
     rule: 'domain-no-framework',
     globs: ['apps/*/src/modules/*/domain/**'],
@@ -235,6 +256,30 @@ function coreEntryPointRule(name, globs) {
     message: `${name} core entrypoints must not import framework, infrastructure, or adapter details`,
   };
 }
+
+function coreVendorNamedExportRule(name, globs) {
+  return {
+    rule: `${name}-entrypoint-no-vendor-named-export`,
+    globs,
+    forbidden: (_specifier, symbols, imported) =>
+      imported.isExport === true &&
+      (symbols ?? []).some((symbol) => VENDOR_NAMED_EXPORT.test(symbol)),
+    message: `${name} core entrypoints must not publish a vendor-named symbol; publish the capability under a vendor-neutral name`,
+  };
+}
+
+// #1439: the whole vendor set, not only the names #1438 happened to rename.
+// `redis` is here because an adapter is allowed to be vendor-specific, but a
+// core entrypoint naming it is the same leak one layer up.
+//
+// `discord` is deliberately NOT a token. This repo is multi-platform, so
+// `discord` is a platform name and appears legitimately in a core type
+// (`ReengagementDiscordPayload` in wispace-client) without any vendor coupling.
+// Only the SDK spelling counts, and the vendor token is `discordjs`.
+// Measured over the eight core entrypoints: 1 false positive with `discord`
+// included, 0 without it.
+const VENDOR_NAMED_EXPORT =
+  /openai|anthropic|gemini|typeorm|ioredis|undici|discordjs|redis|axios/i;
 
 // #1450 AC: the check fails closed. A namespace import or `export *` from a
 // framework-bound subpath of a mixed package brings in the whole adapter
@@ -382,6 +427,9 @@ function importedModules(fileName, sourceText) {
       imported: moduleSpecifier.text,
       line: position.line + 1,
       symbols: symbols ?? importedSymbols(node),
+      // #1439: the published surface is what the vendor-name rule reads, and
+      // a visitor that cannot tell an import from a re-export cannot express it.
+      isExport: ts.isExportDeclaration(node),
     });
   };
 
@@ -1094,7 +1142,8 @@ export function checkArchitecture(rootDir) {
           continue;
         }
         if (rule.allow?.(relativePath, imported)) continue;
-        if (!rule.forbidden(imported.imported, imported.symbols)) continue;
+        if (!rule.forbidden(imported.imported, imported.symbols, imported))
+          continue;
         violations.push({
           rule: rule.rule,
           package: ownerOf(relativePath),

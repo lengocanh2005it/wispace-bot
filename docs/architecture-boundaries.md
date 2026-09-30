@@ -234,6 +234,17 @@ The other mixed packages are enforced by selecting only their framework-neutral 
 
 Do not widen an adapter pattern merely to make CI green. A new entry needs an owner, a linked issue, and the narrowest file/path pattern that describes the adapter. The explicit core-entrypoint rule rejects framework, infrastructure, and adapter imports in every `/core` barrel.
 
+### Vendor-named exports from a core entrypoint (#1439)
+
+Every other rule keys on the module **specifier**, so a vendor-named symbol re-exported from a neutral-looking path — `export { isOpenAiRateLimitError } from '../provider/failure-classifiers'` — reached the framework-free surface with the guard green. That is how a vendor-specific failure classifier came to decide which message a learner sees. A second rule therefore matches on the **exported identifier**: a `/core` entrypoint may not export a symbol named after a banned vendor. It reads export declarations only, because publishing is the surface in question, and an adapter is allowed to be vendor-specific by design.
+
+Two boundaries on that rule, both measured rather than assumed:
+
+- **Platform names are not vendor names.** This repo is multi-platform, so `discord` is a platform and appears legitimately in a core type (`ReengagementDiscordPayload` in `wispace-client`). Only the SDK spelling `discordjs` is a vendor token. Including the bare platform name produced one false positive on the real repository and is why that token is absent.
+- **The framework-bound allowlist is untouched.** The rule reports rather than allowlists, because a core entrypoint is not legitimately framework-bound. An allowlist entry here would be the permanent exemption the rest of this document refuses.
+
+`CORE_OUTER_PATH` does not cover a `provider` path segment, which is a pre-existing and separate gap: `core` already imported from the provider tree before #1430. It is deliberately not fixed here, because a specifier rule there has a wider blast radius than a name rule and would need its own measurement.
+
 ## Commands and CI
 
 ```bash
