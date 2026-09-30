@@ -52,7 +52,6 @@ describe('ChatQuotaEventRepository', () => {
         payload: { limit: 15, used_after: 1, idempotency_key: 'idem-1' },
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const params: unknown[] = manager.query.mock.calls[0]![1] as unknown[];
       expect(params[1]).not.toBe('psid-1');
       expect(params[1]).toMatch(/^[0-9a-f]{64}$/);
@@ -67,7 +66,6 @@ describe('ChatQuotaEventRepository', () => {
         payload: { limit: 15, used_after: 1, idempotency_key: 'idem-2' },
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const params: unknown[] = manager.query.mock.calls[0]![1] as unknown[];
       expect(params[4]).toBeNull();
     });

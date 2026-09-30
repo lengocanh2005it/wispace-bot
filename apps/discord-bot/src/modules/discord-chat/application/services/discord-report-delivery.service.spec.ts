@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { DiscordReportAccountPageReaderPort } from '../../domain/ports/discord-report-account-reader.port';
 import { DiscordReportDeliveryService } from './discord-report-delivery.service';
 import {

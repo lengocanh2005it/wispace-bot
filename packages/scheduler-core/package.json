@@ -21,7 +21,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:types": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "format:check": "oxfmt --check",
     "format": "oxfmt",
     "test": "jest --maxWorkers=50%",

@@ -156,12 +156,10 @@ describe('StudyReminderWorkerService', () => {
       build();
       await service.onModuleInit();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(schedulerRegistry.addCronJob).toHaveBeenCalledWith(
         'study-reminder-evening-rollover',
         expect.anything(),
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
     });
 
@@ -226,7 +224,6 @@ describe('StudyReminderWorkerService', () => {
       build({ sync: 1, cleanup: 2, rollover: 3 }, { logLockSkips: true });
       await service.onModuleInit();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).not.toHaveBeenCalled();
     });
 
@@ -267,11 +264,9 @@ describe('StudyReminderWorkerService', () => {
 
       const result = await service.runEveningRollover();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.deleteSentJobs).toHaveBeenCalledWith('messenger');
       expect(result).toMatchObject({ deletedSent: 5 });
       expect(result.sync).toHaveProperty('upserted');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
     });
 
@@ -281,7 +276,6 @@ describe('StudyReminderWorkerService', () => {
 
       await service.handleCleanupCron();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.deleteTerminalJobsOlderThan).toHaveBeenCalledWith(
         'messenger',
         expect.any(Date),
@@ -296,9 +290,7 @@ describe('StudyReminderWorkerService', () => {
 
       expect(result).toHaveProperty('sync');
       expect(result).toHaveProperty('dispatch');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(dispatchService.dispatchDueReminders).toHaveBeenCalled();
     });
   });
@@ -309,7 +301,6 @@ describe('StudyReminderWorkerService', () => {
       await service.onModuleInit();
       service.onModuleDestroy();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
         'study-reminder-evening-rollover',
       );

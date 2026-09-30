@@ -137,7 +137,6 @@ describe('StudyReminderDispatchService', () => {
 
     const result = await service.dispatchDueReminders();
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(messageSender.sendText).toHaveBeenCalledWith({
       externalUserId: 'ext-1',
       text: 'Nhắc nhở học toán!',
@@ -534,7 +533,6 @@ describe('StudyReminderDispatchService', () => {
   });
 
   it('scopes every due/claim/reset query to its own platform (#180)', async () => {
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     const { findDueJobs, claimJob, resetStuckProcessingJobs } = jobRepo;
     findDueJobs.mockResolvedValue([makeJob()]);
     claimJob.mockResolvedValue(makeJob());
@@ -562,7 +560,6 @@ describe('StudyReminderDispatchService', () => {
 
     await service.dispatchDueReminders();
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(hooks.generateReminder).toHaveBeenCalledWith(
       expect.objectContaining({ sessionKey: 'calendar:99' }),
       expect.objectContaining({ externalUserId: 'ext-1', jobId: 1 }),
@@ -699,7 +696,6 @@ describe('StudyReminderDispatchService', () => {
 
       const result = await service.dispatchDueReminders();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.markFailed).toHaveBeenCalledWith(
         expect.objectContaining({
           terminal: true,
@@ -724,7 +720,6 @@ describe('StudyReminderDispatchService', () => {
 
       await service.dispatchDueReminders();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.markFailed).toHaveBeenCalledWith(
         expect.objectContaining({ terminal: true, retryCount: 4 }),
       );
@@ -791,9 +786,7 @@ describe('StudyReminderDispatchService', () => {
       await first;
 
       expect(sendCalls).toBe(1);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.claimJob).toHaveBeenCalledTimes(1);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.markSent).toHaveBeenCalledWith(
         1,
         'lease-a',
@@ -840,14 +833,12 @@ describe('StudyReminderDispatchService', () => {
       // The first worker may have sent before its lease expired; the reclaimed
       // ambiguous row must never issue a second provider call.
       expect(sendCalls).toBe(1);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.markSent).toHaveBeenCalledWith(
         1,
         'lease-a',
         'sent',
         expect.stringMatching(/^reminder:1:/),
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.markSent).toHaveBeenCalledTimes(1);
     });
 

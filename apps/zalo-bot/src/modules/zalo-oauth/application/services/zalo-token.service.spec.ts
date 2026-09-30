@@ -1,5 +1,4 @@
 import { PlatformConnectivityState } from '@wispace/bot-common/health';
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { ConfigService } from '@nestjs/config';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { ZaloOAuthClientPort } from '../ports/zalo-oauth-client.port';

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { PlatformAgentService } from './agent/platform-agent.service';
 import type { PlatformChatHistoryService } from './chat-history/platform-chat-history.service';
 import { createChatPipelineAdapters } from './chat-pipeline-adapters';

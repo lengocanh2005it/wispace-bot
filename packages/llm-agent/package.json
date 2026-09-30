@@ -35,7 +35,7 @@
     "check:types": "tsc -p tsconfig.build.json --noEmit",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "test": "jest --maxWorkers=50%",
     "eval:chat": "jest src/eval --runInBand",
     "eval:rehash": "node dist/eval/rehash-fixtures.main.js",

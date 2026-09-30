@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- partial service mocks */
 import {
   exercisePlatformToolExecutorConformance,
   type PlatformAgentReply,
@@ -271,7 +270,6 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toEqual({ report: 'Cached report' });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(studentReportService.generateReportStatic).not.toHaveBeenCalled();
     });
 
@@ -289,7 +287,6 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toEqual({ report });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(studentReportService.generateReport).not.toHaveBeenCalled();
     });
   });

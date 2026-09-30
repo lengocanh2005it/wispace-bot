@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { UserCalendarApiClient } from './user-calendar-api.client';
 import { ShapeValidationError } from '../utils/validate-shape';
 import { WispaceApiError } from '../errors/wispace-api.error';

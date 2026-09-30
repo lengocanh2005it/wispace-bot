@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-call -- jest.fn() mocks */
 import { ConfigService } from '@nestjs/config';
 import { MessengerService } from './messenger.service';
 import { MessengerWebhookDispatchService } from './messenger-webhook-dispatch.service';

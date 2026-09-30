@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ConfigService } from '@nestjs/config';
 import { OpsHealthService } from './ops-health.service';
 import type { OpsHealthRepositoryPort, RedisHealthPort } from './types';

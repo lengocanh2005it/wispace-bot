@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- partial repo mocks */
 import type { Repository } from 'typeorm';
 import type { DiscordWelcomeRecordEntity } from '@discord/infrastructure/database/entities/discord-welcome-record.entity';
 import { TypeormDiscordWelcomeRecordRepository } from './typeorm-discord-welcome-record.repository';

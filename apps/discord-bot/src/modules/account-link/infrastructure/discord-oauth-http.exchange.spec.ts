@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- partial fetch mocks */
 import { ConfigService } from '@nestjs/config';
 import { DiscordOauthHttpExchange } from './discord-oauth-http.exchange';
 

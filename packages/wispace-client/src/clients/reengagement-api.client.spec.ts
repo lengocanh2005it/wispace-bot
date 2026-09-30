@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { ReengagementApiClient } from './reengagement-api.client';
 
 const BASE_URL = 'https://backend.example.com/api/bot/reengagement';

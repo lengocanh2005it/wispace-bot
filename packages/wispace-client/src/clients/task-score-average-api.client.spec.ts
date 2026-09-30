@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { TaskScoreAverageApiClient } from './task-score-average-api.client';
 
 function buildBodyMock(text: string) {

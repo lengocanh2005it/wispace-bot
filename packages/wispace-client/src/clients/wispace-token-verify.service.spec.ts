@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 /* eslint-disable no-control-regex -- tests assert control-char stripping */
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';

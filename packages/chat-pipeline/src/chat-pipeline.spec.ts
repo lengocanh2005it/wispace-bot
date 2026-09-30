@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access -- Jest mock.calls access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest mock.calls access */
 import { ChatPipeline } from './chat-pipeline';
 import type {
   AgentPort,

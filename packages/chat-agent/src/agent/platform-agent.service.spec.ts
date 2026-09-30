@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {

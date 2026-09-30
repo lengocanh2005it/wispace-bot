@@ -124,7 +124,6 @@ describe('MessengerChatEnqueueService', () => {
       sendSenderActionOptional,
       sendTextViaPsid,
       process,
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       flushReady: processor.flushReady,
 
       appendChatBuffer,

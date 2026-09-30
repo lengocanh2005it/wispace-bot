@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- partial repo mocks */
 import type { Repository } from 'typeorm';
 import type { DiscordOauthStateEntity } from '@discord/infrastructure/database/entities/discord-oauth-state.entity';
 import { TypeormDiscordOauthStateRepository } from './typeorm-discord-oauth-state.repository';

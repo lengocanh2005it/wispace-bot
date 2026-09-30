@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks */
 import {
   ZaloWebhookIngestService,
   buildZaloEventId,

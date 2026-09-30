@@ -76,7 +76,6 @@ export class RedactedLogger implements LoggerService {
     this.sink =
       options.write ??
       ((level, line) => {
-        // eslint-disable-next-line no-console -- default transport
         console[CONSOLE_METHOD[level] ?? 'log'](line);
       });
   }

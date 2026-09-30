@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- mocked fetch init */
 import { closeKeepAliveAgents } from '../utils/keep-alive-agent';
 import { WispaceConfigService } from '../config/wispace-config.service';
 import { WispaceCalendarService } from './wispace-calendar.service';

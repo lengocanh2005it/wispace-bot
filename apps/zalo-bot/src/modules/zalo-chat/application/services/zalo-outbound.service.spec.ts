@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { ZaloOaAccessTokenPort } from '@zalo/modules/zalo-oauth/application/ports/zalo-oa-token-store.port';
 import type {

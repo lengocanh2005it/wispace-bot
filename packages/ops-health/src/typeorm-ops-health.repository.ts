@@ -229,7 +229,6 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   private async execQuery<T>(sql: string, params: unknown[]): Promise<T[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const result = await this.dataSource.query(sql, params);
 
     return result as T[];

@@ -35,7 +35,6 @@ function optinEvent(
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function referralEvent(ref: string): MessengerWebhookEvent {
   return event({ referral: { ref } });
 }

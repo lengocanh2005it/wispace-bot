@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mocks */
 import type { DiscordAccountLinkService } from './discord-account-link.service';
 import type { DiscordGuildMembershipPort } from '../../domain/ports/discord-guild-membership.port';
 import type { DiscordRelinkNotifier } from './discord-relink-notifier.service';

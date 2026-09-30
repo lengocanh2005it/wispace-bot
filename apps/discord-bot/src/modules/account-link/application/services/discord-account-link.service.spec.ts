@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { DiscordAccountLinkRepositoryPort } from '../../domain/ports/discord-account-link.repository.port';
 import type { DiscordOauthExchangePort } from '../../domain/ports/discord-oauth-exchange.port';
 import { DiscordAccountLinkService } from './discord-account-link.service';
