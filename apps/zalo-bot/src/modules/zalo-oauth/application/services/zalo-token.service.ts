@@ -6,6 +6,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { PlatformConnectivityState } from '@wispace/bot-common/health';
 import {
@@ -68,6 +69,8 @@ export class ZaloTokenService implements OnModuleInit {
     private readonly platformState?: PlatformConnectivityState,
     @Optional()
     private readonly metrics?: BotMetricsService,
+    @Optional()
+    private readonly config?: ConfigService,
   ) {}
 
   onModuleInit(): void {
@@ -118,6 +121,10 @@ export class ZaloTokenService implements OnModuleInit {
       await this.refresh();
     } catch (error) {
       if (error instanceof ZaloOaTokenRowMissingError) {
+        if (this.isOaAccountUnconfigured()) {
+          this.markNotConfigured();
+          return;
+        }
         this.logger.warn('refreshNow skipped — zalo_oa_tokens is empty');
         this.markTokenMissing();
         return;
@@ -222,6 +229,35 @@ export class ZaloTokenService implements OnModuleInit {
         this.markRefreshFailure(error);
       }
     }
+  }
+
+  /**
+   * True when this deployment was never given a Zalo OA account at all.
+   *
+   * The distinguishing signal is the OA app credentials, not the empty token
+   * row: an empty row with credentials present is real data loss and must keep
+   * failing readiness, while both absent means the platform was simply never
+   * switched on.
+   */
+  private isOaAccountUnconfigured(): boolean {
+    const read = (key: string): string | undefined =>
+      this.config?.get<string>(key)?.trim();
+    return !read('ZALO_APP_ID') || !read('ZALO_APP_SECRET_KEY');
+  }
+
+  private markNotConfigured(): void {
+    this.logger.warn(
+      'Zalo OA account is not configured (ZALO_APP_ID / ZALO_APP_SECRET_KEY absent) — ' +
+        'the platform is reported as not_configured and does not block readiness',
+    );
+    const current = this.platformState?.getSnapshot();
+    this.platformState?.transition({
+      status: 'not_configured',
+      ready: false,
+      reason: 'not_configured',
+      lastConnectedAt: current?.lastConnectedAt ?? null,
+      lastVerifiedAt: current?.lastVerifiedAt ?? null,
+    });
   }
 
   private markConnected(): void {

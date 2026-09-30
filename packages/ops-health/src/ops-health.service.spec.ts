@@ -159,6 +159,39 @@ describe('OpsHealthService', () => {
       });
     });
 
+    it('passes readiness when the platform was never configured (#1483 follow-up)', async () => {
+      // A platform with no credentials has no obligation to anyone: there is
+      // nothing to be unreachable. Blocking readiness on it stops the deploy
+      // for a bot that was never set up in the first place.
+      const service = new OpsHealthService(mockRepository(), mockConfig());
+      const result = await service.isApplicationReady({
+        ...connectedPlatform,
+        name: 'zalo',
+        status: 'not_configured',
+        ready: false,
+        reason: 'not_configured',
+      });
+      expect(result).toEqual({ ready: true, status: 'ok' });
+    });
+
+    it('still fails readiness when a configured platform is broken', async () => {
+      // The distinction that keeps this honest: not_configured means "no
+      // account", token_refresh_failed means "we had one and it broke".
+      const service = new OpsHealthService(mockRepository(), mockConfig());
+      const result = await service.isApplicationReady({
+        ...connectedPlatform,
+        name: 'zalo',
+        status: 'unavailable',
+        ready: false,
+        reason: 'token_refresh_failed',
+      });
+      expect(result).toEqual({
+        ready: false,
+        status: 'error',
+        reason: 'token_refresh_failed',
+      });
+    });
+
     it('fails closed when production wiring requires platform state but none is available', async () => {
       const service = new OpsHealthService(
         mockRepository(),
@@ -397,5 +430,43 @@ describe('OpsHealthService', () => {
 
       expect(repo.getChatQuotaSummary).not.toHaveBeenCalled();
     });
+  });
+
+  it('warns rather than paging when the platform was never configured', async () => {
+    const service = new OpsHealthService(mockRepository(), mockConfig());
+    const snapshot = await service.collectSnapshot({
+      name: 'zalo',
+      status: 'not_configured',
+      ready: false,
+      reason: 'not_configured',
+      lastConnectedAt: null,
+      lastVerifiedAt: null,
+    });
+
+    const alert = snapshot.alerts.find(
+      (a) => a.code === 'PLATFORM_NOT_CONFIGURED',
+    );
+    expect(alert).toBeDefined();
+    expect(alert?.severity).toBe('warn');
+    expect(snapshot.alerts.find((a) => a.code === 'PLATFORM_UNAVAILABLE')).toBe(
+      undefined,
+    );
+  });
+
+  it('still pages critical when a configured platform is unavailable', async () => {
+    const service = new OpsHealthService(mockRepository(), mockConfig());
+    const snapshot = await service.collectSnapshot({
+      name: 'zalo',
+      status: 'unavailable',
+      ready: false,
+      reason: 'token_refresh_failed',
+      lastConnectedAt: null,
+      lastVerifiedAt: null,
+    });
+
+    const alert = snapshot.alerts.find(
+      (a) => a.code === 'PLATFORM_UNAVAILABLE',
+    );
+    expect(alert?.severity).toBe('critical');
   });
 });

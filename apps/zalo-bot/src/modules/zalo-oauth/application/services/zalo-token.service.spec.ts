@@ -1,4 +1,6 @@
+import { PlatformConnectivityState } from '@wispace/bot-common/health';
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
+import type { ConfigService } from '@nestjs/config';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { ZaloOAuthClientPort } from '../ports/zalo-oauth-client.port';
 import type {
@@ -21,6 +23,12 @@ function buildRow(
     version: 0,
     ...overrides,
   };
+}
+
+function buildConfig(values: Record<string, string>): ConfigService {
+  return {
+    get: (key: string) => values[key],
+  } as unknown as ConfigService;
 }
 
 function buildPair(): ZaloOaTokenPair {
@@ -242,5 +250,50 @@ describe('ZaloTokenService', () => {
     await service.refreshNow();
     expect(tokenStore.refreshWithLock).toHaveBeenCalledTimes(1);
     expect(oauth.refreshOaToken).toHaveBeenCalledWith('refresh-1');
+  });
+  it('reports not_configured when no Zalo OA account was ever provisioned', async () => {
+    // The token row is empty AND there are no OA app credentials, so this
+    // deployment never had a Zalo account. That is not an outage.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({
+        readCurrent: jest.fn().mockResolvedValue(null),
+      }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({}),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+      ready: false,
+    });
+  });
+
+  it('still reports token_missing when an OA account exists but its row is gone', async () => {
+    // Credentials are provisioned, so an empty token row is real data loss and
+    // must keep failing readiness.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({
+        readCurrent: jest.fn().mockResolvedValue(null),
+      }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({ ZALO_APP_ID: '1234', ZALO_APP_SECRET_KEY: 'secret' }),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'unavailable',
+      reason: 'token_missing',
+      ready: false,
+    });
   });
 });
