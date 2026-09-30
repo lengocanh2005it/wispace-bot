@@ -301,6 +301,15 @@ export class ZaloTokenService implements OnModuleInit {
   private markUnavailable(
     reason: 'token_missing' | 'token_refresh_failed' | 'token_refresh_rejected',
   ): void {
+    // Every unavailability path funnels through here, so an explicitly disabled
+    // platform is reported as not configured whichever way the token flow
+    // failed. Production had an expired row plus stale placeholder credentials,
+    // so it reported token_refresh_failed rather than a missing row, and a
+    // guard that only covered the missing-row path never ran.
+    if (this.isPlatformExplicitlyDisabled()) {
+      this.markNotConfigured();
+      return;
+    }
     const current = this.platformState?.getSnapshot();
     const cachedTokenUsable =
       this.lastKnownAccessTokenExpiresAt - EXPIRY_BUFFER_MS > Date.now();

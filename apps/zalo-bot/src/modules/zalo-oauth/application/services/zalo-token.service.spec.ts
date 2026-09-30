@@ -366,4 +366,40 @@ describe('ZaloTokenService', () => {
       reason: 'not_configured',
     });
   });
+
+  it('reports not_configured even when the token row exists and refresh fails', async () => {
+    // The real production shape: an expired row plus stale placeholder
+    // credentials, so the refresh fails rather than reporting a missing row.
+    const state = new PlatformConnectivityState('zalo');
+    const oauth = buildOAuth();
+    oauth.refreshOaToken = jest
+      .fn()
+      .mockRejectedValue(new Error('network unreachable'));
+    const service = new ZaloTokenService(
+      buildStore({
+        readCurrent: jest
+          .fn()
+          .mockResolvedValue(buildRow({ accessTokenExpiresAt: new Date(0) })),
+        refreshWithLock: jest.fn().mockImplementation(async (refresh) => {
+          void refresh;
+          throw new Error('network unreachable');
+        }),
+      }),
+      oauth,
+      state,
+      undefined,
+      buildConfig({
+        ZALO_APP_ID: '1234',
+        ZALO_APP_SECRET_KEY: 'stale-placeholder',
+        ZALO_PLATFORM_ENABLED: 'false',
+      }),
+    );
+
+    await service.refreshNow().catch(() => undefined);
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+    });
+  });
 });
