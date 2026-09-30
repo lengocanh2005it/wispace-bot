@@ -16,31 +16,13 @@ import {
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatModule } from './discord-chat.module';
+import { findFactoryProvider } from '@wispace/bot-common/testing';
 
 const TEST_POLICY: LlmProviderPolicy = {
   nodeEnv: 'test',
   allowedBaseUrlHosts: ['api.openai.com', 'llm.example.test'],
   allowedModels: ['openai:gpt-5.4', 'openai-compatible:openai/gpt-4o-mini'],
 };
-
-function findFactoryProvider(module: object, token: unknown) {
-  const providers = (Reflect.getMetadata('providers', module) ??
-    []) as Array<unknown>;
-  return providers.find(
-    (
-      provider,
-    ): provider is {
-      provide: unknown;
-      useFactory: (...args: unknown[]) => unknown;
-    } =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token &&
-      'useFactory' in provider &&
-      typeof provider.useFactory === 'function',
-  );
-}
 
 describe('Discord chat module — LLM provider factory', () => {
   it('wires reschedule persistence from the owning adapter entrypoint', () => {

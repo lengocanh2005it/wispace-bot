@@ -15,25 +15,7 @@ import {
 } from '@wispace/scheduler-core/adapters';
 import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core/core';
 import { ZaloReportModule } from './zalo-report.module';
-
-function findFactoryProvider(module: object, token: unknown) {
-  const providers = (Reflect.getMetadata('providers', module) ??
-    []) as Array<unknown>;
-  return providers.find(
-    (
-      provider,
-    ): provider is {
-      provide: unknown;
-      useFactory: (...args: unknown[]) => unknown;
-    } =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token &&
-      'useFactory' in provider &&
-      typeof provider.useFactory === 'function',
-  );
-}
+import { findFactoryProvider } from '@wispace/bot-common/testing';
 
 describe('Zalo outbound port wiring', () => {
   it('wires reschedule and report persistence from owner adapter entrypoints', () => {

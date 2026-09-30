@@ -108,6 +108,11 @@
       "require": "./dist/secrets/index.js",
       "types": "./dist/secrets/index.d.ts"
     },
+    "./testing": {
+      "import": "./dist/testing/index.js",
+      "require": "./dist/testing/index.js",
+      "types": "./dist/testing/index.d.ts"
+    },
     "./bootstrap": {
       "import": "./dist/bootstrap/index.js",
       "require": "./dist/bootstrap/index.js",

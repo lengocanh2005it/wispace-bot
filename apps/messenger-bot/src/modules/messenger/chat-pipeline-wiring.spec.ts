@@ -4,25 +4,7 @@ import {
   TypeormRescheduleStore,
 } from '@wispace/reschedule-confirm/adapters';
 import { ChatPipelineModule } from './chat-pipeline.module';
-
-function findFactoryProvider(module: object, token: unknown) {
-  const providers = (Reflect.getMetadata('providers', module) ??
-    []) as Array<unknown>;
-  return providers.find(
-    (
-      provider,
-    ): provider is {
-      provide: unknown;
-      useFactory: (...args: unknown[]) => unknown;
-    } =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token &&
-      'useFactory' in provider &&
-      typeof provider.useFactory === 'function',
-  );
-}
+import { findFactoryProvider } from '@wispace/bot-common/testing';
 
 describe('Messenger ChatPipelineModule wiring', () => {
   it('wires reschedule persistence from the owning adapter entrypoint', () => {
@@ -43,6 +25,10 @@ describe('Messenger ChatPipelineModule wiring', () => {
       store,
       { registerCron: jest.fn() },
       {},
+      // #1495: the fourth inject entry is the durable attempt store. Passing
+      // three arguments left it undefined, and the returned recovery service
+      // still had the right type, so nothing noticed.
+      { marker: 'attempt-store' },
     );
 
     expect(store).toBeInstanceOf(TypeormRescheduleStore);
