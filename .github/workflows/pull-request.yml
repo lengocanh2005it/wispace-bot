@@ -97,6 +97,9 @@ jobs:
       - name: Test file-size ratchet (ADR-0044)
         run: npm run file-size:test
 
+      - name: Test mutation guard
+        run: npm run prove-checks:test
+
       - name: Verify pull request (format + lint + typecheck + test + build, affected packages only)
         if: github.event_name == 'pull_request'
         run: npm run verify:affected

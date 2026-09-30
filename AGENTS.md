@@ -572,7 +572,7 @@ days. See [ADR-0014](docs/adr/0014-privacy-erasure-completion.md) and the
 | `CLAUDE.md`             | Context loaded each session                                                                                               |
 | `.claude/settings.json` | Permissions (npm/git allow; `.env` deny)                                                                                  |
 | `.claude/rules/`        | `project-conventions`, `clean-architecture`, `chat-rate-limit`, `messenger-chat`, `study-reminder`, `database`, `prompts` |
-| `.claude/skills/`       | `/study-reminder-debug`, `/typeorm-migration`, `/edit-llm-prompt`, `/verify`                                              |
+| `.claude/skills/`       | `/study-reminder-debug`, `/typeorm-migration`, `/edit-llm-prompt`, `/verify`, `/prove-checks` (before claiming a test/guard/migration actually ran — see `scripts/verify-mutation.mjs`), `/refactor-audit` (before implementing a refactor issue: `git log -S` the string the issue names first) |
 
 Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global skills `~/.cursor/skills-cursor/` + `.claude/skills/`.
 
@@ -650,6 +650,7 @@ When closing a gap: update the feature runbook (`apps/messenger-bot/docs/chat-ra
 ## Boundaries — do not do unless explicitly requested by user
 
 - Commit / push git
+- Close or comment on issues (a closing comment is a claim; see `CODING_STANDARDS.md`)
 - Create markdown files outside `docs/` or write unnecessary lengthy READMEs
 - Add message queues (Bull, SQS, Redis)
 - Force push, modify git config
@@ -670,6 +671,7 @@ Green checks are not the same as delivered. Each of these has been missed in thi
 - **Pushed** — `git status` clean and the branch is on the remote, not only committed locally.
 - **CI on the current SHA** — `gh pr checks` lists jobs without proving they belong to the head. Query `check-runs` for the PR's `headRefOid` and confirm every conclusion is `success`.
 - **Issue state matches reality** — an issue closed by a `Closes #N` line is closed, but a *comment saying what landed* is still owed. Comments written before the work are not a substitute; they record the plan, not the outcome.
+- **Acceptance criteria actually met** — a checkbox ticked in a closing comment maps to a line in the diff, or to a *named* out-of-scope issue. A criterion met only partly stays unticked or is split out with a link; it does not get softened into prose. A criterion that turns out to be **wrong** is called out by name with what the code actually does, not quietly implemented adjacent to it. See `CODING_STANDARDS.md`.
 - **Labels match state** — a closed issue still carrying `ready-for-agent` will be picked up by the next triage pass.
 - **Numbers in the issue and PR body are current** — recount after implementation. Counts written during design were right about scope and wrong about detail more than once.
 

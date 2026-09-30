@@ -36,6 +36,7 @@
     "manifest-deps:check": "node scripts/check-manifest-deps.mjs",
     "manifest-deps:test": "node --test scripts/check-manifest-deps.test.mjs",
     "runtime-image:test": "node --test deploy/runtime-image-check.test.mjs",
+    "prove-checks:test": "node --test .claude/skills/prove-checks/scripts/verify-mutation.test.mjs",
     "file-size:check": "node scripts/check-file-size.mjs",
     "file-size:report": "node scripts/check-file-size.mjs --report",
     "file-size:test": "node --test scripts/check-file-size.test.mjs",
