@@ -77,7 +77,13 @@ export interface OpsHealthSnapshot {
 }
 
 export const OPS_HEALTH_REPOSITORY = Symbol('OPS_HEALTH_REPOSITORY');
-export const OPS_HEALTH_SERVICE = Symbol('OPS_HEALTH_SERVICE');
+// Owned by bot-common and re-exported here, not redeclared (#1122). Two
+// `Symbol('OPS_HEALTH_SERVICE')` calls are two different tokens that print
+// identically, so which instance a consumer received came down to which one it
+// imported — and the wrong one resolves to `undefined` through an
+// `@Optional()` parameter instead of failing. bot-common is the lower layer, so
+// it owns this token and the module needs no `useExisting` bridge.
+export { OPS_HEALTH_SERVICE } from '@wispace/bot-common/health';
 export const CRON_HEARTBEAT_REGISTRY = Symbol('CRON_HEARTBEAT_REGISTRY');
 
 export interface OpsHealthRepositoryPort {
