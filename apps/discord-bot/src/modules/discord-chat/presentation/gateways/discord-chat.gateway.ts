@@ -23,7 +23,6 @@ import { PlatformChatQueueService } from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordConsentService } from '../../application/services/discord-consent.service';
 import {
-  RESCHEDULE_INVALID_TOKEN_MESSAGE,
   RescheduleConfirmationService,
   type RescheduleNotificationOutcome,
 } from '@wispace/reschedule-confirm/core';
@@ -365,54 +364,6 @@ export class DiscordChatGateway {
     }
   }
 
-  @Button(RESCHEDULE_CONFIRM_CUSTOM_ID)
-  async onRescheduleConfirm(@Context() [interaction]: ButtonContext) {
-    const discordUserId = interaction.user.id;
-    await interaction.deferUpdate();
-
-    let content: string;
-    try {
-      const identity =
-        await this.accountLinkService.findCurrentIdentity(discordUserId);
-      const result = identity
-        ? await this.rescheduleConfirmationService.confirm(
-            discordUserId,
-            identity.userId,
-            undefined,
-            {
-              platform: 'discord',
-              mappingVersion: identity.mappingVersion,
-            },
-          )
-        : {
-            confirmed: false as const,
-            message: DISCORD_NOT_LINKED_MESSAGE,
-          };
-      content = result.confirmed
-        ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
-        : // #1483: same rule as the token-bound listener. This fixed id carries
-          // no approval token, so the attempt record cannot be consulted and a
-          // committed write stays silent rather than being reported as failed.
-          'unknownOutcome' in result
-          ? ''
-          : result.message;
-    } catch (error) {
-      this.logger.error(
-        `Reschedule confirm failed for discordUserId=${maskExternalId(
-          discordUserId,
-        )}`,
-        formatError(error),
-      );
-      content = CHAT_FAILURE_FALLBACK_MESSAGE;
-    }
-
-    if (!content) return;
-    await interaction.editReply({
-      ...this.prepareReply(discordUserId, content),
-      components: [],
-    });
-  }
-
   @On('interactionCreate')
   async onDynamicRescheduleAction(
     @Context() [interaction]: ContextOf<'interactionCreate'>,
@@ -425,9 +376,9 @@ export class DiscordChatGateway {
     ) {
       return;
     }
-    // The fixed IDs are handled by the legacy @Button handlers below. This
-    // listener owns only token-bound actions so one interaction cannot run
-    // both paths.
+    // ADR-0011: the proposal token is what authorizes the write, and the
+    // production store rejects a confirmation without one. One handler, one
+    // entry path.
     if (!approvalToken) return;
     await interaction.deferUpdate();
     const discordUserId = interaction.user.id;
@@ -465,7 +416,6 @@ export class DiscordChatGateway {
             'unknownOutcome' in result
             ? ''
             : result.message;
-        confirmed = result.confirmed;
         confirmed = result.confirmed;
       }
     } catch (error) {
@@ -509,30 +459,6 @@ export class DiscordChatGateway {
         deliveryOutcome,
       );
     }
-  }
-
-  @Button(RESCHEDULE_CANCEL_CUSTOM_ID)
-  async onRescheduleCancel(@Context() [interaction]: ButtonContext) {
-    const discordUserId = interaction.user.id;
-    await interaction.deferUpdate();
-
-    let content: string;
-    try {
-      content = RESCHEDULE_INVALID_TOKEN_MESSAGE;
-    } catch (error) {
-      this.logger.error(
-        `Reschedule cancel failed for discordUserId=${maskExternalId(
-          discordUserId,
-        )}`,
-        formatError(error),
-      );
-      content = CHAT_FAILURE_FALLBACK_MESSAGE;
-    }
-
-    await interaction.editReply({
-      ...this.prepareReply(discordUserId, content),
-      components: [],
-    });
   }
 
   @Button(MENU_UPCOMING_SESSIONS_CUSTOM_ID)

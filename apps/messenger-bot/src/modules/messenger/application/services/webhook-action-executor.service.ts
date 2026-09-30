@@ -155,13 +155,12 @@ export class WebhookActionExecutorService {
         break;
 
       case 'cancel_reschedule': {
-        const message =
-          action.approvalToken && isValidApprovalToken(action.approvalToken)
-            ? await this.rescheduleConfirmationService.cancel(
-                psid!,
-                action.approvalToken,
-              )
-            : RESCHEDULE_INVALID_TOKEN_MESSAGE;
+        const message = isValidApprovalToken(action.approvalToken)
+          ? await this.rescheduleConfirmationService.cancel(
+              psid!,
+              action.approvalToken,
+            )
+          : RESCHEDULE_INVALID_TOKEN_MESSAGE;
         await this.outbound.sendTextViaPsid({
           psid: psid!,
           userId: action.userId,
@@ -343,8 +342,8 @@ export class WebhookActionExecutorService {
 
   private async handleConfirmReschedulePostback(
     psid: string,
-    userId?: number,
-    approvalToken?: string,
+    userId: number | undefined,
+    approvalToken: string,
   ): Promise<void> {
     const mapping =
       await this.messengerRepository?.findActiveMappingByPsid(psid);
@@ -358,19 +357,19 @@ export class WebhookActionExecutorService {
       });
       return;
     }
-    const result = approvalToken
-      ? await this.rescheduleConfirmationService.confirm(
-          psid,
-          currentUserId,
-          approvalToken,
-          {
-            platform: 'messenger',
-            mappingVersion: mapping
-              ? `${mapping.id}:${mapping.updatedAt}`
-              : undefined,
-          },
-        )
-      : await this.rescheduleConfirmationService.confirm(psid, currentUserId);
+    // ADR-0011: the proposal token also carries the platform binding, so a
+    // confirmation without it could never reach the calendar write anyway.
+    const result = await this.rescheduleConfirmationService.confirm(
+      psid,
+      currentUserId,
+      approvalToken,
+      {
+        platform: 'messenger',
+        mappingVersion: mapping
+          ? `${mapping.id}:${mapping.updatedAt}`
+          : undefined,
+      },
+    );
 
     if ('unknownOutcome' in result) {
       // #1418: the calendar write was attempted and we cannot tell whether it

@@ -3,6 +3,8 @@ import type { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordOutboundService } from './discord-outbound.service';
 import type { DiscordTransportPort } from '../ports/discord-transport.port';
 
+const token = '11111111-1111-4111-8111-111111111111';
+
 function buildTransportStub(
   fetch: jest.Mock,
   channelFetch?: jest.Mock,
@@ -393,17 +395,27 @@ describe('DiscordOutboundService', () => {
     expect((err as Error).message).toContain('di…');
   });
 
-  it('sends a reschedule confirmation DM with confirm/cancel buttons', async () => {
+  it('sends a reschedule confirmation DM whose buttons carry their approval token', async () => {
     const send = jest
       .fn<
         Promise<void>,
-        [{ content: string; buttons: unknown[]; allowedMentions: unknown }]
+        [
+          {
+            content: string;
+            buttons: { customId: string }[];
+            allowedMentions: unknown;
+          },
+        ]
       >()
       .mockResolvedValue(undefined);
     const fetch = jest.fn().mockResolvedValue({ send });
 
     const service = new DiscordOutboundService(buildTransportStub(fetch));
-    await service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?');
+    await service.sendRescheduleConfirmation(
+      'discord-1',
+      'Dời buổi học?',
+      token,
+    );
 
     expect(fetch).toHaveBeenCalledWith('discord-1');
     expect(send).toHaveBeenCalledWith(
@@ -415,7 +427,11 @@ describe('DiscordOutboundService', () => {
       users: [],
       repliedUser: false,
     });
-    expect(send.mock.calls[0][0].buttons).toHaveLength(2);
+    // ADR-0011 / #1493: a button with a bare custom id can never authorize a
+    // calendar write, so both ids must carry the proposal's token.
+    expect(
+      send.mock.calls[0][0].buttons.map((button) => button.customId),
+    ).toEqual([`reschedule_confirm:${token}`, `reschedule_cancel:${token}`]);
   });
 
   it('#232: sendMenuButtons returns true when Discord acknowledges the send', async () => {
@@ -484,7 +500,7 @@ describe('DiscordOutboundService', () => {
     const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
-      service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?'),
+      service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?', token),
     ).resolves.toBe(false);
   });
 
@@ -500,7 +516,7 @@ describe('DiscordOutboundService', () => {
 
     await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
     await service.sendMenuButtons('discord-1', 'menu');
-    await service.sendRescheduleConfirmation('discord-1', 'confirm?');
+    await service.sendRescheduleConfirmation('discord-1', 'confirm?', token);
 
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith('dm_send_error');
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(

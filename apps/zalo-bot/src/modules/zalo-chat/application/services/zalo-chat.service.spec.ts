@@ -130,6 +130,42 @@ describe('ZaloChatService', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it('says nothing when the durable record leaves the outcome unknown (#1483/#1493)', async () => {
+    // The calendar write may already have committed, so any reply would be a
+    // guess — and re-arming the request is not an option.
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest
+        .fn()
+        .mockResolvedValue({ confirmed: false, unknownOutcome: true }),
+      cancel: jest.fn(),
+      recordConfirmationDelivery,
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findCurrentIdentity: jest.fn().mockResolvedValue({
+          userId: 42,
+          mappingVersion: 'mapping-1',
+        }),
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue: jest.fn() } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`);
+
+    expect(sendText).not.toHaveBeenCalled();
+    expect(recordConfirmationDelivery).not.toHaveBeenCalled();
+  });
+
   it('records the real delivery outcome of a committed confirmation (#1483)', async () => {
     // The calendar write has already committed by the time the confirmation is
     // sent, so a send that did not land has to reach the record or the recovery

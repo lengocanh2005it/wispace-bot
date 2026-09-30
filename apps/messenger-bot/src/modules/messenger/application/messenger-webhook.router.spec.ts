@@ -41,6 +41,7 @@ function referralEvent(ref: string): MessengerWebhookEvent {
 }
 
 const defaultCtx: RouterContext = {};
+const token = '11111111-1111-4111-8111-111111111111';
 
 describe('routeWebhookEvent', () => {
   describe('event classification', () => {
@@ -442,9 +443,9 @@ describe('routeWebhookEvent', () => {
       expect(actions[0].type).toBe('send_reminder_preview');
     });
 
-    it('returns confirm_reschedule for CONFIRM_RESCHEDULE', () => {
+    it('returns confirm_reschedule with its approval token for CONFIRM_RESCHEDULE:<token>', () => {
       const actions = routeWebhookEvent(
-        postbackEvent(CONFIRM_RESCHEDULE_POSTBACK),
+        postbackEvent(`${CONFIRM_RESCHEDULE_POSTBACK}:${token}`),
         { ...defaultCtx, userId: 42 },
       );
       expect(actions).toEqual([
@@ -452,13 +453,24 @@ describe('routeWebhookEvent', () => {
           type: 'confirm_reschedule',
           psid: 'psid-123',
           userId: 42,
+          approvalToken: token,
         }),
       ]);
     });
 
-    it('returns cancel_reschedule for CANCEL_RESCHEDULE', () => {
+    it('treats a bare CONFIRM_RESCHEDULE as an unknown postback (#1493)', () => {
+      // ADR-0011: only a proposal carrying its one-time approval token may
+      // authorize a calendar write, so a token-less payload is not a proposal.
       const actions = routeWebhookEvent(
-        postbackEvent(CANCEL_RESCHEDULE_POSTBACK),
+        postbackEvent(CONFIRM_RESCHEDULE_POSTBACK),
+        { ...defaultCtx, userId: 42 },
+      );
+      expect(actions[0].type).toBe('send_welcome');
+    });
+
+    it('returns cancel_reschedule with its approval token for CANCEL_RESCHEDULE:<token>', () => {
+      const actions = routeWebhookEvent(
+        postbackEvent(`${CANCEL_RESCHEDULE_POSTBACK}:${token}`),
         { ...defaultCtx, userId: 42 },
       );
       expect(actions).toEqual([
@@ -466,9 +478,32 @@ describe('routeWebhookEvent', () => {
           type: 'cancel_reschedule',
           psid: 'psid-123',
           userId: 42,
+          approvalToken: token,
         }),
       ]);
     });
+
+    it('treats a bare CANCEL_RESCHEDULE as an unknown postback (#1493)', () => {
+      const actions = routeWebhookEvent(
+        postbackEvent(CANCEL_RESCHEDULE_POSTBACK),
+        { ...defaultCtx, userId: 42 },
+      );
+      expect(actions[0].type).toBe('send_welcome');
+    });
+
+    it.each([
+      `${CONFIRM_RESCHEDULE_POSTBACK}:`,
+      `${CANCEL_RESCHEDULE_POSTBACK}:`,
+    ])(
+      'treats an empty token in "%s" as an unknown postback (#1493)',
+      (payload) => {
+        const actions = routeWebhookEvent(postbackEvent(payload), {
+          ...defaultCtx,
+          userId: 42,
+        });
+        expect(actions[0].type).toBe('send_welcome');
+      },
+    );
 
     it('returns send_welcome for GET_STARTED when link does not block', () => {
       const actions = routeWebhookEvent(postbackEvent('GET_STARTED'), {

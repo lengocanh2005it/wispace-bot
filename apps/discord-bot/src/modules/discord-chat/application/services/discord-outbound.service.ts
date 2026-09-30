@@ -636,11 +636,12 @@ export class DiscordOutboundService {
     }
   }
 
-  /** Discord counterpart to Messenger's postback confirm/cancel buttons. */
+  /** Discord counterpart to Messenger's postback confirm/cancel buttons. The
+   *  token is required: ADR-0011 admits no token-less proposal prompt. */
   async sendRescheduleConfirmation(
     discordUserId: string,
     summary: string,
-    confirmationToken?: string,
+    confirmationToken: string,
     userId?: number,
   ): Promise<void | 'rate_limited' | false> {
     try {
@@ -652,16 +653,12 @@ export class DiscordOutboundService {
       });
       await this.transport.sendDirectMessageButtons(discordUserId, prepared, [
         {
-          customId: confirmationToken
-            ? `${RESCHEDULE_CONFIRM_CUSTOM_ID}:${confirmationToken}`
-            : RESCHEDULE_CONFIRM_CUSTOM_ID,
+          customId: `${RESCHEDULE_CONFIRM_CUSTOM_ID}:${confirmationToken}`,
           label: 'Xác nhận',
           style: 'success',
         },
         {
-          customId: confirmationToken
-            ? `${RESCHEDULE_CANCEL_CUSTOM_ID}:${confirmationToken}`
-            : RESCHEDULE_CANCEL_CUSTOM_ID,
+          customId: `${RESCHEDULE_CANCEL_CUSTOM_ID}:${confirmationToken}`,
           label: 'Hủy',
           style: 'danger',
         },

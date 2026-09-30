@@ -182,11 +182,11 @@ export function buildRescheduleSuccessRichFollowUp(params: {
 
 export function buildRescheduleConfirmFollowUp(params: {
   summary: string;
-  confirmationToken?: string;
+  /** ADR-0011: the payload always carries the proposal's one-time approval
+   *  token. */
+  confirmationToken: string;
 }): MessengerRichFollowUp {
-  const tokenSuffix = params.confirmationToken
-    ? `:${params.confirmationToken}`
-    : '';
+  const tokenSuffix = `:${params.confirmationToken}`;
   return {
     kind: 'button',
     messageType: 'CHAT_RESCHEDULE_CONFIRM',

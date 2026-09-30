@@ -300,11 +300,12 @@ export interface PlatformAgentToolsOptions {
       newLocalDateInvalid: string;
       newTimeInvalid: string;
     };
-    /** Sends the confirmation prompt (Discord: buttons; Zalo: text + reply hint). */
+    /** Sends the confirmation prompt (Discord: buttons; Zalo: text + reply hint).
+     *  The token is required — ADR-0011 admits no token-less proposal prompt. */
     confirmSender: (
       externalUserId: string,
       summary: string,
-      confirmationToken?: string,
+      confirmationToken: string,
       userId?: number,
     ) => Promise<void>;
   };

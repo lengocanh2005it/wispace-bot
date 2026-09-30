@@ -60,7 +60,7 @@ describe('WebhookActionExecutorService.cancel_reschedule', () => {
     expect(cancel).toHaveBeenCalledWith('psid-1', token);
   });
 
-  it('rejects tokenless cancellation without touching the staged proposal', async () => {
+  it('rejects a malformed approval token without touching the staged proposal', async () => {
     const cancel = jest.fn();
     const sendText = jest.fn().mockResolvedValue(undefined);
     const { service, outbound } = buildDeps({
@@ -69,7 +69,11 @@ describe('WebhookActionExecutorService.cancel_reschedule', () => {
     });
 
     await service.executeAction(
-      { type: 'cancel_reschedule', psid: 'psid-1' },
+      {
+        type: 'cancel_reschedule',
+        psid: 'psid-1',
+        approvalToken: 'not-an-approval-token',
+      },
       event,
       jest.fn().mockResolvedValue(undefined),
     );

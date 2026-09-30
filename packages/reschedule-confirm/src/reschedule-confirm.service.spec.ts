@@ -13,6 +13,7 @@ import {
   MemoryRescheduleStore,
   type RescheduleStorePort,
 } from './reschedule-store.port';
+import { MemoryRescheduleAttemptStore } from './reschedule-attempt.port';
 import { WispaceDataCache } from '@wispace/wispace-client/core';
 
 function mockCalendarPort(): CalendarPort<string> {
@@ -726,6 +727,82 @@ describe('RescheduleConfirmationService', () => {
         confirmed: false,
         message: expect.any(String),
       });
+    });
+  });
+
+  /**
+   * #1418/#1493 — the durable attempt record, exercised against the
+   * production store mode (`requiresApprovalToken = true`). The learner-facing
+   * outcome is a property of the service, not of a bot: whichever platform
+   * relays it only decides between `confirmed`, `replayed` and
+   * `unknownOutcome`. Bots cover their own rendering at their own seam.
+   */
+  describe('durable attempt record', () => {
+    const binding = { platform: 'discord', mappingVersion: '7:revision-a' };
+
+    /** Stages through the public interface so the token is a real minted nonce. */
+    const buildStaged = async () => {
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const attemptStore = new MemoryRescheduleAttemptStore();
+      const reschedule = mockReschedulePort();
+      const service = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        reschedule,
+        store,
+        { attemptStore },
+      );
+      const staged = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        platform: binding.platform,
+        mappingVersion: binding.mappingVersion,
+        intent: 'mình muốn đổi lịch học',
+        canonicalArgs: '{"calendarId":1}',
+      });
+      const token = (staged as { confirmationToken: string }).confirmationToken;
+      return { service, attemptStore, reschedule, token };
+    };
+
+    it('records the committed write under the proposal token', async () => {
+      const { service, attemptStore, reschedule, token } = await buildStaged();
+
+      const result = await service.confirm('user-1', 42, token, binding);
+
+      expect(result).toMatchObject({ confirmed: true });
+      expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+      expect(await attemptStore.findAttempt('user-1', token)).toMatchObject({
+        status: 'confirmed',
+        scheduledTimeLabel: '29/07/2026 lúc 15:00',
+      });
+    });
+
+    it('answers a second tap with the same confirmation and no second write', async () => {
+      const { service, reschedule, token } = await buildStaged();
+
+      await service.confirm('user-1', 42, token, binding);
+      const second = await service.confirm('user-1', 42, token, binding);
+
+      expect(second).toMatchObject({ confirmed: true, replayed: true });
+      expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('never re-runs the write and reports no outcome when a prior attempt never reported one', async () => {
+      const { service, attemptStore, reschedule, token } = await buildStaged();
+      await attemptStore.beginAttempt({
+        externalId: 'user-1',
+        nonce: token,
+        platform: binding.platform,
+        userId: 42,
+      });
+
+      const result = await service.confirm('user-1', 42, token, binding);
+
+      expect(result).toEqual({ confirmed: false, unknownOutcome: true });
+      expect(reschedule.rescheduleSession).not.toHaveBeenCalled();
     });
   });
 

@@ -1,5 +1,6 @@
 import {
   buildCalendarEntriesRichFollowUp,
+  buildRescheduleConfirmFollowUp,
   buildStudySessionsRichFollowUps,
   clipMessengerLabel,
 } from './messenger-rich-message.builder';
@@ -8,6 +9,27 @@ describe('messenger-rich-message.builder', () => {
   it('clips long labels', () => {
     expect(clipMessengerLabel('a'.repeat(90), 80)).toHaveLength(80);
     expect(clipMessengerLabel('a'.repeat(90), 80).endsWith('…')).toBe(true);
+  });
+
+  it('puts the proposal approval token in both reschedule postbacks (#1493)', () => {
+    // ADR-0011: a postback without the token cannot authorize a calendar
+    // write, so there is no token-less button variant to emit.
+    const token = '11111111-1111-4111-8111-111111111111';
+    const followUp = buildRescheduleConfirmFollowUp({
+      summary: 'Dời buổi học?',
+      confirmationToken: token,
+    });
+
+    expect(followUp).toEqual(
+      expect.objectContaining({
+        kind: 'button',
+        messageType: 'CHAT_RESCHEDULE_CONFIRM',
+        buttons: [
+          expect.objectContaining({ payload: `CONFIRM_RESCHEDULE:${token}` }),
+          expect.objectContaining({ payload: `CANCEL_RESCHEDULE:${token}` }),
+        ],
+      }),
+    );
   });
 
   it('retains bounded disclosure in upcoming-session cards', () => {

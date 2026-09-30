@@ -415,7 +415,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               ) => {
                 const outcome = await outboundService.sendText(
                   externalUserId,
-                  `${summary}${RESCHEDULE_CONFIRM_SUFFIX}${confirmationToken ? ` Mã: ${confirmationToken}` : ''}`,
+                  `${summary}${RESCHEDULE_CONFIRM_SUFFIX} Mã: ${confirmationToken}`,
                   userId === undefined ? undefined : { userId },
                 );
                 if (outcome !== 'sent') {

@@ -401,6 +401,9 @@ jobs:
       - name: Check platform storage literals (#1079)
         run: bash .github/scripts/check-platform-storage-literals.sh
 
+      - name: Check reschedule confirm entry paths carry their approval token (#1493)
+        run: bash .github/scripts/check-reschedule-confirm-handlers.sh
+
       - name: Check OpenAI SDK import boundary (#427)
         run: bash .github/scripts/check-openai-sdk-imports.sh
 
