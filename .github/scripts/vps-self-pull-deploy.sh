@@ -568,11 +568,15 @@ deploy_app() {
   if [ -z "$APP_SHA" ]; then
     APP_SHA="$NEW_SHA"
   elif [ "$APP_SHA" != "$NEW_SHA" ]; then
-    # Resolving per app must never let an app run ahead of the migration
-    # owner. If this app's target needs a schema the owner has not applied
-    # yet, hold it at its current image instead of rolling forward.
-    if [ "$is_migration_owner" != "true" ] && ! schema_current_for "$APP_SHA"; then
-      echo "ERROR: $app targets $APP_SHA but the schema is not current for it; migration owner has not applied it - holding at $(cat "$state_file" 2>/dev/null || echo unknown)" >&2
+    # Per-app resolution must not let an app run code that needs a migration the
+    # owner has not applied. The baseline is the image the owner actually has
+    # running, not the recorded schema revision: that record lags, and comparing
+    # against it blocks every app for a reason that is not real.
+    owner_state="$STATE_DIR/${APP_ORDER[0]}.sha"
+    owner_deployed="$(cat "$owner_state" 2>/dev/null || true)"
+    if [ "$is_migration_owner" != "true" ] && [ -n "$owner_deployed" ] && \
+      git diff --name-only "$owner_deployed" "$APP_SHA" -- "$MIGRATIONS_PATH" 2>/dev/null | grep -q .; then
+      echo "ERROR: $app targets $APP_SHA which contains migrations the migration owner ($owner_deployed) has not applied - holding at $APP_SHA's predecessor" >&2
       return 1
     fi
     echo "$app: release sha is $NEW_SHA but this app's newest published commit is $APP_SHA - deploying $APP_SHA"
