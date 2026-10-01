@@ -114,10 +114,10 @@ suitable isolation or locking for another engine, but may not silently weaken
 those outcomes.
 
 Timestamp and timezone semantics are a separate policy tracked by
-[#1227](https://github.com/lengocanh2005it/wispace-bot/issues/1227). This ADR
-does not rewrite the existing now() calls or decide which application clock is
-authoritative. WISPACE HTTP/API contracts are also outside this local database
-boundary.
+[#1227](https://github.com/lengocanh2005it/wispace-bot/issues/1227) and settled
+in [ADR-0050](0050-timestamp-and-timezone-policy.md). This ADR does not rewrite
+the existing now() calls or decide which application clock is authoritative.
+WISPACE HTTP/API contracts are also outside this local database boundary.
 
 ## Evidence snapshot
 

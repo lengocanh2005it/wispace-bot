@@ -1,6 +1,5 @@
 import type { WriteToolBudgetSettings } from './write-tool-budget.types';
-
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 const DAILY_DEFAULTS = {
   reschedule_study_session: 8,
   precreate_next_exercise: 15,
@@ -27,7 +26,7 @@ export function readWriteToolBudgetConfig(
 
   return {
     enabled,
-    timezone: get('CHAT_USAGE_TIMEZONE')?.trim() || DEFAULT_TIMEZONE,
+    timezone: resolveTimezone(get, LEGACY_TIMEZONE_ENV_KEYS.chatUsage),
     dailyCaps: {
       reschedule_study_session: positiveIntOr(
         get('CHAT_WRITE_TOOL_DAILY_CAP_RESCHEDULE'),

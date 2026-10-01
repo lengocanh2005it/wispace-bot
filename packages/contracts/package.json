@@ -13,6 +13,29 @@
     "format:check": "oxfmt --check",
     "format": "oxfmt",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "typecheck:tests": "tsc -p tsconfig.json --noEmit"
+    "typecheck:tests": "tsc -p tsconfig.json --noEmit",
+    "test": "jest --maxWorkers=50%"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.13"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest",
+      "^.+\\.js$": "@swc/jest"
+    },
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(\\.pnpm|@nestjs|necord)/)"
+    ]
   }
 }

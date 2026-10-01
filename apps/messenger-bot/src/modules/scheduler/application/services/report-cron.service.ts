@@ -40,6 +40,7 @@ import {
 } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import type { Platform } from '@wispace/contracts';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
@@ -144,8 +145,10 @@ export class ReportCronService {
 
     const schedule = this.reportScheduleService.getExamReminderWindow();
     const reportDate = todayInTimezone(
-      this.configService.get<string>('CHAT_USAGE_TIMEZONE') ??
-        'Asia/Ho_Chi_Minh',
+      resolveTimezone(
+        (key) => this.configService.get<string>(key),
+        LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
+      ),
     );
 
     if (forceSend) {

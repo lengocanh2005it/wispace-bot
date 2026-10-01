@@ -1,8 +1,13 @@
 import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
+import {
+  DEFAULT_TIMEZONE,
+  LEGACY_TIMEZONE_ENV_KEYS,
+  resolveTimezone,
+} from '@wispace/contracts';
 import type { DataQualityConfig } from './data-quality.types';
 
 export const DATA_QUALITY_CRON_DEFAULT = 'production';
-export const DATA_QUALITY_TIMEZONE = 'Asia/Ho_Chi_Minh';
+export const DATA_QUALITY_TIMEZONE = DEFAULT_TIMEZONE;
 
 export const DATA_QUALITY_DEFAULTS = {
   lockId: ADVISORY_LOCKS.DATA_QUALITY_CHECK,
@@ -84,8 +89,7 @@ export function readDataQualityConfig(
         DATA_QUALITY_DEFAULTS.sampleLimit,
       ),
     ),
-    timezone:
-      get('DATA_QUALITY_TIMEZONE')?.trim() || DATA_QUALITY_DEFAULTS.timezone,
+    timezone: resolveTimezone(get, LEGACY_TIMEZONE_ENV_KEYS.dataQuality),
     baselineDays: Math.floor(
       readPositiveNumber(
         get,

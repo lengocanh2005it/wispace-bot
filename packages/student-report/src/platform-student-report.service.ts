@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering/adapters';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import type { Platform } from '@wispace/contracts';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import {
   WispaceDataCache,
   todayInTimezone,
@@ -76,9 +77,10 @@ export class PlatformStudentReportService {
       this.core = this.buildCore();
     }
 
-    const timezone =
-      this.configService.get<string>('STUDY_REMINDER_TIMEZONE')?.trim() ??
-      'Asia/Ho_Chi_Minh';
+    const timezone = resolveTimezone(
+      (key) => this.configService.get<string>(key),
+      LEGACY_TIMEZONE_ENV_KEYS.studyReminder,
+    );
     const correlationId = `${externalUserId}:${todayInTimezone(timezone)}`;
 
     return this.core.generateReport(externalUserId, {

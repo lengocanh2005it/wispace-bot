@@ -10,7 +10,7 @@ import { CronJob } from 'cron';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering/adapters';
 import { WebhookDeadLetterEntity } from '@wispace/database';
-import type { Platform } from '@wispace/contracts';
+import { DEFAULT_TIMEZONE, type Platform } from '@wispace/contracts';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import { subMinutes } from 'date-fns';
 import { CleanupCronService } from '../cleanup-cron.service';
@@ -44,7 +44,12 @@ export interface CleanupCronJobsConfig {
   metrics?: CleanupCronMetricsPort;
 }
 
-const CRON_TIMEZONE = 'Asia/Ho_Chi_Minh';
+/**
+ * Cleanup-cron schedule timezone. `CRON_TIMEZONE` was previously a hardcoded
+ * constant under this name and never read an environment variable; it is now
+ * configurable with the same value as its fallback (ADR-0050).
+ */
+const DEFAULT_CRON_TIMEZONE = DEFAULT_TIMEZONE;
 
 export interface CleanupCronMetricsPort {
   registerCron(name: string, expectedIntervalMs: number): void;
@@ -245,7 +250,9 @@ export class PlatformCleanupCronService
   ): void {
     const job = CronJob.from({
       cronTime,
-      timeZone: CRON_TIMEZONE,
+      timeZone:
+        this.configService.get<string>('CRON_TIMEZONE')?.trim() ||
+        DEFAULT_CRON_TIMEZONE,
       onTick: () => {
         void target().catch((error) => this.logger.error(error));
       },

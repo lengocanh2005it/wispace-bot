@@ -317,3 +317,66 @@ export interface OutboundRateLimitPort {
     units?: number;
   }): Promise<OutboundRateLimitVerdict>;
 }
+
+/**
+ * Timestamp and timezone policy (ADR-0050).
+ *
+ * - Audit and lease/claim columns take the **database** clock. `now()` inside
+ *   the statement is correct for an atomic lease comparison; it is not to be
+ *   rewritten to take an application-supplied parameter.
+ * - Learner-facing daily buckets (`usage_date`, `report_date`) take the
+ *   **application** clock, resolved in the learner timezone, and are passed as
+ *   a bound parameter. They are never derived from `now()` inside SQL, so a
+ *   test does not depend on when it ran.
+ * - No application logic may depend on the column type carrying an offset. A
+ *   naive UTC column is then a drop-in substitute, which is the storage
+ *   guarantee ADR-0025's portability boundary depends on.
+ */
+
+/** Column type for a timezone-aware instant. The one declaration for it. */
+export const TIMESTAMPTZ = 'timestamptz';
+
+/** Column type for a calendar day. Learner-facing buckets are not instants. */
+export const DATE = 'date';
+
+/** Fallback when no timezone variable is set anywhere. */
+export const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+/** The single learner-calendar-day setting. Wins over every legacy alias. */
+export const APP_TIMEZONE_ENV_KEY = 'APP_TIMEZONE';
+
+/**
+ * Legacy per-feature settings, kept readable so a deployed `.env` keeps its
+ * exact behaviour. These are the same decision under different names — "which
+ * day is it for the learner" — which is why they collapse into
+ * {@link APP_TIMEZONE_ENV_KEY}. Removal needs its own migration issue.
+ */
+export const LEGACY_TIMEZONE_ENV_KEYS = {
+  chatUsage: 'CHAT_USAGE_TIMEZONE',
+  llmUsage: 'LLM_USAGE_TIMEZONE',
+  studyReminder: 'STUDY_REMINDER_TIMEZONE',
+  dataQuality: 'DATA_QUALITY_TIMEZONE',
+  reengagement: 'REENGAGEMENT_TIMEZONE',
+} as const;
+
+/**
+ * Resolves the learner calendar day: `APP_TIMEZONE`, then the caller's own
+ * legacy key, then {@link DEFAULT_TIMEZONE}. A set-but-blank value counts as
+ * unset.
+ *
+ * Ordering is what makes consolidation non-behavioural: an environment that
+ * sets only legacy keys resolves exactly as it did before, and an environment
+ * that sets `APP_TIMEZONE` gets one answer everywhere.
+ */
+export function resolveTimezone(
+  get: (key: string) => string | undefined,
+  legacyKey?: string,
+): string {
+  const app = get(APP_TIMEZONE_ENV_KEY)?.trim();
+  if (app) return app;
+  if (legacyKey) {
+    const legacy = get(legacyKey)?.trim();
+    if (legacy) return legacy;
+  }
+  return DEFAULT_TIMEZONE;
+}

@@ -10,23 +10,21 @@ import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { sleep } from '@wispace/bot-common/utils';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone,
+  NOTIFICATION_PREFERENCE,
+  type NotificationPreferencePort } from '@wispace/contracts';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import {
-  NOTIFICATION_PREFERENCE,
-  type NotificationPreferencePort,
-} from '@wispace/contracts';
 import { ReengagementApiClient } from '@wispace/wispace-client/core';
 import type { ReengagementCandidate } from '@wispace/wispace-client/core';
 import { DiscordReengagementService } from './discord-reengagement.service';
 
 const CRON_NAME = 'discord-reengagement-batch';
 const DEFAULT_CRON = '0 9 * * *';
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const DEFAULT_DAYS = 11;
 const DEFAULT_LIMIT = 50;
 const DEFAULT_MAX_PER_BATCH = 100;
@@ -71,9 +69,10 @@ export class DiscordReengagementCronService
     const expression =
       this.configService.get<string>('REENGAGEMENT_CRON')?.trim() ||
       DEFAULT_CRON;
-    const timezone =
-      this.configService.get<string>('REENGAGEMENT_TIMEZONE')?.trim() ||
-      DEFAULT_TIMEZONE;
+    const timezone = resolveTimezone(
+      (key) => this.configService.get<string>(key),
+      LEGACY_TIMEZONE_ENV_KEYS.reengagement,
+    );
     const job = new CronJob(
       expression,
       () => {
