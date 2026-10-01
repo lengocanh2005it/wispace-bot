@@ -232,6 +232,20 @@ describe('DiscordLinkCompletionService', () => {
     expect(welcomeService.welcomeIfDue).not.toHaveBeenCalled();
     expect(outcome).toBe('not-in-guild');
   });
+
+  it('keeps the verify intent when membership remains ambiguous after retries', async () => {
+    const { service, verifyRecordService, guildMembershipService } =
+      buildHarness({});
+    (guildMembershipService.isMember as jest.Mock).mockRejectedValueOnce(
+      new Error('Discord API unavailable'),
+    );
+
+    const outcome = await service.completeLink('code', 'good-token');
+
+    expect(outcome).toBe('success');
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+  });
+
   it('completes link successfully even when welcome delivery fails (outcome: error)', async () => {
     const { service, welcomeService, accountLinkService } = buildHarness({
       inGuild: true,

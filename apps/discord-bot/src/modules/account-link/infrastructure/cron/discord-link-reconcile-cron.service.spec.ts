@@ -128,6 +128,41 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     });
   });
 
+  it('keeps an already-committed intent when the reconciled membership check fails', async () => {
+    const { verifyRecordService, accountLinkService } = buildHarness({
+      records: [
+        {
+          discordUserId: 'discord-user-1',
+          userId: 143,
+          verifiedAt: new Date(Date.now() - 120_000),
+        },
+      ],
+      findUserId: () => 143,
+    });
+    const guildMembershipService = {
+      isMember: jest
+        .fn()
+        .mockRejectedValue(new Error('Discord API unavailable')),
+    };
+    const cron = new DiscordLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_934),
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      guildMembershipService as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
+    );
+
+    await cron.handleReconcile();
+
+    expect(guildMembershipService.isMember).toHaveBeenCalledWith(
+      'discord-user-1',
+    );
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+  });
+
   it('drops records older than the max age when the mapping still missing', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [

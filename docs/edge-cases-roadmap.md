@@ -4,6 +4,10 @@ Document recording **weaknesses / unhandled items** in the WISPACE bots (all fun
 
 **Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Generic tool capability/approval policy **done** (#416). Shared packages **extracted** (20 packages). Discord/Zalo bots **functional** (chat + quota + 7/7 real tool handlers incl. `precreate_next_exercise`). Items below are remaining gaps or scale-dependent improvements.
 
+**Discord callback membership recovery (#484) is covered:** membership checks
+retry briefly, confirmed `Unknown Member` responses route to the invite, and
+ambiguous failures keep the verify intent available to the reconcile cron.
+
 **Scope of this document — read before concluding an area is covered.** Every
 entry here is a **system** edge case: multi-pod scheduling, webhook retry and
 dedupe, the Meta 24h window, Redis unavailability, provider failover, deploy
