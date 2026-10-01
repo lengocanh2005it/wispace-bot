@@ -32,7 +32,7 @@ verify_job="$(extract_job verify)"
 install_step="$(extract_step '      - name: Install dependencies')"
 pr_verify_step="$(extract_step '      - name: Verify pull request')"
 push_verify_step="$(extract_step '      - name: Verify trusted push')"
-full_verify_step="$(extract_step '      - name: Verify full scheduled')"
+full_verify_step="$(extract_step '      - name: Verify scheduled')"
 
 printf '%s\n' "$verify_job" | grep -q '^    steps:' || fail "verify job has no steps"
 job_header="$(printf '%s\n' "$verify_job" | awk '/^    steps:/{exit} {print}')"
@@ -69,7 +69,7 @@ pass "trusted push verify can use Turbo credentials"
 
 printf '%s\n' "$full_verify_step" | grep -Fq "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" \
   || fail "full verify is not gated to scheduled/manual runs"
-printf '%s\n' "$full_verify_step" | grep -q 'run: npx --no-install turbo run format:check lint typecheck test build --force' \
+printf '%s\n' "$full_verify_step" | grep -q 'run: npm run verify -- --force' \
   || fail "scheduled path does not run the full forced Turbo verify"
 printf '%s\n' "$full_verify_step" | grep -q 'TURBO_TOKEN:.*secrets.TURBO_TOKEN' \
   || fail "scheduled path cannot use TURBO_TOKEN"
