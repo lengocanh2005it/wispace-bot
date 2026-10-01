@@ -11,11 +11,16 @@
 import { Logger } from '@nestjs/common';
 import {
   context,
+  propagation,
   SpanStatusCode,
   trace,
   type Attributes,
   type Tracer,
 } from '@opentelemetry/api';
+import {
+  TRACE_PARENT_HEADER,
+  W3CTraceContextPropagator,
+} from '@opentelemetry/core';
 import { errorMessage } from '../masking';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
@@ -33,6 +38,11 @@ export function startTracing(serviceName: string): void {
   // Read here, not at module load: the fail-open branch is the one the
   // Discord and Zalo ports will copy, and reading it here keeps it testable.
   const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  // The default global propagator is a no-op, which would make inject() write
+  // an empty carrier and silently drop every trace context. The W3C
+  // TraceContext propagator is what makes the `traceparent` header — and so
+  // the value the chat queue carries — mean anything.
+  propagation.setGlobalPropagator(new W3CTraceContextPropagator());
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
       [SEMRESATTRS_SERVICE_NAME]: serviceName,
@@ -101,6 +111,40 @@ export async function withRootSpan<T>(
       span.end();
     }
   });
+}
+
+/**
+ * Serialize the active trace context into a carrier string, or undefined when
+ * nothing is being traced. The caller is responsible for putting the string
+ * where the work it describes will find it again — the chat queue keeps it in
+ * its buffer `context` field, which already survives the debounce and the
+ * Redis hop to whichever pod claims the batch.
+ */
+export function captureTraceContext(): string | undefined {
+  const span = trace.getSpan(context.active());
+  if (!span?.spanContext().traceId.match(/[1-9a-f]/)) return undefined;
+  const carrier: Record<string, string> = {};
+  propagation.inject(context.active(), carrier);
+  return carrier[TRACE_PARENT_HEADER] === undefined
+    ? undefined
+    : carrier[TRACE_PARENT_HEADER];
+}
+
+/**
+ * Run `fn` as a child of the trace carried by `parent`, restoring the previous
+ * context afterwards. A missing or malformed carrier starts a fresh trace
+ * rather than throwing — this runs on the flush path, where a bad carrier must
+ * not cost a learner their reply.
+ */
+export async function withExtractedTraceContext<T>(
+  parent: string | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!parent) return fn();
+  const extracted = propagation.extract(context.active(), {
+    [TRACE_PARENT_HEADER]: parent,
+  });
+  return context.with(extracted, fn);
 }
 
 /**

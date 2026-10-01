@@ -22,6 +22,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^12.0.1",
     "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.8.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/instrumentation-http": "^0.222.0",
     "@opentelemetry/instrumentation-pg": "^0.74.0",
@@ -38,6 +39,7 @@
     "typeorm": "^1.1.1"
   },
   "devDependencies": {
+    "@opentelemetry/context-async-hooks": "^2.8.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.6.2",
     "jest": "^30.5.2",

@@ -17,6 +17,10 @@ import type {
 } from '@wispace/chat-pipeline';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import {
+  captureTraceContext,
+  withExtractedTraceContext,
+} from '@wispace/bot-common/tracing';
+import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
@@ -301,13 +305,23 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const userText = text.trim();
     if (this.distributed) {
+      // The flush that eventually runs the LLM happens later — after the
+      // debounce, and possibly on another pod. Carrying the trace context in
+      // the buffer is what keeps the chat turn under the trace id the request
+      // opened, instead of starting an unrelated one.
+      const traceParent = captureTraceContext();
       await this.queueStore!.appendChatBuffer({
         externalUserId,
         userText,
         userId: ctx.userId,
         context:
-          ctx.isServerChannel !== undefined
-            ? { isServerChannel: ctx.isServerChannel }
+          ctx.isServerChannel !== undefined || traceParent !== undefined
+            ? {
+                ...(ctx.isServerChannel !== undefined
+                  ? { isServerChannel: ctx.isServerChannel }
+                  : {}),
+                ...(traceParent !== undefined ? { traceParent } : {}),
+              }
             : undefined,
         idempotencyKey,
         debounceMs: this.debounceMs,
@@ -410,7 +424,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     rateLimitedFlushThisCycle.delete(batch.externalUserId);
 
     try {
-      const context = batch.context as QueueCtx | undefined;
+      const context = batch.context as
+        | (QueueCtx & { traceParent?: string })
+        | undefined;
       const sharedSnapshot = 'lastIdempotencyKey' in batch;
       const flush = () =>
         this.pipeline.flush({
@@ -428,9 +444,15 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       // `chat_total` is the platform's chat-availability SLO series (#371) —
       // timed only when the app wired the closure, ok/error recorded by the
       // metrics helper itself.
-      const delivered = await (this.options.timeStep
-        ? this.options.timeStep('chat_total', flush)
-        : flush());
+      // Re-establish the request's trace before the LLM span opens, so the
+      // turn is a child of the request rather than a trace of its own.
+      const delivered = await withExtractedTraceContext(
+        context?.traceParent,
+        () =>
+          this.options.timeStep
+            ? this.options.timeStep('chat_total', flush)
+            : flush(),
+      );
 
       if (!delivered) {
         if (rateLimitedFlushThisCycle.has(batch.externalUserId)) {

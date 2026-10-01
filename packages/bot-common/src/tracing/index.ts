@@ -2,6 +2,8 @@ export {
   startTracing,
   shutdownTracing,
   withRootSpan,
+  captureTraceContext,
+  withExtractedTraceContext,
   type TracingShutdownOptions,
 } from './tracing';
 
