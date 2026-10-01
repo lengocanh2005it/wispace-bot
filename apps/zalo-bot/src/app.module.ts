@@ -17,6 +17,7 @@ import { ZaloStudyReminderModule } from './modules/zalo-study-reminder/zalo-stud
 import { ZaloReportModule } from './modules/zalo-chat/zalo-report.module';
 import { ZaloOpsModule } from './modules/zalo-ops/zalo-ops.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
+import { BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { OpsHealthModule } from '@wispace/ops-health/adapters';
 
 @Module({
@@ -45,7 +46,7 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
     ZaloStudyReminderModule,
     ZaloReportModule,
     ZaloOpsModule,
-    createMetricsModule('zalo', 'zalo-bot'),
+    createMetricsModule('zalo', BOT_SERVICE_NAMES.zalo),
     OpsHealthModule.forPlatform('zalo', ZaloOauthHttpModule),
   ],
 })

@@ -5,12 +5,9 @@
  * instrumentation requires: `startTracing()` called from top-level code in
  * main.ts would run after the imports above it were already evaluated.
  *
- * The service name must equal the tracer name `createMetricsModule('discord',
- * 'discord-bot')` passes to `trace.getTracer`, so spans from BotMetricsService
- * and the SDK's own resource land under one service. That string is also
- * written in apps/discord-bot/src/app.module.ts — change one, and spans
- * silently split across two service names.
+ * The service name comes from BOT_SERVICE_NAMES so it stays equal to the one
+ * `createMetricsModule('discord', ...)` passes to `trace.getTracer`.
  */
-import { startTracing } from '@wispace/bot-common/tracing';
+import { startTracing, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 
-startTracing('discord-bot');
+startTracing(BOT_SERVICE_NAMES.discord);

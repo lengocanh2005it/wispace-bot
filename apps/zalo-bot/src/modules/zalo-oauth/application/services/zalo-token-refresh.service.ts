@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
-import { withRootSpan } from '@wispace/bot-common/tracing';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
@@ -60,10 +60,15 @@ export class ZaloTokenRefreshService implements OnModuleInit {
     // the cron scheduler — but it happens outside the span, so the span still
     // records the failure.
     try {
-      await withRootSpan('zalo-bot', 'zalo.oa_token_refresh', {}, async () => {
-        await this.tokenService.refreshNow();
-        this.metrics?.recordCronSuccess?.(CRON_JOB_NAME);
-      });
+      await withRootSpan(
+        BOT_SERVICE_NAMES.zalo,
+        'zalo.oa_token_refresh',
+        {},
+        async () => {
+          await this.tokenService.refreshNow();
+          this.metrics?.recordCronSuccess?.(CRON_JOB_NAME);
+        },
+      );
     } catch (error) {
       this.logger.error(
         `Zalo OA token refresh cron failed: ${errorMessage(error)}`,

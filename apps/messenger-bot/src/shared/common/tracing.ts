@@ -5,9 +5,9 @@
  * instrumentation requires: `startTracing()` called from top-level code in
  * main.ts would run after the imports above it were already evaluated.
  *
- * The service name lives here, not in bot-common, so each bot reports under
- * its own name.
+ * The service name comes from BOT_SERVICE_NAMES so it stays equal to the one
+ * `createMetricsModule('messenger', ...)` passes to `trace.getTracer`.
  */
-import { startTracing } from '@wispace/bot-common/tracing';
+import { startTracing, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 
-startTracing('messenger-ai-for-student');
+startTracing(BOT_SERVICE_NAMES.messenger);

@@ -1,7 +1,7 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { WebhookThrottle } from '@wispace/bot-common/redis';
-import { withRootSpan } from '@wispace/bot-common/tracing';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
 import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
 import { ZaloWebhookEventDto } from '../dto/zalo-webhook-event.dto';
@@ -23,7 +23,7 @@ export class ZaloWebhookController {
     // It does NOT cover the chat turn: dispatch is fire-and-forget and
     // carries no traceparent, so the worker starts a fresh trace.
     return withRootSpan(
-      'zalo-bot',
+      BOT_SERVICE_NAMES.zalo,
       'zalo.webhook',
       { 'zalo.event_len': JSON.stringify(body).length },
       async () => {

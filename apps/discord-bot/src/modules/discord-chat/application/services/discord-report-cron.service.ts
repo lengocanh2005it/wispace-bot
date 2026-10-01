@@ -21,7 +21,7 @@ import {
 } from '../../domain/ports/report-cron-seams.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import { withRootSpan } from '@wispace/bot-common/tracing';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import {
   fullPageAsMappingPage,
   iterateMappingPages,
@@ -111,8 +111,11 @@ export class DiscordReportCronService {
       // A cron with no human watching the request. The wave's LLM report
       // generation and WISPACE calls are already instrumented by
       // BotMetricsService, but they need a parent to nest under (#1458).
-      await withRootSpan('discord-bot', 'discord.report_cron', {}, () =>
-        this.sendScheduledReports(),
+      await withRootSpan(
+        BOT_SERVICE_NAMES.discord,
+        'discord.report_cron',
+        {},
+        () => this.sendScheduledReports(),
       );
       this.metrics?.observeReportWaveCompletionLag?.(
         (Date.now() - waveStartedAt) / 1000,

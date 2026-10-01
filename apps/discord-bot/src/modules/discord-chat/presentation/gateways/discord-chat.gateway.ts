@@ -56,7 +56,7 @@ import {
   IntentDetector,
   detectDisclosureProbe,
 } from '@wispace/llm-agent/core';
-import { withRootSpan } from '@wispace/bot-common/tracing';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -250,7 +250,7 @@ export class DiscordChatGateway {
     // WISPACE and LLM span would start its own trace (#1458).
     const text = message.content.trim();
     return withRootSpan(
-      'discord-bot',
+      BOT_SERVICE_NAMES.discord,
       'discord.message',
       {
         'discord.channel_type': String(message.channel.type),

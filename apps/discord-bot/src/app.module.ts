@@ -16,6 +16,7 @@ import { DiscordStudyReminderModule } from './modules/discord-study-reminder/dis
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
 import { DiscordReengagementModule } from './modules/discord-reengagement/discord-reengagement.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
+import { BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { HealthController } from '@wispace/bot-common/health';
 import { OpsHealthModule } from '@wispace/ops-health/adapters';
 
@@ -57,7 +58,7 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
     DiscordStudyReminderModule,
     DiscordOpsModule,
     DiscordReengagementModule,
-    createMetricsModule('discord', 'discord-bot'),
+    createMetricsModule('discord', BOT_SERVICE_NAMES.discord),
     OpsHealthModule.forPlatform('discord', DiscordChatModule),
   ],
 })
