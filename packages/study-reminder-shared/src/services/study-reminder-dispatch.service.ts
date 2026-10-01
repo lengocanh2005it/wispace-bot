@@ -118,8 +118,9 @@ export class StudyReminderDispatchService {
     // A cron with no human watching the request, shared by all three bots
     // (#1458). The per-send WISPACE and LLM spans are already instrumented;
     // this gives them a parent so one reminder is followable end to end.
-    // The tracer name is the platform, matching the metrics prefix each bot
-    // already uses in createMetricsModule.
+    // Nesting follows the active context, not the tracer name, so naming
+    // this after the platform is correct even though BotMetricsService's
+    // tracer is named after the service ('discord-bot', not 'discord').
     return withRootSpan(this.platform, 'study_reminder.dispatch', {}, () =>
       this.dispatchDueRemindersInner(),
     );

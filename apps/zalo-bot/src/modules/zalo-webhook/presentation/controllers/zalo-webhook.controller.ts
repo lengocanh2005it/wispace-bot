@@ -19,8 +19,9 @@ export class ZaloWebhookController {
     @Body() body: ZaloWebhookEventDto,
   ): Promise<{ received: true }> {
     // HttpInstrumentation already opens a server span for the POST, so this
-    // is a child of it: the ingest and everything the queue worker later does
-    // stay joinable under the request's trace id (#1459).
+    // is a child of it and the ingest reads as part of the request (#1459).
+    // It does NOT cover the chat turn: dispatch is fire-and-forget and
+    // carries no traceparent, so the worker starts a fresh trace.
     return withRootSpan(
       'zalo-bot',
       'zalo.webhook',

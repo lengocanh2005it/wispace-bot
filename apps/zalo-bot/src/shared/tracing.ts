@@ -5,9 +5,11 @@
  * instrumentation requires: `startTracing()` called from top-level code in
  * main.ts would run after the imports above it were already evaluated.
  *
- * The service name matches the tracer name `createMetricsModule('zalo',
- * 'zalo-bot')` already passes to `trace.getTracer`, so spans emitted by
- * BotMetricsService and by the SDK's own resource land under one service.
+ * The service name must equal the tracer name `createMetricsModule('zalo',
+ * 'zalo-bot')` passes to `trace.getTracer`, so spans from BotMetricsService
+ * and the SDK's own resource land under one service. That string is also
+ * written in apps/zalo-bot/src/app.module.ts — change one, and spans
+ * silently split across two service names.
  */
 import { startTracing } from '@wispace/bot-common/tracing';
 

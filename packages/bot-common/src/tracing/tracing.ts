@@ -14,11 +14,11 @@ import {
   SpanStatusCode,
   trace,
   type Attributes,
-  type Span,
   type Tracer,
 } from '@opentelemetry/api';
 import { errorMessage } from '../masking';
 import { NodeSDK } from '@opentelemetry/sdk-node';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
@@ -37,9 +37,14 @@ export function startTracing(serviceName: string): void {
     resource: resourceFromAttributes({
       [SEMRESATTRS_SERVICE_NAME]: serviceName,
     }),
-    traceExporter: otlpEndpoint
-      ? new OTLPTraceExporter({ url: otlpEndpoint })
-      : undefined,
+    // `traceExporter: undefined` is NOT the fail-open branch. The SDK then
+    // falls through to getSpanProcessorsFromEnv(), which defaults to a real
+    // OTLP exporter aimed at localhost:4318 — spans would buffer and retry
+    // against a collector that does not exist. An empty spanProcessors list
+    // is the branch that genuinely disables the pipeline (#1457 AC3).
+    spanProcessors: otlpEndpoint
+      ? [new BatchSpanProcessor(new OTLPTraceExporter({ url: otlpEndpoint }))]
+      : [],
     instrumentations: [
       new HttpInstrumentation({ ignoreIncomingRequestHook: () => false }),
       new PgInstrumentation(),
@@ -75,14 +80,14 @@ export async function withRootSpan<T>(
   tracerName: string,
   name: string,
   attributes: Attributes,
-  fn: (span: Span) => Promise<T>,
+  fn: () => Promise<T>,
 ): Promise<T> {
   const tracer: Tracer = trace.getTracer(tracerName);
   const span = tracer.startSpan(name);
   if (Object.keys(attributes).length > 0) span.setAttributes(attributes);
   return context.with(trace.setSpan(context.active(), span), async () => {
     try {
-      const result = await fn(span);
+      const result = await fn();
       span.setStatus({ code: SpanStatusCode.OK });
       return result;
     } catch (err) {

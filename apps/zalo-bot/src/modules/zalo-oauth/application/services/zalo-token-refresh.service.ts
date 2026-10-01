@@ -1,11 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { ZaloTokenService } from './zalo-token.service';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { withRootSpan } from '@wispace/bot-common/tracing';
 
 const DEFAULT_REFRESH_CRON = '0 */45 * * * *';
 const CRON_JOB_NAME = 'zalo-oa-token-refresh';

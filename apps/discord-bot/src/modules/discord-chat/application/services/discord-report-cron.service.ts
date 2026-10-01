@@ -21,6 +21,7 @@ import {
 } from '../../domain/ports/report-cron-seams.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 import {
   fullPageAsMappingPage,
   iterateMappingPages,
@@ -36,7 +37,6 @@ import {
   type ReportAccountRow,
 } from '../../domain/ports/discord-report-account-reader.port';
 import type { Platform } from '@wispace/contracts';
-import { withRootSpan } from '@wispace/bot-common/tracing';
 
 const PLATFORM = 'discord' as const;
 const PAGE_SIZE = 200;
