@@ -7,6 +7,7 @@ status: accepted
 Evaluated on 2026-09-28 in [#1456](https://github.com/lengocanh2005it/wispace-bot/issues/1456)
 and recorded here so the decision survives the issue being closed. messenger-bot
 already runs the OpenTelemetry SDK (OTLP HTTP + HTTP/Pg instrumentation,
+`packages/bot-common/src/tracing/tracing.ts`, started from
 `apps/messenger-bot/src/shared/common/tracing.ts`), `bot-metrics` exposes
 Prometheus metrics, `ops-health` provides alerting, and the deploy stack runs
 Alertmanager. `@nestjs/observe` is the official NestJS APM agent, but adopting it

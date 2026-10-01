@@ -1,7 +1,6 @@
 // The bare side-effect import must stay separate from the named import below:
 // it initialises the OTel SDK before any module loads, and merging the two
 // would drop that ordering guarantee.
-// oxlint-disable-next-line import/no-duplicates
 import './shared/common/tracing'; // MUST be first — initialises OTel SDK before any module loads
 import { shutdownTracing } from '@wispace/bot-common/tracing';
 // vps-self-pull-deploy smoke test: no-op, verifies end-to-end self-pull deploy

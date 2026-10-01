@@ -17,12 +17,14 @@ import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 
-const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-
 let activeSdk: NodeSDK | undefined;
 
 /** Start the SDK and remember it, so a bare `shutdownTracing()` can flush it. */
 export function startTracing(serviceName: string): void {
+  if (activeSdk) return;
+  // Read here, not at module load: the fail-open branch is the one the
+  // Discord and Zalo ports will copy, and reading it here keeps it testable.
+  const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
       [SEMRESATTRS_SERVICE_NAME]: serviceName,
