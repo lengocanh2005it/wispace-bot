@@ -107,7 +107,9 @@ npx turbo run build --filter=@wispace/messenger-bot...
 npx turbo run test --filter=@wispace/messenger-bot...
 ```
 
-Static CI guards (root, no database needed) — all run inside `npm run verify`:
+Repository verification has one root-owned definition in `scripts/verify.mjs`. Run `npm run verify` for the full gate. `npm run verify:affected` runs the same guard tests, repository checks, formatting, lint, and dependency checks, then limits only Turbo typecheck/test/build tasks to affected workspaces. CI sets `TURBO_SCM_BASE` for pull requests. The scheduled gate uses `npm run verify -- --force` to bypass Turbo's cache.
+
+Static CI guards (root, no database needed) — all checks and their guard tests run inside the shared gate:
 
 ```bash
 npm run architecture:check      # import boundary rules
@@ -150,7 +152,7 @@ npm run lint               # oxlint --fix
 npm run format             # oxfmt
 npm run format:check       # oxfmt --check (CI / verify)
 npm run typecheck          # tsc --noEmit
-npm run verify             # format:check + lint + typecheck + test + build
+npm run verify:local       # package-scoped format:check + lint + typecheck + test + build
 ```
 
 ### Utility scripts (require `.env` + DB)
@@ -191,20 +193,15 @@ npm run test:e2e            # test/app.e2e-spec.ts
 
 Before finishing a task (code changes): **required** to update related agent docs/skills (see _Docs & skills when changing code_) and run tests/build.
 
-**Required after every code change — matches CI deploy (in exact order):**
+**Required before reporting code changes complete — run the shared gate from the repository root:**
 
 ```bash
-npm ci                     # required if you just ran npm ci --omit=dev
-npm run format:check       # oxfmt --check — CI fails on format errors
-npm run lint               # oxlint --fix
-npm run typecheck          # tsc --noEmit
-npm run test               # Jest — run npm run test
-npm run build              # nest build + copy assets → dist/
+npm run verify
 ```
 
-> Missing any step may cause CI failure. The order above matches the `quality` jobs in `.github/workflows/pull-request.yml` (`npm run verify`).
+`npm run verify:affected` is the pull-request variant; it shares the root checks and narrows only typecheck/test/build to changed workspaces. The scheduled CI run invokes `npm run verify -- --force` for a full uncached pass.
 
-**Full local verification (recommended):** `npm run format` then `npm run verify`.
+For a formatting repair, run `npm run format` before `npm run verify`.
 
 Fix lint/test/build errors until they pass. `npm run test:e2e` requires a real PostgreSQL instance — not included in the CI gate.
 
@@ -662,7 +659,7 @@ When closing a gap: update the feature runbook (`apps/messenger-bot/docs/chat-ra
 - Only commit when explicitly requested by user.
 - Do not commit `.env` or files containing secrets.
 - Commit messages: short, describe **why** more than **what**.
-- Before PR: run all 5 CI commands in order `format:check → lint → typecheck → test → build`; local verification recommended: `npm run verify`.
+- Before PR: run `npm run verify` from the repository root. CI uses `npm run verify:affected` for pull requests and `npm run verify -- --force` for scheduled full runs.
 
 ### Before reporting a task done
 

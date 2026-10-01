@@ -79,28 +79,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test architecture dependency guard (#431)
-        run: npm run architecture:test
-
-      - name: Test workspace dependency guard
-        run: npm run workspace-deps:test
-
-      - name: Test manifest dependency guard (#1219)
-        run: npm run manifest-deps:test
-
-      - name: Test entrypoint consumer guard (#1440)
-        run: npm run entrypoint-consumers:test
-
-      - name: Test runtime image check (#1219)
-        run: npm run runtime-image:test
-
-      - name: Test file-size ratchet (ADR-0044)
-        run: npm run file-size:test
-
-      - name: Test mutation guard
-        run: npm run prove-checks:test
-
-      - name: Verify pull request (format + lint + typecheck + test + build, affected packages only)
+      - name: Verify pull request (shared repository checks + affected workspace tasks)
         if: github.event_name == 'pull_request'
         run: npm run verify:affected
         env:
@@ -108,7 +87,7 @@ jobs:
           TURBO_CONCURRENCY: 2
           NODE_OPTIONS: '--max-old-space-size=4096'
 
-      - name: Verify trusted push (format + lint + typecheck + test + build)
+      - name: Verify trusted push (full repository gate)
         if: github.event_name == 'push'
         run: npm run verify
         env:
@@ -117,9 +96,9 @@ jobs:
           TURBO_CONCURRENCY: 2
           NODE_OPTIONS: '--max-old-space-size=4096'
 
-      - name: Verify full scheduled (format + lint + typecheck + test + build)
+      - name: Verify scheduled (full repository gate, uncached)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: npx --no-install turbo run format:check lint typecheck test build --force
+        run: npm run verify -- --force
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ secrets.TURBO_TEAM }}

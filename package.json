@@ -40,8 +40,9 @@
     "file-size:check": "node scripts/check-file-size.mjs",
     "file-size:report": "node scripts/check-file-size.mjs --report",
     "file-size:test": "node --test scripts/check-file-size.test.mjs",
-    "verify:affected": "npm run workspace-deps:check && npm run manifest-deps:check && npm run file-size:check && npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build --affected",
-    "verify": "npm run workspace-deps:check && npm run manifest-deps:check && npm run entrypoint-consumers:check && npm run file-size:check && npm run architecture:check && npm run format:check && npm run lint && npm run knip:deps && turbo run typecheck test build",
+    "verify:definition:test": "node --test scripts/verify.test.mjs",
+    "verify:affected": "node scripts/verify.mjs --affected",
+    "verify": "node scripts/verify.mjs",
     "entrypoint-consumers:check": "node scripts/check-export-subpath-consumers.mjs",
     "entrypoint-consumers:test": "node --test scripts/check-export-subpath-consumers.test.mjs"
   },

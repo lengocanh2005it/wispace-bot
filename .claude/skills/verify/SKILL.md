@@ -7,7 +7,7 @@ description: >-
 disable-model-invocation: true
 ---
 
-# Verify (Turborepo)
+# Verify
 
 Run **after code changes** and **after updating agent docs/skills** (see `AGENTS.md` → _Docs & skills when changing code_).
 
@@ -21,24 +21,25 @@ Run at **root** — npm workspaces resolves both `apps/*` and `packages/*`. Requ
 
 ## Quality gate
 
-**CI / deploy** (`.github/workflows/pull-request.yml` — `npm run verify` across all workspaces):
+Run verification from the repository root. `scripts/verify.mjs` is the single definition used by local and CI entry points.
 
 ```bash
-npx turbo run lint --filter=@wispace/messenger-bot...
-npx turbo run test --filter=@wispace/messenger-bot...
-npx turbo run build --filter=@wispace/messenger-bot...
+npm run verify
 ```
 
-**Full local (all workspaces):**
+For the pull-request lane, the same repository checks run and only affected workspace typecheck/test/build tasks are selected. CI supplies `TURBO_SCM_BASE`.
 
 ```bash
-npx turbo run format
-npx turbo run verify
+npm run verify:affected
 ```
 
-If only editing `packages/llm-agent`: run `npx turbo run test --filter=@wispace/llm-agent` first (mock port tests, no DB/Nest needed), then re-run the `@wispace/messenger-bot...` gate (use `...` to rebuild dependent apps).
+The scheduled CI lane uses the full gate with Turbo caching disabled:
 
-All 3 bots (`apps/messenger-bot`, `apps/discord-bot`, `apps/zalo-bot`) are fully functional — the full `npx turbo run format` + `npm run verify` gate above covers all workspaces.
+```bash
+npm run verify -- --force
+```
+
+The gate runs repository guard tests/checks, formatting, lint, dependency checks, then workspace typecheck, tests, and builds. `verify:affected` differs only by passing `--affected` to those final Turbo tasks. Run `npm run format` before the gate when repairing formatting.
 
 The pull-request workflow also runs database checks in disposable PostgreSQL jobs:
 
@@ -56,4 +57,4 @@ Both require `NODE_ENV=test` and a loopback `DB_HOST`; never use production cred
 - Edit `packages/llm-agent` → `agent.service.spec.ts` (in package) must pass, and `@wispace/messenger-bot` app must build/test successfully (dependency).
 - **Do not** use `test:e2e` in default gate (requires PostgreSQL; e2e is outdated).
 
-Fix all format/lint/type/test/build errors before marking task complete. Do not commit unless user requests it.
+Fix all verification errors before marking the task complete. Do not commit unless the user requests it.

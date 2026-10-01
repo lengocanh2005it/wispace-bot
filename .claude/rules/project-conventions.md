@@ -50,20 +50,19 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 2. **Update skills** in `.claude/skills/` if debug/verify/migration/prompt workflows are affected.
 3. **Run quality gate** before reporting task complete (requires full `npm install` at root with dev deps):
 
-**CI / deploy** (matches `.github/workflows/pull-request.yml` `npm run verify`, runs for all workspaces):
+**Full repository gate** (same definition used for trusted pushes and scheduled CI):
 
 ```bash
-npx turbo run lint --filter=@wispace/messenger-bot...
-npx turbo run test --filter=@wispace/messenger-bot...
-npx turbo run build --filter=@wispace/messenger-bot...
+npm run verify
 ```
 
-**Full local** (entire workspace, adds format + typecheck):
+The pull-request lane runs the same root checks and narrows only workspace typecheck/test/build to changed packages:
 
 ```bash
-npx turbo run format
-npx turbo run verify          # format:check + lint + typecheck + test + build, all apps/packages
+npm run verify:affected
 ```
+
+The scheduled lane runs the full gate without Turbo cache reuse: `npm run verify -- --force`. All three entry points delegate to `scripts/verify.mjs`.
 
 **Note:** test = Jest unit specs (`**/*.spec.ts` in each app/package). `'jest' is not recognized` or `'turbo' is not recognized` errors → run `npm install` at root again (don't use `npm ci --omit=dev` before testing).
 

@@ -43,6 +43,6 @@ Bootstrap `zalo_oa_tokens` manually (the table starts empty and the app fails cl
 npm run start:dev
 npm run build
 npm run test
-npm run verify   # format:check + lint + typecheck + test + build
+npm run verify:local   # package-scoped format:check + lint + typecheck + test + build
 node scripts/seed-oa-token.mjs --access-token=... --refresh-token=...   # one-time OA token bootstrap
 ```
