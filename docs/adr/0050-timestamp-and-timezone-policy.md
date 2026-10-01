@@ -127,6 +127,50 @@ adapter layer can hide. A portable timestamp column does not make a weaker
 isolation level safe; the timestamp policy and the concurrency policy are
 independent, and an engine change has to satisfy both.
 
+### Identity is not time
+
+A fourth thing reads the clock and is *not* a timestamp: an idempotency key
+that claims to identify a message. A clock reading is a legitimate answer to
+"when did this happen" and never to "is this the same thing again" — a
+redelivered message produces a different key per delivery, which is the exact
+inverse of what dedupe needs, and the second attempt is charged again.
+
+Every platform therefore derives a chat dedupe key from the event, never from
+the clock:
+
+- Messenger and Discord hash the webhook event id with the platform and user
+  (`buildIdempotencyKey`), bounded to the column length by a SHA-256 prefix.
+- Zalo uses `buildZaloEventId`, which prefers the provider's `msg_id` and falls
+  back to `event_name:userId:timestamp` and then a canonical content hash.
+  Before #1489 the dispatch passed `msg_id` straight through when present and
+  the chat service invented `zalo:<user>:<Date.now()>` when it was absent, so
+  the one provider that omitted the id lost dedupe entirely.
+
+The port takes the key as required. An optional key lets a future caller skip
+the derivation, and the failure is silent: the queue accepts it, the quota is
+charged twice, and nothing in the logs distinguishes that from two genuine
+messages. A missing key is a type error, not a runtime surprise.
+
+### The dedupe window is a count, and that is its scope
+
+The Redis queue keeps the last 40 idempotency keys per learner and trims the
+rest silently. That count is the entire scope of the window: it is not a
+duration, and nothing converts it into one.
+
+At the burst ceiling of 3 messages per minute, 40 keys covers roughly 13
+minutes of sending. A learner who sends more than 40 messages inside a
+plausible provider redelivery window falls out of the window and is no longer
+deduped on the Redis path, with no signal that protection ended. Postgres is
+not subject to this bound — `chat_idempotency` keeps its own retention — so the
+gap is on the fast path, not the durable one.
+
+The bound is deliberate and the count is the contract. Making it a duration
+would mean choosing a redelivery window the provider has not stated; raising
+the count is a one-line change if a redelivery window is ever documented or if
+the exit rate is ever measured. `ponytail:` a learner must exceed 40 messages
+inside the provider's redelivery window to be affected; raise the constant when
+that rate is observed, not before.
+
 ## Evidence snapshot
 
 Measured from runtime entity and application code, excluding migrations, specs,

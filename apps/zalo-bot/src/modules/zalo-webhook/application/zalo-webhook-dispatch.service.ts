@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
+import { buildZaloEventId } from './zalo-webhook-ingest.service';
 import {
   ZALO_INBOUND_CHAT,
   type ZaloInboundChatPort,
@@ -25,9 +26,15 @@ export class ZaloWebhookDispatchService {
       case 'user_send_text': {
         const senderId = event.sender?.id;
         const text = event.message?.text;
-        const msgId = event.message?.msg_id;
         if (senderId && text) {
-          await this.handler.handleIncomingMessage(senderId, text, msgId);
+          // #1489: the dedupe key must be derived from the event, never from a
+          // clock reading — the same helper the durable inbox uses, so a
+          // redelivery of this exact event always yields the same key.
+          await this.handler.handleIncomingMessage(
+            senderId,
+            text,
+            buildZaloEventId(event),
+          );
         }
         return;
       }

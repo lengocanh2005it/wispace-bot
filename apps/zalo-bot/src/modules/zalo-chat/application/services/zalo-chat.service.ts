@@ -97,7 +97,7 @@ export class ZaloChatService {
   async handleIncomingMessage(
     zaloUserId: string,
     text: string,
-    idempotencyKey?: string,
+    idempotencyKey: string,
   ): Promise<void> {
     // Non-disclosure probe (#625): internal-details questions → standard
     // non-disclosure line, before intent detection.
@@ -233,8 +233,12 @@ export class ZaloChatService {
         }
       }
 
-      const key = idempotencyKey ?? `zalo:${zaloUserId}:${Date.now()}`;
-      await this.chatQueueService.enqueue(zaloUserId, text, { userId }, key);
+      await this.chatQueueService.enqueue(
+        zaloUserId,
+        text,
+        { userId },
+        idempotencyKey,
+      );
     } catch (error) {
       this.logger.error(
         `Chat enqueue failed for zaloUserId=${maskExternalId(
