@@ -129,6 +129,11 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
 
   /** Flushes immediately if there is buffered text, bypassing the debounce wait. */
   async flushNow(externalUserId: string): Promise<void> {
+    const state = this.queues.get(externalUserId);
+    if (state?.debounceTimer) {
+      clearTimeout(state.debounceTimer);
+      state.debounceTimer = undefined;
+    }
     await this.flush(externalUserId);
   }
 

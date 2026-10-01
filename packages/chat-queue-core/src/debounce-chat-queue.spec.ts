@@ -141,15 +141,30 @@ describe('DebounceChatQueue', () => {
   });
 
   it('flushNow flushes immediately without waiting for the debounce timer', async () => {
+    jest.useFakeTimers();
     const onFlush =
       makeFlushMock<Record<string, unknown>>().mockResolvedValue(undefined);
     const queue = makeQueue(onFlush, 10_000);
 
-    queue.enqueue({ externalUserId: 'u1', text: 'hello' });
-    await queue.flushNow('u1');
+    try {
+      queue.enqueue({ externalUserId: 'u1', text: 'hello' });
+      expect(jest.getTimerCount()).toBe(2); // cleanup interval + debounce timer
 
-    expect(onFlush).toHaveBeenCalledTimes(1);
-    await queue.destroy();
+      await queue.flushNow('u1');
+
+      expect(onFlush).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(1); // only the cleanup interval remains
+
+      await queue.drain();
+      await queue.destroy();
+      await queue.destroy();
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      expect(onFlush).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps separate debounce state per user', async () => {
