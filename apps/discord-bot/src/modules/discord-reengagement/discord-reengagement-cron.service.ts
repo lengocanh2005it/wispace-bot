@@ -10,9 +10,12 @@ import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { sleep } from '@wispace/bot-common/utils';
-import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone,
+import {
+  LEGACY_TIMEZONE_ENV_KEYS,
   NOTIFICATION_PREFERENCE,
-  type NotificationPreferencePort } from '@wispace/contracts';
+  resolveTimezone,
+  type NotificationPreferencePort,
+} from '@wispace/contracts';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,

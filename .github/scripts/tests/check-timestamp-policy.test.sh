@@ -56,7 +56,9 @@ run_check() { # name repo expected
   local name="$1" repo="$2" expected="$3"
   local output status
 
-  if output=$("$SCRIPT" "$(base_of "$repo")" "$repo" 2>&1); then status=0; else status=$?; fi
+  # Invoked through bash, not executed directly: repository check scripts are
+  # committed without an executable bit and CI calls them the same way.
+  if output=$(bash "$SCRIPT" "$(base_of "$repo")" "$repo" 2>&1); then status=0; else status=$?; fi
 
   if [[ "$expected" == pass && $status -eq 0 ]]; then
     pass "$name"
@@ -152,7 +154,7 @@ git -C "$repo" add -A
 run_check "non-entity file containing now() passes" "$repo" pass
 
 # 10. The real repository passes: the guard must be green on its own tree.
-if output=$("$SCRIPT" HEAD "$REPO_ROOT" 2>&1); then
+if output=$(bash "$SCRIPT" HEAD "$REPO_ROOT" 2>&1); then
   pass "current repository inventory passes"
 else
   echo "$output" >&2
