@@ -106,6 +106,7 @@ test('the root gate owns all workspace verification scripts', () => {
 test('the shared root gate includes each CI guard test and check once', () => {
   for (const script of [
     'architecture:test',
+    'redis-usage:test',
     'workspace-deps:test',
     'manifest-deps:test',
     'entrypoint-consumers:test',
@@ -116,6 +117,7 @@ test('the shared root gate includes each CI guard test and check once', () => {
     'manifest-deps:check',
     'file-size:check',
     'architecture:check',
+    'redis-usage:check',
     'format:check',
     'lint',
     'knip:deps',

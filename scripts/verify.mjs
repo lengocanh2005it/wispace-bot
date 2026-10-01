@@ -7,6 +7,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ROOT_VERIFY_SCRIPTS = [
   'verify:definition:test',
   'architecture:test',
+  'redis-usage:test',
   'workspace-deps:test',
   'manifest-deps:test',
   'entrypoint-consumers:test',
@@ -17,6 +18,7 @@ export const ROOT_VERIFY_SCRIPTS = [
   'manifest-deps:check',
   'file-size:check',
   'architecture:check',
+  'redis-usage:check',
   'format:check',
   'lint',
   'knip:deps',

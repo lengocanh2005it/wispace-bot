@@ -31,6 +31,8 @@
     "database:entity-discovery:test": "node --test scripts/database-entity-discovery.test.mjs",
     "architecture:check": "node scripts/check-architecture.mjs",
     "architecture:test": "node --test scripts/check-architecture.test.mjs",
+    "redis-usage:check": "node scripts/check-redis-usage.mjs",
+    "redis-usage:test": "node --test scripts/check-redis-usage.test.mjs",
     "workspace-deps:check": "node scripts/check-workspace-deps.mjs",
     "workspace-deps:test": "node --test scripts/check-workspace-deps.test.mjs",
     "manifest-deps:check": "node scripts/check-manifest-deps.mjs",

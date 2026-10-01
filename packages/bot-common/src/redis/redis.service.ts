@@ -246,6 +246,9 @@ export class RedisService
         );
       }
 
+      // One connection per process is safe only while no command blocks.
+      // Blocking work needs a separate connection and consumes another Redis
+      // MAX_CLIENT_CONN slot per process; never duplicate this shared client.
       client = new DeadlineRedis(
         {
           host: this.getHost(),
