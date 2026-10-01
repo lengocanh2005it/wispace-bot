@@ -135,6 +135,8 @@ export interface LinkRetryOptions {
 
 export interface LinkCompletionOptions {
   retry?: LinkRetryOptions;
+  /** Keep the durable verify intent available if post-commit work fails. */
+  consumeVerifyIntentAfterCommit?: boolean;
   onBestEffortError?: (
     step: 'consume' | 'clarification' | 'after-commit',
     error: unknown,
@@ -236,12 +238,17 @@ export class LinkCompletionCore<P> {
       throw new LinkConflictError(error);
     }
 
-    await this.bestEffort('consume', () => this.ports.consumeRecord(intent));
+    const consumeVerifyIntent = () =>
+      this.bestEffort('consume', () => this.ports.consumeRecord(intent));
+    if (!this.options.consumeVerifyIntentAfterCommit) {
+      await consumeVerifyIntent();
+    }
     await this.bestEffort('clarification', () =>
       this.ports.clearClarification?.(identity.externalUserId),
     );
 
     let nextAction: LinkCompletionResult['nextAction'];
+    let afterCommitSucceeded = true;
     try {
       const result = await this.ports.afterCommit?.({
         identity,
@@ -250,7 +257,12 @@ export class LinkCompletionCore<P> {
       });
       nextAction = result?.nextAction;
     } catch (error) {
+      afterCommitSucceeded = false;
       this.options.onBestEffortError?.('after-commit', error);
+    }
+
+    if (this.options.consumeVerifyIntentAfterCommit && afterCommitSucceeded) {
+      await consumeVerifyIntent();
     }
 
     return { status: 'linked', ...(nextAction ? { nextAction } : {}) };
@@ -287,6 +299,8 @@ export interface LinkReconcileOptions {
   now?: () => Date;
   maxRecords?: number;
   retry?: LinkRetryOptions;
+  /** Keep the verify intent available if reconciled side effects fail. */
+  consumeVerifyIntentAfterReconciled?: boolean;
   onOutcome?: (
     outcome: LinkReconcileOutcome,
     record: VerifyIntentRecord,
@@ -340,6 +354,7 @@ export class LinkReconcileCronCore {
     now?: () => Date;
     maxRecords?: number;
     retry?: LinkRetryOptions;
+    consumeVerifyIntentAfterReconciled?: boolean;
     onOutcome?: LinkReconcileOptions['onOutcome'];
     onMismatch?: LinkReconcileOptions['onMismatch'];
     onDropped?: LinkReconcileOptions['onDropped'];
@@ -358,6 +373,16 @@ export class LinkReconcileCronCore {
       mismatched: 0,
       failed: 0,
     };
+    const runReconciledSideEffect = async (
+      operation: () => Promise<void>,
+    ): Promise<void> => {
+      try {
+        await operation();
+      } catch (error) {
+        options.onBestEffortError?.('side-effect', error);
+        if (options.consumeVerifyIntentAfterReconciled) throw error;
+      }
+    };
 
     for (const record of records) {
       try {
@@ -366,8 +391,10 @@ export class LinkReconcileCronCore {
         );
         if (existingUserId === record.userId) {
           await this.clearClarification(record.externalUserId, options);
-          await this.ports.consumeRecord(record);
-          try {
+          if (!options.consumeVerifyIntentAfterReconciled) {
+            await this.ports.consumeRecord(record);
+          }
+          await runReconciledSideEffect(async () => {
             const state = await this.ports.getLinkState?.(
               record.externalUserId,
             );
@@ -380,8 +407,9 @@ export class LinkReconcileCronCore {
                   : {}),
               },
             });
-          } catch (error) {
-            options.onBestEffortError?.('side-effect', error);
+          });
+          if (options.consumeVerifyIntentAfterReconciled) {
+            await this.ports.consumeRecord(record);
           }
           result.alreadyCommitted += 1;
           options.onOutcome?.('already_committed', record);
@@ -434,14 +462,17 @@ export class LinkReconcileCronCore {
           continue;
         }
         await this.clearClarification(record.externalUserId, options);
-        await this.ports.consumeRecord(record);
+        if (!options.consumeVerifyIntentAfterReconciled) {
+          await this.ports.consumeRecord(record);
+        }
+        await runReconciledSideEffect(async () => {
+          await options.onReconciled?.({ record, linkResult });
+        });
+        if (options.consumeVerifyIntentAfterReconciled) {
+          await this.ports.consumeRecord(record);
+        }
         result.reconciled += 1;
         options.onOutcome?.('reconciled', record);
-        try {
-          await options.onReconciled?.({ record, linkResult });
-        } catch (error) {
-          options.onBestEffortError?.('side-effect', error);
-        }
       } catch (error) {
         result.failed += 1;
         options.onOutcome?.('failed', record, error);
