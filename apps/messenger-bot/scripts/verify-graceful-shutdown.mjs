@@ -41,7 +41,8 @@ async function bootHarness({
 }) {
   const { createShutdownHandler } =
     await import('../../../packages/bot-common/dist/bootstrap/bot-bootstrap.js');
-  const { shutdownTracing } = await import('../dist/shared/common/tracing.js');
+  const { shutdownTracing } =
+    await import('../../../packages/bot-common/dist/tracing/tracing.js');
 
   const server = http.createServer((req, res) => {
     if (req.url === '/slow') {
