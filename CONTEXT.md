@@ -1000,6 +1000,10 @@ _Avoid_: self-scoring flow, one-shot rehash
 Operations endpoints and scripts. Protected by `InternalApiKeyGuard`. Includes sync, send-reports, profile/setup, health checks, quota status.
 _Avoid_: admin, management
 
+**tracing**:
+OpenTelemetry span emission. Fail-open: with no `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans are no-ops and no exporter is contacted. Separate from metrics: Prometheus is the active emitter, and tracing currently has no collecting backend and no reader. Emitting a span is not the same as a span being read.
+_Avoid_: APM, observability agent, telemetry pipeline
+
 **INTERNAL_API_KEY**:
 Shared secret for authenticating ops HTTP endpoints. Sent via header `X-Internal-Api-Key` or `Authorization: Bearer`.
 _Avoid_: admin key, service key
