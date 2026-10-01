@@ -36,6 +36,7 @@ import {
   type ReportAccountRow,
 } from '../../domain/ports/discord-report-account-reader.port';
 import type { Platform } from '@wispace/contracts';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 
 const PLATFORM = 'discord' as const;
 const PAGE_SIZE = 200;
@@ -107,7 +108,12 @@ export class DiscordReportCronService {
 
     const waveStartedAt = Date.now();
     try {
-      await this.sendScheduledReports();
+      // A cron with no human watching the request. The wave's LLM report
+      // generation and WISPACE calls are already instrumented by
+      // BotMetricsService, but they need a parent to nest under (#1458).
+      await withRootSpan('discord-bot', 'discord.report_cron', {}, () =>
+        this.sendScheduledReports(),
+      );
       this.metrics?.observeReportWaveCompletionLag?.(
         (Date.now() - waveStartedAt) / 1000,
       );

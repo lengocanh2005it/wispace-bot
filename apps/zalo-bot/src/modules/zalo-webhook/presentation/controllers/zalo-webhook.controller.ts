@@ -1,6 +1,7 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { WebhookThrottle } from '@wispace/bot-common/redis';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
 import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
 import { ZaloWebhookEventDto } from '../dto/zalo-webhook-event.dto';
@@ -17,7 +18,17 @@ export class ZaloWebhookController {
   async handleWebhook(
     @Body() body: ZaloWebhookEventDto,
   ): Promise<{ received: true }> {
-    await this.ingestService.ingestEvent(mapZaloEvent(body));
-    return { received: true };
+    // HttpInstrumentation already opens a server span for the POST, so this
+    // is a child of it: the ingest and everything the queue worker later does
+    // stay joinable under the request's trace id (#1459).
+    return withRootSpan(
+      'zalo-bot',
+      'zalo.webhook',
+      { 'zalo.event_len': JSON.stringify(body).length },
+      async () => {
+        await this.ingestService.ingestEvent(mapZaloEvent(body));
+        return { received: true };
+      },
+    );
   }
 }

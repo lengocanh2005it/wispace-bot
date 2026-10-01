@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { jitteredDelayMs } from '@wispace/bot-common/utils';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
@@ -114,6 +115,17 @@ export class StudyReminderDispatchService {
   ) {}
 
   async dispatchDueReminders(): Promise<StudyReminderDispatchResult> {
+    // A cron with no human watching the request, shared by all three bots
+    // (#1458). The per-send WISPACE and LLM spans are already instrumented;
+    // this gives them a parent so one reminder is followable end to end.
+    // The tracer name is the platform, matching the metrics prefix each bot
+    // already uses in createMetricsModule.
+    return withRootSpan(this.platform, 'study_reminder.dispatch', {}, () =>
+      this.dispatchDueRemindersInner(),
+    );
+  }
+
+  private async dispatchDueRemindersInner(): Promise<StudyReminderDispatchResult> {
     const settings = this.scheduleService.getOutboxSettings();
     const now = new Date();
 

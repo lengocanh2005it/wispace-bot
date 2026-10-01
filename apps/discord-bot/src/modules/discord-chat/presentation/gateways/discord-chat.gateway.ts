@@ -56,6 +56,7 @@ import {
   IntentDetector,
   detectDisclosureProbe,
 } from '@wispace/llm-agent/core';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -244,6 +245,26 @@ export class DiscordChatGateway {
   async onMessageCreate(@Context() [message]: ContextOf<'messageCreate'>) {
     if (message.author.bot) return;
 
+    // A gateway event is not an HTTP request, so HttpInstrumentation never
+    // opens a server span for it. Without this root span every downstream
+    // WISPACE and LLM span would start its own trace (#1458).
+    const text = message.content.trim();
+    return withRootSpan(
+      'discord-bot',
+      'discord.message',
+      {
+        'discord.channel_type': String(message.channel.type),
+        'discord.is_dm': message.channel.type === ChannelType.DM,
+        'discord.text_len': text.length,
+      },
+      () => this.onMessageCreateInner(message, text),
+    );
+  }
+
+  private async onMessageCreateInner(
+    message: ContextOf<'messageCreate'>[0],
+    userText: string,
+  ): Promise<unknown> {
     const isDM = message.channel.type === ChannelType.DM;
     const isServerChannel = !isDM;
     const discordUserId = message.author.id;
@@ -256,7 +277,6 @@ export class DiscordChatGateway {
     // In server channels: only respond when @mentioned to avoid replying to everyone
     if (isServerChannel && !isMentioned) return;
 
-    const userText = message.content.trim();
     if (!userText) {
       const hasNonTextContent =
         message.attachments.size > 0 ||

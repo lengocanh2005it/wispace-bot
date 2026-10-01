@@ -24,6 +24,7 @@ import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
 import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
+import { withRootSpan } from '@wispace/bot-common/tracing';
 
 const PLATFORM = 'discord' as const;
 const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
@@ -82,7 +83,13 @@ export class DiscordReportRetryDispatchService {
       name: 'discord-report-retry-dispatch',
       withLock: (run) =>
         this.pgLock.withLock(ADVISORY_LOCKS.DISCORD_REPORT_RETRY_DISPATCH, run),
-      run: async () => (await this.dispatchDueReportRetriesWithItems()).items,
+      // A cron with no human watching the request (#1458): the retry wave's
+      // LLM and WISPACE spans are already instrumented, and this gives them a
+      // parent trace so a single retry is followable end to end.
+      run: async () =>
+        withRootSpan('discord-bot', 'discord.report_retry_dispatch', {}, () =>
+          this.dispatchDueReportRetriesWithItems().then((r) => r.items),
+        ),
       metrics: this.metrics,
       logger: this.logger,
     });

@@ -9,6 +9,14 @@
  * by the bootstrap (`bootstrapBot`), which calls `shutdownTracing`.
  */
 import { Logger } from '@nestjs/common';
+import {
+  context,
+  SpanStatusCode,
+  trace,
+  type Attributes,
+  type Span,
+  type Tracer,
+} from '@opentelemetry/api';
 import { errorMessage } from '../masking';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
@@ -52,6 +60,42 @@ export interface TracingShutdownOptions {
   shutdown?: () => Promise<unknown>;
   logger?: { log(message: string): void; warn(message: string): void };
   timeoutMs?: number;
+}
+
+/**
+ * Run `fn` inside a root span, so every downstream span — WISPACE client
+ * calls, LLM rounds, DB queries — nests under one trace id instead of each
+ * starting its own. No-op when tracing is not configured.
+ *
+ * Attributes are the caller's to choose and are the caller's privacy call:
+ * learner and delivery identifiers belong in logs, not in span attributes
+ * (#859). Prefer lengths, features, and outcomes.
+ */
+export async function withRootSpan<T>(
+  tracerName: string,
+  name: string,
+  attributes: Attributes,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  const tracer: Tracer = trace.getTracer(tracerName);
+  const span = tracer.startSpan(name);
+  if (Object.keys(attributes).length > 0) span.setAttributes(attributes);
+  return context.with(trace.setSpan(context.active(), span), async () => {
+    try {
+      const result = await fn(span);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (err) {
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: errorMessage(err),
+      });
+      span.recordException(err as Error);
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
 }
 
 /**
