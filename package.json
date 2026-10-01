@@ -11,7 +11,7 @@
   "scripts": {
     "prepare": "husky",
     "build": "turbo run build",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "format": "oxfmt apps packages",
     "format:check": "oxfmt --check apps packages",
     "knip": "knip",
@@ -72,7 +72,7 @@
   "lint-staged": {
     "*.ts": [
       "oxfmt",
-      "oxlint --fix --no-error-on-unmatched-pattern"
+      "oxlint --fix --report-unused-disable-directives-severity=error --no-error-on-unmatched-pattern"
     ]
   },
   "dependencies": {

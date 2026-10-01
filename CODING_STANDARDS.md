@@ -11,7 +11,7 @@ rather than re-check them by eye:
 | Workspace package used without being declared | `npm run workspace-deps:check` |
 | Declared `exports` subpath nothing imports | `npm run entrypoint-consumers:check` |
 | Formatting | `npm run format:check` |
-| Suppressions that suppress nothing | `oxlint --report-unused-disable-directives-severity=error` (all 24 workspace lint scripts) |
+| Suppressions that suppress nothing | `oxlint --report-unused-disable-directives-severity=error` — on the root `lint` script that CI runs, and on all 24 workspace lint scripts |
 | Raw external IDs in log lines | `node .github/scripts/check-log-redaction.js` |
 | Platform storage literals in covered consumers | `bash .github/scripts/check-platform-storage-literals.sh` |
 | Token-less reschedule confirm entry paths | `bash .github/scripts/check-reschedule-confirm-handlers.sh` |
