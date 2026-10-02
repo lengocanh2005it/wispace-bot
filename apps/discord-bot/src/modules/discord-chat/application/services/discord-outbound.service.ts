@@ -674,7 +674,9 @@ export class DiscordOutboundService {
     }
   }
 
-  private async admitOutbound(
+  /** Public so a gateway can take the same admission decision for a delivery
+   *  that does not route through this service (#1494). */
+  async admitOutbound(
     externalUserId: string,
     userId: number | undefined,
     units: number,

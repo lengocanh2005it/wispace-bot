@@ -43,6 +43,7 @@ import {
 } from '../../application/ports/discord-consent-prompt.port';
 import {
   DISCORD_LINKED_IDENTITY,
+  type DiscordLinkedIdentity,
   type DiscordLinkedIdentityPort,
 } from '../../domain/ports/discord-linked-identity.port';
 import {
@@ -60,6 +61,15 @@ import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
+
+/**
+ * Answer to a refused reschedule button (#1494). Admission runs before the
+ * calendar write, so a denial means nothing was mutated — saying so is the only
+ * honest reply, because silence reads as "the change went through and broke".
+ * The wait is a guess: the limiter exposes remaining capacity, not a wait time.
+ */
+const RESCHEDULE_RATE_LIMITED_MESSAGE =
+  'Bạn đang thao tác hơi nhanh. Mình chưa xử lý yêu cầu này và đã bỏ lựa chọn này — lịch học vẫn chưa thay đổi. Bạn có thể tạo yêu cầu dời lịch mới sau vài phút nhé.';
 
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
@@ -400,19 +410,42 @@ export class DiscordChatGateway {
     // production store rejects a confirmation without one. One handler, one
     // entry path.
     if (!approvalToken) return;
+    // deferUpdate first: it is cheap and immediate, and Discord gives an
+    // interaction three seconds to be answered, which a Redis round trip would
+    // eat if admission came first.
     await interaction.deferUpdate();
     const discordUserId = interaction.user.id;
+    let identity: DiscordLinkedIdentity | undefined;
     let content: string;
     let confirmed = false;
+    let limited = false;
     try {
-      if (action === RESCHEDULE_CANCEL_CUSTOM_ID) {
+      // Both branches read the identity, not just confirm: the limiter bucket is
+      // keyed by the canonical WISPACE userId, and falling back to the external
+      // id would silently hand this learner a second budget.
+      identity =
+        await this.accountLinkService.findCurrentIdentity(discordUserId);
+      // Admission precedes the mutation (#1494). Denied here, nothing is
+      // written, so no attempt record exists and nothing for the recovery cron
+      // to retry — which is why the limiter's own answer is the whole reply.
+      limited = !(await this.outboundService.admitOutbound(
+        discordUserId,
+        identity?.userId,
+        1,
+      ));
+      if (limited) {
+        this.logger.warn(
+          `Reschedule ${action} refused: outbound rate limit for discordUserId=${maskExternalId(
+            discordUserId,
+          )}`,
+        );
+        content = RESCHEDULE_RATE_LIMITED_MESSAGE;
+      } else if (action === RESCHEDULE_CANCEL_CUSTOM_ID) {
         content = await this.rescheduleConfirmationService.cancel(
           discordUserId,
           approvalToken,
         );
       } else {
-        const identity =
-          await this.accountLinkService.findCurrentIdentity(discordUserId);
         const result = identity
           ? await this.rescheduleConfirmationService.confirm(
               discordUserId,
@@ -461,8 +494,10 @@ export class DiscordChatGateway {
     } catch (error) {
       // A deferred interaction can expire before the edit lands, and Discord has
       // no durable inbox to replay this from, so fall back to a fresh message.
+      // The bucket identity carries through so the fallback is charged to the
+      // same budget as the admission that let this turn through (#1494).
       this.logger.warn(
-        `Reschedule confirm editReply failed for discordUserId=${maskExternalId(
+        `Reschedule ${action} editReply failed for discordUserId=${maskExternalId(
           discordUserId,
         )}`,
         formatError(error),
@@ -470,6 +505,9 @@ export class DiscordChatGateway {
       deliveryOutcome = await this.outboundService.sendText(
         discordUserId,
         content,
+        identity?.userId === undefined
+          ? undefined
+          : { userId: identity.userId },
       );
     }
     if (confirmed) {
