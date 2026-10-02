@@ -1,4 +1,6 @@
-import { Throttle } from '@nestjs/throttler';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
 import type { ConfigService } from '@nestjs/config';
 import type { RedisService } from './redis.service';
@@ -13,6 +15,7 @@ const DEFAULT_WEBHOOK_LIMIT = 120;
 const DEFAULT_WEBHOOK_TTL_MS = 60_000;
 const DEFAULT_GLOBAL_LIMIT = 20;
 const DEFAULT_GLOBAL_TTL_MS = 60_000;
+const WEBHOOK_THROTTLE_METADATA = 'wispace:throttler:webhook';
 
 export function readWebhookThrottleConfig(
   get: (key: string) => string | undefined,
@@ -46,14 +49,21 @@ function readPositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-/** Route-level throttle values are resolved per request from loaded env config. */
+/** Marks a route for the webhook throttle profile configured through ConfigService. */
 export function WebhookThrottle(): MethodDecorator & ClassDecorator {
-  return Throttle({
-    default: {
-      limit: () => readWebhookThrottleConfig((key) => process.env[key]).limit,
-      ttl: () => readWebhookThrottleConfig((key) => process.env[key]).ttlMs,
-    },
-  });
+  return applyDecorators(
+    SetMetadata(WEBHOOK_THROTTLE_METADATA, true),
+    SkipThrottle({ default: true }),
+    Throttle({ webhook: {} }),
+  );
+}
+
+function isWebhookThrottleRoute(context: ExecutionContext): boolean {
+  return (
+    Reflect.getMetadata(WEBHOOK_THROTTLE_METADATA, context.getHandler()) ===
+      true ||
+    Reflect.getMetadata(WEBHOOK_THROTTLE_METADATA, context.getClass()) === true
+  );
 }
 
 /**
@@ -86,8 +96,8 @@ export function throttleTracker(
     : undefined;
 }
 
-// AC5: Webhook routes (Discord/Zalo) apply @WebhookThrottle() which
-// overrides the global throttle with its own limit (120 req/60s).
+// AC5: Messenger/Zalo webhook routes use the named @WebhookThrottle profile
+// (120 req/60s by default), while other routes use the global profile.
 // The getTracker change here does NOT affect webhook redelivery.
 export function createBotThrottlerOptions(
   configService: ConfigService,
@@ -96,12 +106,23 @@ export function createBotThrottlerOptions(
   const config = readGlobalThrottleConfig((key) =>
     configService.get<string>(key),
   );
+  const webhookConfig = readWebhookThrottleConfig((key) =>
+    configService.get<string>(key),
+  );
 
   // AC6: 20 req/min was sized for a single global bucket shared by all
   // clients. Now genuinely per-client, revisit if legitimate OAuth
   // linking bursts (e.g. start-of-term class onboardings) hit the cap.
   return {
-    throttlers: [{ ttl: config.ttlMs, limit: config.limit }],
+    throttlers: [
+      { ttl: config.ttlMs, limit: config.limit },
+      {
+        name: 'webhook',
+        ttl: webhookConfig.ttlMs,
+        limit: webhookConfig.limit,
+        skipIf: (context) => !isWebhookThrottleRoute(context),
+      },
+    ],
     storage: new RedisThrottlerStorage(redisService),
     getTracker: (req) => throttleTracker(req) ?? 'unknown',
   };

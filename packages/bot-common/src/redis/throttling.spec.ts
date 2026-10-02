@@ -1,4 +1,10 @@
-import { readWebhookThrottleConfig, throttleTracker } from './throttling';
+import type { ConfigService } from '@nestjs/config';
+import type { RedisService } from './redis.service';
+import {
+  createBotThrottlerOptions,
+  readWebhookThrottleConfig,
+  throttleTracker,
+} from './throttling';
 
 describe('throttleTracker', () => {
   it('returns X-Real-IP header when present', () => {
@@ -67,5 +73,46 @@ describe('webhook throttling config', () => {
           })[key],
       ),
     ).toEqual({ limit: 120, ttlMs: 60000 });
+  });
+
+  it('configures the webhook profile from ConfigService', () => {
+    const values: Record<string, string> = {
+      WEBHOOK_RATE_LIMIT_PER_MINUTE: '45',
+      WEBHOOK_RATE_LIMIT_TTL_MS: '30000',
+    };
+    const get = jest.fn((key: string) => values[key]);
+    const options = createBotThrottlerOptions(
+      { get } as unknown as ConfigService,
+      {} as RedisService,
+    );
+
+    expect(get).toHaveBeenCalledWith('WEBHOOK_RATE_LIMIT_PER_MINUTE');
+    expect(get).toHaveBeenCalledWith('WEBHOOK_RATE_LIMIT_TTL_MS');
+    expect(options).not.toBeInstanceOf(Array);
+    if (options instanceof Array) throw new Error('Expected options object');
+    expect(options.throttlers).toEqual([
+      { limit: 20, ttl: 60_000 },
+      {
+        name: 'webhook',
+        limit: 45,
+        ttl: 30_000,
+        skipIf: expect.any(Function),
+      },
+    ]);
+  });
+
+  it('keeps the documented webhook defaults when ConfigService has no values', () => {
+    const options = createBotThrottlerOptions(
+      { get: () => undefined } as unknown as ConfigService,
+      {} as RedisService,
+    );
+
+    expect(options).not.toBeInstanceOf(Array);
+    if (options instanceof Array) throw new Error('Expected options object');
+    expect(options.throttlers[1]).toMatchObject({
+      name: 'webhook',
+      limit: 120,
+      ttl: 60_000,
+    });
   });
 });
