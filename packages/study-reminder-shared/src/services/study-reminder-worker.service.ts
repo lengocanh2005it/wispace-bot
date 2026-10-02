@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { Counter } from 'prom-client';
+import { Counter, register } from 'prom-client';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
@@ -63,6 +63,7 @@ export const studyReminderLockSkipsTotal = new Counter({
   name: 'study_reminder_lock_skips_total',
   help: 'Study-reminder worker cron/startup runs skipped because another holder owns the advisory lock',
   labelNames: ['platform', 'scope'] as const,
+  registers: [register],
 });
 
 export interface StudyReminderWorkerLockIds {

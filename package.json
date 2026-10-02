@@ -33,6 +33,8 @@
     "architecture:test": "node --test scripts/check-architecture.test.mjs",
     "redis-usage:check": "node scripts/check-redis-usage.mjs",
     "redis-usage:test": "node --test scripts/check-redis-usage.test.mjs",
+    "metric-registry:check": "node scripts/check-metric-registry.mjs",
+    "metric-registry:test": "node --test scripts/check-metric-registry.test.mjs",
     "workspace-deps:check": "node scripts/check-workspace-deps.mjs",
     "workspace-deps:test": "node --test scripts/check-workspace-deps.test.mjs",
     "manifest-deps:check": "node scripts/check-manifest-deps.mjs",

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
-import { Counter } from 'prom-client';
+import { Counter, register } from 'prom-client';
 import {
   maskExternalIdInText,
   truncatePersistedError,
@@ -12,6 +12,7 @@ import { jitteredDelayMs } from '@wispace/bot-common/utils';
 const webhookInboundRetentionDeletedTotal = new Counter({
   name: 'webhook_inbound_retention_deleted_total',
   help: 'Total rows deleted by webhook inbound retention cleanup',
+  registers: [register],
 });
 import { WebhookInboundEventEntity } from '@wispace/database';
 import type { Platform } from '@wispace/contracts';

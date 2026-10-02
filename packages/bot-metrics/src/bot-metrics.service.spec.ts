@@ -1,8 +1,50 @@
 import { EventEmitter } from 'events';
+import { register } from 'prom-client';
 import { BotMetricsService } from './bot-metrics.service';
+import { RetentionCleanupMetrics } from './retention-cleanup-metrics';
 import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
+  it('keeps retention counters in the bot registry and can recreate them after clear', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'retention_test',
+      collectDefaults: false,
+    });
+    const retentionMetrics = new RetentionCleanupMetrics(
+      'retention_test',
+      metrics.registry,
+    );
+    retentionMetrics.registerPolicy('messenger-message-log-cleanup');
+    retentionMetrics.incRowsDeleted('messenger-message-log-cleanup', 4);
+    retentionMetrics.incCleanupError('messenger-message-log-cleanup');
+    retentionMetrics.incLlmUsageDeleted(2);
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'retention_test_retention_rows_deleted_total{cron_name="messenger-message-log-cleanup"} 4',
+    );
+    expect(output).toContain(
+      'retention_test_retention_cleanup_errors_total{cron_name="messenger-message-log-cleanup"} 1',
+    );
+    expect(output).toContain(
+      'retention_test_llm_usage_retention_deleted_total 2',
+    );
+    expect(
+      register.getSingleMetric('retention_test_retention_rows_deleted_total'),
+    ).toBeUndefined();
+
+    metrics.onModuleDestroy();
+    const reloaded = new BotMetricsService({
+      prefix: 'retention_test',
+      collectDefaults: false,
+    });
+    new RetentionCleanupMetrics('retention_test', reloaded.registry);
+    expect(await reloaded.getMetrics()).toContain(
+      'retention_test_llm_usage_retention_deleted_total 0',
+    );
+    reloaded.onModuleDestroy();
+  });
+
   it('exposes privacy cleanup attempts and queue age without identity labels', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

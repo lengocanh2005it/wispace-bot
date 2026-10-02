@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { RETENTION_CLEANUP_METRICS_PORT } from '@wispace/bot-common/metrics';
 import { LlmUsageEventEntity } from '@wispace/chat-metering/adapters';
 import { LlmUsageRepository } from './llm-usage.repository';
 
@@ -38,6 +39,28 @@ describe('LlmUsageRepository', () => {
   });
 
   describe('deleteOlderThan', () => {
+    it('reports deleted rows to the Messenger metrics registry', async () => {
+      const query = jest.fn().mockResolvedValue([{ id: 'usage-1' }]);
+      const metrics = { incLlmUsageDeleted: jest.fn() };
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          LlmUsageRepository,
+          {
+            provide: getRepositoryToken(LlmUsageEventEntity),
+            useValue: { manager: { query } },
+          },
+          { provide: RETENTION_CLEANUP_METRICS_PORT, useValue: metrics },
+        ],
+      }).compile();
+
+      const repository = moduleRef.get(LlmUsageRepository);
+      await expect(
+        repository.deleteOlderThan(new Date('2026-01-01')),
+      ).resolves.toBe(1);
+      expect(metrics.incLlmUsageDeleted).toHaveBeenCalledWith(1);
+      await moduleRef.close();
+    });
+
     it('deletes in batches of 1000 until exhausted', async () => {
       const query = jest
         .fn<Promise<Array<{ id: string }>>, [string, unknown[]]>()

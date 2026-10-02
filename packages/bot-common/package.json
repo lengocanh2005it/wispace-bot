@@ -113,6 +113,11 @@
       "require": "./dist/health/index.js",
       "types": "./dist/health/index.d.ts"
     },
+    "./metrics": {
+      "import": "./dist/metrics/index.js",
+      "require": "./dist/metrics/index.js",
+      "types": "./dist/metrics/index.d.ts"
+    },
     "./secrets": {
       "import": "./dist/secrets/index.js",
       "require": "./dist/secrets/index.js",

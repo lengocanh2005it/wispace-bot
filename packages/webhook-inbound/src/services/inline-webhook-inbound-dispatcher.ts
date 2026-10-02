@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { Counter, Histogram } from 'prom-client';
+import { Counter, Histogram, register } from 'prom-client';
 import {
   errorMessage,
   maskExternalIdInText,
@@ -14,12 +14,14 @@ const webhookInboundInlineAttemptsTotal = new Counter({
   name: 'webhook_inbound_inline_attempts_total',
   help: 'Inline processing attempts after ingest',
   labelNames: ['platform', 'outcome'] as const,
+  registers: [register],
 });
 export const webhookInboundDispatchLagSeconds = new Histogram({
   name: 'webhook_inbound_dispatch_lag_seconds',
   help: 'Seconds from event ingest to first processing attempt',
   labelNames: ['platform', 'trigger'] as const,
   buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30],
+  registers: [register],
 });
 
 /** Callback signature for inline dispatch after ingest. */

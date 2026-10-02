@@ -5,6 +5,12 @@ import { CleanupCronService } from './cleanup-cron.service';
 function buildService(
   acquired = true,
   values: Record<string, string> = {},
+  retentionMetrics?: {
+    registerPolicy: jest.Mock;
+    incRowsDeleted: jest.Mock;
+    incCleanupError: jest.Mock;
+    incLlmUsageDeleted: jest.Mock;
+  },
 ): { service: CleanupCronService; queries: string[] } {
   const queries: string[] = [];
   const dataSource = {
@@ -28,6 +34,8 @@ function buildService(
     service: new CleanupCronService(
       config,
       new PgAdvisoryLockService(dataSource),
+      undefined,
+      retentionMetrics,
     ),
     queries,
   };
@@ -62,6 +70,40 @@ describe('CleanupCronService', () => {
 
     expect(result?.deleted).toBe(42);
     expect(deleteFn).toHaveBeenCalledWith(expect.any(Date));
+  });
+
+  it('records cleanup outcomes through the injected per-bot metrics port', async () => {
+    const metrics = {
+      registerPolicy: jest.fn(),
+      incRowsDeleted: jest.fn(),
+      incCleanupError: jest.fn(),
+      incLlmUsageDeleted: jest.fn(),
+    };
+    const { service } = buildService(true, {}, metrics);
+
+    await service.execute(
+      'messenger-message-log-cleanup',
+      12345,
+      jest.fn().mockResolvedValue(3),
+    );
+    expect(metrics.registerPolicy).toHaveBeenCalledWith(
+      'messenger-message-log-cleanup',
+    );
+    expect(metrics.incRowsDeleted).toHaveBeenCalledWith(
+      'messenger-message-log-cleanup',
+      3,
+    );
+
+    await expect(
+      service.execute(
+        'messenger-message-log-cleanup',
+        12345,
+        jest.fn().mockRejectedValue(new Error('DB error')),
+      ),
+    ).rejects.toThrow('DB error');
+    expect(metrics.incCleanupError).toHaveBeenCalledWith(
+      'messenger-message-log-cleanup',
+    );
   });
 
   it('returns null when the advisory lock is not acquired', async () => {

@@ -107,6 +107,7 @@ test('the shared root gate includes each CI guard test and check once', () => {
   for (const script of [
     'architecture:test',
     'redis-usage:test',
+    'metric-registry:test',
     'workspace-deps:test',
     'manifest-deps:test',
     'entrypoint-consumers:test',
@@ -118,6 +119,7 @@ test('the shared root gate includes each CI guard test and check once', () => {
     'file-size:check',
     'architecture:check',
     'redis-usage:check',
+    'metric-registry:check',
     'format:check',
     'lint',
     'knip:deps',
