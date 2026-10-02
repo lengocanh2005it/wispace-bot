@@ -1,10 +1,10 @@
 import { DirectUsageWriter } from './direct-usage-writer';
-import type { LlmUsageRepository } from './llm-usage.repository';
+import type { DirectUsageWriterRepository } from './direct-usage-writer';
 
 function mockRepo() {
   return {
     insertUsage: jest.fn().mockRejectedValue(new Error('db down')),
-  } as unknown as LlmUsageRepository;
+  } as unknown as DirectUsageWriterRepository;
 }
 
 describe('DirectUsageWriter', () => {
@@ -39,6 +39,10 @@ describe('DirectUsageWriter', () => {
 
     expect(repo.insertUsage).toHaveBeenCalledTimes(2);
     expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ externalUserId: 'u1' }),
+    );
   });
 
   describe('retry delay jitter (#1490)', () => {

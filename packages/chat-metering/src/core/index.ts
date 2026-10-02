@@ -35,6 +35,8 @@ export {
   LlmUsageRecorderCore,
   toUsageRecorderMetrics,
 } from '../llm-usage/llm-usage-recorder-core.service';
+export { DirectUsageWriter } from '../llm-usage/direct-usage-writer';
+export type { DirectUsageWriterRepository } from '../llm-usage/direct-usage-writer';
 export type {
   RecordLlmUsageFromCompletionInput,
   LlmUsageRecorderMetrics,

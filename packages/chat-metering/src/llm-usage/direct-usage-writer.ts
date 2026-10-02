@@ -1,6 +1,11 @@
 import { jitteredDelayMs } from '@wispace/bot-common/utils';
-import type { LlmUsageRepository } from './llm-usage.repository';
 import type { RecordLlmUsageInput, UsageWriterPort } from './types';
+
+export interface DirectUsageWriterRepository {
+  insertUsage(
+    event: RecordLlmUsageInput & { usageDate: string },
+  ): Promise<void>;
+}
 
 /**
  * Fire-and-forget insert straight to Postgres with 1 retry on any error.
@@ -19,8 +24,11 @@ export class DirectUsageWriter implements UsageWriterPort {
   private disposed = false;
 
   constructor(
-    private readonly repository: LlmUsageRepository,
-    private readonly onError?: (error: unknown) => void,
+    private readonly repository: DirectUsageWriterRepository,
+    private readonly onError?: (
+      error: unknown,
+      event: RecordLlmUsageInput & { usageDate: string },
+    ) => void,
     private readonly rng?: () => number,
   ) {}
 
@@ -40,7 +48,7 @@ export class DirectUsageWriter implements UsageWriterPort {
     this.repository.insertUsage(event).catch((error: unknown) => {
       const isLastAttempt = attempt >= DirectUsageWriter.MAX_RETRIES;
       if (isLastAttempt) {
-        this.onError?.(error);
+        this.onError?.(error, event);
         return;
       }
 

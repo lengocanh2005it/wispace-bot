@@ -1,10 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
-import { LlmUsageRecorderCore } from '@wispace/chat-metering/core';
-import type {
-  UsageWriterPort,
-  LlmUsageRecorderMetrics,
+import {
+  DirectUsageWriter,
+  LlmUsageRecorderCore,
 } from '@wispace/chat-metering/core';
+import type { LlmUsageRecorderMetrics } from '@wispace/chat-metering/core';
 import type {
   RecordLlmUsageFromCompletionInput,
   RecordLlmUsageInput,
@@ -17,9 +22,10 @@ import { LlmUsageConfigService } from './llm-usage-config.service';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 @Injectable()
-export class LlmUsageRecorderService {
+export class LlmUsageRecorderService implements OnModuleDestroy {
   private readonly logger = new Logger(LlmUsageRecorderService.name);
   private core?: LlmUsageRecorderCore;
+  private writer?: DirectUsageWriter;
 
   constructor(
     private readonly configService: LlmUsageConfigService,
@@ -67,57 +73,19 @@ export class LlmUsageRecorderService {
             input.provider,
           );
 
-    this.repository
-      .insertUsage({
-        ...input,
-        estimatedCostUsd,
-        usageDate: this.configService.todayUsageDate(),
-      })
-      .catch((error: unknown) => {
-        this.logger.error(
-          `LLM_USAGE_INSERT_FAILED feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}: ${errorMessage(
-            error,
-          )}`,
-        );
-        this.metrics.incLlmUsageInsertFailure('db_error');
-      });
+    const { psid, ...usage } = input;
+    this.getWriter().write({
+      ...usage,
+      externalUserId: psid,
+      estimatedCostUsd,
+      usageDate: this.configService.todayUsageDate(),
+    });
   }
 
   private getCore(): LlmUsageRecorderCore {
     if (!this.core) {
-      const writer: UsageWriterPort = {
-        write: (event) => {
-          this.repository
-            .insertUsage({
-              feature: event.feature as RecordLlmUsageInput['feature'],
-              psid: event.externalUserId,
-              userId: event.userId,
-              provider: event.provider,
-              model: event.model,
-              promptTokens: event.promptTokens,
-              completionTokens: event.completionTokens,
-              totalTokens: event.totalTokens,
-              cachedTokens: event.cachedTokens,
-              openaiResponseId: event.openaiResponseId,
-              correlationId: event.correlationId,
-              toolRound: event.toolRound,
-              status: event.status,
-              errorMessage: event.errorMessage,
-              estimatedCostUsd: event.estimatedCostUsd,
-              usageDate: event.usageDate,
-            })
-            .catch((error: unknown) => {
-              this.logger.error(
-                `LLM_USAGE_INSERT_FAILED feature=${event.feature} correlation=${event.correlationId ?? 'n/a'}: ${errorMessage(
-                  error,
-                )}`,
-              );
-            });
-        },
-      };
-
       this.core = new LlmUsageRecorderCore(
-        writer,
+        this.getWriter(),
         (model, promptTokens, completionTokens, cachedTokens, provider) =>
           this.configService.estimateCostUsdForModel(
             model,
@@ -132,6 +100,36 @@ export class LlmUsageRecorderService {
       );
     }
     return this.core;
+  }
+
+  private getWriter(): DirectUsageWriter {
+    if (!this.writer) {
+      this.writer = new DirectUsageWriter(
+        {
+          insertUsage: (event) => {
+            const { externalUserId, ...usage } = event;
+            return this.repository.insertUsage({
+              ...usage,
+              feature: usage.feature as RecordLlmUsageInput['feature'],
+              psid: externalUserId,
+            });
+          },
+        },
+        (error, event) => {
+          this.logger.error(
+            `LLM_USAGE_INSERT_FAILED feature=${event.feature} correlation=${event.correlationId ?? 'n/a'}: ${errorMessage(
+              error,
+            )}`,
+          );
+          this.metrics.incLlmUsageInsertFailure('db_error');
+        },
+      );
+    }
+    return this.writer;
+  }
+
+  onModuleDestroy(): void {
+    this.writer?.dispose();
   }
 
   private buildMetrics(): LlmUsageRecorderMetrics {
