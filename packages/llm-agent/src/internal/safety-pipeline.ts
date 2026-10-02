@@ -11,7 +11,7 @@ import {
   buildGroundingBlockedMessage,
   buildNonDisclosureReply,
 } from '../messages';
-import { sanitizeReplyText } from '../text.utils';
+import { sanitizeReplyText } from '../text';
 
 export type SafetyOutcome = 'allowed' | 'grounding_blocked' | 'final_blocked';
 

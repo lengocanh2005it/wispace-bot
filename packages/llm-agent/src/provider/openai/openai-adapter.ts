@@ -14,7 +14,7 @@ import {
   isRateLimitError,
   isServerError,
 } from '../failure-origin';
-import { isAbortError } from '../../retry.utils';
+import { isAbortError } from '../../retry';
 import {
   toOpenAiTools,
   toOpenAiMessages,

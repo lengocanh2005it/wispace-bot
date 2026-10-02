@@ -25,7 +25,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
   - `AGENT_TOOLS` / `AGENT_TOOL_NAMES` — function-calling schema (renamed from `MESSENGER_AGENT_TOOLS`).
   - Ports (`ports.ts`): `LlmExecutionPort`, `LlmUsageRecorderPort`, `LlmSafetyEventPort`, `AgentMetricsPort`, `ToolExecutorPort<T>` — apps implement these ports with existing NestJS services.
   - Safety utils: `prompt-injection.utils.ts`, `llm-grounding.utils.ts`, `openai-error.utils.ts` (unchanged from `src/shared/utils/`).
-  - `scope.utils.ts` (`isObviouslyOffTopic`), `messages.ts` (redirect/injection blocked notifications), `text.utils.ts` (`sanitizeReplyText`) — shared WISPACE domain logic, not platform-specific.
+  - `scope.ts` (`isObviouslyOffTopic`), `messages.ts` (redirect/injection blocked notifications), `text.ts` (`sanitizeReplyText`) — shared WISPACE domain logic, not platform-specific.
   - `utils/load-system-prompt.ts` — generic `.txt` loader (cached by path); each app still keeps its own prompt file (`apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt` — content references "Facebook Messenger" so it is **not** extracted, kept in app).
 - `apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts` becomes a **thin adapter**: builds system prompt (base + linkage), implements ports with real NestJS services (`LlmExecutionService`, `LlmUsageRecorderService`, `LlmSafetyEventService`, `MetricsService`), calls `LlmAgentService.reply()`, then assembles `richFollowUps` (tool handlers still accumulate via `toolContext` — the package is unaware of this concept).
 - `messenger-agent-tools.service.ts` (tool handlers calling Wispace API, business logic) **remains in the app**, implements `ToolExecutorPort`.
