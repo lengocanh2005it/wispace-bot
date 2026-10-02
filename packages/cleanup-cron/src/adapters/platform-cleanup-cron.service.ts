@@ -47,7 +47,7 @@ export interface CleanupCronJobsConfig {
 /**
  * Cleanup-cron schedule timezone. `CRON_TIMEZONE` was previously a hardcoded
  * constant under this name and never read an environment variable; it is now
- * configurable with the same value as its fallback (ADR-0050).
+ * configurable with the same value as its fallback (ADR-0051).
  */
 const DEFAULT_CRON_TIMEZONE = DEFAULT_TIMEZONE;
 

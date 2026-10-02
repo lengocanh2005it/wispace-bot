@@ -401,7 +401,7 @@ jobs:
       - name: Test timestamp column-type guard (#1227)
         run: bash .github/scripts/tests/check-timestamp-policy.test.sh
 
-      - name: Check timestamp column types follow ADR-0050 (#1227)
+      - name: Check timestamp column types follow ADR-0051 (#1227)
         run: bash .github/scripts/check-timestamp-policy.sh
 
       - name: Check log redaction — raw external ids in logger calls (#610)

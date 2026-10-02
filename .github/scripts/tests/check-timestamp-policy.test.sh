@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression tests for the timestamp column-type guard (#1227, ADR-0050).
+# Regression tests for the timestamp column-type guard (#1227, ADR-0051).
 #
 # The guard is diff-based: a whole-repo scan would fail on the 96 bare
 # `timestamptz` literals already in the tree, and a whole-file scan would force

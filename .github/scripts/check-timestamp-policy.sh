@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Timestamp policy check (#1227): a new entity timestamp column is declared
-# through the shared column-type constants in @wispace/contracts (ADR-0050), not
+# through the shared column-type constants in @wispace/contracts (ADR-0051), not
 # as a bare literal. Bare literals in TypeORM decorators and TypeORM's own
 # create/update date decorators and column defaults are all database-clock or
 # framework-native and stay allowed.
@@ -56,14 +56,14 @@ while IFS= read -r added; do
     *'@CreateDateColumn'* | *'@UpdateDateColumn'* | *'default:'*) continue ;;
   esac
   fail "new bare timestamp column type: $added"
-  echo '  declare the column type with TIMESTAMPTZ or DATE from @wispace/contracts (ADR-0050)' >&2
+  echo '  declare the column type with TIMESTAMPTZ or DATE from @wispace/contracts (ADR-0051)' >&2
 done <<<"$(git diff --unified=0 --diff-filter=ACMR "$MERGE_BASE" -- \
   '*.entity.ts' '*.entity.tsx' \
   | grep -E "^\+[^+].*type:[[:space:]]*'(timestamptz|date)'" || true)"
 
 if [[ "$FAILED" -ne 0 ]]; then
   echo >&2
-  echo 'Timestamp column types are owned by @wispace/contracts (ADR-0050):' >&2
+  echo 'Timestamp column types are owned by @wispace/contracts (ADR-0051):' >&2
   echo '  TIMESTAMPTZ — a timezone-aware instant' >&2
   echo '  DATE       — a learner-facing calendar day' >&2
   echo 'Existing bare literals are grandfathered; only changed files are checked.' >&2
