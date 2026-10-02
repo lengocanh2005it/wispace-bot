@@ -22,7 +22,7 @@ import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { subMilliseconds } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
-import { reportRetryAt } from '../utils/report-retry-at';
+import { reportRetryAt } from '@wispace/scheduler-core/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
 const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
