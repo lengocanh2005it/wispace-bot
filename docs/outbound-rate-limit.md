@@ -20,13 +20,17 @@ The gate sits immediately before a learner-facing provider call. Chat, fallback/
 
 One Discord path does not fit "immediately before delivery": the reschedule confirmation takes admission **before** the calendar write instead of before its edit (#1494), because that edit follows a mutation and denying it after the fact would leave a committed change with no honest outcome. The rest of the gate is delivery-adjacent; this one is mutation-adjacent.
 
-Discord interaction edits are **not** blanket-covered. Only the reschedule confirmation edit is gated, because it is the only interaction that follows a mutation. Menu replies (`onMenuUpcomingSessions`, `onMenuLearningProgress`) and chat replies from `onMessageCreateInner` still bypass the gate: pressing a menu mutates nothing, and gating those is a separate learner-visible UX decision, not part of #1494.
+Discord interaction edits are covered case by case, not blanket. Gated: the reschedule confirmation (#1494, the only interaction that follows a mutation) and both menu replies (#1508). Still exempt, with the reason recorded: `message.reply` in a server channel — the DM branch of every one of those handlers routes through `sendMenuButtons` or `sendText`, which are gated, so gating the server-channel branch as well would spend a learner's budget on a channel where their DM counterpart is still waiting.
 
 Each provider attempt, retry, or message chunk consumes one unit. A multi-message send is admitted atomically; if the whole batch does not fit, no partial batch is sent. A denial is terminal for that delivery: chat refunds its inbound quota and completes the queue/inbox without fallback or retry; reminder/report/dead-letter paths record `outbound_rate_limited` and do not retry.
 
 One reschedule interaction costs two units: the proposal message that carries the buttons, plus the confirmation edit that resolves it — or three, when that edit fails and the `sendText` fallback carries the reply instead. The limiter measures **outbound API calls toward one learner**, not messages, so an edit is charged like any other call.
 
 A denied confirm or cancel writes nothing, so there is no attempt record and nothing for the recovery cron to retry; the learner gets one exempt edit saying the schedule is unchanged and the request was discarded. That edit is not charged — it is the limiter's own answer, and charging it would deny the learner the explanation of their own denial.
+
+A denied menu press is answered the same way, with its own copy, and the button message is left untouched — the handler defers a *new* reply rather than editing the pressed message, so the menu stays usable. A menu mutates nothing, so there is nothing to undo and the learner can simply press again. Admission runs before the upstream WISPACE fetch, so a denied press does not pay for a result it will never show.
+
+Cost per menu press: **1 unit when admitted, 0 when denied.** An admitted press spends its unit even if the upstream fetch then throws and the learner gets the failure message instead of the menu. An unlinked learner spends 1 unit for the canned "not linked" answer, because that answer is still a delivered message.
 
 If Redis fails after startup, one admission fails open with outcome `store_unavailable` and an error log. There is no production in-memory fallback.
 

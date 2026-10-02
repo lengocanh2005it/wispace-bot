@@ -71,6 +71,14 @@ const DISCORD_NOT_LINKED_MESSAGE =
 const RESCHEDULE_RATE_LIMITED_MESSAGE =
   'Bạn đang thao tác hơi nhanh. Mình chưa xử lý yêu cầu này và đã bỏ lựa chọn này — lịch học vẫn chưa thay đổi. Bạn có thể tạo yêu cầu dời lịch mới sau vài phút nhé.';
 
+/**
+ * Answer to a refused menu press (#1508). A menu is read-only, so a denial
+ * costs the learner nothing and the buttons stay live for a retry — the copy
+ * only has to explain the pause.
+ */
+const MENU_RATE_LIMITED_MESSAGE =
+  'Bạn đang thao tác hơi nhanh. Mình tạm hoãn để tránh gửi quá nhiều. Vui lòng thử lại sau vài phút nhé.';
+
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
     return `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${maskExternalId(error.externalId)} - ${sanitizeLogValue(errorMessage(error), 500)}`;
@@ -521,41 +529,66 @@ export class DiscordChatGateway {
 
   @Button(MENU_UPCOMING_SESSIONS_CUSTOM_ID)
   async onMenuUpcomingSessions(@Context() [interaction]: ButtonContext) {
+    // deferReply, not deferUpdate: it posts a new message, so the button message
+    // the learner pressed is never edited and its buttons survive whatever this
+    // handler answers with.
     await interaction.deferReply();
     const discordUserId = interaction.user.id;
+    let content: string;
     try {
       const userId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
-      const text = await this.menuService.getUpcomingSessions(
-        discordUserId,
-        userId,
-      );
-      await interaction.editReply(this.prepareReply(discordUserId, text));
+      // Admission before the upstream fetch (#1508): a denied press must not pay
+      // for a WISPACE call whose result the learner will never see.
+      if (await this.outboundService.admitOutbound(discordUserId, userId, 1)) {
+        content = await this.menuService.getUpcomingSessions(
+          discordUserId,
+          userId,
+        );
+      } else {
+        // Nothing was mutated, so there is nothing to undo and the learner can
+        // simply press again.
+        this.logger.warn(
+          `menu_upcoming refused: outbound rate limit for discordUserId=${maskExternalId(
+            discordUserId,
+          )}`,
+        );
+        content = MENU_RATE_LIMITED_MESSAGE;
+      }
     } catch (error) {
       this.logger.error(`menu_upcoming failed`, formatError(error));
-      await interaction.editReply(
-        this.prepareReply(discordUserId, CHAT_FAILURE_FALLBACK_MESSAGE),
-      );
+      content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
+    // One edit, outside the try: letting a failed edit re-enter the catch would
+    // answer a refusal with the menu failure message and attempt the edit twice.
+    await interaction.editReply(this.prepareReply(discordUserId, content));
   }
 
   @Button(MENU_LEARNING_PROGRESS_CUSTOM_ID)
   async onMenuLearningProgress(@Context() [interaction]: ButtonContext) {
     await interaction.deferReply();
     const discordUserId = interaction.user.id;
+    let content: string;
     try {
       const userId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
-      const text = await this.menuService.getLearningProgress(
-        discordUserId,
-        userId,
-      );
-      await interaction.editReply(this.prepareReply(discordUserId, text));
+      if (await this.outboundService.admitOutbound(discordUserId, userId, 1)) {
+        content = await this.menuService.getLearningProgress(
+          discordUserId,
+          userId,
+        );
+      } else {
+        this.logger.warn(
+          `menu_progress refused: outbound rate limit for discordUserId=${maskExternalId(
+            discordUserId,
+          )}`,
+        );
+        content = MENU_RATE_LIMITED_MESSAGE;
+      }
     } catch (error) {
       this.logger.error(`menu_progress failed`, formatError(error));
-      await interaction.editReply(
-        this.prepareReply(discordUserId, CHAT_FAILURE_FALLBACK_MESSAGE),
-      );
+      content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
+    await interaction.editReply(this.prepareReply(discordUserId, content));
   }
 }

@@ -14,6 +14,19 @@ The refusal edit is exempt and charges nothing. It is the limiter's own answer, 
 
 The identity lookup moved ahead of admission and stayed inside the existing error boundary, so a lookup failure degrades to the generic failure message instead of rejecting the handler and leaving the learner on a spinner.
 
-Menu replies and chat replies remain ungated: pressing a menu mutates nothing, so gating those is a separate learner-visible UX decision. Interaction edits are not blanket-covered by this ADR.
+Menu replies are gated too (#1508), and the placement differs: admission runs **before** the upstream WISPACE fetch, so a denied press does not pay for a result it will never show. The handler defers a *new* reply rather than editing the pressed message, so a denial costs the learner nothing and the menu stays usable. A menu mutates nothing, so there is nothing to undo, and telling the learner to press again beats replacing the menu with a dead end.
+
+`message.reply` in a server channel stays exempt, and that is a recorded decision rather than an oversight. The DM branch of every one of those handlers already routes through `sendMenuButtons` or `sendText`, which are gated; adding the server-channel branch would spend a learner's budget on a channel where their DM counterpart is still waiting. The per-handler scope is therefore:
+
+| Interaction call | Decision |
+| --- | --- |
+| Reschedule confirm / cancel | Gated, before the calendar write (this ADR) |
+| `onMenuUpcomingSessions`, `onMenuLearningProgress` | Gated, before the upstream fetch (#1508) |
+| Menu failure answer after an admitted press | Covered by the press's own unit; a denial never reaches it |
+| Menu failure answer after an identity-lookup blip | Ungated and unbudgeted — the press never got past the lookup |
+| `message.reply` in a server channel | Exempt — server-channel sends are out of scope by design |
+| Typing indicators | Exempt — not a learner-facing message |
+
+Interaction edits are not blanket-covered; each call site is one of the rows above. Two rows are ungated failure answers rather than ordinary deliveries, and they are listed so the exemption is visible instead of implied.
 
 The issue's claim that a `rate_limited` outcome lets the recovery cron retry is false on Discord — the cron has no notification transport wired there. That gap, and a platform-scoping bug in the cron's query, are tracked in [#1507](https://github.com/lengocanh2005it/wispace-bot/issues/1507).

@@ -393,6 +393,126 @@ describe('DiscordChatGateway non-text messages (#401)', () => {
   });
 });
 
+describe('DiscordChatGateway menu admission (#1508)', () => {
+  const interaction = (editReply: jest.Mock) =>
+    ({
+      user: { id: 'discord-user-1' },
+      isButton: () => true,
+      deferReply: jest.fn().mockResolvedValue(undefined),
+      editReply,
+    }) as never;
+
+  const buildDenied = (menu: Partial<DiscordMenuService>) => {
+    const getUpcomingSessions = jest.fn().mockResolvedValue('upcoming');
+    const getLearningProgress = jest.fn().mockResolvedValue('progress');
+    const { gateway, outboundService } = buildGateway({
+      outbound: { admitOutbound: jest.fn().mockResolvedValue(false) },
+      menu: { getUpcomingSessions, getLearningProgress, ...menu },
+    });
+    return {
+      gateway,
+      getUpcomingSessions,
+      getLearningProgress,
+      admitOutbound: outboundService.admitOutbound as jest.Mock,
+    };
+  };
+
+  it('does not fetch or render the menu when the learner is limited', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, getUpcomingSessions, admitOutbound } = buildDenied({});
+
+    await gateway.onMenuUpcomingSessions([interaction(editReply)]);
+
+    // The upstream fetch is the expensive part; a denied press must not pay it.
+    expect(admitOutbound).toHaveBeenCalledWith('discord-user-1', 143, 1);
+    expect(getUpcomingSessions).not.toHaveBeenCalled();
+    expect(editReply).toHaveBeenCalledTimes(1);
+    expect(editReply.mock.calls[0][0].content).toContain('tạm hoãn');
+  });
+
+  it('leaves the button message untouched on a denial so the learner can retry', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const deferReply = jest.fn().mockResolvedValue(undefined);
+    const deferUpdate = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
+      outbound: { admitOutbound: jest.fn().mockResolvedValue(false) },
+    });
+
+    await gateway.onMenuUpcomingSessions([
+      {
+        user: { id: 'discord-user-1' },
+        isButton: () => true,
+        deferReply,
+        deferUpdate,
+        editReply,
+      } as never,
+    ]);
+
+    // deferReply posts a new message; deferUpdate would have edited the pressed
+    // message in place. Nothing was mutated, so that message must survive intact.
+    expect(deferReply).toHaveBeenCalledTimes(1);
+    expect(deferUpdate).not.toHaveBeenCalled();
+  });
+
+  it('gates the learning-progress menu on the same rule', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, getLearningProgress, admitOutbound } = buildDenied({});
+
+    await gateway.onMenuLearningProgress([interaction(editReply)]);
+
+    expect(admitOutbound).toHaveBeenCalledWith('discord-user-1', 143, 1);
+    expect(getLearningProgress).not.toHaveBeenCalled();
+    expect(editReply.mock.calls[0][0].content).toContain('tạm hoãn');
+  });
+
+  it('admits with the canonical user id before fetching the menu', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const order: string[] = [];
+    const { gateway, outboundService } = buildGateway({
+      outbound: {
+        admitOutbound: jest.fn().mockImplementation(async () => {
+          order.push('admit');
+          return true;
+        }),
+      },
+      accountLink: { findUserIdByDiscordId: jest.fn().mockResolvedValue(77) },
+      menu: {
+        getUpcomingSessions: jest.fn().mockImplementation(async () => {
+          order.push('fetch');
+          return 'upcoming';
+        }),
+      },
+    });
+
+    await gateway.onMenuUpcomingSessions([interaction(editReply)]);
+
+    expect(order).toEqual(['admit', 'fetch']);
+    expect(outboundService.admitOutbound as jest.Mock).toHaveBeenCalledWith(
+      'discord-user-1',
+      77,
+      1,
+    );
+    expect(editReply.mock.calls[0][0].content).toBe('upcoming');
+  });
+
+  it('keeps the menu failure message on the error branch', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
+      menu: {
+        getUpcomingSessions: jest
+          .fn()
+          .mockRejectedValue(new Error('WISPACE down')),
+      },
+    });
+
+    await gateway.onMenuUpcomingSessions([interaction(editReply)]);
+
+    expect(editReply.mock.calls[0][0].content).toBe(
+      CHAT_FAILURE_FALLBACK_MESSAGE,
+    );
+  });
+});
+
 describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
   const token = '11111111-1111-4111-8111-111111111111';
   const confirmedResult = {
