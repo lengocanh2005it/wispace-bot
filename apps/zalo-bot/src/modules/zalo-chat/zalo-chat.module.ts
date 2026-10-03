@@ -118,6 +118,7 @@ import {
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
 import {
+  RescheduleRecoveryCronService,
   TypeormRescheduleAttemptStore,
   TypeormRescheduleStore,
   createRescheduleProviders,
@@ -753,6 +754,42 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [PlatformStudyCalendarCommandService],
     },
     ...createRescheduleProviders('zalo'),
+    {
+      // #1507: Zalo override of the shared recovery cron, adding the transport
+      // that re-sends a confirmation whose delivery was deferred. Without it, a
+      // `deferred` Zalo row has no bot that can legitimately deliver it, and the
+      // messenger pod would send a Zalo id to Meta and burn all five attempts.
+      // Declared after createRescheduleProviders so it replaces that instance.
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+        pgLock: PgAdvisoryLockService,
+        attemptStore: TypeormRescheduleAttemptStore,
+        outbound: ZaloOutboundService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          { pgLock, lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY },
+          attemptStore,
+          {
+            deliver: ({ externalId, scheduledTimeLabel, userId }) =>
+              outbound.sendText(
+                externalId,
+                `Mình đã dời buổi học sang ${scheduledTimeLabel} cho bạn rồi nhé ✅`,
+                { userId },
+              ),
+          },
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+        TypeormRescheduleAttemptStore,
+        ZaloOutboundService,
+      ],
+    },
     {
       provide: RescheduleConfirmationService,
       useFactory: (

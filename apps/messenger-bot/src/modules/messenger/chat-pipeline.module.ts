@@ -595,11 +595,15 @@ import {
           { pgLock, lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY },
           attemptStore,
           {
-            deliver: (externalId, scheduledTimeLabel) =>
+            // #1507: the replay passes the canonical userId so it charges the
+            // same outbound budget the first delivery charged. Without it the
+            // replay buckets on the PSID and the learner effectively has two.
+            deliver: ({ externalId, scheduledTimeLabel, userId }) =>
               outbound.sendTextViaPsid({
                 psid: externalId,
                 text: `Mình đã dời buổi học sang ${scheduledTimeLabel} cho bạn rồi nhé ✅`,
                 messageType: 'RESCHEDULE_CONFIRMED',
+                userId,
               }),
           },
         ),

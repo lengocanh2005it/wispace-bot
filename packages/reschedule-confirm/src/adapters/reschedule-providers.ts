@@ -37,7 +37,7 @@ export function createRescheduleProviders(platform: Platform): Provider[] {
     {
       provide: TypeormRescheduleAttemptStore,
       useFactory: (repo: Repository<RescheduleConfirmationAttemptEntity>) =>
-        new TypeormRescheduleAttemptStore(repo),
+        new TypeormRescheduleAttemptStore(platform, repo),
       inject: [getRepositoryToken(RescheduleConfirmationAttemptEntity)],
     },
     {

@@ -1,1 +1,5 @@
-export { findFactoryProvider, type FactoryProvider } from './factory-provider';
+export {
+  findEffectiveFactoryProvider,
+  findFactoryProvider,
+  type FactoryProvider,
+} from './factory-provider';

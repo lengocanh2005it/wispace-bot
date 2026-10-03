@@ -30,7 +30,7 @@ describe('WebhookActionExecutorService.confirm_reschedule (#1418)', () => {
 
     const store = new MemoryRescheduleStore<string>();
     const attemptStore: RescheduleAttemptStorePort =
-      new MemoryRescheduleAttemptStore();
+      new MemoryRescheduleAttemptStore('messenger');
 
     Object.assign(store, { requiresApprovalToken: true });
     void store.save({
@@ -181,7 +181,7 @@ describe('WebhookActionExecutorService.confirm_reschedule (#1418)', () => {
   });
 
   it('tells the learner nothing when the write outcome cannot be determined', async () => {
-    const attemptStore = new MemoryRescheduleAttemptStore();
+    const attemptStore = new MemoryRescheduleAttemptStore('messenger');
     const store = new MemoryRescheduleStore<string>();
     Object.assign(store, { requiresApprovalToken: true });
     void store.save({
@@ -202,7 +202,6 @@ describe('WebhookActionExecutorService.confirm_reschedule (#1418)', () => {
     await attemptStore.beginAttempt({
       externalId: psid,
       nonce: token,
-      platform: 'messenger',
       userId: 42,
     });
 

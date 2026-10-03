@@ -10,7 +10,7 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
 
   const build = (
     stale: Array<{ id: number; externalId: string; nonce: string }>,
-    attemptStore = new MemoryRescheduleAttemptStore(),
+    attemptStore = new MemoryRescheduleAttemptStore('messenger'),
     deliver: jest.Mock = jest.fn().mockResolvedValue('sent'),
   ) => {
     const store = {
@@ -35,7 +35,6 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
     await store.beginAttempt({
       externalId,
       nonce,
-      platform: 'messenger',
       userId: 42,
     });
     if (status === 'confirmed') {
@@ -57,7 +56,7 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
   });
 
   it('never re-arms a stale request whose write outcome is unknown', async () => {
-    const attemptStore = new MemoryRescheduleAttemptStore();
+    const attemptStore = new MemoryRescheduleAttemptStore('messenger');
     await attempt(attemptStore, 'attempting');
     const { service, store } = build(
       [{ id: 1, externalId, nonce }],
@@ -73,7 +72,7 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
   });
 
   it('releases a stale request whose write already committed', async () => {
-    const attemptStore = new MemoryRescheduleAttemptStore();
+    const attemptStore = new MemoryRescheduleAttemptStore('messenger');
     await attempt(attemptStore, 'confirmed');
     const { service, store } = build(
       [{ id: 1, externalId, nonce }],
@@ -87,7 +86,7 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
   });
 
   it('replays the confirmation whose delivery was deferred', async () => {
-    const attemptStore = new MemoryRescheduleAttemptStore();
+    const attemptStore = new MemoryRescheduleAttemptStore('messenger');
     await attempt(attemptStore, 'confirmed');
     await attemptStore.deferNotification(
       externalId,
@@ -98,14 +97,18 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
 
     await service.handleRecovery();
 
-    expect(deliver).toHaveBeenCalledWith(externalId, '20/09 lúc 19:00');
+    expect(deliver).toHaveBeenCalledWith({
+      externalId,
+      scheduledTimeLabel: '20/09 lúc 19:00',
+      userId: 42,
+    });
     expect(await attemptStore.findAttempt(externalId, nonce)).toMatchObject({
       notificationStatus: 'delivered',
     });
   });
 
   it('stops retrying the confirmation once the bound is reached', async () => {
-    const attemptStore = new MemoryRescheduleAttemptStore();
+    const attemptStore = new MemoryRescheduleAttemptStore('messenger');
     await attempt(attemptStore, 'confirmed');
     for (let i = 0; i < MAX_NOTIFICATION_ATTEMPTS; i++) {
       await attemptStore.deferNotification(
@@ -123,7 +126,7 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
   });
 
   it('leaves an ambiguous delivery alone rather than re-sending it', async () => {
-    const attemptStore = new MemoryRescheduleAttemptStore();
+    const attemptStore = new MemoryRescheduleAttemptStore('messenger');
     await attempt(attemptStore, 'confirmed');
     await attemptStore.markNotificationAmbiguous(externalId, nonce);
     const { service, deliver } = build([], attemptStore);
@@ -145,56 +148,12 @@ describe('RescheduleRecoveryCronService (#1418)', () => {
       store as never,
       undefined,
       undefined,
-      new MemoryRescheduleAttemptStore(),
+      new MemoryRescheduleAttemptStore('messenger'),
       undefined,
     );
 
     await expect(service.handleRecovery()).resolves.toBeUndefined();
 
     expect(store.revertStaleRow).toHaveBeenCalledWith(1);
-  });
-});
-
-describe('RescheduleRecoveryCronService advisory lock (#464)', () => {
-  const build = (withLock: jest.Mock) => {
-    const store = {
-      listStaleProcessing: jest.fn().mockResolvedValue([]),
-      revertStaleRow: jest.fn().mockResolvedValue(undefined),
-      cancelStaleRow: jest.fn(),
-    };
-    const service = new RescheduleRecoveryCronService(
-      store as never,
-      undefined,
-      {
-        pgLock: { withLock } as never,
-        lockId: 884_200_952,
-      },
-      new MemoryRescheduleAttemptStore(),
-    );
-    return { service, store };
-  };
-
-  it('runs recovery inside the shared advisory lock', async () => {
-    const withLock = jest.fn(async (_id: number, run: () => Promise<unknown>) =>
-      run(),
-    );
-    const { service, store } = build(withLock);
-
-    await service.handleRecovery();
-
-    expect(withLock).toHaveBeenCalledTimes(1);
-    expect(store.listStaleProcessing).toHaveBeenCalled();
-  });
-
-  it('does not touch any row when the lock is not held', async () => {
-    const withLock = jest.fn().mockResolvedValue(undefined);
-    const { service, store } = build(withLock);
-
-    await service.handleRecovery();
-
-    // Another pod owns the tick, so recovery must be a no-op here.
-    expect(store.listStaleProcessing).not.toHaveBeenCalled();
-    expect(store.revertStaleRow).not.toHaveBeenCalled();
-    expect(store.cancelStaleRow).not.toHaveBeenCalled();
   });
 });

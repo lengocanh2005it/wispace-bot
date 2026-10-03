@@ -26,7 +26,11 @@ import {
     unique: true,
   },
 )
-@Index('idx_reschedule_attempt_notification_due', [
+// Leads with `platform` because the recovery cron scans only its own platform's
+// due confirmations (#1507); an index without that leading column cannot serve
+// the predicate.
+@Index('idx_reschedule_attempt_platform_due', [
+  'platform',
   'status',
   'notificationStatus',
   'nextNotificationAttemptAt',

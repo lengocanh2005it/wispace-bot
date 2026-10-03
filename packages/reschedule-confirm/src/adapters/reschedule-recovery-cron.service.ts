@@ -31,10 +31,16 @@ export interface RescheduleRecoveryCronOptions {
  * requests, it just does not re-send confirmations.
  */
 export interface RescheduleConfirmationNotificationPort {
-  deliver(
-    externalId: string,
-    scheduledTimeLabel: string,
-  ): Promise<RescheduleNotificationOutcome>;
+  /**
+   * `userId` is the canonical WISPACE id, not the platform id: the replay must
+   * charge the same outbound budget the first delivery charged, and the limiter
+   * buckets by `userId` when it has one (#1494).
+   */
+  deliver(input: {
+    externalId: string;
+    scheduledTimeLabel: string;
+    userId: number;
+  }): Promise<RescheduleNotificationOutcome>;
   limit?: number;
 }
 
@@ -43,7 +49,10 @@ export interface RescheduleConfirmationNotificationPort {
  * confirmations whose delivery was deferred.
  *
  * Runs every 5 minutes under one global advisory lock (#464) because the table
- * is shared by all three bots.
+ * is shared by all three bots. That shared lock has a consequence recorded in
+ * #1507: only the pod that wins the tick replays, and it replays only **its own
+ * platform's** rows. Every platform is served over successive ticks rather than
+ * within one, so a row waits for a tick its own bot wins.
  *
  * #1418: a stale row is **not** blindly reset to pending. It is re-armed only
  * when no attempt record exists, which proves no calendar write was started. A
@@ -140,10 +149,11 @@ export class RescheduleRecoveryCronService {
     );
     for (const record of due) {
       try {
-        const outcome = await this.notification.deliver(
-          record.externalId,
-          record.scheduledTimeLabel ?? '',
-        );
+        const outcome = await this.notification.deliver({
+          externalId: record.externalId,
+          scheduledTimeLabel: record.scheduledTimeLabel ?? '',
+          userId: record.userId,
+        });
         await applyNotificationOutcome(
           this.attemptStore,
           record.externalId,

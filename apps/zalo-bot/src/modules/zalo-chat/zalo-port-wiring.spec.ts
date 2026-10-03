@@ -15,9 +15,52 @@ import {
 } from '@wispace/scheduler-core/adapters';
 import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core/core';
 import { ZaloReportModule } from './zalo-report.module';
-import { findFactoryProvider } from '@wispace/bot-common/testing';
+import {
+  findEffectiveFactoryProvider,
+  findFactoryProvider,
+} from '@wispace/bot-common/testing';
 
 describe('Zalo outbound port wiring', () => {
+  it('binds the recovery cron to a Zalo transport so a deferred row can be replayed (#1507)', async () => {
+    // Without a transport a `deferred` row has no bot that can legitimately
+    // deliver it: the messenger pod would send a Zalo id to Meta, be rejected,
+    // and burn all five bounded attempts.
+    const binding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      RescheduleRecoveryCronService,
+    );
+    expect(binding).toBeDefined();
+
+    const sendText = jest.fn().mockResolvedValue('sent');
+    const recovery = binding!.useFactory(
+      {},
+      { registerCron: jest.fn() },
+      {},
+      {},
+      { sendText },
+    );
+
+    expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+    const notification = (
+      recovery as unknown as {
+        notification: { deliver: (input: unknown) => Promise<string> };
+      }
+    ).notification;
+    await expect(
+      notification.deliver({
+        externalId: 'zalo-user-1',
+        scheduledTimeLabel: '20/09 lúc 19:00',
+        userId: 42,
+      }),
+    ).resolves.toBe('sent');
+    // userId must reach the transport or the replay charges a second budget.
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-user-1',
+      expect.stringContaining('20/09 lúc 19:00'),
+      { userId: 42 },
+    );
+  });
+
   it('wires reschedule and report persistence from owner adapter entrypoints', () => {
     const rescheduleStoreBinding = findFactoryProvider(
       ZaloChatModule,

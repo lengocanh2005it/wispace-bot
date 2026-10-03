@@ -110,6 +110,7 @@ import {
   LearnerProfileEntity,
 } from '@wispace/database';
 import {
+  RescheduleRecoveryCronService,
   TypeormRescheduleAttemptStore,
   TypeormRescheduleStore,
   createRescheduleProviders,
@@ -603,6 +604,43 @@ const REGISTER_REPORT_MESSAGE =
       inject: [PlatformStudyCalendarCommandService],
     },
     ...createRescheduleProviders('discord'),
+    {
+      // #1507: Discord override of the shared recovery cron, adding the
+      // transport that re-sends a confirmation whose delivery was deferred.
+      // Without it, a `deferred` Discord row has no bot that can legitimately
+      // deliver it: the messenger pod would send a Discord id to Meta, get
+      // rejected, and burn all five bounded attempts.
+      // Declared after createRescheduleProviders so it replaces that instance.
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+        pgLock: PgAdvisoryLockService,
+        attemptStore: TypeormRescheduleAttemptStore,
+        outbound: DiscordOutboundService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          { pgLock, lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY },
+          attemptStore,
+          {
+            deliver: ({ externalId, scheduledTimeLabel, userId }) =>
+              outbound.sendText(
+                externalId,
+                `Mình đã dời buổi học sang ${scheduledTimeLabel} cho bạn rồi nhé ✅`,
+                { userId },
+              ),
+          },
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+        TypeormRescheduleAttemptStore,
+        DiscordOutboundService,
+      ],
+    },
     {
       provide: RescheduleConfirmationService,
       useFactory: (

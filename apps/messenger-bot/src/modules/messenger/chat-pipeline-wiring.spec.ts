@@ -4,7 +4,10 @@ import {
   TypeormRescheduleStore,
 } from '@wispace/reschedule-confirm/adapters';
 import { ChatPipelineModule } from './chat-pipeline.module';
-import { findFactoryProvider } from '@wispace/bot-common/testing';
+import {
+  findEffectiveFactoryProvider,
+  findFactoryProvider,
+} from '@wispace/bot-common/testing';
 
 describe('Messenger ChatPipelineModule wiring', () => {
   it('wires reschedule persistence from the owning adapter entrypoint', () => {
@@ -34,6 +37,46 @@ describe('Messenger ChatPipelineModule wiring', () => {
     expect(store).toBeInstanceOf(TypeormRescheduleStore);
     expect((store as { platform: string }).platform).toBe('messenger');
     expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+  });
+
+  it('replays a deferred confirmation through the Messenger transport (#1507)', async () => {
+    // The shared binding has no transport, so this spec asserted the shared
+    // instance and passed while the override — the one Nest actually resolves —
+    // could have been deleted. `findEffectiveFactoryProvider` reads the last
+    // binding.
+    const binding = findEffectiveFactoryProvider(
+      ChatPipelineModule,
+      RescheduleRecoveryCronService,
+    );
+    expect(binding).toBeDefined();
+
+    const sendTextViaPsid = jest.fn().mockResolvedValue('sent');
+    const recovery = binding!.useFactory(
+      {},
+      { registerCron: jest.fn() },
+      {},
+      {},
+      { sendTextViaPsid },
+    );
+
+    expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+    const notification = (
+      recovery as unknown as {
+        notification: { deliver: (input: unknown) => Promise<string> };
+      }
+    ).notification;
+    await expect(
+      notification.deliver({
+        externalId: 'psid-1',
+        scheduledTimeLabel: '20/09 lúc 19:00',
+        userId: 42,
+      }),
+    ).resolves.toBe('sent');
+    // #1507: without userId the replay charges the PSID bucket and the learner
+    // effectively gets two outbound budgets.
+    expect(sendTextViaPsid).toHaveBeenCalledWith(
+      expect.objectContaining({ psid: 'psid-1', userId: 42 }),
+    );
   });
 
   it('wires PlatformAgentService with LlmContentClassifier in ChatPipelineModule (#864, #868)', () => {

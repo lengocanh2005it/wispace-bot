@@ -16,7 +16,10 @@ import {
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatModule } from './discord-chat.module';
-import { findFactoryProvider } from '@wispace/bot-common/testing';
+import {
+  findEffectiveFactoryProvider,
+  findFactoryProvider,
+} from '@wispace/bot-common/testing';
 
 const TEST_POLICY: LlmProviderPolicy = {
   nodeEnv: 'test',
@@ -49,6 +52,46 @@ describe('Discord chat module — LLM provider factory', () => {
     expect(store).toBeInstanceOf(TypeormRescheduleStore);
     expect((store as { platform: string }).platform).toBe('discord');
     expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+  });
+
+  it('binds the recovery cron to a Discord transport so a deferred row can be replayed (#1507)', async () => {
+    // The shared binding has no transport at all, and a `deferred` row then has
+    // no bot that can legitimately deliver it: the messenger pod would send a
+    // Discord id to Meta, be rejected, and burn all five bounded attempts.
+    const binding = findEffectiveFactoryProvider(
+      DiscordChatModule,
+      RescheduleRecoveryCronService,
+    );
+    expect(binding).toBeDefined();
+
+    const sendText = jest.fn().mockResolvedValue('sent');
+    const recovery = binding!.useFactory(
+      {},
+      { registerCron: jest.fn() },
+      {},
+      {},
+      { sendText },
+    );
+
+    expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+    const notification = (
+      recovery as unknown as {
+        notification: { deliver: (input: unknown) => Promise<string> };
+      }
+    ).notification;
+    await expect(
+      notification.deliver({
+        externalId: 'discord-user-1',
+        scheduledTimeLabel: '20/09 lúc 19:00',
+        userId: 42,
+      }),
+    ).resolves.toBe('sent');
+    // userId must reach the transport or the replay charges a second budget.
+    expect(sendText).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.stringContaining('20/09 lúc 19:00'),
+      { userId: 42 },
+    );
   });
 
   it('builds the confirmation service with the durable attempt store (#1483)', () => {

@@ -586,7 +586,6 @@ export class RescheduleConfirmationService<TExternalId> {
       await this.options.attemptStore?.beginAttempt({
         externalId: String(externalId),
         nonce: attemptNonce,
-        platform: pending.platform ?? binding?.platform ?? 'unknown',
         userId: pending.userId,
       });
     }
