@@ -7,10 +7,10 @@ import { MESSENGER_BACKGROUND_PRODUCERS } from './modules/scheduler/report-produ
 /** A release-image baseline: production NODE_ENV, Vault-delivered secrets. */
 const VALID_ENV: NodeJS.ProcessEnv = {
   NODE_ENV: 'production',
-  INTERNAL_API_KEY: 'internal-ops-key-42',
+  INTERNAL_API_KEY: 'internal-ops-key-9876',
   DB_HOST: 'db.example.com',
   DB_SSL: 'true',
-  OPENAI_API_KEY: 'sk-proj-valid-key',
+  OPENAI_API_KEY: 'sk-primary-test',
   OPENAI_MODEL: 'gpt-5.4',
   LLM_ALLOWED_MODELS: 'openai:gpt-5.4',
   LLM_ALLOWED_BASE_URLS: 'api.openai.com',
@@ -39,7 +39,7 @@ describe('validateStartupConfig', () => {
   it('reports a provider credential the app would refuse to start on', () => {
     const violations = validateStartupConfig({
       ...VALID_ENV,
-      OPENAI_API_KEY: 'sk-or-v1-openrouter-credential',
+      OPENAI_API_KEY: 'sk-or-v1-secondary-test',
     });
 
     expect(violations).toEqual([
@@ -55,7 +55,7 @@ describe('validateStartupConfig', () => {
     const violations = validateStartupConfig({
       ...VALID_ENV,
       INTERNAL_API_KEY: undefined,
-      OPENAI_API_KEY: 'sk-or-v1-openrouter-credential',
+      OPENAI_API_KEY: 'sk-or-v1-secondary-test',
       REPORT_SEND_CONCURRENCY: '5',
     });
 
@@ -105,11 +105,11 @@ describe('the messenger startup validation entry point', () => {
   });
 
   it('never prints the provider credential value', async () => {
-    process.env.OPENAI_API_KEY = 'sk-or-v1-openrouter-credential';
+    process.env.OPENAI_API_KEY = 'sk-or-v1-secondary-test';
 
     await expect(runStartupValidation()).resolves.toBe(1);
     const printed = errorSpy.mock.calls.flat().join('\n');
-    expect(printed).not.toContain('sk-or-v1-openrouter-credential');
+    expect(printed).not.toContain('sk-or-v1-secondary-test');
   });
 });
 

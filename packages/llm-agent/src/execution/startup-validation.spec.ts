@@ -6,7 +6,7 @@ import { collectLlmStartupViolations } from './startup-validation';
  */
 const VALID_LLM_ENV = {
   NODE_ENV: 'production',
-  OPENAI_API_KEY: 'sk-proj-valid-key',
+  OPENAI_API_KEY: 'sk-primary-test',
   OPENAI_MODEL: 'gpt-5.4',
   LLM_ALLOWED_MODELS: 'openai:gpt-5.4',
   LLM_ALLOWED_BASE_URLS: 'api.openai.com',
@@ -111,7 +111,7 @@ describe('collectLlmStartupViolations — background producer capacity', () => {
 describe('collectLlmStartupViolations — provider configuration', () => {
   it('reports a credential the provider validator rejects, naming the provider and the env key', () => {
     const violations = collectLlmStartupViolations(
-      { ...VALID_LLM_ENV, OPENAI_API_KEY: 'sk-or-v1-openrouter-credential' },
+      { ...VALID_LLM_ENV, OPENAI_API_KEY: 'sk-or-v1-secondary-test' },
       [],
     );
 
@@ -126,13 +126,11 @@ describe('collectLlmStartupViolations — provider configuration', () => {
 
   it('never echoes the credential value into the report', () => {
     const violations = collectLlmStartupViolations(
-      { ...VALID_LLM_ENV, OPENAI_API_KEY: 'sk-or-v1-openrouter-credential' },
+      { ...VALID_LLM_ENV, OPENAI_API_KEY: 'sk-or-v1-secondary-test' },
       [],
     );
 
-    expect(violations[0]?.message).not.toContain(
-      'sk-or-v1-openrouter-credential',
-    );
+    expect(violations[0]?.message).not.toContain('sk-or-v1-secondary-test');
   });
 
   it('reports nothing for a credential the provider accepts', () => {
@@ -157,7 +155,7 @@ describe('collectLlmStartupViolations — provider configuration', () => {
     const violations = collectLlmStartupViolations(
       {
         ...VALID_LLM_ENV,
-        OPENAI_API_KEY: 'sk-or-v1-openrouter-credential',
+        OPENAI_API_KEY: 'sk-or-v1-secondary-test',
         REPORT_SEND_CONCURRENCY: '5',
       },
       [MESSENGER_REPORT],
@@ -174,7 +172,7 @@ describe('collectLlmStartupViolations — provider configuration', () => {
       {
         ...VALID_LLM_ENV,
         LLM_EXECUTION_ENABLED: 'false',
-        OPENAI_API_KEY: 'sk-or-v1-openrouter-credential',
+        OPENAI_API_KEY: 'sk-or-v1-secondary-test',
       },
       [],
     );

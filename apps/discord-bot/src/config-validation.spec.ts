@@ -7,10 +7,10 @@ import { DISCORD_BACKGROUND_PRODUCERS } from './modules/discord-chat/report-prod
 /** A release-image baseline: production NODE_ENV, Vault-delivered secrets. */
 const VALID_ENV: NodeJS.ProcessEnv = {
   NODE_ENV: 'production',
-  INTERNAL_API_KEY: 'internal-ops-key-42',
+  INTERNAL_API_KEY: 'internal-ops-key-9876',
   DB_HOST: 'db.example.com',
   DB_SSL: 'true',
-  OPENAI_API_KEY: 'sk-proj-valid-key',
+  OPENAI_API_KEY: 'sk-primary-test',
   OPENAI_MODEL: 'gpt-5.4',
   LLM_ALLOWED_MODELS: 'openai:gpt-5.4',
   LLM_ALLOWED_BASE_URLS: 'api.openai.com',
@@ -39,7 +39,7 @@ describe('validateStartupConfig', () => {
   it('reports a provider credential the app would refuse to start on', () => {
     const violations = validateStartupConfig({
       ...VALID_ENV,
-      OPENAI_API_KEY: 'sk-or-v1-openrouter-credential',
+      OPENAI_API_KEY: 'sk-or-v1-secondary-test',
     });
 
     expect(violations).toEqual([
