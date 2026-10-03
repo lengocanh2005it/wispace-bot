@@ -118,7 +118,10 @@ npm run workspace-deps:check    # workspace packages imported without being decl
 npm run manifest-deps:check     # runtime dependencies declared but never imported
 npm run entrypoint-consumers:check  # a declared `exports` subpath nothing imports (#1440)
 npm run file-size:check         # a tracked file grew past its recorded ceiling
+npm run metric-registry:check    # AST guard: no module-scope prom-client metric without a per-app `registers` (#1381)
 ```
+
+A guard that needs an installed dependency (e.g. `typescript`) belongs in this gate, **not** in CI job `deploy-scripts-test` — that job runs with no `npm ci`, so any `require()` of a devDependency fails it on every push. Wire such a guard as a `package.json` script plus a `ROOT_VERIFY_SCRIPTS` entry (and list it in `scripts/verify.test.mjs`); aliasing a gate script to a file outside `scripts/` is already the pattern — `prove-checks:test` points into `.claude/skills/`.
 
 **Entrypoint consumer guard (#1440):** a declared `exports` subpath that nothing imports reads as a supported API and rots silently. #1440 removed one by hand (`@wispace/llm-agent/tools`) and measuring for this rule then found a second the same day. The rule separates two cases that look alike in the manifest: a subpath that **publishes symbols** nothing imports is a violation, while a subpath that **publishes nothing** — a placeholder reserved for work in progress, currently `@wispace/account-link-core/adapters` — is reported as a note and allowed, because importing it yields nothing and so cannot mislead. Specs count as consumers; a commented-out import does not; an unresolvable entry target is a violation rather than assumed empty. There is no exemption list, because an entry here is exactly the permanent exemption this repository refuses elsewhere.
 
