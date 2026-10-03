@@ -108,14 +108,25 @@ resolve_app_failed() { # app
     || echo "WARN [$(date -Is)] Alertmanager resolve notify failed (curl)" >&2
 }
 
-write_stall_marker() { # reason
-  echo "$(date -Is) $1 $(current_sha)" > "$STALL_MARKER"
+redact_pull_secret() { # text secret
+  local text="$1" secret="$2"
+  [ -z "$secret" ] || text="${text//"$secret"/[REDACTED]}"
+  printf '%s' "$text"
 }
 
-stall_exit() { # reason summary detail
-  local reason="$1" summary="$2" detail="$3"
-  echo "ERROR [$(date -Is)] $reason" >&2
-  write_stall_marker "$reason"
+write_stall_marker() { # outcome detail
+  local outcome="$1" detail="${2:-}" tmp="$STALL_MARKER.tmp.$$"
+  detail="${detail//$'\r'/ }"
+  detail="${detail//$'\n'/; }"
+  detail="${detail//$'\t'/ }"
+  (umask 077; printf '%s outcome=%s sha=%s %s\n' "$(date -Is)" "$outcome" "$(current_sha)" "$detail" > "$tmp") \
+    && mv -f -- "$tmp" "$STALL_MARKER"
+}
+
+stall_exit() { # outcome summary detail
+  local outcome="$1" summary="$2" detail="$3"
+  echo "ERROR [$(date -Is)] outcome=$outcome: $detail" >&2
+  write_stall_marker "$outcome" "$detail"
   notify_stall "$summary" "$detail"
   exit 1
 }
@@ -396,7 +407,7 @@ ci_wait_for_retry() { # reason -> 0 while within wait budget, 1 after timeout
       printf '%s\n%s\n' "$now" "$reason" > "$timeout_marker"
       notify_stall "VPS self-pull CI gate timed out" "CI for $HEAD_SHA stayed unavailable for ${age}s: $reason"
     fi
-    write_stall_marker "ci_gate_timeout $HEAD_SHA"
+    write_stall_marker "ci_gate_timeout" "sha=$HEAD_SHA reason=$reason"
     echo "ERROR [$(date -Is)] CI gate timed out for $HEAD_SHA after ${age}s: $reason" >&2
     return 1
   fi
@@ -404,14 +415,14 @@ ci_wait_for_retry() { # reason -> 0 while within wait budget, 1 after timeout
   return 0
 }
 
-ci_fail_global() { # reason
-  local reason="$1" marker="$CI_GATE_STATE_DIR/$HEAD_SHA.failed"
+ci_fail_global() { # reason [outcome [marker_detail]]
+  local reason="$1" outcome="${2:-ci_gate_failed}" marker_detail="${3:-reason=$1}" marker="$CI_GATE_STATE_DIR/$HEAD_SHA.failed"
   if [ ! -f "$marker" ] || [ "$(head -n 1 "$marker" 2>/dev/null || true)" != "$HEAD_SHA" ]; then
     printf '%s\n%s\n' "$HEAD_SHA" "$reason" > "$marker"
     notify_stall "VPS self-pull CI gate failed" "CI gate blocked $HEAD_SHA: $reason"
   fi
-  write_stall_marker "ci_gate_failed $HEAD_SHA"
-  echo "ERROR [$(date -Is)] CI gate blocked for $HEAD_SHA: $reason" >&2
+  write_stall_marker "$outcome" "sha=$HEAD_SHA $marker_detail"
+  echo "ERROR [$(date -Is)] outcome=$outcome sha=$HEAD_SHA: $reason" >&2
   return 1
 }
 
@@ -446,27 +457,27 @@ recover_previous_stall() {
 }
 
 if ! cd "$REPO_DIR"; then
-  stall_exit "repo dir missing ($REPO_DIR)" \
+  stall_exit "repo_dir_missing" \
     "VPS self-pull stalled (repo dir missing)" \
     "$REPO_DIR does not exist at $(date -Is) — re-clone per docs/project-overview.md §12."
 fi
 
 if ! git fetch origin main; then
-  stall_exit "git fetch origin main failed — staying on $(current_sha)" \
+  stall_exit "git_fetch_failed" \
     "VPS self-pull stalled (git fetch failed)" \
     "git fetch origin main failed at $(date -Is); repo stays at $(current_sha); next cron tick retries."
 fi
 
 if ! git reset --hard origin/main; then
-  stall_exit "git reset --hard origin/main failed" \
+  stall_exit "git_reset_failed" \
     "VPS self-pull stalled (git reset failed)" \
     "git reset failed at $(date -Is) after fetch; repo at $(current_sha)."
 fi
 
 if [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse origin/main 2>/dev/null)" ]; then
-  stall_exit "checkout stale: HEAD=$(current_sha) origin/main=$(git rev-parse origin/main 2>/dev/null || echo unknown)" \
+  stall_exit "checkout_stale" \
     "VPS self-pull stalled (stale checkout)" \
-    "HEAD != origin/main after reset at $(date -Is)."
+    "checkout stale: HEAD=$(current_sha) origin/main=$(git rev-parse origin/main 2>/dev/null || echo unknown) after reset at $(date -Is)."
 fi
 
 NEW_SHA=$(current_sha)
@@ -555,6 +566,7 @@ deploy_app() {
   local force_deploy="${3:-false}"
   local run_migrations_override="${4:-}"
   local health_path run_migrations target_dir image state_file fail_marker image_digest migration_cmd
+  local failure_file deploy_rc failure_outcome failure_detail
   IFS=':' read -r health_path run_migrations <<< "${APPS[$app]}"
   if [ -n "$run_migrations_override" ]; then
     run_migrations="$run_migrations_override"
@@ -584,6 +596,7 @@ deploy_app() {
   image="${REGISTRY}/${REPO_LC}/${app}:${APP_SHA}"
   state_file="$STATE_DIR/${app}.sha"
   fail_marker="$STATE_DIR/${app}.failed"
+  failure_file="$STATE_DIR/.${app}.deploy-failure"
 
   if ! validate_bootstrap_env "$target_dir"; then
     echo "ERROR: $app has no valid Vault bootstrap — refusing to deploy" >&2
@@ -648,6 +661,7 @@ deploy_app() {
 
   if [ -z "$image_digest" ]; then
     echo "ERROR: $app — could not extract digest from manifest inspect" >&2
+    write_stall_marker "image_unresolvable" "app=$app sha=$APP_SHA reason=manifest_inspect_returned_no_digest"
     # Fail closed: do not deploy without digest verification (#196)
     if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$APP_SHA" ]; then
       echo "$APP_SHA" > "$fail_marker"
@@ -675,6 +689,8 @@ deploy_app() {
     migration_cmd="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run"
   fi
 
+  rm -f "$failure_file"
+
   if (
     cd "$target_dir"
     IMAGE="$image" IMAGE_DIGEST="$image_digest" DEPLOY_MODE=self-pull APP_NAME="$app" HEALTH_PATH="$health_path" \
@@ -683,11 +699,13 @@ deploy_app() {
     MIGRATION_PREFLIGHT_CMD="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight" \
     MIGRATION_STATUS_CMD="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show" \
     MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" \
+    DEPLOY_FAILURE_FILE="$failure_file" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \
     APP_NETWORK="$APP_NETWORK" \
     DEPLOY_SHA="$APP_SHA" \
     bash vps-deploy.sh
   ); then
+    rm -f "$failure_file"
     echo "$APP_SHA" > "$state_file"
     record_compatibility_state "$app" "$run_migrations" "$APP_SHA"
     record_schema_revision "$run_migrations" "$APP_SHA"
@@ -699,12 +717,23 @@ deploy_app() {
     fi
     return 0
   else
-    echo "ERROR: deploy failed for $app @ $APP_SHA — will retry next run" >&2
+    deploy_rc=$?
+    failure_outcome="app_deploy_failed"
+    failure_detail="vps-deploy exited with status $deploy_rc"
+    if [ -s "$failure_file" ]; then
+      IFS= read -r failure_outcome < "$failure_file" || true
+      failure_detail="$(sed -n '2p' "$failure_file" 2>/dev/null || true)"
+      [ -n "$failure_outcome" ] || failure_outcome="app_deploy_failed"
+      [ -n "$failure_detail" ] || failure_detail="vps-deploy exited with status $deploy_rc"
+    fi
+    rm -f "$failure_file"
+    echo "ERROR: outcome=$failure_outcome app=$app sha=$APP_SHA detail=$failure_detail — will retry next run" >&2
+    write_stall_marker "$failure_outcome" "app=$app sha=$APP_SHA $failure_detail"
     # Alert once per (app, sha): the same failed sha retries every tick and
     # must not re-page each time (#202). The marker is cleared on success.
     if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$APP_SHA" ]; then
       echo "$APP_SHA" > "$fail_marker"
-      notify_app_failed "$app" "$APP_SHA"
+      notify_app_failed "$app" "$APP_SHA" "$failure_outcome: $failure_detail"
     fi
     return 1
   fi
@@ -721,9 +750,20 @@ case "$CI_GLOBAL_STATE" in
     ;;
 esac
 
-if ! echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
-  echo "WARN [$(date -Is)] docker login to $REGISTRY failed — refusing to deploy until the GHCR pull token is fixed (#604)" >&2
-  ci_fail_global "docker login to $REGISTRY failed; GHCR image state is unverifiable" || exit 1
+docker_login_output=""
+if docker_login_output="$(printf '%s' "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin 2>&1)"; then
+  :
+else
+  docker_login_status=$?
+  docker_login_output="$(redact_pull_secret "$docker_login_output" "$GHCR_PULL_TOKEN")"
+  docker_login_detail="${docker_login_output//$'\r'/ }"
+  docker_login_detail="${docker_login_detail//$'\n'/; }"
+  docker_login_detail="${docker_login_detail//$'\t'/ }"
+  docker_login_detail="${docker_login_detail:0:500}"
+  [ -n "$docker_login_detail" ] || docker_login_detail="(no diagnostic output)"
+  echo "ERROR [$(date -Is)] docker login to $REGISTRY failed (exit $docker_login_status): $docker_login_output" >&2
+  ci_fail_global "docker login to $REGISTRY failed; refusing to deploy until registry authentication is restored" \
+    "registry_login_failed" "registry=$REGISTRY exit_code=$docker_login_status error=$docker_login_detail" || exit 1
 fi
 
 # Pinning the deploy to HEAD wedges the rollout whenever a commit produces no
@@ -767,7 +807,8 @@ resolve_app_sha() {
 OWNER_APP="${APP_ORDER[0]}"
 if [ "${CI_APP_BUILD[$OWNER_APP]-unknown}" = "success" ] && \
   ! docker manifest inspect "${REGISTRY}/${REPO_LC}/${OWNER_APP}:${HEAD_SHA}" >/dev/null 2>&1; then
-  ci_fail_global "$OWNER_APP build-image passed but its GHCR image is missing for $HEAD_SHA" || exit 1
+  ci_fail_global "$OWNER_APP build-image passed but its GHCR image is missing for $HEAD_SHA" \
+    "image_unresolvable" "app=$OWNER_APP sha=$HEAD_SHA reason=CI_build_passed_but_GHCR_manifest_is_missing" || exit 1
 fi
 
 RESOLVED_SHA=$(resolve_target_sha || true)
@@ -808,6 +849,8 @@ if [ "$BARRIER_RC" = 2 ]; then
     BARRIER_RC=0
   else
     echo "ERROR: ${APP_ORDER[0]} (migration owner) — $OWNER_IMAGE $(image_missing_cause); schema is not current for $NEW_SHA — barrier blocked" >&2
+    write_stall_marker "migration_barrier_blocked" \
+      "app=${APP_ORDER[0]} target_sha=$NEW_SHA schema_revision=$(schema_revision || echo unknown) image=$OWNER_IMAGE reason=owner_image_missing_and_schema_not_current"
     OWNER_FAIL_MARKER="$STATE_DIR/${APP_ORDER[0]}.failed"
     if [ ! -f "$OWNER_FAIL_MARKER" ] || [ "$(cat "$OWNER_FAIL_MARKER")" != "$NEW_SHA" ]; then
       echo "$NEW_SHA" > "$OWNER_FAIL_MARKER"
@@ -816,6 +859,8 @@ if [ "$BARRIER_RC" = 2 ]; then
     BARRIER_RC=1
   fi
 elif [ "$BARRIER_RC" = 3 ]; then
+  write_stall_marker "image_unresolvable" \
+    "app=${APP_ORDER[0]} sha=$NEW_SHA reason=CI_build_passed_but_GHCR_manifest_is_missing"
   OWNER_FAIL_MARKER="$STATE_DIR/${APP_ORDER[0]}.failed"
   if [ ! -f "$OWNER_FAIL_MARKER" ] || [ "$(cat "$OWNER_FAIL_MARKER")" != "$NEW_SHA" ]; then
     echo "$NEW_SHA" > "$OWNER_FAIL_MARKER"
@@ -845,6 +890,8 @@ if [ "$BARRIER_RC" = 0 ]; then
           0) ;;
           3)
             ci_mark_app_failure "$app" "CI reported a build but the GHCR image was missing"
+            write_stall_marker "image_unresolvable" \
+              "app=$app sha=$NEW_SHA reason=CI_build_passed_but_GHCR_manifest_is_missing"
             DEPLOY_FAILURE=1
             ;;
           *) DEPLOY_FAILURE=1 ;;
@@ -874,6 +921,11 @@ if [ "$BARRIER_RC" = 0 ] && [ "$DEPLOY_FAILURE" = 0 ] && [ "${#PENDING_APPS[@]}"
       image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
       if ! docker manifest inspect "$image" >/dev/null 2>&1; then
         echo "ERROR: $app image is unavailable; refusing to commit owner-aware schema" >&2
+        if [ "${CI_APP_BUILD[$app]-unknown}" = "success" ]; then
+          write_stall_marker "image_unresolvable" "app=$app sha=$NEW_SHA reason=CI_build_passed_but_GHCR_manifest_is_missing"
+        else
+          write_stall_marker "migration_barrier_blocked" "app=$app sha=$NEW_SHA image=$image reason=required_compatibility_image_missing_before_schema_migration"
+        fi
         DEPLOY_FAILURE=1
       fi
     done

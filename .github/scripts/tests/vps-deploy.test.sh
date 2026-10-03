@@ -39,6 +39,14 @@ FAKEGPG
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
+  login)
+    if [ -n "${FAKE_LOGIN_FAIL:-}" ]; then
+      printf '%s\n' "${FAKE_LOGIN_ERROR:-denied: invalid registry credential}" >&2
+      exit 1
+    fi
+    printf 'Login Succeeded\n'
+    exit 0
+    ;;
   inspect)
     if [ "${2:-}" = "-f" ]; then
       case "${3:-}" in
@@ -152,10 +160,15 @@ if [ -n "${FAKE_POST_SWITCH_FAIL:-}" ] && printf '%s' "$*" | grep -q 'aiassist.a
   exit 1
 fi
 if [ -n "${FAKE_READINESS_FAIL:-}" ] && printf '%s' "$*" | grep -q '/health/ready'; then
-  exit 1
+  printf 'http_status=503'
+  exit 22
 fi
 if printf '%s' "$*" | grep -q -- ' -w '; then
-  printf '401'
+  if printf '%s' "$*" | grep -q '/health/'; then
+    printf 'http_status=200'
+  else
+    printf '401'
+  fi
 fi
 exit 0
 FAKE
@@ -320,6 +333,18 @@ grep -q "active container" "$dir/run.out" || fail "missing active-container fail
 ! grep -q "docker stop --timeout.*messenger-bot-old" "$dir/docker.log" || fail "active container was stopped"
 pass "Nginx bypass refuses to stop active container"
 
+echo "Test 4b: standby health failure exports a diagnostic outcome to the self-pull caller"
+dir=$(make_env standby-health-failure)
+write_env "$dir"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true HEALTH_MAX_ATTEMPTS=1 FAKE_READINESS_FAIL=1 \
+  DEPLOY_FAILURE_FILE="$dir/deploy-failure")
+[ "$code" -eq 1 ] || fail "expected health-check failure exit 1, got $code"
+[ "$(sed -n '1p' "$dir/deploy-failure")" = "app_health_check_failed" ] \
+  || fail "deploy failure outcome file missing the health-check classification"
+grep -Eq '^phase=pre_cutover endpoint=http://127\.0\.0\.1:[0-9]+/health/ready attempts=1 curl_exit=22 last_result=http_status=503$' "$dir/deploy-failure" \
+  || fail "deploy failure outcome file missing endpoint, attempt count, or HTTP status"
+pass "standby health failure is classified with its endpoint and attempts"
+
 echo "Test 5: image pull failure -> fail closed before docker run (#271)"
 dir=$(make_env pull-fail)
 write_env "$dir"
@@ -328,6 +353,17 @@ code=$(run_script "$dir" SKIP_NGINX_CHECK=true FAKE_PULL_FAIL=1)
 grep -q "image pull failed" "$dir/run.out" || fail "missing pull failure message"
 ! grep -q "docker run" "$dir/docker.log" || fail "docker run started after pull failure"
 pass "image pull failure stops before docker run"
+
+echo "Test 5b: registry login failure retains Docker's diagnostic in the deploy log"
+dir=$(make_env login-diagnostic)
+write_env "$dir"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true GHCR_USER=deploy GHCR_PULL_TOKEN=secret-token \
+  FAKE_LOGIN_FAIL=1 FAKE_LOGIN_ERROR='denied: GHCR rejected credential for secret-token')
+[ "$code" -eq 0 ] || fail "deploy should continue to the pull with cached credentials, got $code: $(cat "$dir/run.out")"
+grep -q 'Docker login detail: denied: GHCR rejected credential for \[REDACTED\]' "$dir/run.out" \
+  || fail "Docker login diagnostic missing or token was not redacted"
+! grep -q 'secret-token' "$dir/run.out" || fail "registry token leaked into the deploy log"
+pass "registry login diagnostic is logged with the token redacted"
 
 echo "Test 6: migrations enabled without command -> fail closed (#271)"
 dir=$(make_env migration-command-missing)

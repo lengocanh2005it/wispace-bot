@@ -45,6 +45,20 @@ BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/home/ngoc_anh/backups/ai_chat_bot_db/backup
 HOST_SCRIPTS_DIR="${HOST_SCRIPTS_DIR:-/home/ngoc_anh/scripts}"
 DEPLOY_SCRIPTS_DIR="${DEPLOY_SCRIPTS_DIR:-scripts}"
 DEPLOY_SHA="${DEPLOY_SHA:-}"
+DEPLOY_FAILURE_FILE="${DEPLOY_FAILURE_FILE:-}"
+
+record_deploy_failure() { # outcome detail
+  [ -n "$DEPLOY_FAILURE_FILE" ] || return 0
+  local outcome="$1" detail="$2"
+  (umask 077; printf '%s\n%s\n' "$outcome" "$detail" > "$DEPLOY_FAILURE_FILE") \
+    || echo "WARN: could not write deploy failure detail to $DEPLOY_FAILURE_FILE" >&2
+}
+
+redact_deploy_secret() { # text secret
+  local text="$1" secret="$2"
+  [ -z "$secret" ] || text="${text//"$secret"/[REDACTED]}"
+  printf '%s' "$text"
+}
 
 MANAGED_HOST_SCRIPTS=(
   "postgres-backup.sh"
@@ -640,7 +654,19 @@ fi
 
 # ─── Authenticate with GHCR ──────────────────────────────────────────────────
 if [ -n "${GHCR_PULL_TOKEN:-}" ] && [ -n "${GHCR_USER:-}" ]; then
-  echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>/dev/null || true
+  docker_login_output=""
+  if docker_login_output="$(printf '%s' "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1)"; then
+    :
+  else
+    docker_login_status=$?
+    docker_login_output="$(redact_deploy_secret "$docker_login_output" "$GHCR_PULL_TOKEN")"
+    echo "WARN: docker login to ghcr.io failed (exit $docker_login_status); continuing to the image pull in case cached credentials are valid" >&2
+    if [ -n "$docker_login_output" ]; then
+      printf 'Docker login detail: %s\n' "$docker_login_output" >&2
+    else
+      echo "Docker login detail: (no diagnostic output)" >&2
+    fi
+  fi
 fi
 
 DEPLOY_UID=${DEPLOY_UID:-$(id -u)}
@@ -802,17 +828,28 @@ fi
 # ─── Health check new container (before migrations) ──────────────────────────
 echo "Health-checking $NEW_CONTAINER (port $STANDBY_PORT) ..."
 healthy=""
+last_health_result="no_response"
+last_health_exit=0
 for attempt in $(seq 1 "${HEALTH_MAX_ATTEMPTS}"); do
-  if curl -sf --max-time 3 "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}" >/dev/null 2>&1; then
+  health_result=""
+  if health_result="$(curl -fsS --max-time 3 -o /dev/null -w 'http_status=%{http_code}' \
+    "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}" 2>&1)"; then
     healthy=1
     echo "  Health check passed (attempt ${attempt})"
     break
+  else
+    last_health_exit=$?
+    last_health_result="${health_result//$'\r'/ }"
+    last_health_result="${last_health_result//$'\n'/; }"
+    last_health_result="${last_health_result:0:300}"
+    [ -n "$last_health_result" ] || last_health_result="no_response"
   fi
   sleep 2
 done
 
 if [ -z "$healthy" ]; then
-  echo "ERROR: New container failed health check — rolling back" >&2
+  echo "ERROR: New container failed health check at http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH} after ${HEALTH_MAX_ATTEMPTS} attempt(s) (curl_exit=$last_health_exit, $last_health_result) — rolling back" >&2
+  record_deploy_failure "app_health_check_failed" "phase=pre_cutover endpoint=http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH} attempts=${HEALTH_MAX_ATTEMPTS} curl_exit=$last_health_exit last_result=$last_health_result"
   docker logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
   docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
   exit 1
@@ -821,6 +858,7 @@ fi
 echo "Checking protected metrics endpoint on standby port $STANDBY_PORT ..."
 if ! verify_metrics_endpoint "$STANDBY_PORT"; then
   echo "ERROR: New container metrics endpoint failed auth/health check — rolling back (#278)" >&2
+  record_deploy_failure "app_health_check_failed" "phase=standby_metrics endpoint=http://127.0.0.1:${STANDBY_PORT}${METRICS_PATH}"
   docker logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
   docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
   exit 1
@@ -1006,19 +1044,29 @@ PUBLIC_HEALTH_PATH=$(get_public_health_path "$APP_NAME")
 echo "Monitoring health on $([ "$NGINX_SWITCHED" = "true" ] && echo "public route https://${PUBLIC_HOST}${PUBLIC_HEALTH_PATH}" || echo "port $STANDBY_PORT$HEALTH_PATH") for $(( POST_SWITCH_MONITOR_ATTEMPTS * POST_SWITCH_MONITOR_INTERVAL ))s ..."
 monitor_healthy=""
 monitor_failures=0
+last_monitor_result="no_response"
+last_monitor_exit=0
 MONITOR_MAX_FAILURES="${MONITOR_MAX_FAILURES:-3}"
 check_post_switch_health() {
   if [ "$NGINX_SWITCHED" = "true" ]; then
-    curl -sf --max-time 3 --resolve "${PUBLIC_HOST}:443:127.0.0.1" "https://${PUBLIC_HOST}${PUBLIC_HEALTH_PATH}"
+    curl -fsS --max-time 3 -o /dev/null -w 'http_status=%{http_code}' \
+      --resolve "${PUBLIC_HOST}:443:127.0.0.1" "https://${PUBLIC_HOST}${PUBLIC_HEALTH_PATH}"
   else
-    curl -sf --max-time 3 "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}"
+    curl -fsS --max-time 3 -o /dev/null -w 'http_status=%{http_code}' \
+      "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}"
   fi
 }
 for attempt in $(seq 1 "${POST_SWITCH_MONITOR_ATTEMPTS}"); do
-  if check_post_switch_health >/dev/null 2>&1; then
+  monitor_result=""
+  if monitor_result="$(check_post_switch_health 2>&1)"; then
     monitor_healthy=1
     monitor_failures=0
   else
+    last_monitor_exit=$?
+    last_monitor_result="${monitor_result//$'\r'/ }"
+    last_monitor_result="${last_monitor_result//$'\n'/; }"
+    last_monitor_result="${last_monitor_result:0:300}"
+    [ -n "$last_monitor_result" ] || last_monitor_result="no_response"
     # Tolerate transient blips (e.g. a short Redis hiccup making /health 503)
     # — only roll back after MONITOR_MAX_FAILURES consecutive failures.
     monitor_failures=$((monitor_failures + 1))
@@ -1032,7 +1080,8 @@ for attempt in $(seq 1 "${POST_SWITCH_MONITOR_ATTEMPTS}"); do
 done
 
 if [ -z "$monitor_healthy" ]; then
-  echo "ERROR: Post-switch health check failed — rolling back nginx to port $ACTIVE_PORT" >&2
+  echo "ERROR: Post-switch health check failed at ${PUBLIC_HOST}${PUBLIC_HEALTH_PATH} after ${POST_SWITCH_MONITOR_ATTEMPTS} attempt(s) (curl_exit=$last_monitor_exit, $last_monitor_result) — rolling back nginx to port $ACTIVE_PORT" >&2
+  record_deploy_failure "app_health_check_failed" "phase=post_cutover endpoint=https://${PUBLIC_HOST}${PUBLIC_HEALTH_PATH} attempts=${POST_SWITCH_MONITOR_ATTEMPTS} consecutive_failures=${monitor_failures:-0} curl_exit=$last_monitor_exit last_result=$last_monitor_result"
   rollback_metrics_cutover
   exit 1
 fi
