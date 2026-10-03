@@ -35,8 +35,10 @@ export interface DebounceChatQueueConfig {
    */
   maxPendingSize?: number;
   /**
-   * How long `drain()` keeps waiting for active flushes during shutdown
-   * (default 25s). After the deadline, remaining buffered messages are dropped.
+   * Maximum time an active flush may hold up later batches or `drain()`
+   * (default 25s). A timed-out handler is treated as stalled so buffered
+   * messages can continue through the queue; the handler itself is not
+   * cancelled and may still finish later.
    */
   drainTimeoutMs?: number;
 }
@@ -57,6 +59,8 @@ export interface DebounceChatQueueCallbacks<TContext> {
    * exceeded. `droppedCount` is the number of messages removed.
    */
   onPendingDropped?: (externalUserId: string, droppedCount: number) => void;
+  /** Called when an active flush exceeds the shared flush/drain deadline. */
+  onFlushTimedOut?: (externalUserId: string, timeoutMs: number) => void;
   /**
    * Called when an enqueue arrives after shutdown began — the message is
    * rejected (dropped) because the queue is draining for exit.

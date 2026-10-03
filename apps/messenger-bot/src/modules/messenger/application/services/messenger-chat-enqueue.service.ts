@@ -110,6 +110,13 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
               });
           }
         },
+        onFlushTimedOut: (externalUserId, timeoutMs) => {
+          this.logger.warn(
+            `Chat queue flush stalled for psid=${maskExternalId(
+              externalUserId,
+            )} after ${timeoutMs}ms; releasing the queue for buffered messages (handler may finish later)`,
+          );
+        },
         onShutdownRejected: (externalUserId) => {
           this.logger.warn(
             `Enqueue rejected during shutdown for psid=${maskExternalId(

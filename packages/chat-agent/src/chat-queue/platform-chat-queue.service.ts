@@ -256,6 +256,13 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
                 .catch(() => {});
             }
           },
+          onFlushTimedOut: (externalUserId, timeoutMs) => {
+            this.logger.warn(
+              `Chat queue flush stalled for ${maskExternalId(
+                externalUserId,
+              )} after ${timeoutMs}ms; releasing the queue for buffered messages (handler may finish later)`,
+            );
+          },
           onShutdownRejected: (externalUserId) => {
             this.logger.warn(
               `Enqueue rejected during shutdown for ${maskExternalId(

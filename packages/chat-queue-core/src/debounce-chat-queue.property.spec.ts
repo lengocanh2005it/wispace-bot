@@ -169,8 +169,8 @@ function isSubsequence<T>(candidate: T[], source: T[]): boolean {
  * The stale sweep is pushed past any time this suite advances, so a scenario's
  * only time source is the debounce window it is meant to pin. Gates are
  * released in `finally` rather than awaiting `destroy()` there, because with a
- * held flush `drain()` polls on a timer that a discarded fake clock will never
- * fire.
+ * held flush `drain()` waits on timers that a discarded fake clock will never
+ * fire. Active flushes and their waiters share the configured drain deadline.
  */
 describe('DebounceChatQueue clock and conservation properties', () => {
   beforeEach(() => {
@@ -185,6 +185,7 @@ describe('DebounceChatQueue clock and conservation properties', () => {
     onFlush: ChatQueueFlushHandler<Record<string, never>>,
     maxPendingSize: number,
     callbacks: DebounceChatQueueCallbacks<Record<string, never>> = {},
+    drainTimeoutMs = 25_000,
   ): DebounceChatQueue<Record<string, never>> {
     return new DebounceChatQueue<Record<string, never>>(
       {
@@ -192,6 +193,7 @@ describe('DebounceChatQueue clock and conservation properties', () => {
         staleTtlMs: NO_SWEEP_MS,
         cleanupIntervalMs: NO_SWEEP_MS,
         maxPendingSize,
+        drainTimeoutMs,
       },
       onFlush,
       callbacks,
@@ -373,6 +375,155 @@ describe('DebounceChatQueue clock and conservation properties', () => {
         ],
       },
     );
+  });
+
+  it('runs a waiting flush after an active flush exceeds the shared deadline', async () => {
+    const firstFlush = deferred<void>();
+    const batches: ChatQueueBatch<Record<string, never>>[] = [];
+    const timedOut = jest.fn();
+    const queue = makeClockQueue(
+      async (batch) => {
+        batches.push(batch);
+        if (batches.length === 1) {
+          await firstFlush.promise;
+        }
+      },
+      UNCAPPED,
+      { onFlushTimedOut: timedOut },
+      30,
+    );
+
+    try {
+      queue.enqueue({ externalUserId: 'u1', text: 'first' });
+      const active = queue.flushNow('u1');
+      await Promise.resolve();
+      queue.enqueue({ externalUserId: 'u1', text: 'second' });
+      const waiting = queue.flushNow('u1');
+
+      await jest.advanceTimersByTimeAsync(30);
+      await Promise.all([active, waiting]);
+
+      expect(batches.map((batch) => batch.texts)).toEqual([
+        ['first'],
+        ['second'],
+      ]);
+      expect(timedOut).toHaveBeenCalledTimes(1);
+      expect(timedOut).toHaveBeenCalledWith('u1', 30);
+    } finally {
+      firstFlush.resolve();
+      await queue.destroy();
+    }
+  });
+
+  it('bounds drain by the same deadline and starts its remaining batch', async () => {
+    const firstFlush = deferred<void>();
+    const batches: ChatQueueBatch<Record<string, never>>[] = [];
+    const timedOut = jest.fn();
+    const queue = makeClockQueue(
+      async (batch) => {
+        batches.push(batch);
+        if (batches.length === 1) {
+          await firstFlush.promise;
+        }
+      },
+      UNCAPPED,
+      { onFlushTimedOut: timedOut },
+      30,
+    );
+
+    try {
+      queue.enqueue({ externalUserId: 'u1', text: 'first' });
+      const active = queue.flushNow('u1');
+      await Promise.resolve();
+      queue.enqueue({ externalUserId: 'u1', text: 'second' });
+      const draining = queue.drain();
+
+      await jest.advanceTimersByTimeAsync(30);
+      await Promise.all([active, draining]);
+
+      expect(batches.map((batch) => batch.texts)).toEqual([
+        ['first'],
+        ['second'],
+      ]);
+      expect(timedOut).toHaveBeenCalledTimes(1);
+    } finally {
+      firstFlush.resolve();
+      await queue.destroy();
+    }
+  });
+
+  it('keeps batch order when the active flush settles within the shared deadline', async () => {
+    const firstFlush = deferred<void>();
+    const batches: ChatQueueBatch<Record<string, never>>[] = [];
+    const timedOut = jest.fn();
+    const queue = makeClockQueue(
+      async (batch) => {
+        batches.push(batch);
+        if (batches.length === 1) {
+          await firstFlush.promise;
+        }
+      },
+      UNCAPPED,
+      { onFlushTimedOut: timedOut },
+      30,
+    );
+
+    try {
+      queue.enqueue({ externalUserId: 'u1', text: 'first' });
+      const active = queue.flushNow('u1');
+      await Promise.resolve();
+      queue.enqueue({ externalUserId: 'u1', text: 'second' });
+
+      await jest.advanceTimersByTimeAsync(20);
+      expect(batches.map((batch) => batch.texts)).toEqual([['first']]);
+
+      firstFlush.resolve();
+      await active;
+      await jest.advanceTimersByTimeAsync(WINDOW_MS);
+
+      expect(batches.map((batch) => batch.texts)).toEqual([
+        ['first'],
+        ['second'],
+      ]);
+      expect(timedOut).not.toHaveBeenCalled();
+    } finally {
+      firstFlush.resolve();
+      await queue.destroy();
+    }
+  });
+
+  it('continues queued work after a timed-out automatic flush', async () => {
+    const firstFlush = deferred<void>();
+    const batches: ChatQueueBatch<Record<string, never>>[] = [];
+    const timedOut = jest.fn();
+    const queue = makeClockQueue(
+      async (batch) => {
+        batches.push(batch);
+        if (batches.length === 1) {
+          await firstFlush.promise;
+        }
+      },
+      UNCAPPED,
+      { onFlushTimedOut: timedOut },
+      30,
+    );
+
+    try {
+      queue.enqueue({ externalUserId: 'u1', text: 'first' });
+      await jest.advanceTimersByTimeAsync(WINDOW_MS);
+      queue.enqueue({ externalUserId: 'u1', text: 'second' });
+
+      await jest.advanceTimersByTimeAsync(30 + WINDOW_MS);
+
+      expect(batches.map((batch) => batch.texts)).toEqual([
+        ['first'],
+        ['second'],
+      ]);
+      expect(timedOut).toHaveBeenCalledTimes(1);
+    } finally {
+      firstFlush.resolve();
+      await queue.destroy();
+    }
   });
 
   it('delivers everything accepted before shutdown and rejects only what arrives after', async () => {
