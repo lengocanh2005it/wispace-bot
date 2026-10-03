@@ -46,13 +46,21 @@ function metricClassName(
   if (ts.isIdentifier(expression)) {
     return metricAliases.get(expression.text) ?? expression.text;
   }
-  if (
-    ts.isPropertyAccessExpression(expression) &&
+  const namespaceTarget =
+    (ts.isPropertyAccessExpression(expression) ||
+      ts.isElementAccessExpression(expression)) &&
     ts.isIdentifier(expression.expression) &&
     (namespaceImports.has(expression.expression.text) ||
       defaultImports.has(expression.expression.text))
-  ) {
-    return expression.name.text;
+      ? expression
+      : undefined;
+  if (namespaceTarget) {
+    // `prom.Counter` and `prom['Counter']` are the same access.
+    return ts.isPropertyAccessExpression(namespaceTarget)
+      ? namespaceTarget.name.text
+      : ts.isStringLiteral(namespaceTarget.argumentExpression)
+        ? namespaceTarget.argumentExpression.text
+        : undefined;
   }
   return undefined;
 }

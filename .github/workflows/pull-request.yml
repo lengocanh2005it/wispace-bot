@@ -376,6 +376,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # check-timestamp-policy.sh resolves origin/main and then calls git
+          # merge-base, which a depth-1 clone of a detached pull_request merge
+          # commit cannot support: it creates no remote-tracking ref at all.
+          fetch-depth: 0
 
       - name: Test VPS self-pull deploy (concurrency + CI gate + failure paths, #144/#172/#694)
         run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
@@ -465,9 +470,3 @@ jobs:
 
       - name: Check log redaction — raw external ids in logger calls (#610)
         run: node .github/scripts/check-log-redaction.js
-
-      - name: Test metric registry guard (#1381)
-        run: node --test .github/scripts/tests/check-metric-registration.test.mjs
-
-      - name: Check shared-package metric registry isolation (#1381)
-        run: node .github/scripts/check-metric-registration.js

@@ -64,3 +64,20 @@ test('rejects namespace access to prom-client global register', () => {
   assert.equal(violations.length, 1);
   assert.match(violations[0].message, /process-wide default registry/);
 });
+
+test('treats a string-literal namespace access as the same access', () => {
+  const withoutRegisters = analyzeSource(
+    "import * as prom from 'prom-client';\nconst metric = new prom['Counter']({ name: 'sample', help: 'sample' });",
+    'packages/example/src/metrics.ts',
+  );
+
+  assert.equal(withoutRegisters.length, 1);
+  assert.match(withoutRegisters[0].message, /module-scope Counter/);
+
+  const withRegisters = analyzeSource(
+    "import * as prom from 'prom-client';\nconst metric = new prom['Counter']({ name: 'sample', help: 'sample', registers: [registry] });",
+    'packages/example/src/metrics.ts',
+  );
+
+  assert.deepEqual(withRegisters, []);
+});
