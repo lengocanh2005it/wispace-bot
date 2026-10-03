@@ -32,6 +32,7 @@ import {
   type DiscordOutboundPreparation,
 } from '../utils/discord-outbound-guard';
 import { withRetry } from '@wispace/wispace-client/core';
+import { DiscordSendTimeoutError } from '../../domain/discord-send-outcome.errors';
 
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
@@ -40,6 +41,12 @@ const DM_FAILURE_REASON_RESCHEDULE = 'reschedule_send_error';
 const DM_FAILURE_REASON_PROACTIVE = 'proactive_send_error';
 /** Network/unknown delivery outcome — the provider may have accepted the message (#156). */
 const DM_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
+/**
+ * Deadline expiry — a separate label from the general ambiguous case so an
+ * operator reading the metric can tell a slow send from a dead network
+ * (#1509). Both are ambiguous; only the cause differs.
+ */
+const DM_FAILURE_REASON_AMBIGUOUS_TIMEOUT = 'dm_send_ambiguous_timeout';
 const NETWORK_ERROR_CODES = new Set([
   'ECONNRESET',
   'ECONNREFUSED',
@@ -51,6 +58,13 @@ const NETWORK_ERROR_CODES = new Set([
 ]);
 const DISCORD_ACTION_KINDS = ['everyone', 'here', 'role', 'user'] as const;
 
+/** The metric label for an ambiguous failure, split by its cause (#1509). */
+function ambiguousFailureReason(error: unknown): string {
+  return error instanceof DiscordSendTimeoutError
+    ? DM_FAILURE_REASON_AMBIGUOUS_TIMEOUT
+    : DM_FAILURE_REASON_AMBIGUOUS;
+}
+
 function isDiscordNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) {
     return true;
@@ -60,11 +74,16 @@ function isDiscordNetworkError(error: unknown): boolean {
 }
 
 /**
- * Retry predicate for Discord DM sends (#156): retry only rate limits (429),
- * server errors (5xx) and known network-level failures. Never retry known 4xx
- * (auth/validation — permanent), unknown errors, or cancellations.
+ * Retry predicate for Discord DM sends (#156): retry rate limits (429), server
+ * errors (5xx) and known network-level failures. Never retry known 4xx
+ * (auth/validation — permanent), unknown errors, a caller cancellation, or a
+ * send that hit its own deadline.
  */
 export function isDiscordRetryableError(error: unknown): boolean {
+  // A deadline expiry reaches this predicate as a plain abort, because the
+  // SDK reports every abort identically (ADR-0053). It is not retryable:
+  // there is no delivery verdict, so a resend risks a second copy — the same
+  // line Zalo draws at `httpStatus === 0`.
   if (isAbortError(error)) {
     return false;
   }
@@ -80,6 +99,11 @@ export function isDiscordRetryableError(error: unknown): boolean {
 export function isAmbiguousDeliveryError(error: unknown): boolean {
   if (error instanceof DiscordDeliveryFailureError) {
     return error.ambiguousDelivery;
+  }
+  // A deadline expiry is exactly the case this predicate exists for — the
+  // request may have reached Discord and stalled on the way back (#1509).
+  if (error instanceof DiscordSendTimeoutError) {
+    return true;
   }
   if (isAbortError(error)) {
     return (error as { name?: unknown } | null)?.name === 'TimeoutError';
@@ -264,7 +288,7 @@ export class DiscordOutboundService {
           shouldRetry: isDiscordRetryableError,
           onRetry: (attempt, maxRetries, error) => {
             if (isAmbiguousDeliveryError(error)) {
-              this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+              this.metrics?.incDmDeliveryFailure(ambiguousFailureReason(error));
               ambiguousDeliveryRecorded = true;
             }
             const errorMsg = maskExternalIdInText(
@@ -324,7 +348,7 @@ export class DiscordOutboundService {
         );
       }
       if (ambiguous) {
-        this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+        this.metrics?.incDmDeliveryFailure(ambiguousFailureReason(error));
         return { outcome: 'ambiguous' };
       }
       this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_PROACTIVE);
@@ -382,9 +406,10 @@ export class DiscordOutboundService {
         discordUserId,
       )} after retries: ${errorMsg}`,
     );
-    if (result.ambiguous) {
-      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
-    } else {
+    // `sendCore` already counted the ambiguous outcome against its own cause
+    // (it has the original error; this frame only has the summary), so
+    // counting it again here would double-report every ambiguous send (#1509).
+    if (!result.ambiguous) {
       this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_SEND);
     }
     await this.deliveryJournal?.logDelivery({
@@ -482,6 +507,11 @@ export class DiscordOutboundService {
         ambiguous: boolean;
         retryable: boolean;
         rateLimited?: boolean;
+        /**
+         * The original error behind this result, so callers that only see the
+         * summary can still label a metric by cause (#1509).
+         */
+        cause?: unknown;
       }
   > {
     let ambiguousDeliveryRecorded = false;
@@ -517,7 +547,7 @@ export class DiscordOutboundService {
             // Network/unknown failures have no delivery verdict — the
             // provider may have accepted the first attempt (#156).
             if (isAmbiguousDeliveryError(error)) {
-              this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+              this.metrics?.incDmDeliveryFailure(ambiguousFailureReason(error));
               ambiguousDeliveryRecorded = true;
             }
             const errorMsg = maskExternalIdInText(
@@ -539,19 +569,21 @@ export class DiscordOutboundService {
           ambiguous: ambiguousDeliveryRecorded,
           retryable: false,
           rateLimited: true,
+          cause: error,
         };
       }
       const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
       const ambiguous =
         ambiguousDeliveryRecorded || isAmbiguousDeliveryError(error);
       if (ambiguous) {
-        this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+        this.metrics?.incDmDeliveryFailure(ambiguousFailureReason(error));
       }
       return {
         ok: false,
         error: errorMsg,
         ambiguous,
         retryable: isDiscordRetryableError(error),
+        cause: error,
       };
     }
   }
