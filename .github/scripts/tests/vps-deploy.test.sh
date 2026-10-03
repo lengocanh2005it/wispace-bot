@@ -128,7 +128,17 @@ case "$1" in
   pull)
     [ -n "${FAKE_PULL_FAIL:-}" ] && exit 1 || exit 0
     ;;
-  run|rm|stop|logs|manifest)
+  run)
+    # Startup validation is the only `run` that is not the release container:
+    # it is --rm, detached from the standby port, and names the entrypoint.
+    case "$*" in
+      *config-validation.js*)
+        [ -n "${FAKE_STARTUP_VALIDATION_FAIL:-}" ] && exit 1
+        ;;
+    esac
+    exit 0
+    ;;
+  rm|stop|logs|manifest)
     exit 0
     ;;
   rename)
@@ -923,6 +933,34 @@ code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:m
 [ "$code" -ne 0 ] || fail "expected non-zero exit for missing scripts bundle, got 0"
 grep -q "deploy scripts bundle missing" "$dir/run.out" || fail "expected missing scripts error in run.out: $(cat "$dir/run.out")"
 pass "messenger deploy fails closed when scripts bundle is missing"
+
+echo "Test 41: startup validation runs before the release container starts (#1499)"
+dir=$(make_env startup-validation-order)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+printf 'upstream messenger_backend {\n    server 127.0.0.1:%s;\n}\n' 5007 > "$dir/upstreams/messenger-bot.conf"
+
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+validation_line=$(grep -n "config-validation.js" "$dir/docker.log" | head -1 | cut -d: -f1)
+run_line=$(grep -n -- "-d --name messenger-bot-new" "$dir/docker.log" | head -1 | cut -d: -f1)
+[ -n "$validation_line" ] || fail "startup validation never ran"
+[ -n "$run_line" ] || fail "release container never started"
+[ "$validation_line" -lt "$run_line" ] || fail "startup validation ran after the release container started"
+pass "startup validation precedes the release container"
+
+echo "Test 42: startup validation failure aborts before the release container starts (#1499)"
+dir=$(make_env startup-validation-fail)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+printf 'upstream messenger_backend {\n    server 127.0.0.1:%s;\n}\n' 5007 > "$dir/upstreams/messenger-bot.conf"
+
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true FAKE_STARTUP_VALIDATION_FAIL=1 FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
+[ "$code" -eq 1 ] || fail "expected exit 1 on startup validation failure, got $code"
+grep -q "startup validation failed" "$dir/run.out" || fail "missing startup validation failure message: $(cat "$dir/run.out")"
+! grep -q -- "-d --name messenger-bot-new" "$dir/docker.log" || fail "release container started despite failed validation"
+! grep -q "nginx -s reload" "$dir/docker.log" || fail "traffic switched despite failed validation"
+pass "startup validation failure stops before the release container"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

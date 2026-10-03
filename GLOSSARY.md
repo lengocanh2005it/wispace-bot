@@ -33,3 +33,19 @@ A stable identifier derived from the message's identity and reused verbatim acro
 _Avoid_: nonce, idempotency key, dedupe key
 
 Discord is the only platform with a provider-side dedupe key, which is why its ambiguous resend is safe and Messenger's and Zalo's is not.
+
+## Startup
+
+**Fail-closed constraint**:
+A rule on configuration or wiring that the application refuses to start on. It is not a warning and not a runtime fallback: the process ends before serving traffic, and a warning-class rule is deliberately not one of these. A constraint that is only reached on first use of a lazy component is not a fail-closed constraint, because nothing refuses to start on it.
+_Avoid_: startup check, validation error, guard
+
+**Configuration staleness**:
+A stored configuration value that no longer satisfies a fail-closed constraint, usually because the constraint was tightened after the value was written. The value is valid on its own terms; only the code's expectation of it has moved. Nothing detects this until the value is evaluated, which is why it survives indefinitely and surfaces as a deploy failure rather than as drift.
+_Avoid_: configuration drift, misconfiguration, invalid config
+
+Drift is a different axis and keeps its existing meaning: divergence between two stores that are both live at runtime. Staleness is one artifact versus a code constraint, with only one live participant.
+
+**Startup validation**:
+The deploy phase that evaluates the release image's configuration against the fail-closed constraints before any traffic is switched, reporting every offending key in one pass. It re-invokes the same constraints the application enforces; it does not boot the application to discover them, so it reaches no database, no Redis, and no vendor API. Distinct from the **migration preflight**, which is the pre-migration dump and writer assertion — the word "preflight" belongs to that older phase and not to this one.
+_Avoid_: preflight, config check, dry run, smoke test

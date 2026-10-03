@@ -33,3 +33,19 @@ export function readEnvPositiveInt(
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
+
+/**
+ * Read an explicit override that has no fallback: an absent or unusable value
+ * means "derive it", not "use a default". Shared by the background producers
+ * and by startup validation, so the deploy-time phase can never disagree with
+ * the value the running application applies.
+ */
+export function readOptionalPositiveInt(
+  get: (key: string) => string | undefined,
+  key: string,
+): number | undefined {
+  const raw = get(key)?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+}

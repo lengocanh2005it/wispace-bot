@@ -261,10 +261,21 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### 7.3. Deploy Script (`.github/scripts/vps-deploy.sh`)
 
+Phase order (each step fails closed; see §9.1 for the operator sequence):
+
+1. Vault AppRole login against the bootstrap — before the live `.env` is touched (#932)
+2. Atomic `.env` install + `.env.pre-deploy` snapshot
+3. Image pull, pinned by digest when available (#271/#196)
+4. **Startup validation (#1499)** — `docker run --rm` on the release image runs `node apps/$APP_NAME/dist/config-validation.js`. Vault is loaded, then every fail-closed constraint is checked in one pass: `INTERNAL_API_KEY`, `DB_SSL`, LLM provider key/endpoint/model allowlists, the shared provider attempt budget, the aggregate-concurrency/Redis pairing, and `REPORT_SEND_CONCURRENCY` against the computed background admission capacity. A non-zero exit aborts here — no container is started, no migration runs, nginx keeps serving the live one.
+5. `docker run -d` the new container on the standby port
+6. Pre-cutover `/health/ready` on the standby port (4-minute budget by default)
+7. Pre-migration `pg_dump` → `migration:run` → `migration:show` must report no pending migration (#275)
+8. nginx upstream switch + reload, then public-route monitoring
+
 Needs expansion for real implementation:
 
 - Health check **both** `:5007` and `:5008` (`/health/ready`; detailed DB/Redis status via internal `/health/detail` with `X-Internal-Api-Key`)
-- `docker compose ps` — 2 services healthy
+- `docker compose ps` � 2 services healthy
 - Log tail both containers
 
 ---
@@ -294,6 +305,12 @@ Needs expansion for real implementation:
 3. Set Vault: `CHAT_QUEUE_SHARED=true`, `CRON_LEADER_ENABLED=true`
 4. Deploy new image + compose 2 services
 5. Update Nginx upstream → `nginx -t` → reload
+
+When step 4 aborts at **startup validation**, the cause is already-validated
+configuration, not the image: read the offending keys in the deploy log. The
+values live in Vault (the bootstrap `.env` carries only the AppRole), so fix
+them there and let the next tick re-run — nothing was switched, so there is no
+rollback to reason about.
 
 ### 9.2. Post-Cutover (15–30 minutes)
 

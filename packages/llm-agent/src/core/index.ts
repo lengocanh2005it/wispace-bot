@@ -205,6 +205,8 @@ export type {
   BackgroundAdmissionCapacityConfig,
   BackgroundProducerConcurrencyOptions,
 } from '../execution/background-admission-capacity';
+export { collectLlmStartupViolations } from '../execution/startup-validation';
+export type { BackgroundProducerProbe } from '../execution/startup-validation';
 export { createLlmExecutionFailureTracker } from '../execution/failure-attribution';
 export type {
   LlmExecutionFailureClass,

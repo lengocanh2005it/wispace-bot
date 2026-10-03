@@ -43,6 +43,8 @@ export type {
   BackgroundAdmissionCapacityConfig,
   BackgroundProducerConcurrencyOptions,
 } from './background-admission-capacity';
+export { collectLlmStartupViolations } from './startup-validation';
+export type { BackgroundProducerProbe } from './startup-validation';
 export {
   LlmProviderCircuitOpenError,
   type LlmProviderCircuitState,

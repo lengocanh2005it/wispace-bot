@@ -785,6 +785,29 @@ if ! docker pull "$PULL_REF" 2>/dev/null && ! docker pull "$PULL_REF"; then
   exit 1
 fi
 
+# ─── Startup validation (#1499) ──────────────────────────────────────────────
+# The release image is checked against the fail-closed constraints the app
+# itself enforces, before the new container exists. Nothing is started, no
+# migration runs, and nginx keeps routing to the live container — so a value
+# that went stale against a constraint the code already enforces aborts the
+# deploy in seconds, instead of leaving the container crash-looping until the
+# health probe gives up four minutes later and the rollback loop retries it.
+# Validation reaches no database, Redis or vendor API, so the monitoring
+# network alone is enough and the app network is deliberately not attached.
+echo "Validating startup configuration in $PULL_REF ..."
+if ! docker run --rm \
+  --network "$MONITORING_NETWORK" \
+  --user "${DEPLOY_UID}:${DEPLOY_GID}" \
+  --env-file "$ENV_FILE" \
+  -e HOME=/tmp \
+  --cap-drop ALL --security-opt no-new-privileges:true --read-only \
+  --pids-limit 256 --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  "$PULL_REF" \
+  sh -c "node apps/$APP_NAME/dist/config-validation.js"; then
+  echo "ERROR: startup validation failed — refusing to deploy (#1499)" >&2
+  exit 1
+fi
+
 # ─── Start new container on standby port (docker run, NOT compose) ────────────
 # Compose would "recreate" the old container (it matches by project/service
 # labels), killing it instead of running both side by side.
