@@ -127,6 +127,62 @@ jobs:
       - name: Run HTTP contract tests (messenger-bot)
         run: npm run test:http-contract --workspace=@wispace/messenger-bot
 
+  messenger-e2e-test:
+    # `npm run test:e2e` boots the real AppModule, so it opens a live
+    # TypeORM connection and cannot stub DataSource the way the unit and
+    # contract suites do. That is exactly what makes it worth running: it
+    # proves the whole DI graph resolves and a referral reaches the welcome
+    # send. It sat unrun in CI since NestJS 12 went pure ESM and the suite
+    # stopped loading, so nothing reported the breakage.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_chat_bot_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: ai_chat_bot_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npx --no-install turbo run build --filter=@wispace/messenger-bot^...
+        env:
+          TURBO_CONCURRENCY: 2
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      # The spec boots DatabaseModule for real, so the schema must exist first.
+      - name: Apply migrations
+        run: npm run migration:run --workspace=@wispace/messenger-bot
+
+      - name: Run messenger e2e tests
+        run: npm run test:e2e --workspace=@wispace/messenger-bot
+
   graceful-shutdown-verify:
     # #511: SIGTERM mid-request must drain before exit (OTel must not race
     # the 45s drain). Runs only when shutdown-related files changed.
