@@ -2,11 +2,11 @@
 
 Three suites, three different needs:
 
-| Script | What it needs |
-| --- | --- |
-| `npm test` | nothing — unit tests, all in-memory |
+| Script                       | What it needs                                |
+| ---------------------------- | -------------------------------------------- |
+| `npm test`                   | nothing — unit tests, all in-memory          |
 | `npm run test:http-contract` | nothing — partial apps with mocked providers |
-| `npm run test:e2e` | **a reachable Postgres** (see below) |
+| `npm run test:e2e`           | **a reachable Postgres** (see below)         |
 
 ## Why e2e needs a database
 
