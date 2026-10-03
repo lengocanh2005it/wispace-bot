@@ -45,6 +45,45 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     reloaded.onModuleDestroy();
   });
 
+  it('keeps shared webhook-inbound metrics in the bot registry', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'webhook_test',
+      collectDefaults: false,
+    });
+
+    metrics.incWebhookInboundRetentionDeleted(3);
+    metrics.incWebhookInboundInlineAttempt('zalo', 'completed');
+    metrics.observeWebhookInboundDispatchLag('zalo', 'cron', 1.5);
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'webhook_test_webhook_inbound_retention_deleted_total 3',
+    );
+    expect(output).toContain(
+      'webhook_test_webhook_inbound_inline_attempts_total{platform="zalo",outcome="completed"} 1',
+    );
+    expect(output).toContain(
+      'webhook_test_webhook_inbound_dispatch_lag_seconds_count{platform="zalo",trigger="cron"} 1',
+    );
+    expect(
+      register.getSingleMetric(
+        'webhook_test_webhook_inbound_retention_deleted_total',
+      ),
+    ).toBeUndefined();
+    expect(
+      register.getSingleMetric(
+        'webhook_test_webhook_inbound_inline_attempts_total',
+      ),
+    ).toBeUndefined();
+    expect(
+      register.getSingleMetric(
+        'webhook_test_webhook_inbound_dispatch_lag_seconds',
+      ),
+    ).toBeUndefined();
+
+    metrics.onModuleDestroy();
+  });
+
   it('exposes privacy cleanup attempts and queue age without identity labels', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

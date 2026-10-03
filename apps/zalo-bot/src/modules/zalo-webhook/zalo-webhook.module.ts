@@ -44,9 +44,14 @@ import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.map
     ZaloWebhookSignatureGuard,
     {
       provide: PlatformWebhookInboundEventService,
-      useFactory: (repo: Repository<WebhookInboundEventEntity>) =>
-        new PlatformWebhookInboundEventService('zalo', repo),
-      inject: [getRepositoryToken(WebhookInboundEventEntity)],
+      useFactory: (
+        repo: Repository<WebhookInboundEventEntity>,
+        metrics: BotMetricsService,
+      ) => new PlatformWebhookInboundEventService('zalo', repo, metrics),
+      inject: [
+        getRepositoryToken(WebhookInboundEventEntity),
+        BotMetricsService,
+      ],
     },
     ZaloWebhookIngestService,
     {
@@ -91,6 +96,7 @@ import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.map
         inboundEvents: PlatformWebhookInboundEventService,
         dispatcher: ZaloWebhookDispatchService,
         configService: ConfigService,
+        metrics: BotMetricsService,
       ) => {
         const retryConfig = readInboundRetryConfig((key) =>
           configService.get<string>(key),
@@ -102,12 +108,14 @@ import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.map
             );
           },
           retryConfig,
+          metrics,
         });
       },
       inject: [
         PlatformWebhookInboundEventService,
         ZaloWebhookDispatchService,
         ConfigService,
+        BotMetricsService,
       ],
     },
     {

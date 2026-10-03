@@ -20,6 +20,17 @@ function buildOptions(
     processEvent: (rawPayload: object) => Promise<void>;
     retryConfig: InboundRetryConfig;
     concurrency: number;
+    metrics: {
+      incWebhookInboundInlineAttempt: (
+        platform: string,
+        outcome: string,
+      ) => void;
+      observeWebhookInboundDispatchLag: (
+        platform: string,
+        trigger: string,
+        seconds: number,
+      ) => void;
+    };
   }> = {},
 ) {
   return {
@@ -71,6 +82,27 @@ describe('InlineWebhookInboundDispatcher', () => {
     expect(eventService.claim).toHaveBeenCalledWith(42);
     expect(options.processEvent).toHaveBeenCalledWith({ text: 'hello' });
     expect(eventService.markCompleted).toHaveBeenCalledWith(42, 'lease-1');
+  });
+
+  it('reports inline attempts and dispatch lag through the metrics port', async () => {
+    const metrics = {
+      incWebhookInboundInlineAttempt: jest.fn(),
+      observeWebhookInboundDispatchLag: jest.fn(),
+    };
+    const { dispatcher } = buildDispatcher(undefined, { metrics });
+
+    dispatcher.tryInline(42, { text: 'hello' }, meta);
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(metrics.incWebhookInboundInlineAttempt).toHaveBeenCalledWith(
+      'messenger',
+      'completed',
+    );
+    expect(metrics.observeWebhookInboundDispatchLag).toHaveBeenCalledWith(
+      'messenger',
+      'inline',
+      expect.any(Number),
+    );
   });
 
   it('marks failed with backoff when processEvent throws', async () => {

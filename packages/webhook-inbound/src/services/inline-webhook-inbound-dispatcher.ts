@@ -1,28 +1,14 @@
 import { Logger } from '@nestjs/common';
-import { Counter, Histogram, register } from 'prom-client';
 import {
   errorMessage,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
+import type { WebhookInboundMetricsPort } from '@wispace/bot-common/metrics';
 import type { Platform } from '@wispace/contracts';
 import type {
   PlatformWebhookInboundEventService,
   InboundRetryConfig,
 } from '../adapters/platform-webhook-inbound-event.service';
-
-const webhookInboundInlineAttemptsTotal = new Counter({
-  name: 'webhook_inbound_inline_attempts_total',
-  help: 'Inline processing attempts after ingest',
-  labelNames: ['platform', 'outcome'] as const,
-  registers: [register],
-});
-export const webhookInboundDispatchLagSeconds = new Histogram({
-  name: 'webhook_inbound_dispatch_lag_seconds',
-  help: 'Seconds from event ingest to first processing attempt',
-  labelNames: ['platform', 'trigger'] as const,
-  buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30],
-  registers: [register],
-});
 
 /** Callback signature for inline dispatch after ingest. */
 export type InlineWebhookDispatcherCallback = (
@@ -45,6 +31,10 @@ export interface InlineWebhookInboundDispatcherOptions {
   processEvent: (rawPayload: object) => Promise<void>;
   retryConfig: InboundRetryConfig;
   concurrency?: number;
+  metrics?: Pick<
+    WebhookInboundMetricsPort,
+    'incWebhookInboundInlineAttempt' | 'observeWebhookInboundDispatchLag'
+  >;
 }
 
 /**
@@ -113,16 +103,17 @@ export class InlineWebhookInboundDispatcher {
       .then(async () => {
         const leaseToken = await this.eventService.claim(id);
         if (!leaseToken) {
-          webhookInboundInlineAttemptsTotal.inc({
-            platform: this.platform,
-            outcome: 'lost',
-          });
+          this.options.metrics?.incWebhookInboundInlineAttempt(
+            this.platform,
+            'lost',
+          );
           return;
         }
 
         const lagSeconds = (Date.now() - meta.ingestedAt.getTime()) / 1000;
-        webhookInboundDispatchLagSeconds.observe(
-          { platform: this.platform, trigger: 'inline' },
+        this.options.metrics?.observeWebhookInboundDispatchLag(
+          this.platform,
+          'inline',
           lagSeconds,
         );
 
@@ -136,10 +127,10 @@ export class InlineWebhookInboundDispatcher {
           meta.externalUserId,
         );
 
-        webhookInboundInlineAttemptsTotal.inc({
-          platform: this.platform,
+        this.options.metrics?.incWebhookInboundInlineAttempt(
+          this.platform,
           outcome,
-        });
+        );
 
         if (outcome !== 'completed') {
           this.logger.warn(`Inline dispatch id=${id} outcome=${outcome}`);
@@ -149,10 +140,10 @@ export class InlineWebhookInboundDispatcher {
         this.logger.error(
           `Inline dispatch id=${id} crashed: ${errorMessage(error)}`,
         );
-        webhookInboundInlineAttemptsTotal.inc({
-          platform: this.platform,
-          outcome: 'lost',
-        });
+        this.options.metrics?.incWebhookInboundInlineAttempt(
+          this.platform,
+          'lost',
+        );
       })
       .finally(() => this.release());
   }

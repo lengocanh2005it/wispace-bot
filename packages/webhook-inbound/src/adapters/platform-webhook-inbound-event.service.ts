@@ -2,18 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
-import { Counter, register } from 'prom-client';
 import {
   maskExternalIdInText,
   truncatePersistedError,
 } from '@wispace/bot-common/masking';
+import type { WebhookInboundMetricsPort } from '@wispace/bot-common/metrics';
 import { jitteredDelayMs } from '@wispace/bot-common/utils';
-
-const webhookInboundRetentionDeletedTotal = new Counter({
-  name: 'webhook_inbound_retention_deleted_total',
-  help: 'Total rows deleted by webhook inbound retention cleanup',
-  registers: [register],
-});
 import { WebhookInboundEventEntity } from '@wispace/database';
 import type { Platform } from '@wispace/contracts';
 
@@ -95,6 +89,10 @@ export class PlatformWebhookInboundEventService {
     private readonly platform: Platform,
     @InjectRepository(WebhookInboundEventEntity)
     private readonly repo: Repository<WebhookInboundEventEntity>,
+    private readonly metrics?: Pick<
+      WebhookInboundMetricsPort,
+      'incWebhookInboundRetentionDeleted'
+    >,
   ) {}
 
   /**
@@ -324,7 +322,7 @@ export class PlatformWebhookInboundEventService {
     }
 
     if (totalDeleted > 0) {
-      webhookInboundRetentionDeletedTotal.inc(totalDeleted);
+      this.metrics?.incWebhookInboundRetentionDeleted(totalDeleted);
     }
 
     return totalDeleted;

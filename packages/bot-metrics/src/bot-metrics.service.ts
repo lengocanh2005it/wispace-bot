@@ -13,6 +13,7 @@ import type {
   TraceAPI,
 } from '@opentelemetry/api';
 import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
+import type { WebhookInboundMetricsPort } from '@wispace/bot-common/metrics';
 
 export interface MetricsConfig {
   /** Prefix for metric names (e.g., 'messenger', 'discord', 'zalo') */
@@ -106,7 +107,9 @@ function normalizeRedisCommandMetricLabel(command: string): string {
  * When `tracer` is provided in config, all timing methods also emit OTel spans.
  */
 @Injectable()
-export class BotMetricsService implements OnModuleDestroy {
+export class BotMetricsService
+  implements OnModuleDestroy, WebhookInboundMetricsPort
+{
   private readonly logger = new Logger(BotMetricsService.name);
   readonly registry: Registry;
   private readonly prefix: string;
@@ -165,6 +168,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private cronRegisteredTimestamp: Gauge<string>;
   private studyReminderLockSkips: Counter<string>;
   private webhookInboundBacklog: Gauge;
+  private webhookInboundRetentionDeleted: Counter;
+  private webhookInboundInlineAttempts: Counter<string>;
+  private webhookInboundDispatchLag: Histogram<string>;
   private wispaceCallDuration: Histogram;
   private llmUsageInsertFailures: Counter;
   private llmMissingTokens: Counter;
@@ -559,6 +565,28 @@ export class BotMetricsService implements OnModuleDestroy {
       registers: [this.registry],
     });
 
+    this.webhookInboundRetentionDeleted = new Counter({
+      name: `${this.prefix}_webhook_inbound_retention_deleted_total`,
+      help: 'Total terminal webhook inbound rows deleted by retention cleanup',
+      registers: [this.registry],
+    });
+    this.webhookInboundRetentionDeleted.inc(0);
+
+    this.webhookInboundInlineAttempts = new Counter({
+      name: `${this.prefix}_webhook_inbound_inline_attempts_total`,
+      help: 'Inline webhook inbound processing attempts after ingest',
+      labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.webhookInboundDispatchLag = new Histogram({
+      name: `${this.prefix}_webhook_inbound_dispatch_lag_seconds`,
+      help: 'Seconds from webhook event ingest to first processing attempt',
+      labelNames: ['platform', 'trigger'],
+      buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30],
+      registers: [this.registry],
+    });
+
     this.wispaceCallDuration = new Histogram({
       name: `${this.prefix}_wispace_call_duration_seconds`,
       help: 'Duration of WISPACE upstream API calls',
@@ -903,6 +931,22 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Backlog gauge for the durable inbound retry cron — set per tick. */
   setWebhookInboundBacklog(dueCount: number): void {
     this.webhookInboundBacklog.set(dueCount);
+  }
+
+  incWebhookInboundRetentionDeleted(count: number): void {
+    if (count > 0) this.webhookInboundRetentionDeleted.inc(count);
+  }
+
+  incWebhookInboundInlineAttempt(platform: string, outcome: string): void {
+    this.webhookInboundInlineAttempts.inc({ platform, outcome });
+  }
+
+  observeWebhookInboundDispatchLag(
+    platform: string,
+    trigger: string,
+    seconds: number,
+  ): void {
+    this.webhookInboundDispatchLag.observe({ platform, trigger }, seconds);
   }
 
   incRoundOutcome(feature: string, outcome: string): void {
