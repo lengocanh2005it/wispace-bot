@@ -8,7 +8,11 @@ import type {
   LlmProviderEntryConfig,
   LlmProviderPolicy,
 } from '@wispace/llm-agent/adapters';
-import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  LlmContentClassifier,
+  PlatformAgentService,
+} from '@wispace/chat-agent';
+import type { PlatformChatAgentDynamicOptions } from '@wispace/chat-agent';
 import {
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
@@ -26,6 +30,32 @@ const TEST_POLICY: LlmProviderPolicy = {
   allowedBaseUrlHosts: ['api.openai.com', 'llm.example.test'],
   allowedModels: ['openai:gpt-5.4', 'openai-compatible:openai/gpt-4o-mini'],
 };
+
+/**
+ * The classifier is built by this app's own dynamic-options provider and reaches
+ * the agent through createPlatformChatProviders, so both halves of that hand-off
+ * are asserted below.
+ */
+const DISCORD_AGENT_OPTIONS = 'DISCORD_AGENT_OPTIONS';
+
+const findProviderByToken = <T = unknown>(token: unknown) =>
+  (
+    (Reflect.getMetadata('providers', DiscordChatModule) ??
+      []) as Array<unknown>
+  ).find(
+    (
+      provider,
+    ): provider is {
+      provide: unknown;
+      useFactory: (...args: unknown[]) => T;
+    } =>
+      typeof provider === 'object' &&
+      provider !== null &&
+      'provide' in provider &&
+      provider.provide === token &&
+      'useFactory' in provider &&
+      typeof provider.useFactory === 'function',
+  );
 
 describe('Discord chat module — LLM provider factory', () => {
   it('wires reschedule persistence from the owning adapter entrypoint', () => {
@@ -229,24 +259,6 @@ describe('Discord chat module — LLM provider factory', () => {
   });
 
   it('wires PlatformAgentService with LlmContentClassifier in DiscordChatModule (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', DiscordChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
-    );
-    expect(binding).toBeDefined();
-
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
@@ -267,7 +279,20 @@ describe('Discord chat module — LLM provider factory', () => {
       incClassifierVerdict: jest.fn(),
     };
 
-    const agent = binding!.useFactory(
+    const dynamic = findProviderByToken<PlatformChatAgentDynamicOptions>(
+      DISCORD_AGENT_OPTIONS,
+    )!.useFactory(
+      configService,
+      adapter,
+      {},
+      {},
+      { findCurrentIdentity: jest.fn() },
+      {},
+      metrics,
+    );
+    expect(dynamic.contentClassifier).toBeInstanceOf(LlmContentClassifier);
+
+    const agent = findProviderByToken(PlatformAgentService)!.useFactory(
       configService,
       {},
       {},
@@ -275,35 +300,12 @@ describe('Discord chat module — LLM provider factory', () => {
       {},
       adapter,
       {},
-      metrics,
-      null,
-      {},
-      {},
-      {},
-      {},
+      dynamic,
     );
     expect(agent).toBeInstanceOf(PlatformAgentService);
   });
 
   it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', DiscordChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
-    );
-    expect(binding).toBeDefined();
-
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
@@ -315,18 +317,12 @@ describe('Discord chat module — LLM provider factory', () => {
     };
 
     expect(() =>
-      binding!.useFactory(
+      findProviderByToken(DISCORD_AGENT_OPTIONS)!.useFactory(
         configService,
-        {},
-        {},
-        {},
-        {},
         { providerName: 'openai', isRateLimitError: () => false },
         {},
         {},
-        null,
-        {},
-        {},
+        { findCurrentIdentity: jest.fn() },
         {},
         {},
       ),

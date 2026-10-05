@@ -13,15 +13,13 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
   PlatformWriteToolBudgetService,
-  PlatformLlmSafetyEventAdapter,
-  PlatformLlmUsageRecorderAdapter,
   ChatIdempotencyEntity,
   LlmSafetyCleanupService,
   provideWiredUsageRecorder,
@@ -44,15 +42,17 @@ import {
   PlatformChatQueueService,
   ChatRuntimeConfig,
   RedisChatQueueStore,
-  RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
   CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
+  createPlatformChatProviders,
   recordChatQueueReconciliationMetrics,
 } from '@wispace/chat-agent';
 import type {
   ChatQueueStorePort,
   ClarificationStateStore,
+  PlatformAgentOptions,
+  PlatformChatAgentDynamicOptions,
 } from '@wispace/chat-agent';
 import type {
   LlmExecutionPort,
@@ -115,13 +115,6 @@ import {
   TypeormRescheduleStore,
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
-import {
-  LEARNER_PROFILE_STORE,
-  TypeOrmLearnerProfileStore,
-  createLearnerProfileRecorder,
-  createLearnerProfileSuffix,
-} from '@wispace/learner-profile';
-import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
@@ -130,6 +123,9 @@ const NOT_LINKED_MESSAGE =
 
 const REGISTER_REPORT_MESSAGE =
   'Báo cáo học tập là tự động — WISPACE gửi báo cáo AI qua Discord vào mỗi buổi sáng, khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết. Bạn không cần đăng ký riêng.';
+
+/** The agent options `createPlatformChatProviders` cannot read for this bot. */
+const DISCORD_AGENT_OPTIONS = 'DISCORD_AGENT_OPTIONS';
 
 @Module({
   imports: [
@@ -204,24 +200,130 @@ const REGISTER_REPORT_MESSAGE =
       useExisting: TypeormStudyReminderJobRepository,
     },
     {
-      provide: PlatformChatHistoryService,
+      provide: DISCORD_AGENT_OPTIONS,
       useFactory: (
         configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        redisClient?: { getNativeClient(): unknown } | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
-          redisClient,
-          runtimeConfig,
-        ),
+        adapter: LlmProviderAdapter,
+        executionPort: LlmExecutionPort,
+        clarificationStore: ClarificationStateStore,
+        accountLinkService: DiscordAccountLinkService,
+        rescheduleConfirmationService: RescheduleConfirmationService<string>,
+        metrics: BotMetricsService,
+      ): PlatformChatAgentDynamicOptions => {
+        const classifierConfig = buildClassifierConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        const classifierModel = resolveClassifierModel({
+          ...classifierConfig,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+        });
+        const contentClassifier = new LlmContentClassifier({
+          adapter,
+          execution: executionPort,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+          model: classifierModel,
+          maxInputChars: Math.max(
+            1,
+            readEnvPositiveInt(
+              configService,
+              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
+              512,
+            ),
+          ),
+          timeoutMs: readEnvPositiveInt(
+            configService,
+            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
+            1200,
+          ),
+          onInputShape: (shape) => metrics.incClassifierInput(shape, 'discord'),
+          logger: new Logger('LlmContentClassifier'),
+        });
+        return {
+          currentIdentityProvider: (externalUserId) =>
+            accountLinkService.findCurrentIdentity(externalUserId),
+          metrics: {
+            timeLlmCall: (feature, model, round, fn) =>
+              metrics.timeLlmCall(feature, model, round, fn),
+            timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+            llmRoundOutcomeInc: (feature, outcome) =>
+              metrics.incRoundOutcome(feature, outcome),
+            observationOutcomeInc: (toolName, outcome) =>
+              metrics.incObservationOutcome(toolName, 'discord', outcome),
+            toolPolicyDeniedInc: (toolName, reason) =>
+              metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
+            degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
+            promptCanaryHitInc: () => metrics.incLlmPromptCanaryHit('discord'),
+            totalProviderAttemptsInc: (feature, attempts, outcome) =>
+              metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
+            classifierVerdictInc: (label, mode) =>
+              metrics.incClassifierVerdict(label, mode, 'discord'),
+          },
+          clarificationStore,
+          clarificationOutcomeInc: (outcome) =>
+            metrics.incClarificationOutcome(outcome),
+          contentClassifier,
+          classifierUsage: {
+            provider: adapter.providerName,
+            model: classifierModel,
+          },
+          llmExecution: executionPort,
+          // Bounded admission telemetry (#389)
+          llmAdmissionMetrics: metrics.llmAdmission,
+          // Learner-profile facts are appended by createPlatformChatProviders.
+          //
+          // The three hooks below are `null` per the factory's documented "this
+          // bot has no such hook" contract, but `PlatformChatAgentDynamicOptions`
+          // builds them with `Required<>` and never widens the type to `| null`.
+          // The casts are confined to these three keys so the other nine stay
+          // type-checked. Behaviour matches `null` either way: the agent service
+          // calls `onBeforeReply?.()`, branches `tryFastReschedule ? ... : null`,
+          // and optional-chains `systemPromptSuffix?.()`.
+          systemPromptSuffix: null as unknown as NonNullable<
+            PlatformAgentOptions['systemPromptSuffix']
+          >,
+          onBeforeReply: null as unknown as NonNullable<
+            PlatformAgentOptions['onBeforeReply']
+          >,
+          tryFastReschedule: null as unknown as NonNullable<
+            PlatformAgentOptions['tryFastReschedule']
+          >,
+          cancelPendingReschedule: (externalUserId, approvalToken) =>
+            rescheduleConfirmationService.cancelForUser(
+              externalUserId,
+              approvalToken,
+            ),
+        };
+      },
       inject: [
         ConfigService,
-        ChatRuntimeConfig,
-        { token: REDIS_CLIENT, optional: true },
+        'LLM_PROVIDER_ADAPTER',
+        'LLM_EXECUTION_PORT',
+        CLARIFICATION_STATE_STORE,
+        DiscordAccountLinkService,
+        RescheduleConfirmationService,
+        BotMetricsService,
       ],
     },
+    ...createPlatformChatProviders({
+      platform: 'discord',
+      historyEnvPrefix: 'CHAT_HISTORY_',
+      historyKeyPrefix: 'chat-history:discord:',
+      promptDir: join(__dirname, '../../shared/prompts'),
+      promptFile: 'discord-chat.system.txt',
+      toolExecutionTimeoutMs: 35_000,
+      appendHistory: true,
+      queueWorkerReady: PLATFORM_CHAT_QUEUE_STORE,
+      queueWorkerFlush: PlatformChatQueueService,
+      agentDynamicOptions: DISCORD_AGENT_OPTIONS,
+    }),
     {
       provide: PlatformAgentToolsService,
       useFactory: (
@@ -296,145 +398,6 @@ const REGISTER_REPORT_MESSAGE =
         BotMetricsService,
         WispaceDataCache,
         PlatformWriteToolBudgetService,
-      ],
-    },
-    {
-      provide: LEARNER_PROFILE_STORE,
-      useClass: TypeOrmLearnerProfileStore,
-    },
-    {
-      provide: PlatformAgentService,
-      useFactory: (
-        configService: ConfigService,
-        toolsService: PlatformAgentToolsService,
-        historyService: PlatformChatHistoryService,
-        usageRecorder: PlatformLlmUsageRecorderAdapter,
-        safetyEventService: PlatformLlmSafetyEventAdapter,
-        adapter: LlmProviderAdapter,
-        learnerProfileStore: LearnerProfileStorePort,
-        metrics: BotMetricsService,
-        redisClient: RedisClientPort,
-        clarificationStore: ClarificationStateStore,
-        accountLinkService: DiscordAccountLinkService,
-        rescheduleConfirmationService: RescheduleConfirmationService<string>,
-        executionPort: LlmExecutionPort,
-      ) => {
-        const learnerProfileSuffix = createLearnerProfileSuffix(
-          learnerProfileStore,
-          'discord',
-        );
-        const classifierConfig = buildClassifierConfig((key) =>
-          configService.get<string>(key)?.trim(),
-        );
-        const classifierModel = resolveClassifierModel({
-          ...classifierConfig,
-          executionEnabled: readEnvBoolean(
-            configService,
-            'LLM_EXECUTION_ENABLED',
-            true,
-          ),
-        });
-        const contentClassifier = new LlmContentClassifier({
-          adapter,
-          execution: executionPort,
-          executionEnabled: readEnvBoolean(
-            configService,
-            'LLM_EXECUTION_ENABLED',
-            true,
-          ),
-          model: classifierModel,
-          maxInputChars: Math.max(
-            1,
-            readEnvPositiveInt(
-              configService,
-              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
-              512,
-            ),
-          ),
-          timeoutMs: readEnvPositiveInt(
-            configService,
-            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
-            1200,
-          ),
-          onInputShape: (shape) => metrics.incClassifierInput(shape, 'discord'),
-          logger: new Logger('LlmContentClassifier'),
-        });
-        return new PlatformAgentService(
-          configService,
-          toolsService,
-          historyService,
-          usageRecorder,
-          safetyEventService,
-          adapter,
-          {
-            platform: 'discord',
-            currentIdentityProvider: (externalUserId) =>
-              accountLinkService.findCurrentIdentity(externalUserId),
-            cancelPendingReschedule: (externalUserId, approvalToken) =>
-              rescheduleConfirmationService.cancelForUser(
-                externalUserId,
-                approvalToken,
-              ),
-            clarificationStore,
-            promptDir: join(__dirname, '../../shared/prompts'),
-            promptFile: 'discord-chat.system.txt',
-            toolExecutionTimeoutMs: 35_000,
-            systemPromptSuffix: async (input) => {
-              const learnerProfile = await learnerProfileSuffix(input);
-              return learnerProfile ? { learnerProfile } : undefined;
-            },
-            // Learner profile (#207 item 3): persist server-derived facts
-            // (band target, exam date) from successful tool results.
-            onToolResult: createLearnerProfileRecorder(
-              learnerProfileStore,
-              'discord',
-            ),
-            metrics: {
-              timeLlmCall: (feature, model, round, fn) =>
-                metrics.timeLlmCall(feature, model, round, fn),
-              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
-              llmRoundOutcomeInc: (feature, outcome) =>
-                metrics.incRoundOutcome(feature, outcome),
-              observationOutcomeInc: (toolName, outcome) =>
-                metrics.incObservationOutcome(toolName, 'discord', outcome),
-              toolPolicyDeniedInc: (toolName, reason) =>
-                metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
-              degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
-              promptCanaryHitInc: () =>
-                metrics.incLlmPromptCanaryHit('discord'),
-              totalProviderAttemptsInc: (feature, attempts, outcome) =>
-                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
-              classifierVerdictInc: (label, mode) =>
-                metrics.incClassifierVerdict(label, mode, 'discord'),
-            },
-            clarificationOutcomeInc: (outcome) =>
-              metrics.incClarificationOutcome(outcome),
-            // Bounded admission telemetry (#389)
-            llmAdmissionMetrics: metrics.llmAdmission,
-            llmExecution: executionPort,
-            contentClassifier,
-            classifierUsage: {
-              provider: adapter.providerName,
-              model: classifierModel,
-            },
-          },
-          redisClient,
-        );
-      },
-      inject: [
-        ConfigService,
-        PlatformAgentToolsService,
-        PlatformChatHistoryService,
-        PlatformLlmUsageRecorderAdapter,
-        PlatformLlmSafetyEventAdapter,
-        'LLM_PROVIDER_ADAPTER',
-        LEARNER_PROFILE_STORE,
-        BotMetricsService,
-        REDIS_CLIENT,
-        CLARIFICATION_STATE_STORE,
-        DiscordAccountLinkService,
-        RescheduleConfirmationService,
-        'LLM_EXECUTION_PORT',
       ],
     },
     {
@@ -537,28 +500,6 @@ const REGISTER_REPORT_MESSAGE =
         ConfigService,
         ChatRuntimeConfig,
         BotMetricsService,
-      ],
-    },
-    {
-      provide: RedisChatQueueWorkerService,
-      useFactory: (
-        configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        queueStore: ChatQueueStorePort,
-        queueService: PlatformChatQueueService,
-      ) =>
-        new RedisChatQueueWorkerService(
-          configService,
-          (limit) => queueStore.listReadyExternalUserIds(limit),
-          (externalUserId) => queueService.flushReady(externalUserId),
-          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
-          runtimeConfig,
-        ),
-      inject: [
-        ConfigService,
-        ChatRuntimeConfig,
-        PLATFORM_CHAT_QUEUE_STORE,
-        PlatformChatQueueService,
       ],
     },
     {
