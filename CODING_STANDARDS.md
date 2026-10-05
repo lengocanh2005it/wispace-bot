@@ -15,6 +15,7 @@ rather than re-check them by eye:
 | Raw external IDs in log lines | `node .github/scripts/check-log-redaction.js` |
 | Platform storage literals in covered consumers | `bash .github/scripts/check-platform-storage-literals.sh` |
 | Token-less reschedule confirm entry paths | `bash .github/scripts/check-reschedule-confirm-handlers.sh` |
+| Chat module bypassing the chat provider factory | `bash .github/scripts/check-platform-chat-providers.sh` |
 | Tracked file growing past its ceiling | `npm run file-size:check` |
 
 If one of these is red, the review is not finished — fix it, do not argue with it.
