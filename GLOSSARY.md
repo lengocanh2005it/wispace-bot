@@ -75,3 +75,11 @@ Drift is a different axis and keeps its existing meaning: divergence between two
 **Startup validation**:
 The deploy phase that evaluates the release image's configuration against the fail-closed constraints before any traffic is switched, reporting every offending key in one pass. It re-invokes the same constraints the application enforces; it does not boot the application to discover them, so it reaches no database, no Redis, and no vendor API. Distinct from the **migration preflight**, which is the pre-migration dump and writer assertion — the word "preflight" belongs to that older phase and not to this one.
 _Avoid_: preflight, config check, dry run, smoke test
+
+## Wiring
+
+**Platform provider factory**:
+A function exported by the shared package that owns a group of services, which returns their Nest providers given everything that genuinely differs per platform. It wires only providers the package itself owns; anything belonging to another package — a service, a metrics class, a transport — arrives as an argument, so no factory ever composes another package's factory.
+_Avoid_: chat stack factory, wiring helper, provider builder
+
+A factory exists to make a shared service's constructor change a one-file edit, not to shrink a module's line count. It therefore carries **no defaults**: every option that differs between platforms is a required parameter, so a bot cannot inherit another bot's value by omission. What the factory does not own stays in the app — an implementation that only one bot has is that bot's wiring, not a parameter of someone else's factory.
