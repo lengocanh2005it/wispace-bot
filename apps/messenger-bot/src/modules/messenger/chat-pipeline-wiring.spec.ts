@@ -7,43 +7,25 @@ import {
   ChatPipelineModule,
   MESSENGER_AGENT_OPTIONS,
 } from './chat-pipeline.module';
+import type { FactoryProvider } from '@wispace/bot-common/testing';
 import {
   findEffectiveFactoryProvider,
   findFactoryProvider,
 } from '@wispace/bot-common/testing';
-
-type FactoryProvider = {
-  provide: unknown;
-  useFactory: (...args: unknown[]) => unknown;
-  inject?: unknown[];
-};
 
 /**
  * #1127: `PlatformAgentService` and its classifier options are no longer
  * hand-written here — the shared factory builds the service from this module's
  * `MESSENGER_AGENT_OPTIONS` binding. Reach both by token so the specs keep
  * their intent without depending on an argument position.
+ *
+ * The lookup goes through `findEffectiveFactoryProvider` rather than a local
+ * `.find()`: the last binding is the one Nest resolves, and a first-match lookup
+ * keeps reporting green after the binding it read is deleted (#1507). The helper
+ * also checks each call's arity against the provider's own `inject`.
  */
-const moduleProviders = (): FactoryProvider[] =>
-  (Reflect.getMetadata('providers', ChatPipelineModule) ??
-    []) as unknown[] as FactoryProvider[];
-
-const agentServiceBinding = (): FactoryProvider => {
-  const binding = moduleProviders().find(
-    (provider) =>
-      provider.provide === PlatformAgentService &&
-      typeof provider.useFactory === 'function',
-  );
-  expect(binding).toBeDefined();
-  return binding!;
-};
-
-const agentOptionsBinding = (): FactoryProvider => {
-  const binding = moduleProviders().find(
-    (provider) =>
-      provider.provide === MESSENGER_AGENT_OPTIONS &&
-      typeof provider.useFactory === 'function',
-  );
+const bindingFor = (token: unknown): FactoryProvider => {
+  const binding = findEffectiveFactoryProvider(ChatPipelineModule, token);
   expect(binding).toBeDefined();
   return binding!;
 };
@@ -77,7 +59,7 @@ const approvedOptions = () => {
     configService,
     adapter,
     metrics,
-    options: agentOptionsBinding().useFactory(
+    options: bindingFor(MESSENGER_AGENT_OPTIONS).useFactory(
       configService,
       { tryFastDefaultReschedule: jest.fn() },
       { resolveDisplayName: jest.fn() },
@@ -173,7 +155,7 @@ describe('Messenger ChatPipelineModule wiring', () => {
       },
     });
 
-    const agent = agentServiceBinding().useFactory(
+    const agent = bindingFor(PlatformAgentService).useFactory(
       configService,
       {},
       {},
@@ -201,7 +183,7 @@ describe('Messenger ChatPipelineModule wiring', () => {
     };
 
     expect(() =>
-      agentOptionsBinding().useFactory(
+      bindingFor(MESSENGER_AGENT_OPTIONS).useFactory(
         configService,
         { tryFastDefaultReschedule: jest.fn() },
         { resolveDisplayName: jest.fn() },
