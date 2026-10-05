@@ -25,6 +25,7 @@
     "@wispace/chat-pipeline": "*",
     "@wispace/chat-queue-core": "*",
     "@wispace/contracts": "*",
+    "@wispace/learner-profile": "*",
     "@wispace/llm-agent": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
