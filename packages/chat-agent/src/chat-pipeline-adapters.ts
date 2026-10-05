@@ -57,10 +57,19 @@ export function createChatPipelineAdapters(
               userId: context.userId,
             })
           : await rateLimitService.reserve(externalUserId, idempotencyKey);
+      if (!result.allowed) {
+        return {
+          allowed: false,
+          ...(result.reason !== undefined ? { reason: result.reason } : {}),
+          limit: result.limit,
+        };
+      }
+      // A bypass reserves no slot, so the pipeline must not refund or audit it.
       return {
-        allowed: result.allowed,
-        usageDate: result.usageDate,
-        reason: result.reason,
+        allowed: true,
+        ...(result.quotaReserved === true
+          ? { usageDate: result.usageDate }
+          : {}),
       };
     },
     async refund(

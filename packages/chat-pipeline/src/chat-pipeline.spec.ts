@@ -4,6 +4,7 @@ import type {
   HistoryPort,
   OutboundPort,
   RateLimiterPort,
+  ReserveResult,
   ChatPipelineHooks,
 } from './types';
 
@@ -51,13 +52,13 @@ describe('ChatPipeline', () => {
     const outbound = mockOutbound();
 
     const pipeline = new ChatPipeline(rateLimiter, history, agent, outbound);
-    const delivered = await pipeline.flush({
+    const result = await pipeline.flush({
       externalUserId: 'user-1',
       texts: ['Hello'],
       idempotencyKey: 'msg-1',
     });
 
-    expect(delivered).toBe(true);
+    expect(result).toEqual({ outcome: 'delivered' });
     expect(rateLimiter.reserve).toHaveBeenCalledWith('user-1', 'msg-1', {
       userId: undefined,
     });
@@ -104,30 +105,6 @@ describe('ChatPipeline', () => {
     );
   });
 
-  it('uses a platform pre-reservation without reserving the same idempotency key twice', async () => {
-    const rateLimiter = mockRateLimiter();
-    const pipeline = new ChatPipeline(
-      rateLimiter,
-      mockHistory(),
-      mockAgent(),
-      mockOutbound(),
-    );
-
-    await expect(
-      pipeline.flush({
-        externalUserId: 'user-1',
-        texts: ['Hello'],
-        idempotencyKey: 'msg-pre-reserved',
-        reservedUsageDate: '2026-07-29',
-      }),
-    ).resolves.toBe(true);
-
-    expect(rateLimiter.reserve).not.toHaveBeenCalled();
-    expect(rateLimiter.refund).not.toHaveBeenCalled();
-    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-pre-reserved');
-    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-pre-reserved');
-  });
-
   it('does not persist bounded clarification noise as long-term history', async () => {
     const history = mockHistory();
     const pipeline = new ChatPipeline(
@@ -148,7 +125,7 @@ describe('ChatPipeline', () => {
         texts: ['???'],
         idempotencyKey: 'clarification-1',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ outcome: 'delivered' });
 
     expect(history.appendTurn).not.toHaveBeenCalled();
   });
@@ -210,7 +187,7 @@ describe('ChatPipeline', () => {
         texts: ['???'],
         idempotencyKey: 'event-1',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ outcome: 'delivered' });
 
     expect(outbound.sendText).not.toHaveBeenCalled();
     expect(history.appendTurn).not.toHaveBeenCalled();
@@ -249,7 +226,7 @@ describe('ChatPipeline', () => {
         texts: ['dừng'],
         idempotencyKey: 'event-clarify',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ outcome: 'delivered' });
 
     expect(rateLimiter.refund).toHaveBeenCalledWith(
       'user-1',
@@ -339,11 +316,13 @@ describe('ChatPipeline', () => {
     );
   });
 
-  it('returns false when reserve is denied', async () => {
+  it('returns a denied outcome when reserve is denied', async () => {
     const rateLimiter = mockRateLimiter({
-      reserve: jest
-        .fn()
-        .mockResolvedValue({ allowed: false, reason: 'DAILY_LIMIT' }),
+      reserve: jest.fn().mockResolvedValue({
+        allowed: false,
+        reason: 'DAILY_LIMIT',
+        limit: 30,
+      }),
     });
     const agent = mockAgent();
     const outbound = mockOutbound();
@@ -354,15 +333,52 @@ describe('ChatPipeline', () => {
       outbound,
     );
 
-    const delivered = await pipeline.flush({
+    const result = await pipeline.flush({
       externalUserId: 'user-1',
       texts: ['Hello'],
       idempotencyKey: 'msg-1',
     });
 
-    expect(delivered).toBe(false);
+    expect(result).toEqual({
+      outcome: 'denied',
+      reason: 'DAILY_LIMIT',
+      limit: 30,
+    });
     expect(agent.reply).not.toHaveBeenCalled();
     expect(outbound.sendText).not.toHaveBeenCalled();
+  });
+
+  it('fires onQuotaDenied with reason and limit when reserve is denied', async () => {
+    const onQuotaDenied = jest.fn().mockResolvedValue(undefined);
+    const rateLimiter = mockRateLimiter({
+      reserve: jest.fn().mockResolvedValue({
+        allowed: false,
+        reason: 'DAILY_LIMIT',
+        limit: 30,
+      }),
+    });
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      mockOutbound(),
+      { onQuotaDenied },
+    );
+
+    const result = await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['Hello'],
+      idempotencyKey: 'msg-1',
+    });
+
+    expect(result).toEqual({
+      outcome: 'denied',
+      reason: 'DAILY_LIMIT',
+      limit: 30,
+    });
+    expect(onQuotaDenied).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'DAILY_LIMIT', limit: 30 }),
+    );
   });
 
   it('a redelivered batch (idempotency conflict) never re-enters the agent loop — no write-tool budget double-spend (#626)', async () => {
@@ -384,13 +400,13 @@ describe('ChatPipeline', () => {
       outbound,
     );
 
-    const delivered = await pipeline.flush({
+    const result = await pipeline.flush({
       externalUserId: 'user-1',
       texts: ['tạo cho mình 3 bài tập mới'],
       idempotencyKey: 'redelivered-mid',
     });
 
-    expect(delivered).toBe(false);
+    expect(result).toEqual({ outcome: 'duplicate' });
     expect(agent.reply).not.toHaveBeenCalled();
     expect(outbound.sendText).not.toHaveBeenCalled();
   });
@@ -552,7 +568,7 @@ describe('ChatPipeline', () => {
         texts: ['Hello'],
         idempotencyKey: 'limited-1',
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ outcome: 'failed', reason: 'rate_limited' });
 
     expect(rateLimiter.refund).toHaveBeenCalledWith(
       'user-1',
@@ -641,7 +657,7 @@ describe('ChatPipeline', () => {
         texts: ['Hello'],
         idempotencyKey: 'msg-delivered',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ outcome: 'delivered' });
 
     expect(rateLimiter.refund).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
@@ -670,7 +686,10 @@ describe('ChatPipeline', () => {
         texts: ['Hello'],
         idempotencyKey: 'msg-1',
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({
+      outcome: 'failed',
+      reason: 'delivery_not_confirmed',
+    });
 
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ error: expect.any(Error) }),
@@ -842,13 +861,16 @@ describe('ChatPipeline', () => {
       outbound,
     );
 
-    const delivered = await pipeline.flush({
+    const result = await pipeline.flush({
       externalUserId: 'user-1',
       texts: ['Hello'],
       idempotencyKey: 'msg-1',
     });
 
-    expect(delivered).toBe(false);
+    expect(result).toEqual({
+      outcome: 'failed',
+      reason: 'delivery_not_confirmed',
+    });
     expect(outbound.sendText).not.toHaveBeenCalled();
     expect(rateLimiter.markCompleted).not.toHaveBeenCalled();
     expect(rateLimiter.refund).toHaveBeenCalledWith(
@@ -926,16 +948,45 @@ describe('ChatPipeline', () => {
       outbound,
     );
 
-    const delivered = await pipeline.flush({
+    const result = await pipeline.flush({
       externalUserId: 'user-1',
       texts: ['Hello'],
       idempotencyKey: 'msg-1',
     });
 
-    expect(delivered).toBe(true);
+    expect(result).toEqual({ outcome: 'delivered' });
     expect(rateLimiter.refund).not.toHaveBeenCalled();
     expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-1');
     expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
+  });
+
+  it('times the quota reserve through the injected timeStep seam', async () => {
+    const rateLimiter = mockRateLimiter();
+    const timeStep = jest.fn(
+      async (_step: string, fn: () => Promise<unknown>): Promise<unknown> =>
+        fn(),
+    ) as unknown as <T>(step: string, fn: () => Promise<T>) => Promise<T>;
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      mockOutbound(),
+      {},
+      { timeStep },
+    );
+
+    await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['Hello'],
+      idempotencyKey: 'msg-1',
+    });
+
+    // Quota-database latency stays separable from history/agent/delivery work.
+    expect(timeStep).toHaveBeenCalledWith(
+      'rate_limit_reserve',
+      expect.any(Function),
+    );
+    expect(rateLimiter.reserve).toHaveBeenCalledTimes(1);
   });
 
   it('sets partialDelivery in context for onAfterSend hook', async () => {
@@ -960,6 +1011,146 @@ describe('ChatPipeline', () => {
     expect(onAfterSend).toHaveBeenCalled();
     expect(onAfterSend.mock.calls[0][0]).toMatchObject({
       partialDelivery: true,
+    });
+  });
+
+  describe('stateful fake limiter', () => {
+    function createStatefulFakeLimiter(limit = 2) {
+      const rows = new Map<string, { usageDate: string; status: string }>();
+      const limiter: RateLimiterPort = {
+        reserve: jest.fn(
+          async (
+            _externalUserId: string,
+            key: string,
+            _ctx?: Record<string, unknown>,
+          ): Promise<ReserveResult> => {
+            if (rows.has(key)) {
+              return {
+                allowed: false,
+                reason: 'IDEMPOTENCY_CONFLICT',
+                limit,
+              };
+            }
+            const active = [...rows.values()].filter(
+              (r) => r.status !== 'refunded',
+            ).length;
+            if (active >= limit) {
+              return { allowed: false, reason: 'DAILY_LIMIT', limit };
+            }
+            rows.set(key, { usageDate: '2026-07-29', status: 'reserved' });
+            return { allowed: true, usageDate: '2026-07-29' };
+          },
+        ),
+        refund: jest.fn(
+          async (_externalUserId: string, _usageDate: string, key: string) => {
+            const row = rows.get(key);
+            if (row) row.status = 'refunded';
+          },
+        ),
+        markDelivered: jest.fn(async (key: string) => {
+          const row = rows.get(key);
+          if (row) row.status = 'delivered';
+        }),
+        markCompleted: jest.fn(async (key: string) => {
+          const row = rows.get(key);
+          if (row) row.status = 'completed';
+        }),
+      };
+      return { rows, limiter };
+    }
+
+    it('denies past the daily limit and reports the limit through the hook', async () => {
+      const { limiter } = createStatefulFakeLimiter(1);
+      const onQuotaDenied = jest.fn().mockResolvedValue(undefined);
+      const pipeline = new ChatPipeline(
+        limiter,
+        mockHistory(),
+        mockAgent(),
+        mockOutbound(),
+        { onQuotaDenied },
+      );
+
+      const first = await pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['hi'],
+        idempotencyKey: 'k1',
+      });
+      const second = await pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['hi'],
+        idempotencyKey: 'k2',
+      });
+
+      expect(first.outcome).toBe('delivered');
+      expect(second).toEqual({
+        outcome: 'denied',
+        reason: 'DAILY_LIMIT',
+        limit: 1,
+      });
+      expect(onQuotaDenied).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'DAILY_LIMIT', limit: 1 }),
+      );
+    });
+
+    it('refunds a failed flush so the slot is usable again', async () => {
+      const { rows, limiter } = createStatefulFakeLimiter(1);
+      const pipeline = new ChatPipeline(
+        limiter,
+        mockHistory(),
+        mockAgent({
+          reply: jest.fn().mockRejectedValue(new Error('LLM failed')),
+        }),
+        mockOutbound(),
+      );
+
+      await expect(
+        pipeline.flush({
+          externalUserId: 'user-1',
+          texts: ['hi'],
+          idempotencyKey: 'k-fail',
+        }),
+      ).rejects.toThrow('LLM failed');
+      expect(rows.get('k-fail')?.status).toBe('refunded');
+      expect(limiter.refund).toHaveBeenCalledTimes(1);
+
+      const recovered = await new ChatPipeline(
+        limiter,
+        mockHistory(),
+        mockAgent(),
+        mockOutbound(),
+      ).flush({
+        externalUserId: 'user-1',
+        texts: ['again'],
+        idempotencyKey: 'k-retry',
+      });
+      expect(recovered.outcome).toBe('delivered');
+    });
+
+    it('a redelivered batch returns duplicate and runs the agent once', async () => {
+      const { limiter } = createStatefulFakeLimiter();
+      const agent = mockAgent();
+      const pipeline = new ChatPipeline(
+        limiter,
+        mockHistory(),
+        agent,
+        mockOutbound(),
+      );
+
+      const first = await pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['hi'],
+        idempotencyKey: 'k1',
+      });
+      const second = await pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['hi'],
+        idempotencyKey: 'k1',
+      });
+
+      expect(first.outcome).toBe('delivered');
+      expect(second).toEqual({ outcome: 'duplicate' });
+      expect(agent.reply).toHaveBeenCalledTimes(1);
+      expect(limiter.reserve).toHaveBeenCalledTimes(2);
     });
   });
 });

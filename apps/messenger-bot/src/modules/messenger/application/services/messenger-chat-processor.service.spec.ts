@@ -2,6 +2,7 @@ import { ChatRuntimeConfig } from '@wispace/chat-agent';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@wispace/chat-metering/core';
+import type { ChatQuotaDenyReason } from '@wispace/contracts';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { AgentReplyPort } from '../ports/agent-reply.port';
 import {
@@ -38,6 +39,32 @@ describe('MessengerChatProcessorService', () => {
     quotaReserved: true,
     ...overrides,
   });
+
+  const quotaDenied = (
+    reason: ChatQuotaDenyReason,
+    limit: number,
+  ): ChatQuotaCheckResult => ({
+    allowed: false,
+    used: limit,
+    limit,
+    remaining: 0,
+    reason,
+    usageDate: '2026-06-15',
+  });
+
+  /**
+   * Stateful quota fake (#465): the processor spec drives the quota through this
+   * fake's state, never through per-test `mockResolvedValue` shapes, so a deny
+   * here is produced by the same rules production uses.
+   */
+  interface QuotaFake {
+    dailyLimit: number;
+    burstLimit: number;
+    whitelisted: boolean;
+    dailyUsed: number;
+    burstUsed: number;
+    reservedKeys: Set<string>;
+  }
 
   const createService = (
     options: {
@@ -102,8 +129,37 @@ describe('MessengerChatProcessorService', () => {
       clear: clearHistory,
     };
 
-    const reserveFreeFormSlot = jest.fn((_psid: string, _input?: unknown) =>
-      Promise.resolve(quotaAllowed()),
+    const quota: QuotaFake = {
+      dailyLimit: 15,
+      burstLimit: 3,
+      whitelisted: false,
+      dailyUsed: 0,
+      burstUsed: 0,
+      reservedKeys: new Set<string>(),
+    };
+    const reserveFreeFormSlot = jest.fn(
+      async (_psid: string, input?: { idempotencyKey?: string }) => {
+        const key = input?.idempotencyKey ?? '';
+        if (quota.whitelisted) {
+          return quotaAllowed({ quotaReserved: false });
+        }
+        if (quota.reservedKeys.has(key)) {
+          return quotaDenied('IDEMPOTENCY_CONFLICT', quota.dailyLimit);
+        }
+        if (quota.burstUsed >= quota.burstLimit) {
+          return quotaDenied('BURST_LIMIT', quota.burstLimit);
+        }
+        if (quota.dailyUsed >= quota.dailyLimit) {
+          return quotaDenied('DAILY_LIMIT', quota.dailyLimit);
+        }
+        quota.reservedKeys.add(key);
+        quota.dailyUsed += 1;
+        quota.burstUsed += 1;
+        return quotaAllowed({
+          used: quota.dailyUsed,
+          remaining: quota.dailyLimit - quota.dailyUsed,
+        });
+      },
     );
     const markDelivered = jest.fn((_idempotencyKey: string) =>
       Promise.resolve(),
@@ -226,6 +282,8 @@ describe('MessengerChatProcessorService', () => {
       clearClarificationState,
       cancelPendingReschedule: messengerAgentService.cancelPendingReschedule,
       reserveFreeFormSlot,
+      quota,
+      metrics,
       markDelivered,
       markCompleted,
       refundFreeFormSlot,
@@ -338,6 +396,7 @@ describe('MessengerChatProcessorService', () => {
       idempotencyKey: 'mid-1',
     });
 
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
     expect(reserveFreeFormSlot).toHaveBeenCalledWith('psid-1', {
       userId: 143,
       idempotencyKey: 'mid-1',
@@ -363,6 +422,49 @@ describe('MessengerChatProcessorService', () => {
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
   });
 
+  it('a whitelisted bypass turn writes no quota row and refunds nothing (#465)', async () => {
+    const {
+      service,
+      reply,
+      reserveFreeFormSlot,
+      logMessage,
+      refundFreeFormSlot,
+      quota,
+    } = createService();
+    quota.whitelisted = true;
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-bypass',
+    });
+
+    expect(reply).toHaveBeenCalled();
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
+    // No slot was reserved, so there is no inbound quota row and nothing to
+    // give back on a failed turn.
+    expect(logMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: 'FREE_FORM_CHAT_IN' }),
+    );
+    expect(refundFreeFormSlot).not.toHaveBeenCalled();
+  });
+
+  it('keeps the rate_limit_reserve step metric on the pipeline reserve', async () => {
+    const { service, metrics } = createService();
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-1',
+    });
+
+    // Quota-database latency must stay separable from history/agent/delivery.
+    expect(metrics.timeStep).toHaveBeenCalledWith(
+      'rate_limit_reserve',
+      expect.any(Function),
+    );
+  });
+
   it('sends quota denied message without calling LLM', async () => {
     const {
       service,
@@ -370,15 +472,9 @@ describe('MessengerChatProcessorService', () => {
       reply,
       reserveFreeFormSlot,
       markCompleted,
+      quota,
     } = createService();
-    reserveFreeFormSlot.mockResolvedValue({
-      allowed: false,
-      used: 15,
-      limit: 15,
-      remaining: 0,
-      reason: 'DAILY_LIMIT',
-      usageDate: '2026-06-15',
-    });
+    quota.dailyUsed = quota.dailyLimit;
 
     await service.process({
       psid: 'psid-1',
@@ -394,19 +490,13 @@ describe('MessengerChatProcessorService', () => {
     });
     expect(reply).not.toHaveBeenCalled();
     expect(markCompleted).not.toHaveBeenCalled();
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
   });
 
   it('skips LLM on idempotency conflict', async () => {
-    const { service, reply, reserveFreeFormSlot, markCompleted } =
+    const { service, reply, reserveFreeFormSlot, markCompleted, quota } =
       createService();
-    reserveFreeFormSlot.mockResolvedValue({
-      allowed: false,
-      used: 3,
-      limit: 15,
-      remaining: 12,
-      reason: 'IDEMPOTENCY_CONFLICT',
-      usageDate: '2026-06-15',
-    });
+    quota.reservedKeys.add('mid-dup');
 
     await service.process({
       psid: 'psid-1',
@@ -416,20 +506,12 @@ describe('MessengerChatProcessorService', () => {
 
     expect(reply).not.toHaveBeenCalled();
     expect(markCompleted).not.toHaveBeenCalled();
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
   });
 
   it('sends burst limit message without calling LLM', async () => {
-    const { service, sendTextViaPsid, reply, reserveFreeFormSlot } =
-      createService();
-    reserveFreeFormSlot.mockResolvedValue({
-      allowed: false,
-      used: 3,
-      limit: 3,
-      remaining: 0,
-      reason: 'BURST_LIMIT',
-      usageDate: '2026-06-15',
-      quotaReserved: false,
-    });
+    const { service, sendTextViaPsid, reply, quota } = createService();
+    quota.burstUsed = quota.burstLimit;
 
     await service.process({
       psid: 'psid-1',
@@ -480,11 +562,7 @@ describe('MessengerChatProcessorService', () => {
   });
 
   it('sends remaining quota hint when remaining is at or below threshold', async () => {
-    const { service, sendTextViaPsid, reserveFreeFormSlot, getRemainingQuota } =
-      createService();
-    reserveFreeFormSlot.mockResolvedValue(
-      quotaAllowed({ used: 13, remaining: 2 }),
-    );
+    const { service, sendTextViaPsid, getRemainingQuota } = createService();
     getRemainingQuota.mockResolvedValue({ remaining: 2, limit: 15 });
 
     await service.process({
@@ -502,11 +580,7 @@ describe('MessengerChatProcessorService', () => {
   });
 
   it('does not send remaining quota hint when remaining is zero', async () => {
-    const { service, sendTextViaPsid, reserveFreeFormSlot, getRemainingQuota } =
-      createService();
-    reserveFreeFormSlot.mockResolvedValue(
-      quotaAllowed({ used: 15, remaining: 0 }),
-    );
+    const { service, sendTextViaPsid, getRemainingQuota } = createService();
     getRemainingQuota.mockResolvedValue({ remaining: 0, limit: 15 });
 
     await service.process({
@@ -523,11 +597,7 @@ describe('MessengerChatProcessorService', () => {
   });
 
   it('does not send remaining quota hint when remaining is above threshold', async () => {
-    const { service, sendTextViaPsid, reserveFreeFormSlot, getRemainingQuota } =
-      createService();
-    reserveFreeFormSlot.mockResolvedValue(
-      quotaAllowed({ used: 5, remaining: 10 }),
-    );
+    const { service, sendTextViaPsid, getRemainingQuota } = createService();
     getRemainingQuota.mockResolvedValue({ remaining: 10, limit: 15 });
 
     await service.process({

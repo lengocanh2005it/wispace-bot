@@ -52,10 +52,21 @@ export function createMessengerChatPipelineAdapters(
           idempotencyKey,
         },
       );
+      if (!result.allowed) {
+        return {
+          allowed: false,
+          ...(result.reason !== undefined ? { reason: result.reason } : {}),
+          limit: result.limit,
+        };
+      }
+      // A bypass (whitelist / enforcement off) reserves no slot: without a
+      // usageDate the pipeline skips refund and the `FREE_FORM_CHAT_IN` log,
+      // exactly as the old processor pre-check did.
       return {
-        allowed: result.allowed,
-        usageDate: result.usageDate,
-        reason: result.reason,
+        allowed: true,
+        ...(result.quotaReserved === true
+          ? { usageDate: result.usageDate }
+          : {}),
       };
     },
     async refund(
