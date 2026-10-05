@@ -1,4 +1,4 @@
-import { ZaloChatModule } from './zalo-chat.module';
+import { ZaloChatModule, ZALO_AGENT_OPTIONS } from './zalo-chat.module';
 import { ZALO_OUTBOUND } from './application/ports/zalo-outbound.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
@@ -206,23 +206,16 @@ describe('Zalo outbound port wiring', () => {
   });
 
   it('wires PlatformAgentService with LlmContentClassifier in ZaloChatModule (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
+    const binding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      PlatformAgentService,
     );
     expect(binding).toBeDefined();
+    const dynamicBinding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      ZALO_AGENT_OPTIONS,
+    );
+    expect(dynamicBinding).toBeDefined();
 
     const configService = {
       get: jest.fn((key: string) => {
@@ -252,34 +245,26 @@ describe('Zalo outbound port wiring', () => {
       {},
       adapter,
       {},
-      metrics,
+      dynamicBinding!.useFactory(
+        configService,
+        metrics,
+        {},
+        adapter,
+        {},
+        {},
+        {},
+      ),
       null,
-      {},
-      {},
-      {},
-      {},
     );
     expect(agent).toBeInstanceOf(PlatformAgentService);
   });
 
   it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
+    const dynamicBinding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      ZALO_AGENT_OPTIONS,
     );
-    expect(binding).toBeDefined();
+    expect(dynamicBinding).toBeDefined();
 
     const configService = {
       get: jest.fn((key: string) => {
@@ -292,17 +277,11 @@ describe('Zalo outbound port wiring', () => {
     };
 
     expect(() =>
-      binding!.useFactory(
+      dynamicBinding!.useFactory(
         configService,
         {},
         {},
-        {},
-        {},
         { providerName: 'openai', isRateLimitError: () => false },
-        {},
-        {},
-        null,
-        {},
         {},
         {},
         {},

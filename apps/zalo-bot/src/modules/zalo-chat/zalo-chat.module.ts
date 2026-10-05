@@ -28,8 +28,6 @@ import {
   ChatIdempotencyEntity,
   PlatformChatRateLimitService,
   PlatformWriteToolBudgetService,
-  PlatformLlmUsageRecorderAdapter,
-  PlatformLlmSafetyEventAdapter,
   LlmSafetyCleanupService,
   provideWiredUsageRecorder,
 } from '@wispace/chat-metering/adapters';
@@ -43,15 +41,16 @@ import {
   PlatformChatQueueService,
   ChatRuntimeConfig,
   RedisChatQueueStore,
-  RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
   CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
+  createPlatformChatProviders,
   recordChatQueueReconciliationMetrics,
 } from '@wispace/chat-agent';
 import type {
   ChatQueueStorePort,
   ClarificationStateStore,
+  PlatformChatAgentDynamicOptions,
 } from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
@@ -124,13 +123,6 @@ import {
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
 import {
-  LEARNER_PROFILE_STORE,
-  TypeOrmLearnerProfileStore,
-  createLearnerProfileRecorder,
-  createLearnerProfileSuffix,
-} from '@wispace/learner-profile';
-import type { LearnerProfileStorePort } from '@wispace/learner-profile';
-import {
   CleanupCronService,
   PlatformCleanupCronService,
   PlatformLinkAuditCleanupService,
@@ -148,6 +140,8 @@ const REGISTER_REPORT_MESSAGE =
 
 const RESCHEDULE_CONFIRM_SUFFIX =
   '\n\nNhắn "xác nhận <mã>" để đồng ý, hoặc "hủy" để hủy.';
+
+export const ZALO_AGENT_OPTIONS = 'ZALO_AGENT_OPTIONS';
 
 @Module({
   imports: [
@@ -333,25 +327,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [DeliveryLogService, PlatformDeadLetterService],
     },
     {
-      provide: PlatformChatHistoryService,
-      useFactory: (
-        configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        redisClient?: { getNativeClient(): unknown } | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'ZALO_CHAT_HISTORY_', keyPrefix: 'chat-history:zalo:' },
-          redisClient,
-          runtimeConfig,
-        ),
-      inject: [
-        ConfigService,
-        ChatRuntimeConfig,
-        { token: REDIS_CLIENT, optional: true },
-      ],
-    },
-    {
       provide: PlatformAgentToolsService,
       useFactory: (
         configService: ConfigService,
@@ -442,30 +417,16 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ],
     },
     {
-      provide: LEARNER_PROFILE_STORE,
-      useClass: TypeOrmLearnerProfileStore,
-    },
-    {
-      provide: PlatformAgentService,
+      provide: ZALO_AGENT_OPTIONS,
       useFactory: (
         configService: ConfigService,
-        toolsService: PlatformAgentToolsService,
-        historyService: PlatformChatHistoryService,
-        usageRecorder: PlatformLlmUsageRecorderAdapter,
-        safetyEventService: PlatformLlmSafetyEventAdapter,
-        adapter: LlmProviderAdapter,
-        learnerProfileStore: LearnerProfileStorePort,
         metrics: BotMetricsService,
-        redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
+        adapter: LlmProviderAdapter,
+        executionPort: LlmExecutionPort,
         accountLinkService: ZaloAccountLinkService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
-        executionPort: LlmExecutionPort,
-      ) => {
-        const learnerProfileSuffix = createLearnerProfileSuffix(
-          learnerProfileStore,
-          'zalo',
-        );
+      ): PlatformChatAgentDynamicOptions => {
         const classifierConfig = buildClassifierConfig((key) =>
           configService.get<string>(key)?.trim(),
         );
@@ -502,83 +463,71 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           onInputShape: (shape) => metrics.incClassifierInput(shape, 'zalo'),
           logger: new Logger('LlmContentClassifier'),
         });
-        return new PlatformAgentService(
-          configService,
-          toolsService,
-          historyService,
-          usageRecorder,
-          safetyEventService,
-          adapter,
-          {
-            platform: 'zalo',
-            currentIdentityProvider: (externalUserId) =>
-              accountLinkService.findCurrentIdentity(externalUserId),
-            cancelPendingReschedule: (externalUserId, approvalToken) =>
-              rescheduleConfirmationService.cancelForUser(
-                externalUserId,
-                approvalToken,
-              ),
-            clarificationStore,
-            promptDir: join(__dirname, '../../shared/prompts'),
-            promptFile: 'zalo-chat.system.txt',
-            toolExecutionTimeoutMs: 35_000,
-            systemPromptSuffix: async (input) => {
-              const learnerProfile = await learnerProfileSuffix(input);
-              return learnerProfile ? { learnerProfile } : undefined;
-            },
-            // Learner profile (#207 item 3): persist server-derived facts
-            // (band target, exam date) from successful tool results.
-            onToolResult: createLearnerProfileRecorder(
-              learnerProfileStore,
-              'zalo',
-            ),
-            metrics: {
-              timeLlmCall: (feature, model, round, fn) =>
-                metrics.timeLlmCall(feature, model, round, fn),
-              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
-              llmRoundOutcomeInc: (feature, outcome) =>
-                metrics.incRoundOutcome(feature, outcome),
-              observationOutcomeInc: (toolName, outcome) =>
-                metrics.incObservationOutcome(toolName, 'zalo', outcome),
-              toolPolicyDeniedInc: (toolName, reason) =>
-                metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
-              degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
-              promptCanaryHitInc: () => metrics.incLlmPromptCanaryHit('zalo'),
-              totalProviderAttemptsInc: (feature, attempts, outcome) =>
-                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
-              classifierVerdictInc: (label, mode) =>
-                metrics.incClassifierVerdict(label, mode, 'zalo'),
-            },
-            clarificationOutcomeInc: (outcome) =>
-              metrics.incClarificationOutcome(outcome),
-            // Bounded admission telemetry (#389)
-            llmAdmissionMetrics: metrics.llmAdmission,
-            llmExecution: executionPort,
-            contentClassifier,
-            classifierUsage: {
-              provider: adapter.providerName,
-              model: classifierModel,
-            },
+        return {
+          currentIdentityProvider: (externalUserId) =>
+            accountLinkService.findCurrentIdentity(externalUserId),
+          metrics: {
+            timeLlmCall: (feature, model, round, fn) =>
+              metrics.timeLlmCall(feature, model, round, fn),
+            timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+            llmRoundOutcomeInc: (feature, outcome) =>
+              metrics.incRoundOutcome(feature, outcome),
+            observationOutcomeInc: (toolName, outcome) =>
+              metrics.incObservationOutcome(toolName, 'zalo', outcome),
+            toolPolicyDeniedInc: (toolName, reason) =>
+              metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
+            degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
+            promptCanaryHitInc: () => metrics.incLlmPromptCanaryHit('zalo'),
+            totalProviderAttemptsInc: (feature, attempts, outcome) =>
+              metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
+            classifierVerdictInc: (label, mode) =>
+              metrics.incClassifierVerdict(label, mode, 'zalo'),
           },
-          redisClient,
-        );
+          clarificationStore,
+          clarificationOutcomeInc: (outcome) =>
+            metrics.incClarificationOutcome(outcome),
+          contentClassifier,
+          classifierUsage: {
+            provider: adapter.providerName,
+            model: classifierModel,
+          },
+          llmExecution: executionPort,
+          // Bounded admission telemetry (#389)
+          llmAdmissionMetrics: metrics.llmAdmission,
+          // The learner-profile part is the factory's; Zalo has no other.
+          systemPromptSuffix: null,
+          onBeforeReply: null,
+          tryFastReschedule: null,
+          cancelPendingReschedule: (externalUserId, approvalToken) =>
+            rescheduleConfirmationService.cancelForUser(
+              externalUserId,
+              approvalToken,
+            ),
+        };
       },
       inject: [
         ConfigService,
-        PlatformAgentToolsService,
-        PlatformChatHistoryService,
-        PlatformLlmUsageRecorderAdapter,
-        PlatformLlmSafetyEventAdapter,
-        'LLM_PROVIDER_ADAPTER',
-        LEARNER_PROFILE_STORE,
         BotMetricsService,
-        REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
+        'LLM_PROVIDER_ADAPTER',
+        'LLM_EXECUTION_PORT',
         ZaloAccountLinkService,
         RescheduleConfirmationService,
-        'LLM_EXECUTION_PORT',
       ],
     },
+    ...createPlatformChatProviders({
+      platform: 'zalo',
+      // Zalo prefixes its chat-history env with its own namespace.
+      historyEnvPrefix: 'ZALO_CHAT_HISTORY_',
+      historyKeyPrefix: 'chat-history:zalo:',
+      promptDir: join(__dirname, '../../shared/prompts'),
+      promptFile: 'zalo-chat.system.txt',
+      toolExecutionTimeoutMs: 35_000,
+      appendHistory: true,
+      queueWorkerReady: PLATFORM_CHAT_QUEUE_STORE,
+      queueWorkerFlush: PlatformChatQueueService,
+      agentDynamicOptions: ZALO_AGENT_OPTIONS,
+    }),
     {
       provide: PlatformChatQueueService,
       useFactory: (
@@ -676,28 +625,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ConfigService,
         ChatRuntimeConfig,
         BotMetricsService,
-      ],
-    },
-    {
-      provide: RedisChatQueueWorkerService,
-      useFactory: (
-        configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        queueStore: ChatQueueStorePort,
-        queueService: PlatformChatQueueService,
-      ) =>
-        new RedisChatQueueWorkerService(
-          configService,
-          (limit) => queueStore.listReadyExternalUserIds(limit),
-          (externalUserId) => queueService.flushReady(externalUserId),
-          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
-          runtimeConfig,
-        ),
-      inject: [
-        ConfigService,
-        ChatRuntimeConfig,
-        PLATFORM_CHAT_QUEUE_STORE,
-        PlatformChatQueueService,
       ],
     },
     {
