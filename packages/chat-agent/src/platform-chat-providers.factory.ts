@@ -46,22 +46,19 @@ export interface PlatformChatFlushSource {
 export type PlatformChatAgentDynamicOptions = Pick<
   PlatformAgentOptions,
   'currentIdentityProvider' | 'metrics'
-> &
-  Required<
-    Pick<
-      PlatformAgentOptions,
-      | 'clarificationStore'
-      | 'clarificationOutcomeInc'
-      | 'contentClassifier'
-      | 'classifierUsage'
-      | 'llmExecution'
-      | 'llmAdmissionMetrics'
-      | 'systemPromptSuffix'
-      | 'onBeforeReply'
-      | 'tryFastReschedule'
-      | 'cancelPendingReschedule'
-    >
-  >;
+> & { [K in PlatformChatAgentHookKeys]-?: PlatformAgentOptions[K] | null };
+
+type PlatformChatAgentHookKeys =
+  | 'clarificationStore'
+  | 'clarificationOutcomeInc'
+  | 'contentClassifier'
+  | 'classifierUsage'
+  | 'llmExecution'
+  | 'llmAdmissionMetrics'
+  | 'systemPromptSuffix'
+  | 'onBeforeReply'
+  | 'tryFastReschedule'
+  | 'cancelPendingReschedule';
 
 export interface CreatePlatformChatProvidersOptions {
   platform: Platform;
@@ -173,15 +170,17 @@ export function createPlatformChatProviders(
             toolExecutionTimeoutMs,
             appendHistory,
             metrics: dynamic.metrics,
-            clarificationStore: dynamic.clarificationStore,
-            clarificationOutcomeInc: dynamic.clarificationOutcomeInc,
-            contentClassifier: dynamic.contentClassifier,
-            classifierUsage: dynamic.classifierUsage,
-            llmExecution: dynamic.llmExecution,
-            llmAdmissionMetrics: dynamic.llmAdmissionMetrics,
-            onBeforeReply: dynamic.onBeforeReply,
-            tryFastReschedule: dynamic.tryFastReschedule,
-            cancelPendingReschedule: dynamic.cancelPendingReschedule,
+            clarificationStore: dynamic.clarificationStore ?? undefined,
+            clarificationOutcomeInc:
+              dynamic.clarificationOutcomeInc ?? undefined,
+            contentClassifier: dynamic.contentClassifier ?? undefined,
+            classifierUsage: dynamic.classifierUsage ?? undefined,
+            llmExecution: dynamic.llmExecution ?? undefined,
+            llmAdmissionMetrics: dynamic.llmAdmissionMetrics ?? undefined,
+            onBeforeReply: dynamic.onBeforeReply ?? undefined,
+            tryFastReschedule: dynamic.tryFastReschedule ?? undefined,
+            cancelPendingReschedule:
+              dynamic.cancelPendingReschedule ?? undefined,
             onToolResult: createLearnerProfileRecorder(
               learnerProfileStore,
               platform,
