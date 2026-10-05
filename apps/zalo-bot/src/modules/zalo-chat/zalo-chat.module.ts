@@ -143,25 +143,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
 
 export const ZALO_AGENT_OPTIONS = 'ZALO_AGENT_OPTIONS';
 
-/**
- * The shared agent options this bot closes over itself, narrowed to the three
- * hooks Zalo does not have. Every key stays required, so a hook cannot be
- * dropped by accident: `null` is how this bot says "no such hook".
- *
- * `PlatformChatAgentDynamicOptions` is `Required<Pick<…>>` over optional,
- * non-nullable members, so it admits neither `null` nor `undefined` for those
- * three keys. The widening is therefore local and derived — it tracks the
- * package type rather than restating it.
- */
-type ZaloChatAgentOptions = {
-  [K in keyof PlatformChatAgentDynamicOptions]: K extends
-    | 'systemPromptSuffix'
-    | 'onBeforeReply'
-    | 'tryFastReschedule'
-    ? PlatformChatAgentDynamicOptions[K] | null
-    : PlatformChatAgentDynamicOptions[K];
-};
-
 @Module({
   imports: [
     BotCommonModule,
@@ -445,7 +426,7 @@ type ZaloChatAgentOptions = {
         executionPort: LlmExecutionPort,
         accountLinkService: ZaloAccountLinkService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
-      ): ZaloChatAgentOptions => {
+      ): PlatformChatAgentDynamicOptions => {
         const classifierConfig = buildClassifierConfig((key) =>
           configService.get<string>(key)?.trim(),
         );
