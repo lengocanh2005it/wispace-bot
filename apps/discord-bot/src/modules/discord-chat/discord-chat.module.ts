@@ -51,7 +51,6 @@ import {
 import type {
   ChatQueueStorePort,
   ClarificationStateStore,
-  PlatformAgentOptions,
   PlatformChatAgentDynamicOptions,
 } from '@wispace/chat-agent';
 import type {
@@ -278,23 +277,10 @@ const DISCORD_AGENT_OPTIONS = 'DISCORD_AGENT_OPTIONS';
           // Bounded admission telemetry (#389)
           llmAdmissionMetrics: metrics.llmAdmission,
           // Learner-profile facts are appended by createPlatformChatProviders.
-          //
-          // The three hooks below are `null` per the factory's documented "this
-          // bot has no such hook" contract, but `PlatformChatAgentDynamicOptions`
-          // builds them with `Required<>` and never widens the type to `| null`.
-          // The casts are confined to these three keys so the other nine stay
-          // type-checked. Behaviour matches `null` either way: the agent service
-          // calls `onBeforeReply?.()`, branches `tryFastReschedule ? ... : null`,
-          // and optional-chains `systemPromptSuffix?.()`.
-          systemPromptSuffix: null as unknown as NonNullable<
-            PlatformAgentOptions['systemPromptSuffix']
-          >,
-          onBeforeReply: null as unknown as NonNullable<
-            PlatformAgentOptions['onBeforeReply']
-          >,
-          tryFastReschedule: null as unknown as NonNullable<
-            PlatformAgentOptions['tryFastReschedule']
-          >,
+          // Discord has no display-name suffix, so `null` is the whole answer.
+          systemPromptSuffix: null,
+          onBeforeReply: null,
+          tryFastReschedule: null,
           cancelPendingReschedule: (externalUserId, approvalToken) =>
             rescheduleConfirmationService.cancelForUser(
               externalUserId,
