@@ -170,6 +170,12 @@ export interface ChatPipelineHooks {
 export interface ChatPipelineConfig {
   /** Max characters for merged user text. Default: 4000. */
   mergedTextMaxChars?: number;
+  /**
+   * Times one pipeline step, so platforms keep their own duration metric and
+   * span per step. Quota reserve is timed as `rate_limit_reserve` — the step
+   * name Messenger's `chat_step_duration_seconds{step=…}` series already uses.
+   */
+  timeStep?: <T>(step: string, fn: () => Promise<T>) => Promise<T>;
 }
 
 /**

@@ -49,6 +49,10 @@ function capUserTextParts(
  */
 export class ChatPipeline {
   private readonly mergedTextMaxChars: number;
+  private readonly timeStep?: <T>(
+    step: string,
+    fn: () => Promise<T>,
+  ) => Promise<T>;
 
   constructor(
     private readonly rateLimiter: RateLimiterPort,
@@ -60,6 +64,7 @@ export class ChatPipeline {
   ) {
     this.mergedTextMaxChars =
       config.mergedTextMaxChars ?? DEFAULT_MERGED_TEXT_MAX_CHARS;
+    this.timeStep = config.timeStep;
   }
 
   /**
@@ -90,12 +95,15 @@ export class ChatPipeline {
       // ── Reserve quota ─────────────────────────────────────────────────────
       await this.hooks.onStep?.('before_reserve', ctx);
 
-      if (input.idempotencyKey) {
-        const reserveResult: ReserveResult = await this.rateLimiter.reserve(
-          input.externalUserId,
-          input.idempotencyKey,
-          { userId: input.userId },
-        );
+      const idempotencyKey = input.idempotencyKey;
+      if (idempotencyKey) {
+        const reserve = (): Promise<ReserveResult> =>
+          this.rateLimiter.reserve(input.externalUserId, idempotencyKey, {
+            userId: input.userId,
+          });
+        const reserveResult = this.timeStep
+          ? await this.timeStep('rate_limit_reserve', reserve)
+          : await reserve();
 
         if (!reserveResult.allowed) {
           if (reserveResult.reason === 'IDEMPOTENCY_CONFLICT') {

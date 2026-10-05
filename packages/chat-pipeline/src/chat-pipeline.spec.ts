@@ -960,6 +960,35 @@ describe('ChatPipeline', () => {
     expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
   });
 
+  it('times the quota reserve through the injected timeStep seam', async () => {
+    const rateLimiter = mockRateLimiter();
+    const timeStep = jest.fn(
+      async (_step: string, fn: () => Promise<unknown>): Promise<unknown> =>
+        fn(),
+    ) as unknown as <T>(step: string, fn: () => Promise<T>) => Promise<T>;
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      mockOutbound(),
+      {},
+      { timeStep },
+    );
+
+    await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['Hello'],
+      idempotencyKey: 'msg-1',
+    });
+
+    // Quota-database latency stays separable from history/agent/delivery work.
+    expect(timeStep).toHaveBeenCalledWith(
+      'rate_limit_reserve',
+      expect.any(Function),
+    );
+    expect(rateLimiter.reserve).toHaveBeenCalledTimes(1);
+  });
+
   it('sets partialDelivery in context for onAfterSend hook', async () => {
     const onAfterSend = jest.fn().mockResolvedValue(undefined);
     const outbound = mockOutbound({

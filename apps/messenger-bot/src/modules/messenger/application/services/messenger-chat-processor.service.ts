@@ -235,6 +235,11 @@ export class MessengerChatProcessorService {
 
     const pipelineConfig = {
       mergedTextMaxChars: chatRateLimitConfig.getSettings().mergedTextMaxChars,
+      // Keeps `chat_step_duration_seconds{step="rate_limit_reserve"}` and the
+      // `chat.rate_limit_reserve` span populated now that the reserve runs here
+      // instead of in the removed processor pre-check.
+      timeStep: <T>(step: string, fn: () => Promise<T>): Promise<T> =>
+        this.metrics.timeStep(step, fn),
     };
 
     this.pipeline = new ChatPipeline(

@@ -283,6 +283,7 @@ describe('MessengerChatProcessorService', () => {
       cancelPendingReschedule: messengerAgentService.cancelPendingReschedule,
       reserveFreeFormSlot,
       quota,
+      metrics,
       markDelivered,
       markCompleted,
       refundFreeFormSlot,
@@ -446,6 +447,22 @@ describe('MessengerChatProcessorService', () => {
       expect.objectContaining({ messageType: 'FREE_FORM_CHAT_IN' }),
     );
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
+  });
+
+  it('keeps the rate_limit_reserve step metric on the pipeline reserve', async () => {
+    const { service, metrics } = createService();
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-1',
+    });
+
+    // Quota-database latency must stay separable from history/agent/delivery.
+    expect(metrics.timeStep).toHaveBeenCalledWith(
+      'rate_limit_reserve',
+      expect.any(Function),
+    );
   });
 
   it('sends quota denied message without calling LLM', async () => {
