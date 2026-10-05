@@ -78,6 +78,15 @@ for f in "${CHAT_MODULES[@]}"; do
 done
 
 # Rule 2 — the factory's tokens are not re-declared anywhere in apps/*/src.
+#
+# Scope, stated so it is not over-read: this matches the explicit object form
+# `provide: <token>`. It does NOT match Nest's bare shorthand (`providers:
+# [Foo]`), nor a `provide:` whose value sits on the following line. A
+# line-oriented grep cannot cover those without also matching every import
+# list, which mentions the same tokens. The bare and split-line forms are
+# covered by each app's `chat-providers-graph.spec.ts`, which compares parsed
+# DI metadata by identity and therefore matches every form. The guard is the
+# fast signal; the spec is the authority.
 while IFS= read -r token; do
   [ -n "$token" ] || continue
   # <<< herestring, not a pipe: fail() must mutate FAILED in this shell

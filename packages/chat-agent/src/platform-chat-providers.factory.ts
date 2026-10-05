@@ -47,9 +47,9 @@ export type PlatformChatAgentDynamicOptions = Pick<
   PlatformAgentOptions,
   'currentIdentityProvider' | 'metrics'
 > & {
-  [K in Exclude<PlatformChatAgentHookKeys, 'systemPromptSuffix'>]-?:
-    | PlatformAgentOptions[K]
-    | null;
+  [
+    K in Exclude<PlatformChatAgentHookKeys, 'systemPromptSuffix'>
+  ]-?: NonNullable<PlatformAgentOptions[K]> | null;
 } & {
   /**
    * The bot's own prompt parts. Narrowed against the string form the

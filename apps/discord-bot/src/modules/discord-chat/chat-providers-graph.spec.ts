@@ -56,15 +56,25 @@ const USE_FACTORY_SPINE_TOKENS = [
   RedisChatQueueWorkerService,
 ];
 
+/**
+ * Matches every form Nest accepts for a provider binding, not just the
+ * `provide:` object form: a bare class or token (`providers: [Foo]`), and any
+ * `provide` whose value is the token regardless of where the key sits on the
+ * line. Reading parsed metadata rather than source is what makes that
+ * exhaustive — a line-oriented grep cannot tell a bare array element from an
+ * import-list entry, so the shorthand form slipped past both the guard and
+ * this assertion until it was matched by identity instead.
+ */
 const bindingsFor = (token: unknown): unknown[] => {
   const providers: unknown[] =
     Reflect.getMetadata('providers', DiscordChatModule) ?? [];
   return providers.filter(
     (provider) =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token,
+      provider === token ||
+      (typeof provider === 'object' &&
+        provider !== null &&
+        'provide' in provider &&
+        provider.provide === token),
   );
 };
 
