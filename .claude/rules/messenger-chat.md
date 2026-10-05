@@ -69,7 +69,7 @@ external IDs. See [ADR-0007](../../docs/adr/0007-postgres-redis-consistency.md).
 
 | File                                                      | Role                                                       |
 | --------------------------------------------------------- | ---------------------------------------------------------- |
-| `messenger-chat-queue.service.ts`                         | Enqueue, debounce, flush, `processChatBatch`, reserve hook |
+| `messenger-chat-queue.service.ts`                         | Enqueue, debounce, flush, `processChatBatch` |
 | `messenger-chat-history.service.ts`                       | LLM context facade — delegates to `CHAT_HISTORY_STORE`     |
 | `infrastructure/persistence/redis-chat-queue.store.ts`    | Redis queue buffer (R4)                                    |
 | `infrastructure/persistence/chat-queue.store.resolver.ts` | Redis store when distributed                               |
@@ -99,7 +99,7 @@ Queue port: `CHAT_QUEUE_STORE`. History port: `CHAT_HISTORY_STORE`.
 
 ## In-chat privacy confirm (#660)
 
-- `MessengerChatProcessorService.processChatBatchInner` checks privacy **before** the quota block: `privacyState.getPendingAction(psid, 'messenger')` + the anchored, short-request `detectPrivacyIntent(mergedText)`. Explicit requests and valid confirm/cancel responses return handled with no quota slot and no `pipeline.flush`.
+ - `MessengerChatProcessorService.processChatBatchInner` checks privacy **before** the pipeline flush: `privacyState.getPendingAction(psid, 'messenger')` + the anchored, short-request `detectPrivacyIntent(mergedText)`. Explicit requests and valid confirm/cancel responses return handled with no quota slot and no `pipeline.flush`. Quota reserve/deny lives inside the pipeline (single owner, #465).
 - **Safe pending flow:** confirmation uses an action-specific phrase (`Đồng ý xóa dữ liệu`, `Đồng ý ngắt kết nối`, or `Đồng ý tải dữ liệu`) and never accepts a bare `ok`, `Có`, or `y`. Confirmation/cancellation matching normalizes diacritics, punctuation, and polite suffixes. An unrelated or ambiguous reply clears pending state and falls through to the normal pipeline; a new explicit privacy request replaces the pending intent.
 - Inbound consent/cancel is logged to `message_logs` as `PRIVACY_CONFIRM_IN` / `PRIVACY_CANCEL_IN` before the irreversible step (`logPrivacyInbound`, best-effort).
 - `PrivacyStateService` TTL is `PRIVACY_CONFIRM_TTL_MS` (default 30 min), read via `MessengerChatSharedConfigService.getPrivacyConfirmTtlMs()` and passed to the constructor by the `useFactory` in `chat-pipeline.module.ts`. In-memory + pod-local — durable/cross-pod persistence is #542.

@@ -14,6 +14,32 @@ _Avoid_: failed, retriable, unknown
 
 The two are mutually exclusive and exhaust the cases a send can end in. Every outbound path must classify into one of them; a classification that silently falls through to "not sent" turns a lost verdict into a lost message.
 
+## Quota owner
+
+**Quota owner**:
+The single component per platform that reserves quota for a chat batch. Today and going forward that is the chat pipeline — never the chat processor, the queue, or a per-platform adapter. Two layers reserving for one batch is a defect, not a defense.
+_Avoid_: rate-limit check, pre-reserve
+
+## Chat flush outcome
+
+One reserved quota slot maps to exactly one outcome. Every chat flush ends in one of these four; an unexpected provider error is classified **failed** at the caller boundary — the flush rethrows after firing `onError`.
+
+**Delivered**:
+The message was sent and the provider accepted it. The quota slot is consumed. Terminal.
+_Avoid_: sent, ok, success
+
+**Denied**:
+The quota guard rejected the batch before any send — no turn ran, no quota slot consumed. Terminal for this batch; the learner gets the deny notice through `onQuotaDenied`.
+_Avoid_: rate-limited, throttled, blocked
+
+**Duplicate**:
+The same delivery key was already in flight or completed, so the pipeline reserved no second slot and ran no turn. Terminal and silent — never a deny notice.
+_Avoid_: in-flight, conflict, skipped
+
+**Failed**:
+Reserve succeeded but the turn errored before a confirmed send. The slot is refunded and the outcome is retryable through the failed-flush durability path.
+_Avoid_: error, unsent, dropped
+
 ## Retry boundary
 
 **Caller cancellation**:

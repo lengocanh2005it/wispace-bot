@@ -3,6 +3,7 @@ import type {
   ChatPipelineConfig,
   ChatPipelineHooks,
   ChatPipelineInput,
+  ChatPipelineResult,
   HistoryPort,
   OutboundPort,
   PipelineContext,
@@ -63,9 +64,9 @@ export class ChatPipeline {
 
   /**
    * Run the full flush pipeline for a batch of merged user texts.
-   * Returns true if the main reply was delivered.
+   * The single quota owner: reserves, refunds and finalizes here.
    */
-  async flush(input: ChatPipelineInput): Promise<boolean> {
+  async flush(input: ChatPipelineInput): Promise<ChatPipelineResult> {
     const mergedText = input.texts.join('\n').slice(0, this.mergedTextMaxChars);
     const userTextParts = capUserTextParts(
       input.userTextParts ?? input.texts,
@@ -89,7 +90,7 @@ export class ChatPipeline {
       // ── Reserve quota ─────────────────────────────────────────────────────
       await this.hooks.onStep?.('before_reserve', ctx);
 
-      if (input.idempotencyKey && input.reservedUsageDate === undefined) {
+      if (input.idempotencyKey) {
         const reserveResult: ReserveResult = await this.rateLimiter.reserve(
           input.externalUserId,
           input.idempotencyKey,
@@ -97,13 +98,32 @@ export class ChatPipeline {
         );
 
         if (!reserveResult.allowed) {
-          return false;
+          if (reserveResult.reason === 'IDEMPOTENCY_CONFLICT') {
+            return { outcome: 'duplicate', reason: reserveResult.reason };
+          }
+          try {
+            await this.hooks.onQuotaDenied?.({
+              ...ctx,
+              reason: reserveResult.reason ?? 'DAILY_LIMIT',
+              ...(reserveResult.limit !== undefined
+                ? { limit: reserveResult.limit }
+                : {}),
+            });
+          } catch {
+            // Deny messaging must never turn a handled drop into a retry.
+          }
+          return {
+            outcome: 'denied',
+            ...(reserveResult.reason !== undefined
+              ? { reason: reserveResult.reason }
+              : {}),
+            ...(reserveResult.limit !== undefined
+              ? { limit: reserveResult.limit }
+              : {}),
+          };
         }
 
         usageDate = reserveResult.usageDate;
-        ctx.usageDate = usageDate;
-      } else if (input.idempotencyKey) {
-        usageDate = input.reservedUsageDate;
         ctx.usageDate = usageDate;
       }
 
@@ -170,7 +190,7 @@ export class ChatPipeline {
         } catch {
           // Rate-limit handling must never turn a handled drop into a retry.
         }
-        return false;
+        return { outcome: 'failed', reason: 'rate_limited' };
       }
 
       if (!delivered && !ctx.partialDelivery) {
@@ -192,9 +212,9 @@ export class ChatPipeline {
         try {
           await this.hooks.onError?.(ctx);
         } catch {
-          // Error hooks own their delivery-failure logging; preserve the false result.
+          // Error hooks own their delivery-failure logging; preserve the failed outcome.
         }
-        return false;
+        return { outcome: 'failed', reason: 'delivery_not_confirmed' };
       }
 
       // ── Canned clarification turns never consume quota (#959/#661) ────────
@@ -215,7 +235,7 @@ export class ChatPipeline {
           }
         }
         await this.hooks.onStep?.('after_send', ctx);
-        return true;
+        return { outcome: 'delivered' };
       }
 
       // ── Persist delivery before history/quota finalization ───────────────
@@ -253,7 +273,7 @@ export class ChatPipeline {
         await this.hooks.onAfterSend?.(ctx);
       }
 
-      return delivered;
+      return { outcome: 'delivered' };
     } catch (error) {
       ctx.deliveryAmbiguous =
         this.outbound.isAmbiguousDeliveryError?.(error) === true;

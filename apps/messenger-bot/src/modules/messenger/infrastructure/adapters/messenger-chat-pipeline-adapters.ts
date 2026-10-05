@@ -56,6 +56,7 @@ export function createMessengerChatPipelineAdapters(
         allowed: result.allowed,
         usageDate: result.usageDate,
         reason: result.reason,
+        ...(result.limit !== undefined ? { limit: result.limit } : {}),
       };
     },
     async refund(

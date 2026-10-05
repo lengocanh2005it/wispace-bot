@@ -8,7 +8,9 @@
 export interface ReserveResult {
   allowed: boolean;
   usageDate?: string;
-  reason?: string;
+  reason?: ChatQuotaDenyReason;
+  /** Quota limit that rejected the reserve (deny only). */
+  limit?: number;
 }
 
 export interface RateLimiterPort {
@@ -39,8 +41,17 @@ export interface HistoryPort {
 }
 
 import type { ChatHistoryMessage } from '@wispace/chat-history';
-import type { OutboundDeliveryOutcome } from '@wispace/contracts';
+import type {
+  ChatQuotaDenyReason,
+  OutboundDeliveryOutcome,
+} from '@wispace/contracts';
 export type { ChatHistoryMessage };
+
+/** Non-quota failure causes reported on a failed flush. */
+export type ChatPipelineFailureReason =
+  | 'rate_limited'
+  | 'delivery_not_confirmed'
+  | 'error';
 
 // ── Agent ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +105,25 @@ export interface OutboundPort {
   isAmbiguousDeliveryError?(error: unknown): boolean;
 }
 
+/**
+ * Delivered: reply reached the learner. Denied: quota guard rejected the
+ * batch before any turn. Duplicate: same idempotency key already in flight
+ * or done. Failed: reserve won but the turn did not confirm delivery.
+ */
+export type ChatPipelineOutcome =
+  | 'delivered'
+  | 'denied'
+  | 'duplicate'
+  | 'failed';
+
+export interface ChatPipelineResult {
+  outcome: ChatPipelineOutcome;
+  /** Deny reason on denied; failure cause on failed. */
+  reason?: ChatQuotaDenyReason | ChatPipelineFailureReason;
+  /** Quota limit that rejected the reserve (denied only). */
+  limit?: number;
+}
+
 // ── Pipeline context (passed to hooks) ──────────────────────────────────────
 
 export interface PipelineContext {
@@ -123,6 +153,10 @@ export interface ChatPipelineHooks {
   onError?: (ctx: PipelineContext) => Promise<void>;
   /** Called when the outbound limiter intentionally drops a reply. */
   onRateLimited?: (ctx: PipelineContext) => Promise<void>;
+  /** Called when quota reserve rejects the batch; deny messaging flows through this hook. */
+  onQuotaDenied?: (
+    ctx: PipelineContext & { reason: ChatQuotaDenyReason; limit?: number },
+  ) => Promise<void>;
   /** Called at each pipeline step for tracing/metrics. */
   onStep?: (step: string, ctx: PipelineContext) => Promise<void>;
 }
@@ -135,9 +169,8 @@ export interface ChatPipelineConfig {
 }
 
 /**
- * Input supplied to a flush. `reservedUsageDate` is used by callers that
- * reserve quota in a platform-specific pre-check; it prevents a second
- * idempotency reservation while preserving refund/finalization semantics.
+ * Input supplied to a flush. `idempotencyKey` is required whenever quota
+ * enforcement applies; the pipeline is the only layer that reserves.
  */
 export interface ChatPipelineInput {
   externalUserId: string;
@@ -146,6 +179,5 @@ export interface ChatPipelineInput {
   /** Optional raw current messages when `texts` is already presentation-formatted. */
   userTextParts?: readonly string[];
   idempotencyKey?: string;
-  reservedUsageDate?: string;
   context?: Record<string, unknown>;
 }

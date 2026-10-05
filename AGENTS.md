@@ -476,7 +476,7 @@ Webhook text → persist to `webhook_inbound_events` (idempotent event_id; failu
   → ACK 200 → retry cron claims and dispatches
   → MessengerChatEnqueueService.enqueue → debounce flush
   → MessengerChatProcessorService.processChatBatch
-  → ChatRateLimitService.reserve (DB idempotency + daily usage, hard cap H3)
+  → ChatPipeline.flush reserves quota via its rate limiter port (DB idempotency + daily usage, hard cap H3)
   → MessengerAgentService (LLM) → Send API
   → markCompleted; error before bubble → refund (H4)
 ```

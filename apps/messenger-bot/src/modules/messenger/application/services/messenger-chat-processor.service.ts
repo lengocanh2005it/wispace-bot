@@ -91,7 +91,6 @@ export class MessengerChatProcessorService {
   private readonly pipeline: ChatPipeline;
   private queueClearer?: (psid: string) => Promise<void>;
   private readonly fallbackSentThisCycle = new Set<string>();
-  private readonly rateLimitedThisCycle = new Set<string>();
 
   constructor(
     private readonly outbound: MessengerOutboundService,
@@ -140,6 +139,24 @@ export class MessengerChatProcessorService {
             .sendSenderActionOptional(ctx.externalUserId, 'typing_on')
             .catch(() => {});
         }
+        if (step === 'before_history' && ctx.usageDate !== undefined) {
+          await this.messengerRepository.logMessage({
+            userId: ctx.userId,
+            psid: ctx.externalUserId,
+            messageType: 'FREE_FORM_CHAT_IN',
+            status: 'SENT',
+          });
+        }
+      },
+      onQuotaDenied: async (ctx) => {
+        const denyReason =
+          ctx.reason === 'BURST_LIMIT' ? 'BURST_LIMIT' : 'DAILY_LIMIT';
+        await outbound.sendTextViaPsid({
+          psid: ctx.externalUserId,
+          userId: ctx.userId,
+          text: buildChatQuotaDenyMessage(denyReason, ctx.limit ?? 0),
+          messageType: 'CHAT_QUOTA_DENIED',
+        });
       },
       onError: async (ctx: PipelineContext) => {
         this.logger.error(
@@ -197,7 +214,6 @@ export class MessengerChatProcessorService {
         }
       },
       onRateLimited: async (ctx: PipelineContext) => {
-        this.rateLimitedThisCycle.add(ctx.externalUserId);
         // A rate-limited send never reaches onError, so the confirmation card
         // this turn staged is never shown and its proposal would stay armed
         // (#1420).
@@ -331,7 +347,6 @@ export class MessengerChatProcessorService {
     let retryScheduled = false;
     let shouldComplete = false;
     this.fallbackSentThisCycle.delete(psid);
-    this.rateLimitedThisCycle.delete(psid);
     try {
       const delivered = await this.processChatBatch({
         psid,
@@ -341,11 +356,7 @@ export class MessengerChatProcessorService {
         linkContext: snapshot.linkContext,
         idempotencyKey: snapshot.lastIdempotencyKey,
       });
-      if (
-        delivered ||
-        this.fallbackSentThisCycle.has(psid) ||
-        this.rateLimitedThisCycle.has(psid)
-      ) {
+      if (delivered || this.fallbackSentThisCycle.has(psid)) {
         shouldComplete = true;
       } else if (this.flushSettings.retryEnabled) {
         try {
@@ -394,7 +405,6 @@ export class MessengerChatProcessorService {
       throw error;
     } finally {
       this.fallbackSentThisCycle.delete(psid);
-      this.rateLimitedThisCycle.delete(psid);
       if (shouldComplete && !retryScheduled) {
         try {
           await this.getChatQueueStore().completeChatBuffer({
@@ -461,7 +471,6 @@ export class MessengerChatProcessorService {
       this.privacyState && this.privacyService
         ? detectPrivacyIntent(mergedText)
         : null;
-    let reservedUsageDate: string | undefined;
 
     if (this.privacyState && this.privacyService) {
       pendingAction = this.privacyState.getPendingAction(psid, 'messenger');
@@ -517,7 +526,7 @@ export class MessengerChatProcessorService {
 
     // ── Pre-pipeline checks ──────────────────────────────────────────
 
-    // Privacy intercept — runs before the quota block so explicit privacy
+    // Privacy intercept — runs before the pipeline so explicit privacy
     // requests and valid confirmations/cancellations never reach the LLM.
     if (this.privacyState && this.privacyService) {
       // Identity check: the pending action only survives while the mapping
@@ -540,72 +549,43 @@ export class MessengerChatProcessorService {
       }
     }
 
-    // Quota pre-check + deny messages (processor wrapper, not pipeline)
-    if (idempotencyKey) {
-      const quota = await this.metrics.timeStep('rate_limit_reserve', () =>
-        this.chatRateLimitService.reserveFreeFormSlot(psid, {
-          userId,
-          idempotencyKey,
-        }),
-      );
-
-      if (!quota.allowed) {
-        if (quota.reason === 'IDEMPOTENCY_CONFLICT') {
-          this.logger.log(
-            `Skipping duplicate chat flush mid=${idempotencyKey} psid=${maskExternalId(psid)}`,
-          );
-          return true;
-        }
-
-        const denyReason =
-          quota.reason === 'BURST_LIMIT' ? 'BURST_LIMIT' : 'DAILY_LIMIT';
-
-        await this.outbound.sendTextViaPsid({
-          psid,
-          userId,
-          text: buildChatQuotaDenyMessage(denyReason, quota.limit),
-          messageType: 'CHAT_QUOTA_DENIED',
-        });
-        return true;
-      }
-
-      if (quota.quotaReserved) {
-        reservedUsageDate = quota.usageDate;
-        await this.messengerRepository.logMessage({
-          userId,
-          psid,
-          messageType: 'FREE_FORM_CHAT_IN',
-          status: 'SENT',
-        });
-      }
-    } else if (this.chatRateLimitConfig.shouldEnforceForPsid(psid)) {
+    if (
+      !idempotencyKey &&
+      this.chatRateLimitConfig.shouldEnforceForPsid(psid)
+    ) {
       this.logger.error(
         `Chat flush without message.mid psid=${maskExternalId(
           psid,
         )}; skipped (H5)`,
       );
       return true;
-    } else {
+    }
+    if (!idempotencyKey) {
       this.logger.warn(
         `Chat flush without message.mid psid=${maskExternalId(
           psid,
-        )}; rate limit reserve skipped`,
+        )}; quota reserve skipped (pipeline runs without a reserve key)`,
       );
     }
 
     // ── Pipeline flush ───────────────────────────────────────────────
 
-    return this.metrics.timeStep('pipeline_flush', () =>
-      this.pipeline.flush({
+    return this.metrics.timeStep('pipeline_flush', async () => {
+      const result = await this.pipeline.flush({
         externalUserId: psid,
         userId,
         texts: [mergedText],
         ...(userTextParts ? { userTextParts } : {}),
         idempotencyKey,
-        reservedUsageDate,
         context: linkContext ? { linkContext } : undefined,
-      }),
-    );
+      });
+      if (result.outcome === 'duplicate') {
+        this.logger.log(
+          `Skipping duplicate chat flush mid=${idempotencyKey ?? '?'} psid=${maskExternalId(psid)}`,
+        );
+      }
+      return result.outcome !== 'failed' || result.reason === 'rate_limited';
+    });
   }
 
   private async handlePrivacyIntent(

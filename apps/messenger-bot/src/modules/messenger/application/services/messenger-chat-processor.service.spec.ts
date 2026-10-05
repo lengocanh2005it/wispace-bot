@@ -338,6 +338,7 @@ describe('MessengerChatProcessorService', () => {
       idempotencyKey: 'mid-1',
     });
 
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
     expect(reserveFreeFormSlot).toHaveBeenCalledWith('psid-1', {
       userId: 143,
       idempotencyKey: 'mid-1',
@@ -394,6 +395,7 @@ describe('MessengerChatProcessorService', () => {
     });
     expect(reply).not.toHaveBeenCalled();
     expect(markCompleted).not.toHaveBeenCalled();
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
   });
 
   it('skips LLM on idempotency conflict', async () => {
@@ -416,6 +418,7 @@ describe('MessengerChatProcessorService', () => {
 
     expect(reply).not.toHaveBeenCalled();
     expect(markCompleted).not.toHaveBeenCalled();
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
   });
 
   it('sends burst limit message without calling LLM', async () => {
