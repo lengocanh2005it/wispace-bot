@@ -37,7 +37,6 @@
     "@wispace/cleanup-cron": "*",
     "@wispace/contracts": "*",
     "@wispace/database": "*",
-    "@wispace/learner-profile": "*",
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",
     "@wispace/reschedule-confirm": "*",
