@@ -3,11 +3,93 @@ import {
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
 } from '@wispace/reschedule-confirm/adapters';
-import { ChatPipelineModule } from './chat-pipeline.module';
+import {
+  ChatPipelineModule,
+  MESSENGER_AGENT_OPTIONS,
+} from './chat-pipeline.module';
 import {
   findEffectiveFactoryProvider,
   findFactoryProvider,
 } from '@wispace/bot-common/testing';
+
+type FactoryProvider = {
+  provide: unknown;
+  useFactory: (...args: unknown[]) => unknown;
+  inject?: unknown[];
+};
+
+/**
+ * #1127: `PlatformAgentService` and its classifier options are no longer
+ * hand-written here — the shared factory builds the service from this module's
+ * `MESSENGER_AGENT_OPTIONS` binding. Reach both by token so the specs keep
+ * their intent without depending on an argument position.
+ */
+const moduleProviders = (): FactoryProvider[] =>
+  (Reflect.getMetadata('providers', ChatPipelineModule) ??
+    []) as unknown[] as FactoryProvider[];
+
+const agentServiceBinding = (): FactoryProvider => {
+  const binding = moduleProviders().find(
+    (provider) =>
+      provider.provide === PlatformAgentService &&
+      typeof provider.useFactory === 'function',
+  );
+  expect(binding).toBeDefined();
+  return binding!;
+};
+
+const agentOptionsBinding = (): FactoryProvider => {
+  const binding = moduleProviders().find(
+    (provider) =>
+      provider.provide === MESSENGER_AGENT_OPTIONS &&
+      typeof provider.useFactory === 'function',
+  );
+  expect(binding).toBeDefined();
+  return binding!;
+};
+
+/**
+ * The nine messenger-local options, with a classifier built against the
+ * approved model — the state the #864/#868 tests care about.
+ */
+const approvedOptions = () => {
+  const configService = {
+    get: jest.fn((key: string) => {
+      if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
+      if (key === 'LLM_INPUT_CLASSIFIER_MODEL')
+        return 'google/gemini-2.0-flash-lite';
+      if (key === 'LLM_ALLOWED_MODELS')
+        return 'openai:google/gemini-2.0-flash-lite';
+      return undefined;
+    }),
+  };
+  const adapter = {
+    providerName: 'openai',
+    getDefaultModel: () => 'google/gemini-2.0-flash-lite',
+    isRateLimitError: () => false,
+  };
+  const metrics = {
+    incClassifierInput: jest.fn(),
+    incClassifierVerdict: jest.fn(),
+  };
+
+  return {
+    configService,
+    adapter,
+    metrics,
+    options: agentOptionsBinding().useFactory(
+      configService,
+      { tryFastDefaultReschedule: jest.fn() },
+      { resolveDisplayName: jest.fn() },
+      metrics,
+      {},
+      adapter,
+      {},
+      { cancelForUser: jest.fn() },
+      () => Promise.resolve(undefined),
+    ),
+  };
+};
 
 describe('Messenger ChatPipelineModule wiring', () => {
   it('wires reschedule persistence from the owning adapter entrypoint', () => {
@@ -80,83 +162,34 @@ describe('Messenger ChatPipelineModule wiring', () => {
   });
 
   it('wires PlatformAgentService with LlmContentClassifier in ChatPipelineModule (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', ChatPipelineModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
-    );
-    expect(binding).toBeDefined();
+    const { configService, metrics, options } = approvedOptions();
 
-    const configService = {
-      get: jest.fn((key: string) => {
-        if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
-        if (key === 'LLM_INPUT_CLASSIFIER_MODEL')
-          return 'google/gemini-2.0-flash-lite';
-        if (key === 'LLM_ALLOWED_MODELS')
-          return 'openai:google/gemini-2.0-flash-lite';
-        return undefined;
-      }),
-    };
-    const adapter = {
-      providerName: 'openai',
-      getDefaultModel: () => 'google/gemini-2.0-flash-lite',
-      isRateLimitError: () => false,
-    };
-    const metrics = {
-      incClassifierInput: jest.fn(),
-      incClassifierVerdict: jest.fn(),
-    };
+    // The classifier is messenger's own; the shared factory must receive it.
+    expect(options).toMatchObject({
+      contentClassifier: expect.anything(),
+      classifierUsage: {
+        provider: 'openai',
+        model: 'google/gemini-2.0-flash-lite',
+      },
+    });
 
-    const agent = binding!.useFactory(
+    const agent = agentServiceBinding().useFactory(
       configService,
       {},
       {},
       {},
       {},
-      adapter,
-      {},
-      {},
-      metrics,
-      {},
-      {},
-      null,
-      {},
-      {},
-      () => Promise.resolve(undefined),
+      { providerName: 'openai', isRateLimitError: () => false },
+      { get: () => undefined },
+      options,
+      undefined,
     );
+
     expect(agent).toBeInstanceOf(PlatformAgentService);
+    expect(metrics.incClassifierInput).not.toHaveBeenCalled();
   });
 
   it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', ChatPipelineModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
-    );
-    expect(binding).toBeDefined();
-
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
@@ -168,21 +201,15 @@ describe('Messenger ChatPipelineModule wiring', () => {
     };
 
     expect(() =>
-      binding!.useFactory(
+      agentOptionsBinding().useFactory(
         configService,
-        {},
-        {},
-        {},
+        { tryFastDefaultReschedule: jest.fn() },
+        { resolveDisplayName: jest.fn() },
+        { incClassifierInput: jest.fn() },
         {},
         { providerName: 'openai', isRateLimitError: () => false },
         {},
-        {},
-        {},
-        {},
-        {},
-        null,
-        {},
-        {},
+        { cancelForUser: jest.fn() },
         () => Promise.resolve(undefined),
       ),
     ).toThrow(/not approved by LLM_ALLOWED_MODELS/i);
