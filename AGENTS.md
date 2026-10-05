@@ -220,6 +220,7 @@ Fix lint/test/build errors until they pass. `npm run test:e2e` requires a real P
 | `oxlint` reports `no-useless-escape`                      | Regex uses `\/` or `\-` in character class                         | Remove backslash: `[/-]` instead of `[\/\-]`                                                                                                          |
 | `rg` exits 0 with no output on a pattern you know is there  | The pattern is a regex and a metacharacter (`(`, `[`, `*`, `+`, `?`, `\|`, `\`) stopped it matching | Use `rg -F` to search the pattern literally                                                                                                |
 | Tests pass locally but fail CI due to date/time           | CI runs UTC, local runs UTC+7                                      | Do not hardcode dates — use `new Date()` or mock `Date.now`                                                                                           |
+| `knip:deps` dies with `RangeError: Array buffer allocation failed` | Not a heap cap — **free RAM**. Measured: the same `--max-old-space-size=8192` run passes with memory free and fails with <2 GB free | Free memory (close the browser/editor/WSL) and re-run. Do **not** add a heap flag to the script: it does not create RAM. CI `verify` runs this gate and is green, so the gate is fine — treat it as a local-machine limit. Scoping knip per `--workspace` would cut peak memory but changes the gate's semantics, so it is not the fix |
 
 **Rule for adding new services with timer/interval:**
 
