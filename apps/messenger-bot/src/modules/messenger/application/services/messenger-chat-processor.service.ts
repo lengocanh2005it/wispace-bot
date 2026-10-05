@@ -4,7 +4,7 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import { ChatPipeline } from '@wispace/chat-pipeline';
+import { ChatPipeline, isTerminalFlush } from '@wispace/chat-pipeline';
 import type {
   PipelineContext,
   ChatPipelineHooks,
@@ -154,7 +154,7 @@ export class MessengerChatProcessorService {
         await outbound.sendTextViaPsid({
           psid: ctx.externalUserId,
           userId: ctx.userId,
-          text: buildChatQuotaDenyMessage(denyReason, ctx.limit ?? 0),
+          text: buildChatQuotaDenyMessage(denyReason, ctx.limit),
           messageType: 'CHAT_QUOTA_DENIED',
         });
       },
@@ -584,7 +584,7 @@ export class MessengerChatProcessorService {
           `Skipping duplicate chat flush mid=${idempotencyKey ?? '?'} psid=${maskExternalId(psid)}`,
         );
       }
-      return result.outcome !== 'failed' || result.reason === 'rate_limited';
+      return isTerminalFlush(result);
     });
   }
 

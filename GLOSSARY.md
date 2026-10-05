@@ -37,7 +37,7 @@ The same delivery key was already in flight or completed, so the pipeline reserv
 _Avoid_: in-flight, conflict, skipped
 
 **Failed**:
-Reserve succeeded but the turn errored before a confirmed send. The slot is refunded and the outcome is retryable through the failed-flush durability path.
+Reserve succeeded but the turn did not confirm delivery — the provider rate-limited the send, or the reply was never confirmed as accepted. The slot is refunded. Retryability is a caller decision, not a property of this outcome: a rate-limited drop is terminal, an unconfirmed delivery goes through the failed-flush durability path.
 _Avoid_: error, unsent, dropped
 
 ## Retry boundary

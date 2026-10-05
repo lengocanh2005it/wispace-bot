@@ -5,13 +5,15 @@
 
 // ── Rate Limiter ────────────────────────────────────────────────────────────
 
-export interface ReserveResult {
-  allowed: boolean;
-  usageDate?: string;
-  reason?: ChatQuotaDenyReason;
-  /** Quota limit that rejected the reserve (deny only). */
-  limit?: number;
-}
+/**
+ * A deny always carries the limit that rejected it, so deny copy never has to
+ * invent one; a success carries `usageDate` only when a slot was actually
+ * reserved, so callers keep refund and audit behaviour identical on the
+ * whitelist / enforcement-off bypass.
+ */
+export type ReserveResult =
+  | { allowed: true; usageDate?: string }
+  | { allowed: false; reason?: ChatQuotaDenyReason; limit: number };
 
 export interface RateLimiterPort {
   reserve(
@@ -50,8 +52,7 @@ export type { ChatHistoryMessage };
 /** Non-quota failure causes reported on a failed flush. */
 export type ChatPipelineFailureReason =
   | 'rate_limited'
-  | 'delivery_not_confirmed'
-  | 'error';
+  | 'delivery_not_confirmed';
 
 // ── Agent ───────────────────────────────────────────────────────────────────
 
@@ -109,19 +110,22 @@ export interface OutboundPort {
  * Delivered: reply reached the learner. Denied: quota guard rejected the
  * batch before any turn. Duplicate: same idempotency key already in flight
  * or done. Failed: reserve won but the turn did not confirm delivery.
+ *
+ * A deny carries the limit that rejected it; a failure carries its cause.
  */
-export type ChatPipelineOutcome =
-  | 'delivered'
-  | 'denied'
-  | 'duplicate'
-  | 'failed';
+export type ChatPipelineResult =
+  | { outcome: 'delivered' }
+  | { outcome: 'denied'; reason?: ChatQuotaDenyReason; limit: number }
+  | { outcome: 'duplicate' }
+  | { outcome: 'failed'; reason: ChatPipelineFailureReason };
 
-export interface ChatPipelineResult {
-  outcome: ChatPipelineOutcome;
-  /** Deny reason on denied; failure cause on failed. */
-  reason?: ChatQuotaDenyReason | ChatPipelineFailureReason;
-  /** Quota limit that rejected the reserve (denied only). */
-  limit?: number;
+/**
+ * Whether a flush ended without a retryable delivery failure. Denials and
+ * duplicates are handled outcomes; a rate-limited send is a handled drop, so
+ * only a delivery that was not confirmed (or an exception) is retryable.
+ */
+export function isTerminalFlush(result: ChatPipelineResult): boolean {
+  return result.outcome !== 'failed' || result.reason === 'rate_limited';
 }
 
 // ── Pipeline context (passed to hooks) ──────────────────────────────────────
@@ -155,7 +159,7 @@ export interface ChatPipelineHooks {
   onRateLimited?: (ctx: PipelineContext) => Promise<void>;
   /** Called when quota reserve rejects the batch; deny messaging flows through this hook. */
   onQuotaDenied?: (
-    ctx: PipelineContext & { reason: ChatQuotaDenyReason; limit?: number },
+    ctx: PipelineContext & { reason?: ChatQuotaDenyReason; limit: number },
   ) => Promise<void>;
   /** Called at each pipeline step for tracing/metrics. */
   onStep?: (step: string, ctx: PipelineContext) => Promise<void>;

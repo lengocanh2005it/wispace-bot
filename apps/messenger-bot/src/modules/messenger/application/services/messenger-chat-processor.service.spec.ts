@@ -364,6 +364,34 @@ describe('MessengerChatProcessorService', () => {
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
   });
 
+  it('a whitelisted bypass turn writes no quota row and refunds nothing (#465)', async () => {
+    const {
+      service,
+      reply,
+      reserveFreeFormSlot,
+      logMessage,
+      refundFreeFormSlot,
+    } = createService();
+    reserveFreeFormSlot.mockResolvedValue(
+      quotaAllowed({ quotaReserved: false }),
+    );
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-bypass',
+    });
+
+    expect(reply).toHaveBeenCalled();
+    expect(reserveFreeFormSlot).toHaveBeenCalledTimes(1);
+    // No slot was reserved, so there is no inbound quota row and nothing to
+    // give back on a failed turn.
+    expect(logMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: 'FREE_FORM_CHAT_IN' }),
+    );
+    expect(refundFreeFormSlot).not.toHaveBeenCalled();
+  });
+
   it('sends quota denied message without calling LLM', async () => {
     const {
       service,

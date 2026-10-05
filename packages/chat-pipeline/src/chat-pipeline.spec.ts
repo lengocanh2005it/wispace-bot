@@ -4,6 +4,7 @@ import type {
   HistoryPort,
   OutboundPort,
   RateLimiterPort,
+  ReserveResult,
   ChatPipelineHooks,
 } from './types';
 
@@ -315,11 +316,13 @@ describe('ChatPipeline', () => {
     );
   });
 
-  it('returns false when reserve is denied', async () => {
+  it('returns a denied outcome when reserve is denied', async () => {
     const rateLimiter = mockRateLimiter({
-      reserve: jest
-        .fn()
-        .mockResolvedValue({ allowed: false, reason: 'DAILY_LIMIT' }),
+      reserve: jest.fn().mockResolvedValue({
+        allowed: false,
+        reason: 'DAILY_LIMIT',
+        limit: 30,
+      }),
     });
     const agent = mockAgent();
     const outbound = mockOutbound();
@@ -336,7 +339,11 @@ describe('ChatPipeline', () => {
       idempotencyKey: 'msg-1',
     });
 
-    expect(result).toEqual({ outcome: 'denied', reason: 'DAILY_LIMIT' });
+    expect(result).toEqual({
+      outcome: 'denied',
+      reason: 'DAILY_LIMIT',
+      limit: 30,
+    });
     expect(agent.reply).not.toHaveBeenCalled();
     expect(outbound.sendText).not.toHaveBeenCalled();
   });
@@ -393,16 +400,13 @@ describe('ChatPipeline', () => {
       outbound,
     );
 
-    const delivered = await pipeline.flush({
+    const result = await pipeline.flush({
       externalUserId: 'user-1',
       texts: ['tạo cho mình 3 bài tập mới'],
       idempotencyKey: 'redelivered-mid',
     });
 
-    expect(delivered).toEqual({
-      outcome: 'duplicate',
-      reason: 'IDEMPOTENCY_CONFLICT',
-    });
+    expect(result).toEqual({ outcome: 'duplicate' });
     expect(agent.reply).not.toHaveBeenCalled();
     expect(outbound.sendText).not.toHaveBeenCalled();
   });
@@ -990,14 +994,13 @@ describe('ChatPipeline', () => {
             _externalUserId: string,
             key: string,
             _ctx?: Record<string, unknown>,
-          ): Promise<{
-            allowed: boolean;
-            reason?: 'DAILY_LIMIT' | 'IDEMPOTENCY_CONFLICT';
-            limit?: number;
-            usageDate?: string;
-          }> => {
+          ): Promise<ReserveResult> => {
             if (rows.has(key)) {
-              return { allowed: false, reason: 'IDEMPOTENCY_CONFLICT' };
+              return {
+                allowed: false,
+                reason: 'IDEMPOTENCY_CONFLICT',
+                limit,
+              };
             }
             const active = [...rows.values()].filter(
               (r) => r.status !== 'refunded',
@@ -1116,10 +1119,7 @@ describe('ChatPipeline', () => {
       });
 
       expect(first.outcome).toBe('delivered');
-      expect(second).toEqual({
-        outcome: 'duplicate',
-        reason: 'IDEMPOTENCY_CONFLICT',
-      });
+      expect(second).toEqual({ outcome: 'duplicate' });
       expect(agent.reply).toHaveBeenCalledTimes(1);
       expect(limiter.reserve).toHaveBeenCalledTimes(2);
     });

@@ -99,15 +99,15 @@ export class ChatPipeline {
 
         if (!reserveResult.allowed) {
           if (reserveResult.reason === 'IDEMPOTENCY_CONFLICT') {
-            return { outcome: 'duplicate', reason: reserveResult.reason };
+            return { outcome: 'duplicate' };
           }
           try {
             await this.hooks.onQuotaDenied?.({
               ...ctx,
-              reason: reserveResult.reason ?? 'DAILY_LIMIT',
-              ...(reserveResult.limit !== undefined
-                ? { limit: reserveResult.limit }
+              ...(reserveResult.reason !== undefined
+                ? { reason: reserveResult.reason }
                 : {}),
+              limit: reserveResult.limit,
             });
           } catch {
             // Deny messaging must never turn a handled drop into a retry.
@@ -117,9 +117,7 @@ export class ChatPipeline {
             ...(reserveResult.reason !== undefined
               ? { reason: reserveResult.reason }
               : {}),
-            ...(reserveResult.limit !== undefined
-              ? { limit: reserveResult.limit }
-              : {}),
+            limit: reserveResult.limit,
           };
         }
 

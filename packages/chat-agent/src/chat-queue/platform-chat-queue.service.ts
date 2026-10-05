@@ -16,7 +16,7 @@ import type {
   PipelineContext,
   RateLimiterPort,
 } from '@wispace/chat-pipeline';
-import { ChatPipeline } from '@wispace/chat-pipeline';
+import { ChatPipeline, isTerminalFlush } from '@wispace/chat-pipeline';
 import {
   captureTraceContext,
   withExtractedTraceContext,
@@ -456,7 +456,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           // delivery failures. Do not retry or leave the Redis lease in-flight.
           return 'completed';
         case 'failed': {
-          if (result.reason === 'rate_limited') {
+          if (isTerminalFlush(result)) {
             return 'completed';
           }
           const fallbackWasSent = fallbackSentThisCycle.has(

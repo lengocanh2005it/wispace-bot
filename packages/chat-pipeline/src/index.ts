@@ -1,15 +1,15 @@
 export { ChatPipeline } from './chat-pipeline';
+export { isTerminalFlush } from './types';
 export type {
   AgentInput,
   AgentPort,
   AgentReply,
   ChatHistoryMessage,
   ChatPipelineConfig,
-  ChatPipelineInput,
-  ChatPipelineHooks,
-  ChatPipelineOutcome,
-  ChatPipelineResult,
   ChatPipelineFailureReason,
+  ChatPipelineHooks,
+  ChatPipelineInput,
+  ChatPipelineResult,
   HistoryPort,
   OutboundPort,
   PipelineContext,

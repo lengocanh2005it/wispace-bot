@@ -17,11 +17,15 @@ jest.mock('@wispace/chat-queue-core', () => ({
   })),
 }));
 
-jest.mock('@wispace/chat-pipeline', () => ({
-  ChatPipeline: jest.fn().mockImplementation(() => ({
-    flush: jest.fn(),
-  })),
-}));
+jest.mock('@wispace/chat-pipeline', () => {
+  const actual = jest.requireActual('@wispace/chat-pipeline');
+  return {
+    ...actual,
+    ChatPipeline: jest.fn().mockImplementation(() => ({
+      flush: jest.fn(),
+    })),
+  };
+});
 
 describe('PlatformChatQueueService', () => {
   const configGet = jest.fn((key: string): string | undefined => {
