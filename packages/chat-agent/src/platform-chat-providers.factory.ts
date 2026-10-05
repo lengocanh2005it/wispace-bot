@@ -46,7 +46,23 @@ export interface PlatformChatFlushSource {
 export type PlatformChatAgentDynamicOptions = Pick<
   PlatformAgentOptions,
   'currentIdentityProvider' | 'metrics'
-> & { [K in PlatformChatAgentHookKeys]-?: PlatformAgentOptions[K] | null };
+> & {
+  [K in Exclude<PlatformChatAgentHookKeys, 'systemPromptSuffix'>]-?:
+    | PlatformAgentOptions[K]
+    | null;
+} & {
+  /**
+   * The bot's own prompt parts. Narrowed against the string form the
+   * underlying option still allows: a mandatory suffix cannot be merged
+   * with named parts, and silently dropping it would remove a learner's
+   * name while the profile part still rendered.
+   */
+  systemPromptSuffix:
+    | ((
+        input: PlatformAgentInput,
+      ) => Promise<PlatformPromptSuffixParts | undefined>)
+    | null;
+};
 
 type PlatformChatAgentHookKeys =
   | 'clarificationStore'
@@ -190,11 +206,9 @@ export function createPlatformChatProviders(
                 externalUserId: input.externalUserId,
                 userId: input.userId,
               });
-              const own = agentSystemPromptSuffix
+              const ownParts = agentSystemPromptSuffix
                 ? await agentSystemPromptSuffix(input)
                 : undefined;
-              const ownParts: PlatformPromptSuffixParts | undefined =
-                typeof own === 'string' ? undefined : own;
               const merged: PlatformPromptSuffixParts = {
                 ...ownParts,
                 ...(learnerProfileSection
@@ -216,7 +230,7 @@ export function createPlatformChatProviders(
         'LLM_PROVIDER_ADAPTER',
         LEARNER_PROFILE_STORE,
         agentDynamicOptions,
-        { token: REDIS_CLIENT, optional: true },
+        REDIS_CLIENT,
       ],
     },
     {
