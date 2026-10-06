@@ -93,12 +93,12 @@ Violations name both the importing and the target feature module. Tests are
 exempt and may assemble concrete implementations.
 
 **Currently enforced for `discord-bot` and `zalo-bot`.** `messenger-bot` is not
-yet under this rule. It has 23 concrete cross-feature imports, spread across 4 of
-its 10 feature modules, and no baseline or allow-list may be written to absorb
-them. #1446 removes the largest of those clusters by folding the context-free
-`scheduler` module into `messenger` ([ADR 0055](adr/0055-messenger-report-scheduling-is-messenger-behaviour.md));
-#1447 clears the rest and adds the app. The enforced set is
-`FEATURE_MODULE_RULE_APPS` in
+yet under this rule. It has 23 concrete cross-feature imports, and no baseline or
+allow-list may be written to absorb them. #1446 folds the context-free
+`scheduler` module into `messenger`, clearing 5 of them ([ADR
+0055](adr/0055-messenger-report-scheduling-is-messenger-behaviour.md) records the
+per-cluster breakdown); #1447 clears the rest and adds the app. The enforced set
+is `FEATURE_MODULE_RULE_APPS` in
 [`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs).
 
 There is no baseline, ratchet, or per-edge allow-list. Both bots' existing
