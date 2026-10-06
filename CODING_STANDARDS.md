@@ -143,9 +143,10 @@ review and label events and never rewrites fixtures itself.
 
 Committing, pushing, force pushing, changing git config, closing or commenting on
 issues, adding a broker (Bull, SQS, Redis) where the repo uses SQL outbox tables
-and advisory locks, and writing markdown outside `docs/` other than the root
-`AGENTS.md` / `CODING_STANDARDS.md` / `CLAUDE.md`. Where an action has a supported
-repo alternative, `AGENTS.md` routes to it; take gated actions only when asked.
+and advisory locks, and creating markdown outside `docs/` other than the root
+`AGENTS.md` / `CODING_STANDARDS.md` / `CLAUDE.md` require an explicit request.
+Updates to existing authoritative runbooks and `.claude/rules/` files remain part
+of doc parity (see above).
 
 ## Language
 

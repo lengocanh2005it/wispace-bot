@@ -8,21 +8,28 @@ clean up. Flow and schedule detail for each area also lives in
 
 ## Advisory lock registry
 
-Ids are registered in `ADVISORY_LOCKS` (`@wispace/bot-common`); a new cron takes
-its id from there. Contention is log-and-skip, never a queue behind the lock.
+Messenger-owned app locks use `ADVISORY_LOCK` in
+`apps/messenger-bot/src/shared/common/advisory-lock-ids.ts`. Discord/Zalo locks
+and cross-bot locks use `ADVISORY_LOCKS` (`@wispace/bot-common/locks`); the shared
+`ReportCronLockService` maps all three platform report IDs there. Keep existing
+Messenger-local IDs local; add a shared ID only when shared consumers use it.
+Contention is log-and-skip, never a queue behind the lock.
 
-| Id                                                                  | Lock name                                     | Scope                                                           |
-| ------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------- |
-| `884_200_801` / `802` / `803`                                       | report cron leader, lease `report:<platform>` | per platform (Messenger / Discord / Zalo)                       |
-| `884_200_901/902/903`, `884_200_944/945/946`, `884_200_947/948/949` | study-reminder sync / cleanup / rollover      | per platform — `.claude/rules/study-reminder.md`                |
-| `884_200_905` / `884_200_932`                                       | `MESSENGER_/ZALO_WEBHOOK_INBOUND_RETRY`       | per platform, every 30s                                         |
-| `884_200_910` / `884_200_933`                                       | `MESSENGER_/ZALO_WEBHOOK_INBOUND_CLEANUP`     | per platform, 03:15 ICT                                         |
-| `884_200_934`                                                       | `DISCORD_LINK_RECONCILE`                      | Discord, every 5 min                                            |
-| `884_200_937`                                                       | `ZALO_LINK_RECONCILE`                         | Zalo, every 5 min                                               |
-| `884_200_943`                                                       | `DATA_QUALITY_CHECK`                          | deliberately fleet-wide — unrelated to the per-platform ids     |
-| `884_200_950`                                                       | `DISCORD_REENGAGEMENT`                        | Discord batch scan                                              |
-| `884_200_951`                                                       | `DISCORD_REPORT_RETRY_DISPATCH`               | Discord, every 15 min                                           |
-| `884_200_952`                                                       | `RESCHEDULE_RECOVERY`                         | **global**, shared by all three bots (see platform scope below) |
+Selected recovery-sensitive IDs are summarized below; consult each registry for
+the complete inventory.
+
+| Id / registry                                                            | Lock name                                     | Scope                                                           |
+| ------------------------------------------------------------------------ | --------------------------------------------- | --------------------------------------------------------------- |
+| `801` (`ADVISORY_LOCK` + `ADVISORY_LOCKS`), `802/803` (`ADVISORY_LOCKS`) | report cron leader, lease `report:<platform>` | per platform (Messenger / Discord / Zalo)                       |
+| `901/902/903` (`ADVISORY_LOCK`); `944-946`, `947-949` (`ADVISORY_LOCKS`) | study-reminder sync / cleanup / rollover      | per platform — `.claude/rules/study-reminder.md`                |
+| `905` (`ADVISORY_LOCK`) / `932` (`ADVISORY_LOCKS`)                       | `MESSENGER_/ZALO_WEBHOOK_INBOUND_RETRY`       | per platform, every 30s                                         |
+| `910` (`ADVISORY_LOCK`) / `933` (`ADVISORY_LOCKS`)                       | `MESSENGER_/ZALO_WEBHOOK_INBOUND_CLEANUP`     | per platform, 03:15 ICT                                         |
+| `934` (`ADVISORY_LOCKS`)                                                 | `DISCORD_LINK_RECONCILE`                      | Discord, every 5 min                                            |
+| `937` (`ADVISORY_LOCKS`)                                                 | `ZALO_LINK_RECONCILE`                         | Zalo, every 5 min                                               |
+| `943` (`ADVISORY_LOCKS`)                                                 | `DATA_QUALITY_CHECK`                          | deliberately fleet-wide — unrelated to the per-platform ids     |
+| `950` (`ADVISORY_LOCKS`)                                                 | `DISCORD_REENGAGEMENT`                        | Discord batch scan                                              |
+| `951` (`ADVISORY_LOCKS`)                                                 | `DISCORD_REPORT_RETRY_DISPATCH`               | Discord, every 15 min                                           |
+| `952` (`ADVISORY_LOCKS`)                                                 | `RESCHEDULE_RECOVERY`                         | **global**, shared by all three bots (see platform scope below) |
 
 A lock skip is observable: `study_reminder_lock_skips_total{platform,scope}` for
 the reminder worker, a debug log for the retry-dispatch and reschedule crons.

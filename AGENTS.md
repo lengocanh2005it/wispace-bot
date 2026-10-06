@@ -44,7 +44,9 @@ Guards: `.github/scripts/check-log-redaction.js`. Rule + credential registry:
 `@wispace/contracts` — ADR-0043's test: a cause taxonomy a deciding, an applying and
 a recording context all read is cross-context; a state private to one context's own
 rows stays with that context. Platform storage literals live in `PLATFORM_STORAGE`
-(ADR-0042), advisory lock ids in `ADVISORY_LOCKS`. Chat wiring goes through
+(ADR-0042). Advisory lock ownership follows platform boundaries: Messenger-local
+ids live in `ADVISORY_LOCK`; shared and Discord/Zalo ids live in `ADVISORY_LOCKS`.
+Chat wiring goes through
 `createPlatformChatProviders`: the factory selects no implementation by platform,
 and every agent option is present, `null` meaning "this bot has no such hook".
 Persistence: `packages/database` owns schema/entities/migrations; adapters come from
@@ -141,5 +143,5 @@ until #417. Closed-gap status is `docs/edge-cases-roadmap.md`; the decision reco
 `docs/adr/`.
 
 Actions that wait for an explicit request — committing, pushing, force pushing,
-git config, closing or commenting on issues, writing markdown outside `docs/` other
+git config, closing or commenting on issues, creating markdown outside `docs/` other
 than the root agent files — are listed in `CODING_STANDARDS.md`.

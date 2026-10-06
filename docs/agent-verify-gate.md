@@ -19,9 +19,10 @@ repository checks, formatting, lint, dependency checks, then Turbo
 typecheck/test/build. Nothing else is a substitute for it: a targeted
 `npx turbo run test --filter=…` proves one workspace, not the gate.
 
-`npm run test` inside a workspace runs `jest --forceExit --maxWorkers=50%` —
-workers for speed, `forceExit` guarding open handles. `npm run test:e2e` needs a
-real PostgreSQL and is outside the gate.
+App workspace test scripts use `jest --forceExit --maxWorkers=50%`. Most package
+scripts use `jest --maxWorkers=50%` without `--forceExit`; some packages differ, so
+check the target workspace's `package.json` when diagnosing open handles.
+Messenger's `npm run test:e2e` needs a real PostgreSQL and is outside the gate.
 
 The database smokes need `NODE_ENV=test` and a loopback `DB_HOST` (CI sets
 `DB_ALLOW_INSECURE_HOSTS=postgres` for them); they are not part of the gate and
@@ -159,9 +160,9 @@ destroy.
 | webhook event routing                | `messenger-webhook.router.spec.ts`        |
 
 Specs live at `apps/*/src/**/*.spec.ts` and `packages/*/src/**/*.spec.ts`; run
-`npm run test` per workspace. Inside one package the scoped scripts are
-`npm run typecheck`, `npm run lint`, `npm run format:check`,
-`npm run migration:run|revert|show`, `npm run build`, and `npm run verify:local`
-(package-scoped `format:check` + `lint` + `typecheck` + `test` + `build`).
+`npm run test --workspace=<workspace>` for a focused workspace run. Workspace
+scripts vary: check that workspace's `package.json` before calling `verify:local`
+or another package-scoped command. TypeORM `migration:run|revert|show` scripts are
+Messenger-only and run from `apps/messenger-bot/`.
 Eval-harness specs have their own branch — see
 [`agent-llm-and-chat.md`](agent-llm-and-chat.md).
