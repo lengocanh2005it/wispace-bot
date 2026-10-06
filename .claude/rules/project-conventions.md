@@ -46,7 +46,7 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 
 ## When modifying code (mandatory)
 
-1. **Update agent docs** if behavior/API/env/runbook changes — see table in `AGENTS.md` section _Docs & skills when changing code_.
+1. **Update agent docs** with behavior/API/env/runbook changes in the same commit — see `CODING_STANDARDS.md`.
 2. **Update skills** in `.claude/skills/` if debug/verify/migration/prompt workflows are affected.
 3. **Run quality gate** before reporting task complete (requires full `npm install` at root with dev deps):
 
