@@ -8,7 +8,10 @@ import type {
   LlmProviderEntryConfig,
   LlmProviderPolicy,
 } from '@wispace/llm-agent/adapters';
-import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  LlmContentClassifier,
+  PlatformAgentService,
+} from '@wispace/chat-agent';
 import {
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
@@ -16,6 +19,7 @@ import {
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatModule } from './discord-chat.module';
+import type { FactoryProvider } from '@wispace/bot-common/testing';
 import {
   findEffectiveFactoryProvider,
   findFactoryProvider,
@@ -25,6 +29,26 @@ const TEST_POLICY: LlmProviderPolicy = {
   nodeEnv: 'test',
   allowedBaseUrlHosts: ['api.openai.com', 'llm.example.test'],
   allowedModels: ['openai:gpt-5.4', 'openai-compatible:openai/gpt-4o-mini'],
+};
+
+/**
+ * The classifier is built by this app's own dynamic-options provider and reaches
+ * the agent through createPlatformChatProviders, so both halves of that hand-off
+ * are asserted below.
+ */
+const DISCORD_AGENT_OPTIONS = 'DISCORD_AGENT_OPTIONS';
+
+/**
+ * The spec for #1127 forbids a hand-rolled `.find()` over the provider metadata:
+ * a first-match lookup keeps reporting green after the binding it read is
+ * deleted, which is the failure mode #1507 already documented. `factoryFor`
+ * delegates to the shared helper, which reads the *last* binding — the one Nest
+ * resolves — and adds its arity check against the provider's own `inject`.
+ */
+const factoryFor = (token: unknown): FactoryProvider => {
+  const binding = findEffectiveFactoryProvider(DiscordChatModule, token);
+  expect(binding).toBeDefined();
+  return binding!;
 };
 
 describe('Discord chat module — LLM provider factory', () => {
@@ -134,21 +158,9 @@ describe('Discord chat module — LLM provider factory', () => {
   });
 
   it('wires the shared fail-closed policy into the startup binding', () => {
-    const providers = (Reflect.getMetadata('providers', DiscordSharedModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: string;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === 'LLM_PROVIDER_ADAPTER' &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
+    const binding = findEffectiveFactoryProvider(
+      DiscordSharedModule,
+      'LLM_PROVIDER_ADAPTER',
     );
     expect(binding).toBeDefined();
     expect(() =>
@@ -229,24 +241,6 @@ describe('Discord chat module — LLM provider factory', () => {
   });
 
   it('wires PlatformAgentService with LlmContentClassifier in DiscordChatModule (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', DiscordChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
-    );
-    expect(binding).toBeDefined();
-
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
@@ -267,7 +261,23 @@ describe('Discord chat module — LLM provider factory', () => {
       incClassifierVerdict: jest.fn(),
     };
 
-    const agent = binding!.useFactory(
+    const dynamic = factoryFor(DISCORD_AGENT_OPTIONS).useFactory(
+      configService,
+      adapter,
+      {},
+      {},
+      { findCurrentIdentity: jest.fn() },
+      {},
+      metrics,
+    );
+    expect(dynamic).toMatchObject({
+      contentClassifier: expect.any(LlmContentClassifier),
+    });
+
+    // Nine arguments: the shared factory injects the optional REDIS_CLIENT last,
+    // and the helper's arity check now fails a short call rather than letting it
+    // pass a correctly-shaped service with an undefined tail.
+    const agent = factoryFor(PlatformAgentService).useFactory(
       configService,
       {},
       {},
@@ -275,35 +285,13 @@ describe('Discord chat module — LLM provider factory', () => {
       {},
       adapter,
       {},
-      metrics,
-      null,
-      {},
-      {},
-      {},
-      {},
+      dynamic,
+      undefined,
     );
     expect(agent).toBeInstanceOf(PlatformAgentService);
   });
 
   it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', DiscordChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
-    );
-    expect(binding).toBeDefined();
-
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'LLM_INPUT_CLASSIFIER_ENABLED') return 'true';
@@ -315,18 +303,12 @@ describe('Discord chat module — LLM provider factory', () => {
     };
 
     expect(() =>
-      binding!.useFactory(
+      factoryFor(DISCORD_AGENT_OPTIONS).useFactory(
         configService,
-        {},
-        {},
-        {},
-        {},
         { providerName: 'openai', isRateLimitError: () => false },
         {},
         {},
-        null,
-        {},
-        {},
+        { findCurrentIdentity: jest.fn() },
         {},
         {},
       ),

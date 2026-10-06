@@ -459,6 +459,12 @@ jobs:
       - name: Check zod trust-boundary packages (#1053)
         run: bash .github/scripts/check-zod-boundary-imports.sh
 
+      - name: Test platform chat provider guard (#1127)
+        run: bash .github/scripts/tests/check-platform-chat-providers.test.sh
+
+      - name: Check chat modules wire the shared spine through the factory (#1127)
+        run: bash .github/scripts/check-platform-chat-providers.sh
+
       - name: Test timestamp column-type guard (#1227)
         run: bash .github/scripts/tests/check-timestamp-policy.test.sh
 
