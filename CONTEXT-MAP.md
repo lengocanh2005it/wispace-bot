@@ -48,6 +48,7 @@ requests the next exercise and sends WISPACE's link.
 4. `externalUserId`, `userId`, and `platform` are shared identity vocabulary; they must not become a reason to put all business logic in one package.
 5. Platform-specific delivery crosses an outbound port; Reminder and Report do not call Messenger/Discord/Zalo services directly.
 6. `bot-common`, `bot-metrics`, `date-utils`, `llm-agent`, and database connection utilities are shared kernel/infrastructure, not bounded contexts. `llm-agent` is consumed by four contexts and has no runtime dependency on any of them; `bot-metrics` is consumed only at app composition roots.
+7. The daily report wave — leader election, per-learner claim, retry dispatch, and delivery — belongs to Platform Interaction and lives inside that platform's own feature module. The report window and report content remain Student Report's. See [ADR 0055](docs/adr/0055-messenger-report-scheduling-is-messenger-behaviour.md).
 
 ## Known Boundary Debt
 

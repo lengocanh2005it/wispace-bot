@@ -790,9 +790,12 @@ function featureModuleBoundaryViolation(relativePath, imported, flatModules) {
  * deliberately no per-edge exemption list, because a per-edge list is a
  * permanent shelf, and this checker already had one removed (#1088).
  *
- * `apps/messenger-bot` is pending #1447, which is blocked on #1446
- * (`scheduler` reaching into `messenger`'s concrete services — 20 edges, a
- * dependency-inversion problem rather than a hygiene one).
+ * `apps/messenger-bot` is pending #1447. #1446 clears the way by folding
+ * `scheduler` into the `messenger` feature module, on the ground that no
+ * bounded context owns it (ADR 0055). With that module's predicates,
+ * `scheduler` -> `messenger` is 18 production import statements: 5 concrete,
+ * 13 exempt as port or composition-root imports. Messenger-bot's total is 23
+ * concrete imports across 4 of its 10 feature modules.
  */
 const FEATURE_MODULE_RULE_APPS = new Set(['apps/discord-bot', 'apps/zalo-bot']);
 
