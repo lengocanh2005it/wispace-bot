@@ -12,17 +12,15 @@
  * `npm ci --omit=dev`, so a dev advisory cannot reach production at all.
  *
  * The threshold is critical, not high, and that is a deliberate decision rather
- * than a convenient one. Two production highs remain accepted: `undici@6.28.0`
- * (a WebSocket advisory — `openai` peer-requires undici and this repo declares
+ * than a convenient one. One production high remains accepted: `undici@6.28.0`,
+ * a WebSocket advisory — `openai` peer-requires undici and this repo declares
  * its own `undici@^8.11.2`, so a top-level override would drag the direct
  * dependency down a major; discord.js reaches WebSocket through `ws`, not
- * undici) and `@grpc/grpc-js@1.14.4` (the repo exports traces over
- * `exporter-trace-otlp-http` and never instantiates the gRPC exporter, and npm
- * does not apply an override for it in this tree — a no-op override would look
- * like a mitigation without being one). Both are recorded in
- * `docs/dependency-security.md` rather than suppressed, and the gate still
- * reports them on every run. Raising the threshold back to `high` means
- * overriding both, which is the follow-up if either becomes reachable.
+ * undici; and both `discord.js` and `@discordjs/rest` still declare
+ * `undici@^6.27.0` at their latest versions, so the copy is upstream's to move.
+ * It is recorded in `docs/dependency-security.md` rather than suppressed, and
+ * the gate still reports it on every run. Raising the threshold to `high` waits
+ * on those upstream floors, not on work here.
  *
  * Deliberately not a lockfile scan. npm's advisory database changes under the
  * tree, so this gate is a moving target by design: a new upstream advisory fails

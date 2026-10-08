@@ -157,12 +157,11 @@ merely untriggered. Three limits worth knowing:
 and fails the `production-audit` CI job on a **critical** advisory. It is a
 separate job rather than a `ROOT_VERIFY_SCRIPTS` entry because it needs the
 network and the root gate must stay runnable offline. The threshold is critical
-rather than high on purpose: two production highs are accepted with written
-justification, and the gate still prints both on every run. Overrides that do
-take effect are confirmed by `npm ls <pkg>` reporting `overridden` — one entry
-(`@grpc/grpc-js`) does not apply in this tree and was removed rather than left
-looking like a mitigation. Findings, accepted exceptions and the "do not run
-`npm audit fix` blind" warning are in `docs/dependency-security.md`.
+rather than high on purpose: one production high is accepted with written
+justification, and the gate still prints it on every run. Overrides are confirmed
+by `npm ls <pkg>` reporting `overridden`. Findings, accepted exceptions, the "do
+not run `npm audit fix` blind" warning, and the `npm update` versus `overrides`
+distinction are in `docs/dependency-security.md`.
 
 **Deployment scripts are regression-tested.** `vps-deploy.sh` and
 `vps-self-pull-deploy.sh` behaviour is pinned by
