@@ -17,7 +17,7 @@
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nestjs/common": "^12.1.0",
+    "@nestjs/common": "^12.1.2",
     "@nestjs/config": "^12.0.0",
     "@wispace/bot-common": "*",
     "@wispace/chat-history": "*",

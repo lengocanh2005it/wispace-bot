@@ -17,7 +17,7 @@
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nestjs/common": "^12.1.0",
+    "@nestjs/common": "^12.1.2",
     "@wispace/bot-common": "*",
     "express": "^5.2.1",
     "prom-client": "^15.1.3"
