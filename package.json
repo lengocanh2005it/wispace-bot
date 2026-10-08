@@ -41,6 +41,8 @@
     "manifest-deps:test": "node --test scripts/check-manifest-deps.test.mjs",
     "dep-versions:check": "node scripts/check-dep-versions.mjs",
     "dep-versions:test": "node --test scripts/check-dep-versions.test.mjs",
+    "audit:check": "node scripts/check-prod-audit.mjs",
+    "audit:test": "node --test scripts/check-prod-audit.test.mjs",
     "runtime-image:test": "node --test deploy/runtime-image-check.test.mjs",
     "prove-checks:test": "node --test .claude/skills/prove-checks/scripts/verify-mutation.test.mjs",
     "file-size:check": "node scripts/check-file-size.mjs",
@@ -86,7 +88,8 @@
     "opossum": "^10.0.0"
   },
   "overrides": {
-    "multer": "2.3.0",
+    "multer": "2.4.0",
+    "proxy-addr": "2.0.8",
     "@nestjs/throttler": {
       "@nestjs/common": "^12.1.1",
       "@nestjs/core": "^12.1.1"
