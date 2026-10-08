@@ -132,15 +132,23 @@ under that workspace and one process loads two ORMs. Nothing surfaces as a clean
 error — entity metadata and decorator registries are per-copy, so `instanceof`
 fails across the boundary, and a TypeORM upgrade stops being one change. The
 compat axis is `major` above zero and `0.minor` at it, because for `0.y` the
-minor is the breaking axis. Three limits worth knowing:
+minor is the breaking axis. Only `^major.minor.patch` is *provably* safe once two
+declarations share an axis — any two caret ranges inside one major always
+intersect — so a `~`, a partial version or an alias on a shared dep is reported
+as unverified rather than passed in silence. Detecting a genuinely disjoint
+same-major pair needs a real solver, and `semver` is not a root dependency, so
+the rule stops at reporting. All 241 shared declarations in the repo are
+`^major.minor.patch` today, which makes the rule exact for this tree rather than
+merely untriggered. Three limits worth knowing:
 
 1. It compares **ranges, not installed trees**. "Exactly one installed copy" is
    false on a healthy tree — `@types/node` and `undici` each resolve to two
    versions because a third-party package pins the older one — so a lockfile
    rule would fail on transitives this repo does not control.
-2. Same major with `^` or `~` always intersects, so major equality is the case
-   that actually nests a copy. Disjoint minors inside one major are a rarer,
-   second-order case and would need a real solver.
+2. It fails **only** on a major mismatch. A same-major disjoint pair (`~1.2.0`
+   beside `~1.5.0`) nests a copy and is listed as unverified, not failed — the
+   check stays green there on purpose, so an unusual pin surfaces without
+   blocking work.
 3. `devDependencies` are included because a drifted dev declaration nests the
    same way: root holds `typeorm` there. `dependencies` alone would have missed
    the shape of #757 itself.

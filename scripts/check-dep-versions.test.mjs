@@ -133,7 +133,7 @@ test('workspace packages and single-workspace deps are not compared', () => {
   }
 });
 
-test('a range naming no version is counted, not failed', () => {
+test('a range naming no version is reported unverified, not failed', () => {
   const f = fixture();
   try {
     f.manifest('packages/a', { dependencies: { glob: '*' } });
@@ -141,11 +141,73 @@ test('a range naming no version is counted, not failed', () => {
     f.manifest('packages/c', { dependencies: { tool: '^1.0.0' } });
     f.manifest('packages/d', { dependencies: { tool: '^2.0.0' } });
 
-    const { violations, incomparable } = checkDepVersions(f.root);
+    const { violations, unverified } = checkDepVersions(f.root);
 
-    assert.equal(incomparable, 1);
     assert.equal(violations.length, 1);
     assert.equal(violations[0].name, 'tool');
+    assert.deepEqual(
+      unverified.map((u) => u.name),
+      ['glob'],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('a same-major disjoint pair is unverified rather than a violation', () => {
+  const f = fixture();
+  try {
+    f.manifest('packages/a', { dependencies: { pkg: '~1.2.0' } });
+    f.manifest('packages/b', { dependencies: { pkg: '~1.5.0' } });
+
+    const { violations, unverified } = checkDepVersions(f.root);
+
+    // The majors agree, so this is not drift the rule can prove -- but npm nests
+    // a copy here, so it must not pass silently.
+    assert.deepEqual(violations, []);
+    assert.equal(unverified.length, 1);
+    assert.equal(unverified[0].name, 'pkg');
+    assert.deepEqual(
+      unverified[0].sites.map((s) => s.range),
+      ['~1.2.0', '~1.5.0'],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('caret declarations inside one axis are never unverified', () => {
+  const f = fixture();
+  try {
+    f.manifest('packages/a', { dependencies: { pkg: '^1.0.0' } });
+    f.manifest('packages/b', { dependencies: { pkg: '^1.9.9' } });
+    f.manifest('packages/c', { devDependencies: { zero: '^0.3.1' } });
+    f.manifest('packages/d', { devDependencies: { zero: '^0.3.20' } });
+
+    const { violations, unverified } = checkDepVersions(f.root);
+
+    assert.deepEqual(violations, []);
+    assert.deepEqual(unverified, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a partial or aliased range is unverified even at a single workspace', () => {
+  const f = fixture();
+  try {
+    f.manifest('packages/a', { dependencies: { pkg: '^1' } });
+    f.manifest('packages/b', { dependencies: { pkg: '^1.2.3' } });
+    f.manifest('packages/c', { dependencies: { alias: 'npm:pkg@^1.0.0' } });
+    f.manifest('packages/d', { dependencies: { alias: 'npm:pkg@^1.2.0' } });
+
+    const { violations, unverified } = checkDepVersions(f.root);
+
+    assert.deepEqual(violations, []);
+    assert.deepEqual(
+      unverified.map((u) => u.name),
+      ['alias', 'pkg'],
+    );
   } finally {
     f.close();
   }
@@ -163,15 +225,20 @@ test('compatAxis reads aliases and pinned versions', () => {
   assert.equal(compatAxis('workspace:*'), null);
 });
 
-test('the real tree carries no drift', () => {
+test('the real tree carries no drift and nothing unverified', () => {
   const root = join(import.meta.dirname, '..');
-  const { violations, shared } = checkDepVersions(root);
+  const { violations, unverified, shared } = checkDepVersions(root);
 
   assert.ok(shared > 0, 'the repo declares shared dependencies to compare');
   assert.deepEqual(
     violations,
     [],
     `drift on a real workspace: ${JSON.stringify(violations)}`,
+  );
+  assert.deepEqual(
+    unverified.map((u) => u.name),
+    [],
+    `the real tree should use only ^major.minor.patch on shared deps, found: ${JSON.stringify(unverified)}`,
   );
 });
 
