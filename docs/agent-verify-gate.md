@@ -124,6 +124,27 @@ the 780-line threshold it replaced was retired.
 against a module-scope `prom-client` metric with no per-app `registers` — the
 failure it prevents is a duplicate registration at import time.
 
+**Shared dependency versions (#757).** `npm run dep-versions:check` fails a
+package declared at two incompatible majors across workspaces. `packages/learner-profile`
+sat on `typeorm: ^0.3.20` while every other database-touching workspace sat on
+`^1.1.0`; disjoint ranges mean npm cannot hoist one copy, so it nests a second
+under that workspace and one process loads two ORMs. Nothing surfaces as a clean
+error — entity metadata and decorator registries are per-copy, so `instanceof`
+fails across the boundary, and a TypeORM upgrade stops being one change. The
+compat axis is `major` above zero and `0.minor` at it, because for `0.y` the
+minor is the breaking axis. Three limits worth knowing:
+
+1. It compares **ranges, not installed trees**. "Exactly one installed copy" is
+   false on a healthy tree — `@types/node` and `undici` each resolve to two
+   versions because a third-party package pins the older one — so a lockfile
+   rule would fail on transitives this repo does not control.
+2. Same major with `^` or `~` always intersects, so major equality is the case
+   that actually nests a copy. Disjoint minors inside one major are a rarer,
+   second-order case and would need a real solver.
+3. `devDependencies` are included because a drifted dev declaration nests the
+   same way: root holds `typeorm` there. `dependencies` alone would have missed
+   the shape of #757 itself.
+
 **Deployment scripts are regression-tested.** `vps-deploy.sh` and
 `vps-self-pull-deploy.sh` behaviour is pinned by
 `.github/scripts/tests/vps-deploy.test.sh` and
