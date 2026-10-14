@@ -333,7 +333,12 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
 
     const pipeline = service as unknown as { pipeline: { flush: jest.Mock } };
     pipeline.pipeline = {
-      flush: jest.fn(() => Promise.resolve(false)),
+      flush: jest.fn(() =>
+        Promise.resolve({
+          outcome: 'failed',
+          reason: 'delivery_not_confirmed',
+        }),
+      ),
     };
 
     await service.flushReady('psid-false');

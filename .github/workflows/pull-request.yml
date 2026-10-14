@@ -60,6 +60,28 @@ jobs:
           fi
           echo "No unpinned registry executables in build steps."
 
+  production-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test the audit gate parser
+        run: npm run audit:test
+
+      - name: Fail on a critical production dependency advisory
+        run: npm run audit:check
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -71,7 +93,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -113,7 +135,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -126,6 +148,62 @@ jobs:
 
       - name: Run HTTP contract tests (messenger-bot)
         run: npm run test:http-contract --workspace=@wispace/messenger-bot
+
+  messenger-e2e-test:
+    # `npm run test:e2e` boots the real AppModule, so it opens a live
+    # TypeORM connection and cannot stub DataSource the way the unit and
+    # contract suites do. That is exactly what makes it worth running: it
+    # proves the whole DI graph resolves and a referral reaches the welcome
+    # send. It sat unrun in CI since NestJS 12 went pure ESM and the suite
+    # stopped loading, so nothing reported the breakage.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_chat_bot_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: ai_chat_bot_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npx --no-install turbo run build --filter=@wispace/messenger-bot^...
+        env:
+          TURBO_CONCURRENCY: 2
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      # The spec boots DatabaseModule for real, so the schema must exist first.
+      - name: Apply migrations
+        run: npm run migration:run --workspace=@wispace/messenger-bot
+
+      - name: Run messenger e2e tests
+        run: npm run test:e2e --workspace=@wispace/messenger-bot
 
   graceful-shutdown-verify:
     # #511: SIGTERM mid-request must drain before exit (OTel must not race
@@ -161,7 +239,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.changes.outputs.run == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -224,7 +302,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -293,7 +371,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -320,6 +398,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # check-timestamp-policy.sh resolves origin/main and then calls git
+          # merge-base, which a depth-1 clone of a detached pull_request merge
+          # commit cannot support: it creates no remote-tracking ref at all.
+          fetch-depth: 0
 
       - name: Test VPS self-pull deploy (concurrency + CI gate + failure paths, #144/#172/#694)
         run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
@@ -398,11 +481,20 @@ jobs:
       - name: Check zod trust-boundary packages (#1053)
         run: bash .github/scripts/check-zod-boundary-imports.sh
 
+      - name: Test platform chat provider guard (#1127)
+        run: bash .github/scripts/tests/check-platform-chat-providers.test.sh
+
+      - name: Check chat modules wire the shared spine through the factory (#1127)
+        run: bash .github/scripts/check-platform-chat-providers.sh
+
       - name: Test timestamp column-type guard (#1227)
         run: bash .github/scripts/tests/check-timestamp-policy.test.sh
 
-      - name: Check timestamp column types follow ADR-0050 (#1227)
+      - name: Check timestamp column types follow ADR-0051 (#1227)
         run: bash .github/scripts/check-timestamp-policy.sh
+
+      - name: Test log-redaction guard per interpolation (#1387)
+        run: node --test .github/scripts/tests/check-log-redaction.test.mjs
 
       - name: Check log redaction — raw external ids in logger calls (#610)
         run: node .github/scripts/check-log-redaction.js

@@ -1,5 +1,5 @@
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { readWebhookThrottleConfig } from '@wispace/bot-common/redis';
+import { createBotThrottlerOptions } from '@wispace/bot-common/redis';
 import { plainToInstance } from 'class-transformer';
 import { ZaloWebhookEventDto } from '../dto/zalo-webhook-event.dto';
 import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
@@ -16,17 +16,38 @@ describe('ZaloWebhookController webhook guards', () => {
       ZaloWebhookSignatureGuard,
       ThrottlerGuard,
     ]);
-    const limit = Reflect.getMetadata(
-      'THROTTLER:LIMITdefault',
-      handleWebhook,
-    ) as () => number;
-    const ttl = Reflect.getMetadata(
-      'THROTTLER:TTLdefault',
-      handleWebhook,
-    ) as () => number;
-    const config = readWebhookThrottleConfig((key) => process.env[key]);
-    expect(limit()).toBe(config.limit);
-    expect(ttl()).toBe(config.ttlMs);
+    expect(Reflect.getMetadata('THROTTLER:SKIPdefault', handleWebhook)).toBe(
+      true,
+    );
+    expect(Reflect.getMetadataKeys(handleWebhook)).toEqual(
+      expect.arrayContaining([
+        'THROTTLER:LIMITwebhook',
+        'THROTTLER:TTLwebhook',
+      ]),
+    );
+
+    const values: Record<string, string> = {
+      WEBHOOK_RATE_LIMIT_PER_MINUTE: '45',
+      WEBHOOK_RATE_LIMIT_TTL_MS: '30000',
+    };
+    const options = createBotThrottlerOptions(
+      { get: (key: string) => values[key] } as never,
+      {} as never,
+    );
+    if (options instanceof Array) throw new Error('Expected options object');
+    const webhook = options.throttlers.find(({ name }) => name === 'webhook');
+    expect(webhook).toMatchObject({ limit: 45, ttl: 30_000 });
+    const context = {
+      getHandler: () => handleWebhook,
+      getClass: () => ZaloWebhookController,
+    } as never;
+    expect(webhook?.skipIf?.(context)).toBe(false);
+    expect(
+      webhook?.skipIf?.({
+        getHandler: () => () => undefined,
+        getClass: () => ZaloWebhookController,
+      } as never),
+    ).toBe(true);
   });
 });
 

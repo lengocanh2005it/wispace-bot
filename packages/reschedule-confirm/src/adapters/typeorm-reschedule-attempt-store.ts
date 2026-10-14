@@ -14,11 +14,16 @@ import {
  * Postgres persistence for the durable reschedule attempt record (#1418).
  *
  * Every write is keyed by `(platform, external_id, nonce)` — the identity the
- * learner acted on — so a later request cannot overwrite an earlier proof.
+ * learner acted on — so a later request cannot overwrite an earlier's proof.
+ *
+ * #1507: the platform is bound at construction, like `TypeormRescheduleStore`.
+ * The table is shared by all three bots under one advisory lock, so a scan that
+ * did not filter by platform would hand the messenger transport a Discord id.
  */
 @Injectable()
 export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort {
   constructor(
+    private readonly platform: string,
     @InjectRepository(RescheduleConfirmationAttemptEntity)
     private readonly repo: Repository<RescheduleConfirmationAttemptEntity>,
   ) {}
@@ -26,7 +31,6 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
   async beginAttempt(input: {
     externalId: string;
     nonce: string;
-    platform: string;
     userId: number;
   }): Promise<void> {
     await this.repo
@@ -34,7 +38,7 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
       .insert()
       .into(RescheduleConfirmationAttemptEntity)
       .values({
-        platform: input.platform,
+        platform: this.platform,
         externalId: input.externalId,
         nonce: input.nonce,
         userId: input.userId,
@@ -69,6 +73,7 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
       .where('external_id = :externalId', { externalId: input.externalId })
       .andWhere('nonce = :nonce', { nonce: input.nonce })
       .andWhere('status = :status', { status: 'attempting' })
+      .andWhere('platform = :platform', { platform: this.platform })
       .execute();
     return (result.affected ?? 0) > 0;
   }
@@ -80,6 +85,7 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
       .from(RescheduleConfirmationAttemptEntity)
       .where('external_id = :externalId', { externalId })
       .andWhere('nonce = :nonce', { nonce })
+      .andWhere('platform = :platform', { platform: this.platform })
       .execute();
   }
 
@@ -91,6 +97,7 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
       .createQueryBuilder('attempt')
       .where('attempt.external_id = :externalId', { externalId })
       .andWhere('attempt.nonce = :nonce', { nonce })
+      .andWhere('attempt.platform = :platform', { platform: this.platform })
       .getOne();
     return row ? this.toRecord(row) : null;
   }
@@ -101,7 +108,8 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
   ): Promise<RescheduleAttemptRecord[]> {
     const rows = await this.repo
       .createQueryBuilder('attempt')
-      .where('attempt.status = :status', { status: 'confirmed' })
+      .where('attempt.platform = :platform', { platform: this.platform })
+      .andWhere('attempt.status = :status', { status: 'confirmed' })
       .andWhere('attempt.notification_status = :deferred', {
         deferred: 'deferred',
       })
@@ -173,6 +181,7 @@ export class TypeormRescheduleAttemptStore implements RescheduleAttemptStorePort
       })
       .where('external_id = :externalId', { externalId })
       .andWhere('nonce = :nonce', { nonce })
+      .andWhere('platform = :platform', { platform: this.platform })
       .execute();
   }
 

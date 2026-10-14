@@ -9,7 +9,8 @@ disable-model-invocation: true
 
 # Verify
 
-Run **after code changes** and **after updating agent docs/skills** (see `AGENTS.md` → _Docs & skills when changing code_).
+Run **after code changes** and **after updating agent docs/skills** (agent-facing docs
+ship in the same commit — see `AGENTS.md` → _Workflow_ → _Implement_).
 
 ## Prerequisites
 

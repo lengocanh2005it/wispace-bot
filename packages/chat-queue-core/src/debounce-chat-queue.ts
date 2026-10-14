@@ -11,6 +11,7 @@ interface QueueState<TContext> {
   context?: Partial<TContext>;
   debounceTimer?: ReturnType<typeof setTimeout>;
   processing: boolean;
+  processingDeadlineAt?: number;
   pendingWhileProcessing: string[];
   lastPendingIdempotencyKey?: string;
   lastActivityAt: number;
@@ -134,7 +135,7 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
       clearTimeout(state.debounceTimer);
       state.debounceTimer = undefined;
     }
-    await this.flush(externalUserId);
+    await this.flushOrWait(externalUserId, this.deadlineFromNow());
   }
 
   /** Discards buffered work for one external identity without cancelling an in-flight flush. */
@@ -159,13 +160,15 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     // Each flush can promote pendingWhileProcessing texts, so keep draining
     // until no user has work left — but WAIT for active flushes instead of
     // skipping them (a flush in progress can still promote pending messages).
-    const deadline = Date.now() + this.drainTimeoutMs;
+    const deadline = this.deadlineFromNow();
     for (;;) {
       const users = [...this.queues.keys()];
       if (users.length === 0) {
         return;
       }
-      await Promise.allSettled(users.map((user) => this.flushOrWait(user)));
+      await Promise.allSettled(
+        users.map((user) => this.flushOrWait(user, deadline)),
+      );
 
       let hasWork = false;
       for (const state of this.queues.values()) {
@@ -214,7 +217,10 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     this.queues.clear();
   }
 
-  private async flushOrWait(externalUserId: string): Promise<void> {
+  private async flushOrWait(
+    externalUserId: string,
+    deadlineAt: number,
+  ): Promise<void> {
     const state = this.queues.get(externalUserId);
     if (!state) {
       return;
@@ -222,19 +228,21 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     if (state.processing) {
       // Wait for the active flush — its finally block promotes any
       // pendingWhileProcessing texts into `texts`, which the next flush
-      // iteration then delivers.
-      await new Promise<void>((resolve) => {
-        const poll = () => {
-          if (!state.processing) {
-            resolve();
-            return;
-          }
-          setTimeout(poll, DebounceChatQueue.IDLE_POLL_MS);
-        };
-        poll();
-      });
+      // iteration then delivers. The active flush and this wait share the
+      // same deadline, so a stuck handler cannot pin this caller forever.
+      const waitUntil = Math.min(
+        deadlineAt,
+        state.processingDeadlineAt ?? deadlineAt,
+      );
+      while (state.processing && Date.now() < waitUntil) {
+        const waitMs = Math.min(
+          DebounceChatQueue.IDLE_POLL_MS,
+          waitUntil - Date.now(),
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+      }
     }
-    await this.flush(externalUserId);
+    await this.flush(externalUserId, deadlineAt);
   }
 
   private scheduleFlush(
@@ -255,23 +263,53 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     state.debounceTimer = timer;
   }
 
-  private async flush(externalUserId: string): Promise<void> {
+  private async flush(
+    externalUserId: string,
+    deadlineAt = this.deadlineFromNow(),
+  ): Promise<void> {
     const state = this.queues.get(externalUserId);
     if (!state || state.processing || !state.texts.length) {
       return;
     }
 
+    if (state.debounceTimer) {
+      clearTimeout(state.debounceTimer);
+      state.debounceTimer = undefined;
+    }
+
     state.processing = true;
+    state.processingDeadlineAt = deadlineAt;
     const texts = state.texts;
     state.texts = [];
     const context = state.context;
     const idempotencyKey = state.lastIdempotencyKey;
     state.lastIdempotencyKey = undefined;
 
+    const startedAt = Date.now();
+    const flushTimedOut = Symbol('flush-timed-out');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      await this.onFlush({ externalUserId, texts, context, idempotencyKey });
+      const result = await Promise.race([
+        this.onFlush({ externalUserId, texts, context, idempotencyKey }),
+        new Promise<typeof flushTimedOut>((resolve) => {
+          timeout = setTimeout(
+            () => resolve(flushTimedOut),
+            Math.max(0, deadlineAt - Date.now()),
+          );
+        }),
+      ]);
+      if (result === flushTimedOut) {
+        this.callbacks.onFlushTimedOut?.(
+          externalUserId,
+          Math.max(0, deadlineAt - startedAt),
+        );
+      }
     } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       state.processing = false;
+      state.processingDeadlineAt = undefined;
 
       if (state.pendingWhileProcessing.length > 0) {
         state.texts.push(...state.pendingWhileProcessing);
@@ -289,6 +327,11 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
         this.queues.delete(externalUserId);
       }
     }
+  }
+
+  /** One deadline source for active flushes, flushNow(), and drain(). */
+  private deadlineFromNow(): number {
+    return Date.now() + this.drainTimeoutMs;
   }
 
   private evictStale(): void {

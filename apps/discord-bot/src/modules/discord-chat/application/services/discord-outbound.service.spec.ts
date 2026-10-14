@@ -1,6 +1,7 @@
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordOutboundService } from './discord-outbound.service';
 import type { DiscordTransportPort } from '../ports/discord-transport.port';
+import { DiscordSendTimeoutError } from '../../domain/discord-send-outcome.errors';
 
 const token = '11111111-1111-4111-8111-111111111111';
 
@@ -712,11 +713,14 @@ describe('DiscordOutboundService', () => {
     );
   });
 
-  it('#156: does not retry a timeout and records ambiguous delivery', async () => {
-    const timeout = Object.assign(new Error('request timed out'), {
-      name: 'TimeoutError',
-    });
-    const fetch = jest.fn().mockRejectedValue(timeout);
+  it('#1509: a stalled send is ambiguous and not re-sent', async () => {
+    // The SDK reports its own deadline as a bare `AbortError`, not a
+    // `TimeoutError`. The adapter attributes the cause before it reaches the
+    // application layer. There is no delivery verdict, so the send is
+    // ambiguous AND terminal — a resend would risk a second copy (#1509).
+    const fetch = jest
+      .fn()
+      .mockRejectedValue(new DiscordSendTimeoutError(15_000));
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
@@ -728,6 +732,40 @@ describe('DiscordOutboundService', () => {
     await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous_timeout',
+    );
+    // One send, one count. `sendCore` attributes the cause and counts it; the
+    // caller must not count the same ambiguous failure a second time (#1509).
+    expect(
+      jest
+        .mocked(metrics.incDmDeliveryFailure)
+        .mock.calls.filter(
+          ([reason]) => reason === 'dm_send_ambiguous_timeout',
+        ),
+    ).toHaveLength(1);
+  });
+
+  it('#1509: an abort the adapter did not attribute is not ambiguous', async () => {
+    // Only the adapter can tell a deadline from any other abort, because the
+    // SDK reports both as a bare `AbortError`. An unattributed one carries no
+    // evidence that the request was in flight, so it must not be recorded as
+    // a message that might still arrive.
+    const fetch = jest.fn().mockRejectedValue(
+      Object.assign(new Error('This operation was aborted'), {
+        name: 'AbortError',
+      }),
+    );
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildTransportStub(fetch),
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
       'dm_send_ambiguous',
     );
   });

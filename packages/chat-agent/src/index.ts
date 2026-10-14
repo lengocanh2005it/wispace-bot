@@ -1,5 +1,15 @@
 export { PlatformAgentService } from './agent/platform-agent.service';
 export {
+  createPlatformChatProviders,
+  PLATFORM_CHAT_PROVIDER_TOKENS,
+} from './platform-chat-providers.factory';
+export type {
+  CreatePlatformChatProvidersOptions,
+  PlatformChatAgentDynamicOptions,
+  PlatformChatFlushSource,
+  PlatformChatQueueReadySource,
+} from './platform-chat-providers.factory';
+export {
   RedisClarificationStateStore,
   clarificationStateKey,
   createClarificationStateStore,

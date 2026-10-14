@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { Counter } from 'prom-client';
 import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
@@ -57,13 +56,6 @@ const DEFAULT_LOCK_IDS: Record<Platform, StudyReminderWorkerLockIds> = {
     rollover: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_ROLLOVER,
   },
 };
-
-/** #777: a lock skip is distinguishable from "synced, nothing to do". */
-export const studyReminderLockSkipsTotal = new Counter({
-  name: 'study_reminder_lock_skips_total',
-  help: 'Study-reminder worker cron/startup runs skipped because another holder owns the advisory lock',
-  labelNames: ['platform', 'scope'] as const,
-});
 
 export interface StudyReminderWorkerLockIds {
   sync: number;
@@ -377,9 +369,6 @@ export class StudyReminderWorkerService
   }
 
   private recordLockSkip(scope: 'sync' | 'cleanup' | 'rollover'): void {
-    studyReminderLockSkipsTotal
-      .labels({ platform: this.platform, scope })
-      .inc();
     this.options.metrics?.incStudyReminderLockSkip(this.platform, scope);
   }
 

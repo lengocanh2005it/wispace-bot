@@ -16,6 +16,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { readOptionalPositiveInt } from '@wispace/bot-common/config';
 import {
   fullPageAsMappingPage,
   iterateMappingPages,
@@ -45,6 +46,7 @@ import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
 } from '@wispace/llm-agent/core';
+import { MESSENGER_REPORT_PRODUCER } from '../../report-producer';
 
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -79,8 +81,11 @@ export class ReportCronService {
     );
     this.concurrency = resolveBackgroundProducerConcurrency(executionConfig, {
       enabled: executionConfig.enabled,
-      producerName: 'messenger report',
-      configuredConcurrency: this.readConfiguredConcurrency(),
+      producerName: MESSENGER_REPORT_PRODUCER.producerName,
+      configuredConcurrency: readOptionalPositiveInt(
+        (key) => this.configService.get<string>(key),
+        MESSENGER_REPORT_PRODUCER.concurrencyEnvKey,
+      ),
       onWarning: (message) => this.logger.warn(message),
     });
     this.metrics?.registerCron?.(
@@ -341,16 +346,5 @@ export class ReportCronService {
       skipAlreadySentToday,
       examDateForOutbox,
     });
-  }
-
-  private readConfiguredConcurrency(): number | undefined {
-    const raw = this.configService
-      .get<string>('REPORT_SEND_CONCURRENCY')
-      ?.trim();
-    if (!raw) return undefined;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : undefined;
   }
 }

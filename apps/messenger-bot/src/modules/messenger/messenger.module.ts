@@ -81,9 +81,14 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     MessengerWebhookStartupService,
     {
       provide: PlatformWebhookInboundEventService,
-      useFactory: (repo: Repository<WebhookInboundEventEntity>) =>
-        new PlatformWebhookInboundEventService('messenger', repo),
-      inject: [getRepositoryToken(WebhookInboundEventEntity)],
+      useFactory: (
+        repo: Repository<WebhookInboundEventEntity>,
+        metrics: BotMetricsService,
+      ) => new PlatformWebhookInboundEventService('messenger', repo, metrics),
+      inject: [
+        getRepositoryToken(WebhookInboundEventEntity),
+        BotMetricsService,
+      ],
     },
     {
       provide: WEBHOOK_INBOUND_EVENTS_PORT,
@@ -100,6 +105,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         inboundEvents: PlatformWebhookInboundEventService,
         dispatch: MessengerWebhookDispatchService,
         configService: ConfigService,
+        metrics: BotMetricsService,
       ) => {
         const retryConfig = readInboundRetryConfig((key) =>
           configService.get<string>(key),
@@ -111,12 +117,14 @@ import { BotMetricsService } from '@wispace/bot-metrics';
             );
           },
           retryConfig,
+          metrics,
         });
       },
       inject: [
         PlatformWebhookInboundEventService,
         MessengerWebhookDispatchService,
         ConfigService,
+        BotMetricsService,
       ],
     },
     {

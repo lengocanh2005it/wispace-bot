@@ -319,7 +319,7 @@ export interface OutboundRateLimitPort {
 }
 
 /**
- * Timestamp and timezone policy (ADR-0050).
+ * Timestamp and timezone policy (ADR-0051).
  *
  * - Audit and lease/claim columns take the **database** clock. `now()` inside
  *   the statement is correct for an atomic lease comparison; it is not to be

@@ -18,6 +18,7 @@ const mockQueueCallbacks: Array<{
     pendingCount: number,
   ) => void;
   onPendingDropped: (externalUserId: string, droppedCount: number) => void;
+  onFlushTimedOut?: (externalUserId: string, timeoutMs: number) => void;
 }> = [];
 const mockQueueFlushCallbacks: Array<
   (batch: {

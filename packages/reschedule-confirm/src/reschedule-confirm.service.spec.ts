@@ -741,7 +741,7 @@ describe('RescheduleConfirmationService', () => {
       const store = new MemoryRescheduleStore<string>();
       (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
         true;
-      const attemptStore = new MemoryRescheduleAttemptStore();
+      const attemptStore = new MemoryRescheduleAttemptStore('discord');
       const reschedule = mockReschedulePort();
       const service = new RescheduleConfirmationService(
         mockCalendarPort(),
@@ -791,7 +791,6 @@ describe('RescheduleConfirmationService', () => {
       await attemptStore.beginAttempt({
         externalId: 'user-1',
         nonce: token,
-        platform: binding.platform,
         userId: 42,
       });
 

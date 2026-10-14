@@ -33,7 +33,7 @@ before filing: the `chat_quota_events` cleanup cron **does** exist
 ignored" claim is stale at HEAD (`typeorm-ops-health.repository.ts` binds `$2`).
 Remaining unowned findings are exactly the open issues above.
 
-Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
+Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (open items).
 
 ---
 
@@ -408,13 +408,13 @@ npm run study-reminder:jobs
 | On Phase Merge          | Update                                                                                                                     |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Any                     | Tick ✓ in phase table at top of this file                                                                                  |
-| S0                      | `AGENTS.md` Integration gaps, `study-session-reminder.md`                                                                  |
+| S0                      | `study-session-reminder.md`                                                                                               |
 | S2                      | `study-session-reminder.md` §11.6, `project-overview.md` §6                                                                |
 | R4, H7 scale            | `project-overview.md` §10                                                                                                  |
 | LLM-AB, SAFETY, METRICS | `project-overview.md` §3 (modules), §6 (cron), §8 (env)                                                                    |
-| PRIVACY                 | `AGENTS.md` Integration gaps, `study-session-reminder.md`, `project-overview.md` §4–§6, ADR-0014, fleet verification drill |
-| PKG                     | `project-overview.md` §3 (code structure), AGENTS.md                                                                       |
-| DISCORD, ZALO           | `project-overview.md` §1 (features), AGENTS.md Integration gaps                                                            |
+| PRIVACY                 | `study-session-reminder.md`, `project-overview.md` §4–§6, ADR-0014, fleet verification drill                              |
+| PKG                     | `project-overview.md` §3 (code structure)                                                                                  |
+| DISCORD, ZALO           | `project-overview.md` §1 (features)                                                                                        |
 | L1, R1, L2, R2, R3, …   | Corresponding section in this file → move to "Already Done" ✓                                                              |
 
 ---

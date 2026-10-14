@@ -45,10 +45,16 @@ export interface RescheduleAttemptRecord {
 export interface BeginAttemptInput {
   externalId: string;
   nonce: string;
-  platform: string;
   userId: number;
 }
 
+/**
+ * #1507: the attempt store is bound to one platform rather than reading it from
+ * each row. `reschedule_confirmation_attempts` is a single shared table with a
+ * shared advisory lock, so a store that could write or scan another platform's
+ * rows would let the messenger transport send a Discord id to Meta. Binding the
+ * platform here makes that impossible to express rather than merely discouraged.
+ */
 export interface RescheduleAttemptStorePort {
   /** Records that a calendar mutation is about to be attempted. */
   beginAttempt(input: BeginAttemptInput): Promise<void>;
@@ -67,7 +73,10 @@ export interface RescheduleAttemptStorePort {
     externalId: string,
     nonce: string,
   ): Promise<RescheduleAttemptRecord | null>;
-  /** Confirmed mutations whose confirmation the learner has not received. */
+  /**
+   * Confirmed mutations whose confirmation this platform's learner has not
+   * received. Scoped to the store's own platform (#1507).
+   */
   listDueNotificationAttempts(
     limit: number,
     now: Date,
@@ -141,6 +150,8 @@ export async function applyNotificationOutcome(
 export class MemoryRescheduleAttemptStore implements RescheduleAttemptStorePort {
   private readonly byKey = new Map<string, RescheduleAttemptRecord>();
 
+  constructor(private readonly platform: string) {}
+
   private key(externalId: string, nonce: string): string {
     return `${externalId}:${nonce}`;
   }
@@ -149,7 +160,7 @@ export class MemoryRescheduleAttemptStore implements RescheduleAttemptStorePort 
     this.byKey.set(this.key(input.externalId, input.nonce), {
       externalId: input.externalId,
       nonce: input.nonce,
-      platform: input.platform,
+      platform: this.platform,
       userId: input.userId,
       status: 'attempting',
       scheduledTimeLabel: null,
@@ -194,7 +205,9 @@ export class MemoryRescheduleAttemptStore implements RescheduleAttemptStorePort 
       Array.from(this.byKey.values())
         .filter(
           (record) =>
-            record.status === 'confirmed' && notificationIsDue(record, now),
+            record.platform === this.platform &&
+            record.status === 'confirmed' &&
+            notificationIsDue(record, now),
         )
         .slice(0, limit),
     );

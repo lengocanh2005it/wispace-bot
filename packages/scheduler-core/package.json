@@ -11,6 +11,12 @@
       "require": "./dist/core/index.js",
       "default": "./dist/core/index.js"
     },
+    "./utils": {
+      "import": "./dist/utils/index.js",
+      "types": "./dist/utils/index.d.ts",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
+    },
     "./adapters": {
       "import": "./dist/adapters/index.js",
       "types": "./dist/adapters/index.d.ts",

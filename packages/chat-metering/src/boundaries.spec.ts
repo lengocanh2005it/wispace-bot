@@ -7,6 +7,7 @@ describe('chat-metering package boundaries', () => {
   it('keeps policy/contracts in core and persistence/wiring in adapters', () => {
     expect(core.ChatRateLimitCore).toBeDefined();
     expect(core.LlmUsageRecorderCore).toBeDefined();
+    expect(core.DirectUsageWriter).toBeDefined();
     expect(core.LlmSafetyCore).toBeDefined();
     expect(core.WriteToolBudgetCore).toBeDefined();
     expect(coreExports.ChatMeteringModule).toBeUndefined();

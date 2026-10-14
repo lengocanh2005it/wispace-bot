@@ -1,28 +1,18 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Counter } from 'prom-client';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { runLockedTick } from '@wispace/bot-common/cron';
 import { readEnvBoolean, readEnvPositiveInt } from '@wispace/bot-common/config';
+import {
+  RETENTION_CLEANUP_METRICS_PORT,
+  type RetentionCleanupMetricsPort,
+} from '@wispace/bot-common/metrics';
 import { subDays } from 'date-fns';
 import {
   createCleanupCronPolicyRegistry,
   type CleanupCronPolicy,
   type CleanupCronPolicyRegistry,
 } from './cleanup-policy.registry';
-
-/** Retention-cleanup metrics — module-level Counters shared across all bots. */
-export const retentionRowsDeletedTotal = new Counter({
-  name: 'retention_rows_deleted_total',
-  help: 'Total rows deleted by retention cleanup crons',
-  labelNames: ['cron_name'] as const,
-});
-
-export const retentionCleanupErrorsTotal = new Counter({
-  name: 'retention_cleanup_errors_total',
-  help: 'Total retention cleanup failures',
-  labelNames: ['cron_name'] as const,
-});
 
 export interface CleanupResult {
   deleted: number;
@@ -42,6 +32,9 @@ export class CleanupCronService {
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
     @Optional() policyRegistry?: CleanupCronPolicyRegistry,
+    @Optional()
+    @Inject(RETENTION_CLEANUP_METRICS_PORT)
+    private readonly retentionMetrics?: RetentionCleanupMetricsPort,
   ) {
     this.policies = policyRegistry ?? createCleanupCronPolicyRegistry();
   }
@@ -58,6 +51,7 @@ export class CleanupCronService {
     deleteFn: (cutoff?: Date) => Promise<number>,
   ): Promise<CleanupResult | null> {
     const policy = this.policies.resolve(name);
+    this.recordMetric(() => this.retentionMetrics?.registerPolicy(name));
     const enabled = this.isEnabled(name);
     const retentionDays = this.getRetentionDays(name);
     const cutoff = policy.retention
@@ -79,11 +73,13 @@ export class CleanupCronService {
                   : ''
               }`,
             );
-            retentionRowsDeletedTotal.labels({ cron_name: name }).inc(deleted);
+            this.recordMetric(() =>
+              this.retentionMetrics?.incRowsDeleted(name, deleted),
+            );
           }
           return [{ outcome: 'succeeded' as const, details: { deleted } }];
         } catch (error) {
-          retentionCleanupErrorsTotal.labels({ cron_name: name }).inc();
+          this.recordMetric(() => this.retentionMetrics?.incCleanupError(name));
           throw error;
         }
       },
@@ -100,6 +96,17 @@ export class CleanupCronService {
 
   getRetentionDays(name: string): number {
     return this.readRetentionDays(this.policies.resolve(name));
+  }
+
+  /** Metrics must never change cleanup behavior when an adapter is unavailable. */
+  private recordMetric(record: () => void): void {
+    try {
+      record();
+    } catch (error) {
+      this.logger.warn(
+        `Could not record retention cleanup metric: ${String(error)}`,
+      );
+    }
   }
 
   private readEnabled(policy: CleanupCronPolicy): boolean {

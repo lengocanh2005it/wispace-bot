@@ -1255,14 +1255,14 @@ describe('PlatformAgentService', () => {
         texts: ['first question'],
         idempotencyKey: 'message-1',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ outcome: 'delivered' });
     await expect(
       pipeline.flush({
         externalUserId: 'zalo-user-1',
         texts: ['second question'],
         idempotencyKey: 'message-2',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ outcome: 'delivered' });
 
     expect(historyService.getHistory).toHaveBeenCalledTimes(2);
     expect(historyService.appendTurn).toHaveBeenCalledTimes(2);

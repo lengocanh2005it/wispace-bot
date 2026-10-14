@@ -46,6 +46,10 @@ echo "FAKE app network ${APP_NETWORK:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
 echo "FAKE migration lock ${MIGRATION_LOCK_ID:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
 echo "locked" > "${FAKE_DEPLOY_STARTED:?}"
 [ -n "${FAKE_DEPLOY_SLEEP:-}" ] && sleep "$FAKE_DEPLOY_SLEEP"
+[ -z "${FAKE_DEPLOY_FAILURE_OUTCOME:-}" ] || [ "${FAKE_DEPLOY_FAIL_APP:-}" != "${APP_NAME:-}" ] || {
+  printf '%s\n%s\n' "$FAKE_DEPLOY_FAILURE_OUTCOME" "${FAKE_DEPLOY_FAILURE_DETAIL:-simulated deployment health check failure}" > "${DEPLOY_FAILURE_FILE:?}"
+  exit 1
+}
 [ "${FAKE_DEPLOY_FAIL_APP:-}" = "${APP_NAME:-}" ] && exit 1
 [ -n "${FAKE_DEPLOY_FAIL:-}" ] && exit 1
 exit 0
@@ -90,7 +94,14 @@ FAKE
 #!/usr/bin/env bash
 echo "docker $1" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
+  login)
+    if [ -n "${FAKE_LOGIN_FAIL:-}" ]; then
+      printf '%s\n' "${FAKE_LOGIN_ERROR:-denied: invalid registry credential}" >&2
+      exit 1
+    fi
+    printf 'Login Succeeded\n'
+    exit 0
+    ;;
   manifest)
     # Return JSON with sha256 digest for digest extraction (#196)
     printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
@@ -287,6 +298,8 @@ grep -q "^git fetch" "$dir/git.log" || fail "fetch not called"
 grep -q "^git reset" "$dir/git.log" && fail "reset must not run after failed fetch"
 grep -q "curl -sf -X POST" "$dir/curl.log" || fail "alert not posted"
 [ -f "$dir/state/stall" ] || fail "stall marker missing"
+grep -q 'outcome=git_fetch_failed' "$dir/state/stall" || fail "stall marker lacks the fetch failure outcome"
+grep -q 'git fetch origin main failed' "$dir/state/stall" || fail "stall marker lacks fetch detail"
 [ ! -f "$dir/deploy.log" ] || fail "deploy ran despite fetch failure"
 pass "fetch failure handled"
 
@@ -295,6 +308,7 @@ dir=$(make_env stale-checkout)
 code=$(run_script "$dir" FAKE_RESET_STALE=1)
 [ "$code" -ne 0 ] || fail "expected non-zero exit, got $code"
 grep -q "checkout stale" "$dir/run.out" || fail "missing stale ERROR log"
+grep -q 'outcome=checkout_stale' "$dir/state/stall" || fail "stall marker lacks stale-checkout outcome"
 [ ! -f "$dir/deploy.log" ] || fail "deploy ran despite stale checkout"
 grep -q "curl -sf -X POST" "$dir/curl.log" || fail "alert not posted"
 pass "stale checkout handled"
@@ -663,6 +677,8 @@ grep -q "migration owner.*not published yet" "$dir/run.out" || fail "missing mig
 grep -q "schema is not current" "$dir/run.out" || fail "barrier did not state the schema reason"
 [ -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot failed marker missing"
 [ "$(cat "$dir/state/messenger-bot.failed")" = "$SHA_B" ] || fail "messenger-bot failed marker sha != $SHA_B"
+grep -q 'outcome=migration_barrier_blocked' "$dir/state/stall" || fail "stall marker lacks migration-barrier outcome"
+grep -q 'schema_revision=' "$dir/state/stall" || fail "stall marker lacks the applied schema revision"
 grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "barrier alert not posted"
 [ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot deployed despite blocked barrier"
 [ ! -f "$dir/state/zalo-bot.sha" ] || fail "zalo-bot deployed despite blocked barrier"
@@ -758,6 +774,7 @@ for app in messenger-bot discord-bot zalo-bot; do
   [ "$(cat "$dir/state/$app.sha")" = "$SHA_A" ] || fail "$app state sha moved off $SHA_A"
 done
 [ ! -s "$dir/curl.body" ] || fail "alert paged for a commit that legitimately built nothing"
+[ ! -f "$dir/state/stall" ] || fail "a commit with no image was recorded as a deploy failure"
 pass "no-image HEAD resolves to the newest published commit"
 
 
@@ -769,7 +786,14 @@ make_no_owner_image_docker() { # dir
 #!/usr/bin/env bash
 echo "docker \$*" >> "\${DOCKER_LOG:?}"
 case "\$1" in
-  login) [ -z "\${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
+  login)
+    if [ -n "\${FAKE_LOGIN_FAIL:-}" ]; then
+      printf '%s\\n' "\${FAKE_LOGIN_ERROR:-denied: invalid registry credential}" >&2
+      exit 1
+    fi
+    printf 'Login Succeeded\\n'
+    exit 0
+    ;;
   manifest)
     # messenger-bot is unpublished at every sha; the dependents are published.
     if echo "\$*" | grep -q "messenger-bot"; then
@@ -845,12 +869,47 @@ echo "Test 19: docker login failure is reported as a credential fault, not a mis
 dir=$(make_env login-failure)
 for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
 make_no_owner_image_docker "$dir"
-code=$(run_script "$dir" FAKE_LOGIN_FAIL=1)
+code=$(run_script "$dir" GHCR_PULL_TOKEN=ghcr-test-secret FAKE_LOGIN_FAIL=1 \
+  FAKE_LOGIN_ERROR='denied: GHCR rejected credential')
 [ "$code" -ne 0 ] || fail "expected non-zero exit, got $code: $(cat "$dir/run.out")"
 grep -q "docker login to ghcr.io failed" "$dir/run.out" || fail "login failure not logged"
+grep -q 'denied: GHCR rejected credential' "$dir/run.out" || fail "Docker login diagnostic was discarded"
 grep -q "refusing to deploy" "$dir/run.out" || fail "login failure did not fail closed"
+grep -q 'outcome=registry_login_failed' "$dir/state/stall" || fail "stall marker lacks registry-login outcome"
+grep -q 'denied: GHCR rejected credential' "$dir/state/stall" || fail "stall marker lacks registry-login detail"
 [ ! -f "$dir/deploy.log" ] || fail "deploy ran after login failure"
 pass "login failure fails closed before CI/image fallback"
+
+echo "Test 19a: a CI-published image missing from GHCR has its own stall outcome"
+dir=$(make_env image-unresolvable)
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) printf 'Login Succeeded\n'; exit 0 ;;
+  manifest) printf 'manifest unknown: image tag unavailable\n' >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir" FAKE_CI_SCENARIO=success)
+[ "$code" -ne 0 ] || fail "unresolvable image should fail closed"
+grep -q 'build-image passed but its GHCR image is missing' "$dir/run.out" || fail "missing unresolvable-image log"
+grep -q 'outcome=image_unresolvable' "$dir/state/stall" || fail "stall marker lacks unresolvable-image outcome"
+grep -q "app=messenger-bot sha=$SHA_B" "$dir/state/stall" || fail "stall marker lacks app and target sha"
+pass "unresolvable image is identified separately from a no-image commit"
+
+echo "Test 19b: failed app health check writes its phase and endpoint to the stall marker"
+dir=$(make_env app-health-failure)
+code=$(run_script "$dir" FAKE_DEPLOY_FAIL_APP=messenger-bot \
+  FAKE_DEPLOY_FAILURE_OUTCOME=app_health_check_failed \
+  FAKE_DEPLOY_FAILURE_DETAIL='phase=pre_cutover endpoint=http://127.0.0.1:5001/health/ready attempts=120')
+[ "$code" -eq 0 ] || fail "app-local deploy failure should retry on the next cron tick, got $code"
+grep -q 'outcome=app_health_check_failed' "$dir/state/stall" || fail "stall marker lacks app-health outcome"
+grep -q 'app=messenger-bot' "$dir/state/stall" || fail "stall marker lacks failed app"
+grep -q 'phase=pre_cutover.*health/ready.*attempts=120' "$dir/state/stall" || fail "stall marker lacks health-check detail"
+! grep -q '^FAKE vps-deploy discord-bot' "$dir/deploy.log" || fail "dependent app deployed after migration-owner health failure"
+pass "app health failure is diagnosed in the stall marker"
 
 echo "Test 20: every self-pull app uses readiness for the promotion gate (#776)"
 grep -q '\[messenger-bot\]="/health/ready:false"' "$SCRIPT" || fail "Messenger compatibility rollout path changed"

@@ -250,6 +250,53 @@ describe('PlatformStudyCalendarCommandService', () => {
     expect(result.created).toEqual({ id: 8, userId: 3 });
   });
 
+  it.each([
+    { rng: () => 0, expectedSleeps: [150, 350] },
+    { rng: () => 1, expectedSleeps: [300, 700] },
+  ])(
+    'equal-jitters bounded source deletes through the injected RNG and sleep seam',
+    async ({ rng, expectedSleeps }) => {
+      const deleteCalendar = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('transient delete failure'))
+        .mockRejectedValueOnce(new Error('transient delete failure'))
+        .mockResolvedValue(undefined);
+      const calendarService = buildCalendarService({
+        listCalendars: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 7, userId: 3, eventDate: '2026-08-10', time: '09:00' },
+          ]),
+        deleteCalendar,
+        createCalendar: jest.fn().mockResolvedValue({ id: 8, userId: 3 }),
+      });
+      const sleeps: number[] = [];
+      const service = new PlatformStudyCalendarCommandService(
+        {
+          platform: 'zalo',
+          rng,
+          sleep: async (ms) => {
+            sleeps.push(ms);
+          },
+        },
+        calendarService,
+        buildConfigService(),
+      );
+
+      await expect(
+        service.rescheduleSession({
+          externalUserId: 'u1',
+          userId: 3,
+          calendarId: 7,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+      ).resolves.toMatchObject({ cancelledCalendarId: 7 });
+
+      expect(sleeps).toEqual(expectedSleeps);
+      expect(deleteCalendar).toHaveBeenCalledTimes(3);
+    },
+  );
+
   it('reuses an existing replacement on retry (no duplicate creation)', async () => {
     // Crash between create and delete: the replacement already exists in the
     // same snapshot the idempotency check reuses.

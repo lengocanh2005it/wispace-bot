@@ -1,6 +1,9 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Client } from 'discord.js';
-import { DiscordGuildMembershipAdapter } from './discord-guild-membership.adapter';
+import {
+  DiscordGuildMembershipAdapter,
+  getMembershipCheckRetryDelayMs,
+} from './discord-guild-membership.adapter';
 
 function buildConfigService(guildId?: string): ConfigService {
   return {
@@ -9,6 +12,14 @@ function buildConfigService(guildId?: string): ConfigService {
 }
 
 describe('DiscordGuildMembershipAdapter (#232 fail-closed)', () => {
+  it('equal-jitters each retry under its nominal ceiling through the rng seam', () => {
+    expect(getMembershipCheckRetryDelayMs(1, () => 0)).toBe(50);
+    expect(getMembershipCheckRetryDelayMs(1, () => 1)).toBe(100);
+    expect(getMembershipCheckRetryDelayMs(2, () => 0)).toBe(100);
+    expect(getMembershipCheckRetryDelayMs(2, () => 1)).toBe(200);
+    expect(getMembershipCheckRetryDelayMs(3, () => 1)).toBe(200);
+  });
+
   it('returns false when DISCORD_GUILD_ID is not set (cannot verify)', async () => {
     const client = {} as unknown as Client;
     const adapter = new DiscordGuildMembershipAdapter(
