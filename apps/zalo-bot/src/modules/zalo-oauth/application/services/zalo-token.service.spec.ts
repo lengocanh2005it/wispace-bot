@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
+import { PlatformConnectivityState } from '@wispace/bot-common/health';
+import type { ConfigService } from '@nestjs/config';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { ZaloOAuthClientPort } from '../ports/zalo-oauth-client.port';
 import type {
@@ -21,6 +22,12 @@ function buildRow(
     version: 0,
     ...overrides,
   };
+}
+
+function buildConfig(values: Record<string, string>): ConfigService {
+  return {
+    get: (key: string) => values[key],
+  } as unknown as ConfigService;
 }
 
 function buildPair(): ZaloOaTokenPair {
@@ -242,5 +249,156 @@ describe('ZaloTokenService', () => {
     await service.refreshNow();
     expect(tokenStore.refreshWithLock).toHaveBeenCalledTimes(1);
     expect(oauth.refreshOaToken).toHaveBeenCalledWith('refresh-1');
+  });
+  it('reports not_configured when no Zalo OA account was ever provisioned', async () => {
+    // The token row is empty AND there are no OA app credentials, so this
+    // deployment never had a Zalo account. That is not an outage.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({
+        readCurrent: jest.fn().mockResolvedValue(null),
+      }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({}),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+      ready: false,
+    });
+  });
+
+  it('still reports token_missing when an OA account exists but its row is gone', async () => {
+    // Credentials are provisioned, so an empty token row is real data loss and
+    // must keep failing readiness.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({
+        readCurrent: jest.fn().mockResolvedValue(null),
+      }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({ ZALO_APP_ID: '1234', ZALO_APP_SECRET_KEY: 'secret' }),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'unavailable',
+      reason: 'token_missing',
+      ready: false,
+    });
+  });
+
+  it('reports not_configured when the platform is explicitly switched off', async () => {
+    // Stale placeholder credentials are present, so their presence cannot be
+    // used to infer whether the platform is in use. The operator says so.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({ readCurrent: jest.fn().mockResolvedValue(null) }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({
+        ZALO_APP_ID: '1234',
+        ZALO_APP_SECRET_KEY: 'stale-placeholder',
+        ZALO_PLATFORM_ENABLED: 'false',
+      }),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+    });
+  });
+
+  it('keeps failing when the platform is on but no flag was ever set', async () => {
+    // Absent flag must not relax readiness, or a real deployment that forgot
+    // the flag would silently report healthy.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({ readCurrent: jest.fn().mockResolvedValue(null) }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({ ZALO_APP_ID: '1234', ZALO_APP_SECRET_KEY: 'secret' }),
+    );
+
+    await service.refreshNow();
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'unavailable',
+      reason: 'token_missing',
+    });
+  });
+
+  it('reports not_configured from the startup probe, not only the cron', async () => {
+    // onModuleInit is what sets the readiness state the deploy reads. A guard
+    // applied only to refreshNow never runs on this path, which is how the
+    // first attempt at this fix failed to change production behaviour.
+    const state = new PlatformConnectivityState('zalo');
+    const service = new ZaloTokenService(
+      buildStore({ readCurrent: jest.fn().mockResolvedValue(null) }),
+      buildOAuth(),
+      state,
+      undefined,
+      buildConfig({
+        ZALO_APP_ID: '1234',
+        ZALO_APP_SECRET_KEY: 'stale-placeholder',
+        ZALO_PLATFORM_ENABLED: 'false',
+      }),
+    );
+
+    await service.onModuleInit();
+    await new Promise((r) => setImmediate(r));
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+    });
+  });
+
+  it('reports not_configured even when the token row exists and refresh fails', async () => {
+    // The real production shape: an expired row plus stale placeholder
+    // credentials, so the refresh fails rather than reporting a missing row.
+    const state = new PlatformConnectivityState('zalo');
+    const oauth = buildOAuth();
+    oauth.refreshOaToken = jest
+      .fn()
+      .mockRejectedValue(new Error('network unreachable'));
+    const service = new ZaloTokenService(
+      buildStore({
+        readCurrent: jest
+          .fn()
+          .mockResolvedValue(buildRow({ accessTokenExpiresAt: new Date(0) })),
+        refreshWithLock: jest.fn().mockImplementation(async (refresh) => {
+          void refresh;
+          throw new Error('network unreachable');
+        }),
+      }),
+      oauth,
+      state,
+      undefined,
+      buildConfig({
+        ZALO_APP_ID: '1234',
+        ZALO_APP_SECRET_KEY: 'stale-placeholder',
+        ZALO_PLATFORM_ENABLED: 'false',
+      }),
+    );
+
+    await service.refreshNow().catch(() => undefined);
+
+    expect(state.getSnapshot()).toMatchObject({
+      status: 'not_configured',
+      reason: 'not_configured',
+    });
   });
 });

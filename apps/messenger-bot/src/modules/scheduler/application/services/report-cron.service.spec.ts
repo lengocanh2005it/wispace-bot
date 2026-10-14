@@ -99,7 +99,6 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
     expect(reportSendOrchestrationService.claimAndSend).toHaveBeenCalledWith(
       mapping,
       {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-06-15',

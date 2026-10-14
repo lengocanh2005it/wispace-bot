@@ -28,8 +28,6 @@ import {
   ChatIdempotencyEntity,
   PlatformChatRateLimitService,
   PlatformWriteToolBudgetService,
-  PlatformLlmUsageRecorderAdapter,
-  PlatformLlmSafetyEventAdapter,
   LlmSafetyCleanupService,
   provideWiredUsageRecorder,
 } from '@wispace/chat-metering/adapters';
@@ -43,15 +41,16 @@ import {
   PlatformChatQueueService,
   ChatRuntimeConfig,
   RedisChatQueueStore,
-  RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
   CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
+  createPlatformChatProviders,
   recordChatQueueReconciliationMetrics,
 } from '@wispace/chat-agent';
 import type {
   ChatQueueStorePort,
   ClarificationStateStore,
+  PlatformChatAgentDynamicOptions,
 } from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
@@ -118,17 +117,11 @@ import {
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
 import {
+  RescheduleRecoveryCronService,
   TypeormRescheduleAttemptStore,
   TypeormRescheduleStore,
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
-import {
-  LEARNER_PROFILE_STORE,
-  TypeOrmLearnerProfileStore,
-  createLearnerProfileRecorder,
-  createLearnerProfileSuffix,
-} from '@wispace/learner-profile';
-import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import {
   CleanupCronService,
   PlatformCleanupCronService,
@@ -147,6 +140,8 @@ const REGISTER_REPORT_MESSAGE =
 
 const RESCHEDULE_CONFIRM_SUFFIX =
   '\n\nNhắn "xác nhận <mã>" để đồng ý, hoặc "hủy" để hủy.';
+
+export const ZALO_AGENT_OPTIONS = 'ZALO_AGENT_OPTIONS';
 
 @Module({
   imports: [
@@ -332,25 +327,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [DeliveryLogService, PlatformDeadLetterService],
     },
     {
-      provide: PlatformChatHistoryService,
-      useFactory: (
-        configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        redisClient?: { getNativeClient(): unknown } | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'ZALO_CHAT_HISTORY_', keyPrefix: 'chat-history:zalo:' },
-          redisClient,
-          runtimeConfig,
-        ),
-      inject: [
-        ConfigService,
-        ChatRuntimeConfig,
-        { token: REDIS_CLIENT, optional: true },
-      ],
-    },
-    {
       provide: PlatformAgentToolsService,
       useFactory: (
         configService: ConfigService,
@@ -415,7 +391,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               ) => {
                 const outcome = await outboundService.sendText(
                   externalUserId,
-                  `${summary}${RESCHEDULE_CONFIRM_SUFFIX}${confirmationToken ? ` Mã: ${confirmationToken}` : ''}`,
+                  `${summary}${RESCHEDULE_CONFIRM_SUFFIX} Mã: ${confirmationToken}`,
                   userId === undefined ? undefined : { userId },
                 );
                 if (outcome !== 'sent') {
@@ -441,30 +417,16 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ],
     },
     {
-      provide: LEARNER_PROFILE_STORE,
-      useClass: TypeOrmLearnerProfileStore,
-    },
-    {
-      provide: PlatformAgentService,
+      provide: ZALO_AGENT_OPTIONS,
       useFactory: (
         configService: ConfigService,
-        toolsService: PlatformAgentToolsService,
-        historyService: PlatformChatHistoryService,
-        usageRecorder: PlatformLlmUsageRecorderAdapter,
-        safetyEventService: PlatformLlmSafetyEventAdapter,
-        adapter: LlmProviderAdapter,
-        learnerProfileStore: LearnerProfileStorePort,
         metrics: BotMetricsService,
-        redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
+        adapter: LlmProviderAdapter,
+        executionPort: LlmExecutionPort,
         accountLinkService: ZaloAccountLinkService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
-        executionPort: LlmExecutionPort,
-      ) => {
-        const learnerProfileSuffix = createLearnerProfileSuffix(
-          learnerProfileStore,
-          'zalo',
-        );
+      ): PlatformChatAgentDynamicOptions => {
         const classifierConfig = buildClassifierConfig((key) =>
           configService.get<string>(key)?.trim(),
         );
@@ -501,83 +463,71 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           onInputShape: (shape) => metrics.incClassifierInput(shape, 'zalo'),
           logger: new Logger('LlmContentClassifier'),
         });
-        return new PlatformAgentService(
-          configService,
-          toolsService,
-          historyService,
-          usageRecorder,
-          safetyEventService,
-          adapter,
-          {
-            platform: 'zalo',
-            currentIdentityProvider: (externalUserId) =>
-              accountLinkService.findCurrentIdentity(externalUserId),
-            cancelPendingReschedule: (externalUserId, approvalToken) =>
-              rescheduleConfirmationService.cancelForUser(
-                externalUserId,
-                approvalToken,
-              ),
-            clarificationStore,
-            promptDir: join(__dirname, '../../shared/prompts'),
-            promptFile: 'zalo-chat.system.txt',
-            toolExecutionTimeoutMs: 35_000,
-            systemPromptSuffix: async (input) => {
-              const learnerProfile = await learnerProfileSuffix(input);
-              return learnerProfile ? { learnerProfile } : undefined;
-            },
-            // Learner profile (#207 item 3): persist server-derived facts
-            // (band target, exam date) from successful tool results.
-            onToolResult: createLearnerProfileRecorder(
-              learnerProfileStore,
-              'zalo',
-            ),
-            metrics: {
-              timeLlmCall: (feature, model, round, fn) =>
-                metrics.timeLlmCall(feature, model, round, fn),
-              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
-              llmRoundOutcomeInc: (feature, outcome) =>
-                metrics.incRoundOutcome(feature, outcome),
-              observationOutcomeInc: (toolName, outcome) =>
-                metrics.incObservationOutcome(toolName, 'zalo', outcome),
-              toolPolicyDeniedInc: (toolName, reason) =>
-                metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
-              degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
-              promptCanaryHitInc: () => metrics.incLlmPromptCanaryHit('zalo'),
-              totalProviderAttemptsInc: (feature, attempts, outcome) =>
-                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
-              classifierVerdictInc: (label, mode) =>
-                metrics.incClassifierVerdict(label, mode, 'zalo'),
-            },
-            clarificationOutcomeInc: (outcome) =>
-              metrics.incClarificationOutcome(outcome),
-            // Bounded admission telemetry (#389)
-            llmAdmissionMetrics: metrics.llmAdmission,
-            llmExecution: executionPort,
-            contentClassifier,
-            classifierUsage: {
-              provider: adapter.providerName,
-              model: classifierModel,
-            },
+        return {
+          currentIdentityProvider: (externalUserId) =>
+            accountLinkService.findCurrentIdentity(externalUserId),
+          metrics: {
+            timeLlmCall: (feature, model, round, fn) =>
+              metrics.timeLlmCall(feature, model, round, fn),
+            timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+            llmRoundOutcomeInc: (feature, outcome) =>
+              metrics.incRoundOutcome(feature, outcome),
+            observationOutcomeInc: (toolName, outcome) =>
+              metrics.incObservationOutcome(toolName, 'zalo', outcome),
+            toolPolicyDeniedInc: (toolName, reason) =>
+              metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
+            degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
+            promptCanaryHitInc: () => metrics.incLlmPromptCanaryHit('zalo'),
+            totalProviderAttemptsInc: (feature, attempts, outcome) =>
+              metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
+            classifierVerdictInc: (label, mode) =>
+              metrics.incClassifierVerdict(label, mode, 'zalo'),
           },
-          redisClient,
-        );
+          clarificationStore,
+          clarificationOutcomeInc: (outcome) =>
+            metrics.incClarificationOutcome(outcome),
+          contentClassifier,
+          classifierUsage: {
+            provider: adapter.providerName,
+            model: classifierModel,
+          },
+          llmExecution: executionPort,
+          // Bounded admission telemetry (#389)
+          llmAdmissionMetrics: metrics.llmAdmission,
+          // The learner-profile part is the factory's; Zalo has no other.
+          systemPromptSuffix: null,
+          onBeforeReply: null,
+          tryFastReschedule: null,
+          cancelPendingReschedule: (externalUserId, approvalToken) =>
+            rescheduleConfirmationService.cancelForUser(
+              externalUserId,
+              approvalToken,
+            ),
+        };
       },
       inject: [
         ConfigService,
-        PlatformAgentToolsService,
-        PlatformChatHistoryService,
-        PlatformLlmUsageRecorderAdapter,
-        PlatformLlmSafetyEventAdapter,
-        'LLM_PROVIDER_ADAPTER',
-        LEARNER_PROFILE_STORE,
         BotMetricsService,
-        REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
+        'LLM_PROVIDER_ADAPTER',
+        'LLM_EXECUTION_PORT',
         ZaloAccountLinkService,
         RescheduleConfirmationService,
-        'LLM_EXECUTION_PORT',
       ],
     },
+    ...createPlatformChatProviders({
+      platform: 'zalo',
+      // Zalo prefixes its chat-history env with its own namespace.
+      historyEnvPrefix: 'ZALO_CHAT_HISTORY_',
+      historyKeyPrefix: 'chat-history:zalo:',
+      promptDir: join(__dirname, '../../shared/prompts'),
+      promptFile: 'zalo-chat.system.txt',
+      toolExecutionTimeoutMs: 35_000,
+      appendHistory: true,
+      queueWorkerReady: PLATFORM_CHAT_QUEUE_STORE,
+      queueWorkerFlush: PlatformChatQueueService,
+      agentDynamicOptions: ZALO_AGENT_OPTIONS,
+    }),
     {
       provide: PlatformChatQueueService,
       useFactory: (
@@ -678,28 +628,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ],
     },
     {
-      provide: RedisChatQueueWorkerService,
-      useFactory: (
-        configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        queueStore: ChatQueueStorePort,
-        queueService: PlatformChatQueueService,
-      ) =>
-        new RedisChatQueueWorkerService(
-          configService,
-          (limit) => queueStore.listReadyExternalUserIds(limit),
-          (externalUserId) => queueService.flushReady(externalUserId),
-          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
-          runtimeConfig,
-        ),
-      inject: [
-        ConfigService,
-        ChatRuntimeConfig,
-        PLATFORM_CHAT_QUEUE_STORE,
-        PlatformChatQueueService,
-      ],
-    },
-    {
       provide: PlatformStudyCalendarCommandService,
       useFactory: (
         calendarService: WispaceCalendarService,
@@ -753,6 +681,42 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [PlatformStudyCalendarCommandService],
     },
     ...createRescheduleProviders('zalo'),
+    {
+      // #1507: Zalo override of the shared recovery cron, adding the transport
+      // that re-sends a confirmation whose delivery was deferred. Without it, a
+      // `deferred` Zalo row has no bot that can legitimately deliver it, and the
+      // messenger pod would send a Zalo id to Meta and burn all five attempts.
+      // Declared after createRescheduleProviders so it replaces that instance.
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+        pgLock: PgAdvisoryLockService,
+        attemptStore: TypeormRescheduleAttemptStore,
+        outbound: ZaloOutboundService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          { pgLock, lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY },
+          attemptStore,
+          {
+            deliver: ({ externalId, scheduledTimeLabel, userId }) =>
+              outbound.sendText(
+                externalId,
+                `Mình đã dời buổi học sang ${scheduledTimeLabel} cho bạn rồi nhé ✅`,
+                { userId },
+              ),
+          },
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+        TypeormRescheduleAttemptStore,
+        ZaloOutboundService,
+      ],
+    },
     {
       provide: RescheduleConfirmationService,
       useFactory: (
@@ -813,7 +777,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
         new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
           platform: 'zalo',
-          advisoryLockId: 884_200_942,
+          advisoryLockId: ADVISORY_LOCKS.PLATFORM_LINK_AUDIT_CLEANUP,
         }),
       inject: [CleanupCronService, DataSource],
     },
@@ -878,12 +842,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           {
             platform: 'zalo',
             lockIds: {
-              messageLog: 884_200_916,
-              deadLetter: 884_200_917,
-              idempotencyRecovery: 884_200_918,
-              idempotencyCleanup: 884_200_919,
-              oauthState: 884_200_913,
-              reportClaim: 884_200_921,
+              messageLog: ADVISORY_LOCKS.ZALO_CLEANUP_MESSAGE_LOG,
+              deadLetter: ADVISORY_LOCKS.ZALO_CLEANUP_DEAD_LETTER,
+              idempotencyRecovery:
+                ADVISORY_LOCKS.ZALO_CLEANUP_IDEMPOTENCY_RECOVERY,
+              idempotencyCleanup: ADVISORY_LOCKS.ZALO_CLEANUP_IDEMPOTENCY,
+              oauthState: ADVISORY_LOCKS.ZALO_CLEANUP_OAUTH_STATE,
+              reportClaim: ADVISORY_LOCKS.ZALO_CLEANUP_REPORT_CLAIM,
             },
             messageLogRepo,
             deadLetterRepo,

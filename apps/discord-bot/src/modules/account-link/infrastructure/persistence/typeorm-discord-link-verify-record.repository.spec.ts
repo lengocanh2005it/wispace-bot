@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock */
 import { TypeormDiscordLinkVerifyRecordRepository } from './typeorm-discord-link-verify-record.repository';
 
 function buildMockRepo() {

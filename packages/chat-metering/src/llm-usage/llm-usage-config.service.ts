@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import { todayInTimezone } from '@wispace/date-utils';
 import {
   buildInputCostEnvKey,
@@ -29,9 +30,10 @@ export class LlmUsageConfigService {
   }
 
   todayUsageDate(): string {
-    const timezone =
-      this.configService.get<string>('LLM_USAGE_TIMEZONE')?.trim() ||
-      'Asia/Ho_Chi_Minh';
+    const timezone = resolveTimezone(
+      (key) => this.configService.get<string>(key),
+      LEGACY_TIMEZONE_ENV_KEYS.llmUsage,
+    );
     return todayInTimezone(timezone);
   }
 

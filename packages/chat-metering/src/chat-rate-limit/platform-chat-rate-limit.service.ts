@@ -1,5 +1,10 @@
 import { InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  APP_TIMEZONE_ENV_KEY,
+  LEGACY_TIMEZONE_ENV_KEYS,
+  resolveTimezone,
+} from '@wispace/contracts';
 import type { Repository } from 'typeorm';
 import { ChatDailyUsageEntity } from '../entities/chat-daily-usage.entity';
 import { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';
@@ -35,7 +40,6 @@ export interface PlatformChatRateLimitOptions {
 
 const DEFAULT_DAILY_LIMIT = 15;
 const DEFAULT_BURST_PER_MINUTE = 3;
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const DEFAULT_STUCK_RESERVED_MS = 600_000;
 
 /**
@@ -88,8 +92,10 @@ export class PlatformChatRateLimitService {
           ),
       timezone: strict
         ? this.readRequiredTimezone(configService)
-        : (configService.get<string>('CHAT_USAGE_TIMEZONE') ??
-          DEFAULT_TIMEZONE),
+        : resolveTimezone(
+            (key) => configService.get<string>(key),
+            LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
+          ),
       burstCountsRefunded: lenient
         ? ['true', '1', 'yes'].includes(
             configService
@@ -241,12 +247,15 @@ export class PlatformChatRateLimitService {
   }
 
   private readRequiredTimezone(configService: ConfigService): string {
-    const timezone = configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim();
-    if (!timezone) {
+    const get = (key: string) => configService.get<string>(key);
+    const explicit =
+      get(APP_TIMEZONE_ENV_KEY)?.trim() ||
+      get(LEGACY_TIMEZONE_ENV_KEYS.chatUsage)?.trim();
+    if (!explicit) {
       throw new InternalServerErrorException(
-        'CHAT_USAGE_TIMEZONE must be set in .env',
+        'APP_TIMEZONE (or CHAT_USAGE_TIMEZONE) must be set in .env',
       );
     }
-    return timezone;
+    return explicit;
   }
 }

@@ -491,8 +491,8 @@ One top-level operation that asks an LLM to produce one feature result. A chat g
 _Avoid_: provider attempt, chat turn
 
 **08:00 report wave**:
-The set of scheduled-report jobs selected by one platform's 08:00 ICT report tick. Retry-dispatch jobs are later attempts, not part of the original wave.
-_Avoid_: report cron (which can also mean retry dispatch), report fan-out
+The set of scheduled-report jobs selected by one platform's 08:00 ICT report tick. Retry-dispatch jobs are later attempts, not part of the original wave. Its owner and its split from report content are `CONTEXT-MAP.md` boundary rule 7.
+_Avoid_: report cron (which can also mean retry dispatch), report fan-out, scheduler module
 
 **background producer concurrency**:
 The maximum number of report or study-reminder generations a producer starts at once before they contend for LLM admission. It is a producer-side cap, distinct from the admission queue's provider-execution limit.
@@ -1000,6 +1000,10 @@ _Avoid_: self-scoring flow, one-shot rehash
 Operations endpoints and scripts. Protected by `InternalApiKeyGuard`. Includes sync, send-reports, profile/setup, health checks, quota status.
 _Avoid_: admin, management
 
+**tracing**:
+OpenTelemetry span emission. Fail-open: with no `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans are no-ops and no exporter is contacted. Separate from metrics: Prometheus is the active emitter, and tracing currently has no collecting backend and no reader. Emitting a span is not the same as a span being read.
+_Avoid_: APM, observability agent, telemetry pipeline
+
 **INTERNAL_API_KEY**:
 Shared secret for authenticating ops HTTP endpoints. Sent via header `X-Internal-Api-Key` or `Authorization: Bearer`.
 _Avoid_: admin key, service key
@@ -1147,8 +1151,12 @@ Implementation of a port, bridging domain interfaces and infrastructure services
 _Avoid_: implementation, service implementation
 
 **feature module**:
-A top-level directory under a bot's `modules` directory, owning one capability's four layers. Two feature modules in the same bot may depend on each other only through the target's ports or from a composition root; a concrete cross-feature import is a boundary violation. Unqualified, "feature" means a feature module — not the LLM feature tag.
-_Avoid_: feature (unqualified), package, context, module
+A top-level directory under a bot's `modules` directory, owning one capability's four layers. It is the directory form of a **bounded context**: a module that no context owns is a technical slice — a grouping by mechanism — and it does not become a boundary by being a directory. Two feature modules in the same bot may depend on each other only through the target's ports or from a composition root; a concrete cross-feature import is a boundary violation. Unqualified, "feature" means a feature module — not the LLM feature tag.
+_Avoid_: feature (unqualified), package, module, context (the boundary is a **bounded context**; a feature module is its directory form)
+
+**bounded context**:
+A domain boundary with its own language, invariants, and persistence, recorded in [CONTEXT-MAP.md](CONTEXT-MAP.md) both as a table row and — once it has a distinct language or invariant of its own — as a `<context>/CONTEXT.md`. A feature module is its directory form; the two are not interchangeable names.
+_Avoid_: feature module (the directory form, not the boundary), package, service
 
 **composition root**:
 The application wiring boundary where concrete adapters are bound to ports. A composition root may name infrastructure and platform services; feature application code may not.

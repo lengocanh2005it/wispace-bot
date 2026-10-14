@@ -1,5 +1,4 @@
 import type { Repository } from 'typeorm';
-import { Counter } from 'prom-client';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { LlmUsageEventEntity } from '../entities/llm-usage-event.entity';
 import type {
@@ -7,11 +6,6 @@ import type {
   LlmUsageQueryFilter,
   RecordLlmUsageInput,
 } from './types';
-
-const llmUsageRetentionDeletedTotal = new Counter({
-  name: 'llm_usage_retention_deleted_total',
-  help: 'Total rows deleted by LLM usage retention cleanup',
-});
 
 interface AggregateQueryRow {
   feature: string;
@@ -110,10 +104,6 @@ export class LlmUsageRepository {
       if (deleted.length < BATCH_SIZE) {
         break;
       }
-    }
-
-    if (totalDeleted > 0) {
-      llmUsageRetentionDeletedTotal.inc(totalDeleted);
     }
 
     return totalDeleted;

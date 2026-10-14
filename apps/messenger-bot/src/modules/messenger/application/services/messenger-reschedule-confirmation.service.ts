@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
+import {
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  RescheduleConfirmationService,
+} from '@wispace/reschedule-confirm/core';
 import type {
   CalendarPort,
   ReschedulePort,
@@ -40,6 +43,13 @@ export class MessengerRescheduleConfirmationService extends RescheduleConfirmati
     const result = await super.stage(input);
     if ('error' in result) {
       return result;
+    }
+    // Unreachable in practice: `stage` always mints the nonce. The field is
+    // optional only so the non-enumerable token stays out of legacy response
+    // shapes, so failing closed costs nothing and a proposal button is never
+    // emitted that no approval token can act on.
+    if (!result.confirmationToken) {
+      return { error: RESCHEDULE_INVALID_TOKEN_MESSAGE };
     }
     const messengerResult = {
       ...result,

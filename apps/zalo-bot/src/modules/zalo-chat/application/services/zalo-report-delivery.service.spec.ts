@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ZaloReportDeliveryService } from './zalo-report-delivery.service';
 import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/infrastructure/persistence/zalo-account-link.service';

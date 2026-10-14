@@ -16,8 +16,13 @@ import { DiscordStudyReminderModule } from './modules/discord-study-reminder/dis
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
 import { DiscordReengagementModule } from './modules/discord-reengagement/discord-reengagement.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
+import { BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { HealthController } from '@wispace/bot-common/health';
 import { OpsHealthModule } from '@wispace/ops-health/adapters';
+import {
+  DISCORD_REST_TIMEOUT_MULTIPLIER,
+  resolveDiscordSendTimeoutMs,
+} from './modules/discord-chat/domain/discord-send-timeout';
 
 @Module({
   controllers: [HealthController],
@@ -47,6 +52,17 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
           IntentsBitField.Flags.MessageContent,
         ],
         partials: [Partials.Channel],
+        // `retries` covers only aborts and ECONNRESET; every other failure is
+        // the application's to classify, and an SDK retry here would hide a
+        // delivery outcome above it. `timeout` is a backstop above the
+        // adapter's own deadline, which must stay the shorter one so an abort
+        // is always ours to attribute.
+        rest: {
+          retries: 0,
+          timeout:
+            resolveDiscordSendTimeoutMs(configService) *
+            DISCORD_REST_TIMEOUT_MULTIPLIER,
+        },
       }),
     }),
     ScheduleModule.forRoot(),
@@ -57,7 +73,7 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
     DiscordStudyReminderModule,
     DiscordOpsModule,
     DiscordReengagementModule,
-    createMetricsModule('discord', 'discord-bot'),
+    createMetricsModule('discord', BOT_SERVICE_NAMES.discord),
     OpsHealthModule.forPlatform('discord', DiscordChatModule),
   ],
 })

@@ -1,4 +1,4 @@
-import { ZaloChatModule } from './zalo-chat.module';
+import { ZaloChatModule, ZALO_AGENT_OPTIONS } from './zalo-chat.module';
 import { ZALO_OUTBOUND } from './application/ports/zalo-outbound.port';
 import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
@@ -15,9 +15,52 @@ import {
 } from '@wispace/scheduler-core/adapters';
 import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core/core';
 import { ZaloReportModule } from './zalo-report.module';
-import { findFactoryProvider } from '@wispace/bot-common/testing';
+import {
+  findEffectiveFactoryProvider,
+  findFactoryProvider,
+} from '@wispace/bot-common/testing';
 
 describe('Zalo outbound port wiring', () => {
+  it('binds the recovery cron to a Zalo transport so a deferred row can be replayed (#1507)', async () => {
+    // Without a transport a `deferred` row has no bot that can legitimately
+    // deliver it: the messenger pod would send a Zalo id to Meta, be rejected,
+    // and burn all five bounded attempts.
+    const binding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      RescheduleRecoveryCronService,
+    );
+    expect(binding).toBeDefined();
+
+    const sendText = jest.fn().mockResolvedValue('sent');
+    const recovery = binding!.useFactory(
+      {},
+      { registerCron: jest.fn() },
+      {},
+      {},
+      { sendText },
+    );
+
+    expect(recovery).toBeInstanceOf(RescheduleRecoveryCronService);
+    const notification = (
+      recovery as unknown as {
+        notification: { deliver: (input: unknown) => Promise<string> };
+      }
+    ).notification;
+    await expect(
+      notification.deliver({
+        externalId: 'zalo-user-1',
+        scheduledTimeLabel: '20/09 lúc 19:00',
+        userId: 42,
+      }),
+    ).resolves.toBe('sent');
+    // userId must reach the transport or the replay charges a second budget.
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-user-1',
+      expect.stringContaining('20/09 lúc 19:00'),
+      { userId: 42 },
+    );
+  });
+
   it('wires reschedule and report persistence from owner adapter entrypoints', () => {
     const rescheduleStoreBinding = findFactoryProvider(
       ZaloChatModule,
@@ -163,23 +206,16 @@ describe('Zalo outbound port wiring', () => {
   });
 
   it('wires PlatformAgentService with LlmContentClassifier in ZaloChatModule (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
+    const binding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      PlatformAgentService,
     );
     expect(binding).toBeDefined();
+    const dynamicBinding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      ZALO_AGENT_OPTIONS,
+    );
+    expect(dynamicBinding).toBeDefined();
 
     const configService = {
       get: jest.fn((key: string) => {
@@ -209,34 +245,26 @@ describe('Zalo outbound port wiring', () => {
       {},
       adapter,
       {},
-      metrics,
+      dynamicBinding!.useFactory(
+        configService,
+        metrics,
+        {},
+        adapter,
+        {},
+        {},
+        {},
+      ),
       null,
-      {},
-      {},
-      {},
-      {},
     );
     expect(agent).toBeInstanceOf(PlatformAgentService);
   });
 
   it('fails closed at startup when LLM_INPUT_CLASSIFIER_ENABLED=true with unapproved model (#864, #868)', () => {
-    const providers = (Reflect.getMetadata('providers', ZaloChatModule) ??
-      []) as Array<unknown>;
-    const binding = providers.find(
-      (
-        provider,
-      ): provider is {
-        provide: unknown;
-        useFactory: (...args: unknown[]) => unknown;
-      } =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === PlatformAgentService &&
-        'useFactory' in provider &&
-        typeof provider.useFactory === 'function',
+    const dynamicBinding = findEffectiveFactoryProvider(
+      ZaloChatModule,
+      ZALO_AGENT_OPTIONS,
     );
-    expect(binding).toBeDefined();
+    expect(dynamicBinding).toBeDefined();
 
     const configService = {
       get: jest.fn((key: string) => {
@@ -249,17 +277,11 @@ describe('Zalo outbound port wiring', () => {
     };
 
     expect(() =>
-      binding!.useFactory(
+      dynamicBinding!.useFactory(
         configService,
         {},
         {},
-        {},
-        {},
         { providerName: 'openai', isRateLimitError: () => false },
-        {},
-        {},
-        null,
-        {},
         {},
         {},
         {},

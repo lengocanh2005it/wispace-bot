@@ -21,6 +21,8 @@ import {
 } from '../../domain/ports/report-cron-seams.port';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { readOptionalPositiveInt } from '@wispace/bot-common/config';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import {
   fullPageAsMappingPage,
   iterateMappingPages,
@@ -29,6 +31,7 @@ import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
 } from '@wispace/llm-agent/core';
+import { DISCORD_REPORT_PRODUCER } from '../../report-producer';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
   DISCORD_REPORT_ACCOUNT_READER,
@@ -83,8 +86,11 @@ export class DiscordReportCronService {
     );
     this.concurrency = resolveBackgroundProducerConcurrency(executionConfig, {
       enabled: executionConfig.enabled,
-      producerName: 'discord report',
-      configuredConcurrency: this.readConfiguredConcurrency(),
+      producerName: DISCORD_REPORT_PRODUCER.producerName,
+      configuredConcurrency: readOptionalPositiveInt(
+        (key) => this.configService.get<string>(key),
+        DISCORD_REPORT_PRODUCER.concurrencyEnvKey,
+      ),
       onWarning: (message) => this.logger.warn(message),
     });
     this.metrics?.registerCron?.(
@@ -107,7 +113,15 @@ export class DiscordReportCronService {
 
     const waveStartedAt = Date.now();
     try {
-      await this.sendScheduledReports();
+      // A cron with no human watching the request. The wave's LLM report
+      // generation and WISPACE calls are already instrumented by
+      // BotMetricsService, but they need a parent to nest under (#1458).
+      await withRootSpan(
+        BOT_SERVICE_NAMES.discord,
+        'discord.report_cron',
+        {},
+        () => this.sendScheduledReports(),
+      );
       this.metrics?.observeReportWaveCompletionLag?.(
         (Date.now() - waveStartedAt) / 1000,
       );
@@ -322,16 +336,5 @@ export class DiscordReportCronService {
         error: 'additional failures omitted (see logs)',
       });
     }
-  }
-
-  private readConfiguredConcurrency(): number | undefined {
-    const raw = this.configService
-      .get<string>('DISCORD_REPORT_SEND_CONCURRENCY')
-      ?.trim();
-    if (!raw) return undefined;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : undefined;
   }
 }

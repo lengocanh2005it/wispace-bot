@@ -74,6 +74,12 @@ external_user_id=discordUserId, user_id)` into `discord_account_links`
    The redirect URLs never carry secrets and the frontend needs no callback
    page (the portal shows the link state itself).
 
+   The membership adapter retries lookup errors up to three times. Discord's
+   `Unknown Member` response is treated as confirmed non-membership and routes
+   to the invite. Other unresolved errors are not treated as non-membership:
+   the callback leaves its verify intent pending, and the reconcile cron retries
+   the membership check and welcome before consuming that intent.
+
 > **Welcome-DM dedupe (#231/#232/#233/#159):** both the organic (`guildMemberAdd`
 > of an unlinked user, via `sendOrganicWelcomeIfDue`) and the linked path
 > (callback / re-join / reconcile cron, via `welcomeIfDue`) share **one**
@@ -88,8 +94,9 @@ external_user_id=discordUserId, user_id)` into `discord_account_links`
 > marked **only** when Discord acknowledged the send, so a privacy-blocked DM
 > stays retryable by the next join/callback/reconcile event. `isMember` fails
 > closed when `DISCORD_GUILD_ID` is unset (returns false), deferring the
-> callback welcome to `guildMemberAdd`. Attempts are counted in
-> `discord_welcome_attempts_total{outcome=success|error|skipped}`.
+> callback welcome to `guildMemberAdd`. Ambiguous membership API errors retain
+> the verify intent through reconciliation until membership and welcome work
+> succeeds. Attempts are counted in `discord_welcome_attempts_total{outcome=success|error|skipped}`.
 
 > **Why no "join-before-link"?** Discord DMs need a shared guild, but the
 > _mapping_ does not. Linking commits at callback so a user who never joins

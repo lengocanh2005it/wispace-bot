@@ -11,16 +11,16 @@ FREE_FORM quota for bidirectional AI chat. V1 + hardening **H1–H7 ✓**.
 
 Raw TypeORM `UPDATE`/`DELETE` results are `[rows, affected]`; repository code that reads `RETURNING` rows must unwrap that tuple before indexing or iterating.
 
-## Flow (hook reserve)
+## Flow (pipeline owns quota)
 
 ```
 Webhook text → MessengerChatEnqueueService.enqueue → debounce flush
-  → ChatRateLimitService.reserveFreeFormSlot (DB idempotency + daily usage, hard cap H3)
-  → MessengerAgentService → Send API
+  → ChatPipeline.flush reserves via RateLimiterPort (DB idempotency + daily usage, hard cap H3)
+  → Agent → Send API
   → markCompleted; error before first bubble → refund (H4)
 ```
 
-Reserve is **not** called from webhook — only from `MessengerChatProcessorService` on flush.
+Reserve is **not** called from webhook and no longer from the processor — `ChatPipeline.flush` is the single quota owner (#465). Deny copy reaches Messenger learners via the `onQuotaDenied` hook.
 
 Menu postback, reminder cron, proactive reports do **not** go through this module.
 

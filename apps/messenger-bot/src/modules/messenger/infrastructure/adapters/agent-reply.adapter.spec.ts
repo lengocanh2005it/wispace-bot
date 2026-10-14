@@ -137,7 +137,6 @@ describe('AgentReplyAdapter', () => {
 
       expect(result.text).toMatch(/WISPACE/);
       expect(result.richFollowUps).toEqual([]);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       const chatFn = adapter.chatWithTools as jest.Mock;
       expect(chatFn).not.toHaveBeenCalled();
     });
@@ -164,7 +163,6 @@ describe('AgentReplyAdapter', () => {
 
       expect(result.text).toBe('Đã chuẩn bị đổi lịch cho bạn.');
       expect(result.richFollowUps).toEqual([]);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(adapter.chatWithTools as jest.Mock).not.toHaveBeenCalled();
     });
   });
@@ -184,7 +182,6 @@ describe('AgentReplyAdapter', () => {
 
       expect(result.richFollowUps).toEqual([]);
       expect(result.text).toMatch(/không thể xử lý/i);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(adapter.chatWithTools as jest.Mock).not.toHaveBeenCalled();
     });
   });
@@ -202,7 +199,6 @@ describe('AgentReplyAdapter', () => {
       });
 
       expect(result.text).toBeTruthy();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(adapter.chatWithTools as jest.Mock).not.toHaveBeenCalled();
     });
   });

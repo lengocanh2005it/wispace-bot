@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mocks */
 import type { ConfigService } from '@nestjs/config';
 import type { PlatformChatQueueService } from '@wispace/chat-agent';
 import type { RescheduleConfirmationService } from '@wispace/reschedule-confirm/core';
@@ -9,6 +8,7 @@ import type { DiscordConsentPromptPort } from '../../application/ports/discord-c
 import type { DiscordWelcomeDeliveryPort } from '../../application/ports/discord-welcome-delivery.port';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import { prepareDiscordOutbound } from '../../application/utils/discord-outbound-guard';
+import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent/core';
 import { DiscordChatGateway } from './discord-chat.gateway';
 import { ChannelType } from 'discord.js';
 
@@ -56,6 +56,7 @@ function buildGateway(overrides: {
     sendMenuButtons: jest.fn().mockResolvedValue(true),
     sendText: jest.fn().mockResolvedValue(undefined),
     sendToChannel: jest.fn().mockResolvedValue(undefined),
+    admitOutbound: jest.fn().mockResolvedValue(true),
     ...overrides.outbound,
   } as unknown as DiscordOutboundService;
   const welcomeService = {
@@ -392,6 +393,126 @@ describe('DiscordChatGateway non-text messages (#401)', () => {
   });
 });
 
+describe('DiscordChatGateway menu admission (#1508)', () => {
+  const interaction = (editReply: jest.Mock) =>
+    ({
+      user: { id: 'discord-user-1' },
+      isButton: () => true,
+      deferReply: jest.fn().mockResolvedValue(undefined),
+      editReply,
+    }) as never;
+
+  const buildDenied = (menu: Partial<DiscordMenuService>) => {
+    const getUpcomingSessions = jest.fn().mockResolvedValue('upcoming');
+    const getLearningProgress = jest.fn().mockResolvedValue('progress');
+    const { gateway, outboundService } = buildGateway({
+      outbound: { admitOutbound: jest.fn().mockResolvedValue(false) },
+      menu: { getUpcomingSessions, getLearningProgress, ...menu },
+    });
+    return {
+      gateway,
+      getUpcomingSessions,
+      getLearningProgress,
+      admitOutbound: outboundService.admitOutbound as jest.Mock,
+    };
+  };
+
+  it('does not fetch or render the menu when the learner is limited', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, getUpcomingSessions, admitOutbound } = buildDenied({});
+
+    await gateway.onMenuUpcomingSessions([interaction(editReply)]);
+
+    // The upstream fetch is the expensive part; a denied press must not pay it.
+    expect(admitOutbound).toHaveBeenCalledWith('discord-user-1', 143, 1);
+    expect(getUpcomingSessions).not.toHaveBeenCalled();
+    expect(editReply).toHaveBeenCalledTimes(1);
+    expect(editReply.mock.calls[0][0].content).toContain('tạm hoãn');
+  });
+
+  it('leaves the button message untouched on a denial so the learner can retry', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const deferReply = jest.fn().mockResolvedValue(undefined);
+    const deferUpdate = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
+      outbound: { admitOutbound: jest.fn().mockResolvedValue(false) },
+    });
+
+    await gateway.onMenuUpcomingSessions([
+      {
+        user: { id: 'discord-user-1' },
+        isButton: () => true,
+        deferReply,
+        deferUpdate,
+        editReply,
+      } as never,
+    ]);
+
+    // deferReply posts a new message; deferUpdate would have edited the pressed
+    // message in place. Nothing was mutated, so that message must survive intact.
+    expect(deferReply).toHaveBeenCalledTimes(1);
+    expect(deferUpdate).not.toHaveBeenCalled();
+  });
+
+  it('gates the learning-progress menu on the same rule', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, getLearningProgress, admitOutbound } = buildDenied({});
+
+    await gateway.onMenuLearningProgress([interaction(editReply)]);
+
+    expect(admitOutbound).toHaveBeenCalledWith('discord-user-1', 143, 1);
+    expect(getLearningProgress).not.toHaveBeenCalled();
+    expect(editReply.mock.calls[0][0].content).toContain('tạm hoãn');
+  });
+
+  it('admits with the canonical user id before fetching the menu', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const order: string[] = [];
+    const { gateway, outboundService } = buildGateway({
+      outbound: {
+        admitOutbound: jest.fn().mockImplementation(async () => {
+          order.push('admit');
+          return true;
+        }),
+      },
+      accountLink: { findUserIdByDiscordId: jest.fn().mockResolvedValue(77) },
+      menu: {
+        getUpcomingSessions: jest.fn().mockImplementation(async () => {
+          order.push('fetch');
+          return 'upcoming';
+        }),
+      },
+    });
+
+    await gateway.onMenuUpcomingSessions([interaction(editReply)]);
+
+    expect(order).toEqual(['admit', 'fetch']);
+    expect(outboundService.admitOutbound as jest.Mock).toHaveBeenCalledWith(
+      'discord-user-1',
+      77,
+      1,
+    );
+    expect(editReply.mock.calls[0][0].content).toBe('upcoming');
+  });
+
+  it('keeps the menu failure message on the error branch', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
+      menu: {
+        getUpcomingSessions: jest
+          .fn()
+          .mockRejectedValue(new Error('WISPACE down')),
+      },
+    });
+
+    await gateway.onMenuUpcomingSessions([interaction(editReply)]);
+
+    expect(editReply.mock.calls[0][0].content).toBe(
+      CHAT_FAILURE_FALLBACK_MESSAGE,
+    );
+  });
+});
+
 describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
   const token = '11111111-1111-4111-8111-111111111111';
   const confirmedResult = {
@@ -404,6 +525,7 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
     confirmResult: unknown = confirmedResult,
   ) => {
     const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const confirm = jest.fn().mockResolvedValue(confirmResult);
     const { gateway } = buildGateway({
       outbound: { sendText },
       accountLink: {
@@ -411,18 +533,15 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
           .fn()
           .mockResolvedValue({ userId: 42, mappingVersion: '1:2026-09-29' }),
       },
-      reschedule: {
-        confirm: jest.fn().mockResolvedValue(confirmResult),
-        recordConfirmationDelivery,
-      },
+      reschedule: { confirm, recordConfirmationDelivery },
     });
-    return { gateway, recordConfirmationDelivery };
+    return { gateway, recordConfirmationDelivery, confirm };
   };
 
-  const interaction = (editReply: jest.Mock) =>
+  const interaction = (editReply: jest.Mock, action = 'reschedule_confirm') =>
     ({
       user: { id: 'discord-user-1' },
-      customId: `reschedule_confirm:${token}`,
+      customId: `${action}:${token}`,
       isButton: () => true,
       deferUpdate: jest.fn().mockResolvedValue(undefined),
       editReply,
@@ -459,6 +578,7 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
     expect(sendText).toHaveBeenCalledWith(
       'discord-user-1',
       expect.stringContaining('20/09 lúc 19:00'),
+      { userId: 42 },
     );
     expect(recordConfirmationDelivery).toHaveBeenCalledWith(
       'discord-user-1',
@@ -487,6 +607,226 @@ describe('DiscordChatGateway reschedule confirmation delivery (#1483)', () => {
     // A failure message here would read as "the change did not happen" when it
     // may well have.
     expect(editReply).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordChatGateway reschedule confirmation admission (#1494)', () => {
+  const token = '22222222-2222-4222-8222-222222222222';
+
+  const linkedIdentity = {
+    userId: 42,
+    mappingVersion: '1:2026-09-29',
+  };
+
+  const buildLimited = () => {
+    const confirm = jest.fn();
+    const cancel = jest.fn();
+    const sendText = jest.fn();
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const { gateway, outboundService } = buildGateway({
+      outbound: {
+        admitOutbound: jest.fn().mockResolvedValue(false),
+        sendText,
+      },
+      accountLink: {
+        findCurrentIdentity: jest.fn().mockResolvedValue(linkedIdentity),
+      },
+      reschedule: { confirm, cancel, recordConfirmationDelivery },
+    });
+    return {
+      gateway,
+      confirm,
+      cancel,
+      sendText,
+      recordConfirmationDelivery,
+      admitOutbound: outboundService.admitOutbound as jest.Mock,
+    };
+  };
+
+  const interaction = (editReply: jest.Mock, action = 'reschedule_confirm') =>
+    ({
+      user: { id: 'discord-user-1' },
+      customId: `${action}:${token}`,
+      isButton: () => true,
+      deferUpdate: jest.fn().mockResolvedValue(undefined),
+      editReply,
+    }) as never;
+
+  it('refuses the confirm before the calendar write when the learner is limited', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, confirm, recordConfirmationDelivery, admitOutbound } =
+      buildLimited();
+
+    await gateway.onDynamicRescheduleAction([interaction(editReply)]);
+
+    // Same bucket identity as every other Discord outbound path.
+    expect(admitOutbound).toHaveBeenCalledWith('discord-user-1', 42, 1);
+    // Admission precedes the mutation: nothing is written for a denied turn.
+    expect(confirm).not.toHaveBeenCalled();
+    // Silence would read as "the change went through but broke".
+    expect(editReply).toHaveBeenCalledTimes(1);
+    expect(editReply.mock.calls[0][0].content).toContain('chưa thay đổi');
+    // No mutation means no attempt record exists to record against.
+    expect(recordConfirmationDelivery).not.toHaveBeenCalled();
+  });
+
+  it('refuses the cancel without touching the staged proposal', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, cancel, recordConfirmationDelivery, admitOutbound } =
+      buildLimited();
+
+    await gateway.onDynamicRescheduleAction([
+      interaction(editReply, 'reschedule_cancel'),
+    ]);
+
+    // Cancel reads the identity too, otherwise this learner draws from a
+    // second bucket just by pressing the other button.
+    expect(admitOutbound).toHaveBeenCalledWith('discord-user-1', 42, 1);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(editReply.mock.calls[0][0].content).toContain('chưa thay đổi');
+    expect(recordConfirmationDelivery).not.toHaveBeenCalled();
+  });
+
+  it('charges the refusal one admission and echoes no request text', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway, admitOutbound, sendText } = buildLimited();
+
+    await gateway.onDynamicRescheduleAction([interaction(editReply)]);
+
+    expect(admitOutbound).toHaveBeenCalledTimes(1);
+    // One edit is the whole answer; a DM fallback here would be a second
+    // delivery attempt for a refusal that already landed.
+    expect(editReply).toHaveBeenCalledTimes(1);
+    expect(sendText).not.toHaveBeenCalled();
+    const content = editReply.mock.calls[0][0].content as string;
+    expect(content).not.toContain(token);
+    expect(content).not.toContain('discord-user-1');
+  });
+
+  it('deferUpdate precedes admission so the Redis call cannot burn the 3s token', async () => {
+    const order: string[] = [];
+    const { gateway } = buildGateway({
+      outbound: {
+        admitOutbound: jest.fn().mockImplementation(async () => {
+          order.push('admit');
+          return false;
+        }),
+      },
+      accountLink: {
+        findCurrentIdentity: jest.fn().mockResolvedValue(linkedIdentity),
+      },
+      reschedule: { confirm: jest.fn() },
+    });
+    const interaction = {
+      user: { id: 'discord-user-1' },
+      customId: `reschedule_confirm:${token}`,
+      isButton: () => true,
+      deferUpdate: jest.fn().mockImplementation(async () => {
+        order.push('defer');
+      }),
+      editReply: jest.fn().mockResolvedValue(undefined),
+    } as never;
+
+    await gateway.onDynamicRescheduleAction([interaction]);
+
+    expect(order).toEqual(['defer', 'admit']);
+  });
+
+  it('admits, then confirms, then records — admission is consulted before the write', async () => {
+    const order: string[] = [];
+    const confirm = jest.fn().mockImplementation(async () => {
+      order.push('confirm');
+      return {
+        confirmed: true as const,
+        scheduledTimeLabel: '20/09 lúc 19:00',
+      };
+    });
+    const recordConfirmationDelivery = jest
+      .fn()
+      .mockImplementation(async () => {
+        order.push('record');
+      });
+    const { gateway } = buildGateway({
+      outbound: {
+        admitOutbound: jest.fn().mockImplementation(async () => {
+          order.push('admit');
+          return true;
+        }),
+      },
+      accountLink: {
+        findCurrentIdentity: jest.fn().mockResolvedValue(linkedIdentity),
+      },
+      reschedule: { confirm, recordConfirmationDelivery },
+    });
+
+    await gateway.onDynamicRescheduleAction([
+      interaction(jest.fn().mockResolvedValue(undefined)),
+    ]);
+
+    expect(order).toEqual(['admit', 'confirm', 'record']);
+    expect(recordConfirmationDelivery).toHaveBeenCalledWith(
+      'discord-user-1',
+      token,
+      'sent',
+    );
+  });
+
+  it('charges the edit-failure fallback to the same bucket as the admission', async () => {
+    const sendText = jest.fn().mockResolvedValue('not_sent');
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
+      outbound: { sendText },
+      accountLink: {
+        findCurrentIdentity: jest.fn().mockResolvedValue(linkedIdentity),
+      },
+      reschedule: {
+        confirm: jest.fn().mockResolvedValue({
+          confirmed: true as const,
+          scheduledTimeLabel: '20/09 lúc 19:00',
+        }),
+        recordConfirmationDelivery,
+      },
+    });
+
+    await gateway.onDynamicRescheduleAction([
+      interaction(
+        jest.fn().mockRejectedValue(new Error('Unknown interaction')),
+      ),
+    ]);
+
+    // Without the userId the fallback lands in the external-id bucket and the
+    // same turn draws from two budgets.
+    expect(sendText).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.any(String),
+      {
+        userId: 42,
+      },
+    );
+    expect(recordConfirmationDelivery).toHaveBeenCalledWith(
+      'discord-user-1',
+      token,
+      'not_sent',
+    );
+  });
+
+  it('degrades to the failure message when the identity lookup fails', async () => {
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const confirm = jest.fn();
+    const { gateway } = buildGateway({
+      accountLink: {
+        findCurrentIdentity: jest.fn().mockRejectedValue(new Error('DB blip')),
+      },
+      reschedule: { confirm },
+    });
+
+    await gateway.onDynamicRescheduleAction([interaction(editReply)]);
+
+    // A lookup failure must not strand the learner on a spinner.
+    expect(confirm).not.toHaveBeenCalled();
+    expect(editReply.mock.calls[0][0].content).toBe(
+      CHAT_FAILURE_FALLBACK_MESSAGE,
+    );
   });
 });
 

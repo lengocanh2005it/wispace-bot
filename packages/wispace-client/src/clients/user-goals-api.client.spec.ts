@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { UserGoalsApiClient } from './user-goals-api.client';
 import type { WispaceClientMetrics } from './wispace-client-types';
 import { WispaceApiError } from '../errors/wispace-api.error';

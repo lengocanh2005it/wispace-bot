@@ -44,5 +44,5 @@ The app runs as an HTTP server (`PORT`, default `3001`) to expose `GET /v1/disco
 npm run start:dev
 npm run build
 npm run test
-npm run verify   # format:check + lint + typecheck + test + build
+npm run verify:local   # package-scoped format:check + lint + typecheck + test + build
 ```

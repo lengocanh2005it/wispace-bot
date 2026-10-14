@@ -1,10 +1,10 @@
 import { DirectUsageWriter } from './direct-usage-writer';
-import type { LlmUsageRepository } from './llm-usage.repository';
+import type { DirectUsageWriterRepository } from './direct-usage-writer';
 
 function mockRepo() {
   return {
     insertUsage: jest.fn().mockRejectedValue(new Error('db down')),
-  } as unknown as LlmUsageRepository;
+  } as unknown as DirectUsageWriterRepository;
 }
 
 describe('DirectUsageWriter', () => {
@@ -39,6 +39,51 @@ describe('DirectUsageWriter', () => {
 
     expect(repo.insertUsage).toHaveBeenCalledTimes(2);
     expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ externalUserId: 'u1' }),
+    );
+  });
+
+  describe('retry delay jitter (#1490)', () => {
+    const event = {
+      feature: 'chat' as const,
+      externalUserId: 'u-jitter',
+      model: 'gpt-4',
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      cachedTokens: 0,
+      usageDate: '2026-08-25',
+    };
+
+    it('fires at the floor (250ms) when rng pins 0', async () => {
+      const repo = mockRepo();
+      new DirectUsageWriter(repo, undefined, () => 0).write(event);
+
+      await jest.runAllTicks();
+      jest.advanceTimersByTime(249);
+      await jest.runAllTicks();
+      expect(repo.insertUsage).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(1);
+      await jest.runAllTicks();
+      expect(repo.insertUsage).toHaveBeenCalledTimes(2);
+    });
+
+    it('never waits past the 500ms ceiling when rng pins 1', async () => {
+      const repo = mockRepo();
+      new DirectUsageWriter(repo, undefined, () => 1).write(event);
+
+      await jest.runAllTicks();
+      jest.advanceTimersByTime(499);
+      await jest.runAllTicks();
+      expect(repo.insertUsage).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(1);
+      await jest.runAllTicks();
+      expect(repo.insertUsage).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('dispose before catch handler prevents retry', async () => {

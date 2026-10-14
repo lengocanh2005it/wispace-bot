@@ -4,6 +4,10 @@ Document recording **weaknesses / unhandled items** in the WISPACE bots (all fun
 
 **Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Generic tool capability/approval policy **done** (#416). Shared packages **extracted** (20 packages). Discord/Zalo bots **functional** (chat + quota + 7/7 real tool handlers incl. `precreate_next_exercise`). Items below are remaining gaps or scale-dependent improvements.
 
+**Discord callback membership recovery (#484) is covered:** membership checks
+retry briefly, confirmed `Unknown Member` responses route to the invite, and
+ambiguous failures keep the verify intent available to the reconcile cron.
+
 **Scope of this document — read before concluding an area is covered.** Every
 entry here is a **system** edge case: multi-pod scheduling, webhook retry and
 dedupe, the Meta 24h window, Redis unavailability, provider failover, deploy
@@ -29,7 +33,7 @@ before filing: the `chat_quota_events` cleanup cron **does** exist
 ignored" claim is stale at HEAD (`typeorm-ops-health.repository.ts` binds `$2`).
 Remaining unowned findings are exactly the open issues above.
 
-Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
+Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (open items).
 
 ---
 
@@ -404,13 +408,13 @@ npm run study-reminder:jobs
 | On Phase Merge          | Update                                                                                                                     |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Any                     | Tick ✓ in phase table at top of this file                                                                                  |
-| S0                      | `AGENTS.md` Integration gaps, `study-session-reminder.md`                                                                  |
+| S0                      | `study-session-reminder.md`                                                                                               |
 | S2                      | `study-session-reminder.md` §11.6, `project-overview.md` §6                                                                |
 | R4, H7 scale            | `project-overview.md` §10                                                                                                  |
 | LLM-AB, SAFETY, METRICS | `project-overview.md` §3 (modules), §6 (cron), §8 (env)                                                                    |
-| PRIVACY                 | `AGENTS.md` Integration gaps, `study-session-reminder.md`, `project-overview.md` §4–§6, ADR-0014, fleet verification drill |
-| PKG                     | `project-overview.md` §3 (code structure), AGENTS.md                                                                       |
-| DISCORD, ZALO           | `project-overview.md` §1 (features), AGENTS.md Integration gaps                                                            |
+| PRIVACY                 | `study-session-reminder.md`, `project-overview.md` §4–§6, ADR-0014, fleet verification drill                              |
+| PKG                     | `project-overview.md` §3 (code structure)                                                                                  |
+| DISCORD, ZALO           | `project-overview.md` §1 (features)                                                                                        |
 | L1, R1, L2, R2, R3, …   | Corresponding section in this file → move to "Already Done" ✓                                                              |
 
 ---

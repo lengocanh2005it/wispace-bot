@@ -4,7 +4,7 @@ import {
   isAmbiguousMessage,
   isStopIntent,
   isDistressExpression,
-} from './scope.utils';
+} from './scope';
 
 describe('isObviouslyOffTopic', () => {
   it.each(['', '   ', 'chào bạn', 'hello', 'ok'])(

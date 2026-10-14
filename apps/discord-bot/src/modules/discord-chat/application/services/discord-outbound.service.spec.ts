@@ -1,7 +1,9 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordOutboundService } from './discord-outbound.service';
 import type { DiscordTransportPort } from '../ports/discord-transport.port';
+import { DiscordSendTimeoutError } from '../../domain/discord-send-outcome.errors';
+
+const token = '11111111-1111-4111-8111-111111111111';
 
 function buildTransportStub(
   fetch: jest.Mock,
@@ -393,17 +395,27 @@ describe('DiscordOutboundService', () => {
     expect((err as Error).message).toContain('di…');
   });
 
-  it('sends a reschedule confirmation DM with confirm/cancel buttons', async () => {
+  it('sends a reschedule confirmation DM whose buttons carry their approval token', async () => {
     const send = jest
       .fn<
         Promise<void>,
-        [{ content: string; buttons: unknown[]; allowedMentions: unknown }]
+        [
+          {
+            content: string;
+            buttons: { customId: string }[];
+            allowedMentions: unknown;
+          },
+        ]
       >()
       .mockResolvedValue(undefined);
     const fetch = jest.fn().mockResolvedValue({ send });
 
     const service = new DiscordOutboundService(buildTransportStub(fetch));
-    await service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?');
+    await service.sendRescheduleConfirmation(
+      'discord-1',
+      'Dời buổi học?',
+      token,
+    );
 
     expect(fetch).toHaveBeenCalledWith('discord-1');
     expect(send).toHaveBeenCalledWith(
@@ -415,7 +427,11 @@ describe('DiscordOutboundService', () => {
       users: [],
       repliedUser: false,
     });
-    expect(send.mock.calls[0][0].buttons).toHaveLength(2);
+    // ADR-0011 / #1493: a button with a bare custom id can never authorize a
+    // calendar write, so both ids must carry the proposal's token.
+    expect(
+      send.mock.calls[0][0].buttons.map((button) => button.customId),
+    ).toEqual([`reschedule_confirm:${token}`, `reschedule_cancel:${token}`]);
   });
 
   it('#232: sendMenuButtons returns true when Discord acknowledges the send', async () => {
@@ -484,7 +500,7 @@ describe('DiscordOutboundService', () => {
     const service = new DiscordOutboundService(buildTransportStub(fetch));
 
     await expect(
-      service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?'),
+      service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?', token),
     ).resolves.toBe(false);
   });
 
@@ -500,7 +516,7 @@ describe('DiscordOutboundService', () => {
 
     await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
     await service.sendMenuButtons('discord-1', 'menu');
-    await service.sendRescheduleConfirmation('discord-1', 'confirm?');
+    await service.sendRescheduleConfirmation('discord-1', 'confirm?', token);
 
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith('dm_send_error');
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
@@ -697,11 +713,14 @@ describe('DiscordOutboundService', () => {
     );
   });
 
-  it('#156: does not retry a timeout and records ambiguous delivery', async () => {
-    const timeout = Object.assign(new Error('request timed out'), {
-      name: 'TimeoutError',
-    });
-    const fetch = jest.fn().mockRejectedValue(timeout);
+  it('#1509: a stalled send is ambiguous and not re-sent', async () => {
+    // The SDK reports its own deadline as a bare `AbortError`, not a
+    // `TimeoutError`. The adapter attributes the cause before it reaches the
+    // application layer. There is no delivery verdict, so the send is
+    // ambiguous AND terminal — a resend would risk a second copy (#1509).
+    const fetch = jest
+      .fn()
+      .mockRejectedValue(new DiscordSendTimeoutError(15_000));
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
@@ -713,6 +732,40 @@ describe('DiscordOutboundService', () => {
     await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous_timeout',
+    );
+    // One send, one count. `sendCore` attributes the cause and counts it; the
+    // caller must not count the same ambiguous failure a second time (#1509).
+    expect(
+      jest
+        .mocked(metrics.incDmDeliveryFailure)
+        .mock.calls.filter(
+          ([reason]) => reason === 'dm_send_ambiguous_timeout',
+        ),
+    ).toHaveLength(1);
+  });
+
+  it('#1509: an abort the adapter did not attribute is not ambiguous', async () => {
+    // Only the adapter can tell a deadline from any other abort, because the
+    // SDK reports both as a bare `AbortError`. An unattributed one carries no
+    // evidence that the request was in flight, so it must not be recorded as
+    // a message that might still arrive.
+    const fetch = jest.fn().mockRejectedValue(
+      Object.assign(new Error('This operation was aborted'), {
+        name: 'AbortError',
+      }),
+    );
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildTransportStub(fetch),
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
       'dm_send_ambiguous',
     );
   });

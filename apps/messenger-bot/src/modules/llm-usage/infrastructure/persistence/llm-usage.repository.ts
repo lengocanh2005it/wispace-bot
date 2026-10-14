@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { RETENTION_CLEANUP_METRICS_PORT } from '@wispace/bot-common/metrics';
+import type { RetentionCleanupMetricsPort } from '@wispace/bot-common/metrics';
 import {
   LlmUsageEventEntity,
   LlmUsageRepository as ChatMeteringLlmUsageRepository,
@@ -22,6 +24,9 @@ export class LlmUsageRepository implements LlmUsageRepositoryPort {
   constructor(
     @InjectRepository(LlmUsageEventEntity)
     usageRepo: Repository<LlmUsageEventEntity>,
+    @Optional()
+    @Inject(RETENTION_CLEANUP_METRICS_PORT)
+    private readonly metrics?: RetentionCleanupMetricsPort,
   ) {
     this.core = new ChatMeteringLlmUsageRepository(usageRepo, PLATFORM);
   }
@@ -32,8 +37,16 @@ export class LlmUsageRepository implements LlmUsageRepositoryPort {
     return this.core.insertUsage({ ...input, externalUserId: input.psid });
   }
 
-  deleteOlderThan(cutoff: Date): Promise<number> {
-    return this.core.deleteOlderThan(cutoff);
+  async deleteOlderThan(cutoff: Date): Promise<number> {
+    const deleted = await this.core.deleteOlderThan(cutoff);
+    if (deleted > 0) {
+      try {
+        this.metrics?.incLlmUsageDeleted(deleted);
+      } catch {
+        // Metrics must not turn a successful retention delete into a failure.
+      }
+    }
+    return deleted;
   }
 
   aggregateUsage(filter: LlmUsageQueryFilter): Promise<LlmUsageAggregateRow[]> {

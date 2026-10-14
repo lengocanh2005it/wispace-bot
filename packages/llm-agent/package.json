@@ -23,12 +23,6 @@
       "require": "./dist/provider/index.js",
       "default": "./dist/provider/index.js"
     },
-    "./tools": {
-      "import": "./dist/agent.tools.js",
-      "types": "./dist/agent.tools.d.ts",
-      "require": "./dist/agent.tools.js",
-      "default": "./dist/agent.tools.js"
-    },
     "./execution": {
       "import": "./dist/execution/index.js",
       "types": "./dist/execution/index.d.ts",
@@ -41,7 +35,7 @@
     "check:types": "tsc -p tsconfig.build.json --noEmit",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "test": "jest --maxWorkers=50%",
     "eval:chat": "jest src/eval --runInBand",
     "eval:rehash": "node dist/eval/rehash-fixtures.main.js",
@@ -50,7 +44,7 @@
     "classifier:eval": "node dist/classifier/classifier-eval.main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.json --noEmit",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify:local": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@wispace/bot-common": "*",

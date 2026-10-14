@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment -- fluent Jest query-builder fake */
 import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
 import type { Repository } from 'typeorm';
 import { WebhookInboundEventEntity } from '@wispace/database';
@@ -564,12 +563,18 @@ describe('PlatformWebhookInboundEventService', () => {
         query: queryMock,
         createQueryBuilder: createQueryBuilderMock,
       } as unknown as Repository<WebhookInboundEventEntity>;
+      const metrics = { incWebhookInboundRetentionDeleted: jest.fn() };
 
-      const service = new PlatformWebhookInboundEventService('messenger', repo);
+      const service = new PlatformWebhookInboundEventService(
+        'messenger',
+        repo,
+        metrics,
+      );
       const cutoff = new Date('2026-01-01T00:00:00Z');
       const deleted = await service.deleteTerminalOlderThan(cutoff);
 
       expect(deleted).toBe(3);
+      expect(metrics.incWebhookInboundRetentionDeleted).toHaveBeenCalledWith(3);
       // Verify the SELECT query uses bounded batch with LIMIT 1000
       expect(queryMock).toHaveBeenCalledWith(
         expect.stringContaining('SELECT id FROM webhook_inbound_events'),

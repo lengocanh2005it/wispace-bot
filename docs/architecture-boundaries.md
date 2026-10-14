@@ -93,10 +93,11 @@ Violations name both the importing and the target feature module. Tests are
 exempt and may assemble concrete implementations.
 
 **Currently enforced for `discord-bot` and `zalo-bot`.** `messenger-bot` is not
-yet under this rule: its largest cross-feature cluster (`scheduler` importing
-`messenger`'s concrete services) is a dependency-inversion problem rather than
-a hygiene one, and grandfathering it would create the permanent exemption this
-document twice says does not exist. Tracked in #1446 and #1447; the enforced set
+yet under this rule. It has 23 concrete cross-feature imports, and no baseline or
+allow-list may be written to absorb them. #1446 folds the context-free
+`scheduler` module into `messenger`, clearing 5 of them ([ADR
+0055](adr/0055-messenger-report-scheduling-is-messenger-behaviour.md) records the
+per-cluster breakdown); #1447 clears the rest and adds the app. The enforced set
 is `FEATURE_MODULE_RULE_APPS` in
 [`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs).
 
@@ -233,6 +234,17 @@ framework-bound.
 The other mixed packages are enforced by selecting only their framework-neutral core paths; their runtime services are outside those scopes, not hidden behind a package-wide exemption. `cleanup-cron` is intentionally framework-bound and is not labelled as a core package.
 
 Do not widen an adapter pattern merely to make CI green. A new entry needs an owner, a linked issue, and the narrowest file/path pattern that describes the adapter. The explicit core-entrypoint rule rejects framework, infrastructure, and adapter imports in every `/core` barrel.
+
+### Vendor-named exports from a core entrypoint (#1439)
+
+Every other rule keys on the module **specifier**, so a vendor-named symbol re-exported from a neutral-looking path — `export { isOpenAiRateLimitError } from '../provider/failure-classifiers'` — reached the framework-free surface with the guard green. That is how a vendor-specific failure classifier came to decide which message a learner sees. A second rule therefore matches on the **exported identifier**: a `/core` entrypoint may not export a symbol named after a banned vendor. It reads export declarations only, because publishing is the surface in question, and an adapter is allowed to be vendor-specific by design.
+
+Two boundaries on that rule, both measured rather than assumed:
+
+- **Platform names are not vendor names.** This repo is multi-platform, so `discord` is a platform and appears legitimately in a core type (`ReengagementDiscordPayload` in `wispace-client`). Only the SDK spelling `discordjs` is a vendor token. Including the bare platform name produced one false positive on the real repository and is why that token is absent.
+- **The framework-bound allowlist is untouched.** The rule reports rather than allowlists, because a core entrypoint is not legitimately framework-bound. An allowlist entry here would be the permanent exemption the rest of this document refuses.
+
+`CORE_OUTER_PATH` does not cover a `provider` path segment, which is a pre-existing and separate gap: `core` already imported from the provider tree before #1430. It is deliberately not fixed here, because a specifier rule there has a wider blast radius than a name rule and would need its own measurement.
 
 ## Commands and CI
 

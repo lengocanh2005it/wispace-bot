@@ -14,12 +14,8 @@ import {
   detectDisclosureProbe,
 } from './safety/prompt-injection.utils';
 import { isHarmfulOutputSafetyReason } from './safety/final-output.utils';
-import {
-  isObviouslyOffTopic,
-  isAmbiguousMessage,
-  isStopIntent,
-} from './scope.utils';
-import { isAbortError } from './retry.utils';
+import { isObviouslyOffTopic, isAmbiguousMessage, isStopIntent } from './scope';
+import { isAbortError } from './retry';
 import { withTimeout } from '@wispace/bot-common/utils';
 import {
   buildExhaustionPartialAnswer,

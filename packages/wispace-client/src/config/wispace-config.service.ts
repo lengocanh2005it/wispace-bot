@@ -2,6 +2,7 @@ import type {
   WispaceApiClientConfig,
   WispaceClientMetrics,
 } from '../clients/wispace-client-types';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
 import type { WispaceLinkStatusClientConfig } from '../types/link-status.types';
 import type { WispaceIdHeader } from '../utils/wispace-headers';
@@ -109,8 +110,9 @@ export class WispaceConfigService {
   }
 
   getTimezone(): string {
-    return (
-      this.getConfig('STUDY_REMINDER_TIMEZONE')?.trim() ?? 'Asia/Ho_Chi_Minh'
+    return resolveTimezone(
+      this.getConfig,
+      LEGACY_TIMEZONE_ENV_KEYS.studyReminder,
     );
   }
 

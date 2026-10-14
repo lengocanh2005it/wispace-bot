@@ -45,15 +45,16 @@ import {
   buildLegacyLearnerUsageQuery,
 } from '@wispace/database';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';
 import { ZaloReportDeliveryService } from './application/services/zalo-report-delivery.service';
-
-const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
 
 @Module({
   imports: [
@@ -159,7 +160,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
           reportSendScheduleService,
           {
             platform: 'zalo',
-            lockId: ZALO_REPORT_CLAIM_STALE_RESET_LOCK,
+            lockId: ADVISORY_LOCKS.ZALO_REPORT_CLAIM_STALE_RESET,
             metrics,
           },
         ),

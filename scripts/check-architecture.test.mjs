@@ -944,6 +944,82 @@ test('package core entrypoints reject bot-common infrastructure wiring', () => {
   }
 });
 
+test('a core entrypoint re-exporting a vendor-named symbol is rejected (#1439)', () => {
+  // The specifier is deliberately neutral: every existing rule keys on the
+  // module path, so nothing fires and the vendor name reaches the surface.
+  const f = fixture();
+  try {
+    f.write(
+      'packages/llm-agent/src/core/index.ts',
+      "export { isOpenAiRateLimitError } from '../provider/failure-classifiers';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(
+      result.violations[0].rule,
+      'llm-agent-entrypoint-no-vendor-named-export',
+    );
+    assert.deepEqual(result.violations[0].symbols, ['isOpenAiRateLimitError']);
+  } finally {
+    f.close();
+  }
+});
+
+test('a core entrypoint may still re-export a vendor-neutral symbol (#1439)', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/llm-agent/src/core/index.ts',
+      "export { isRateLimitError } from '../provider/failure-classifiers';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a non-core module may keep a vendor-named symbol (#1439)', () => {
+  // The rule is scoped to the framework-free surface. An adapter is allowed to
+  // be vendor-specific, which is the whole point of an adapter.
+  const f = fixture();
+  try {
+    f.write(
+      'packages/llm-agent/src/adapters/openai-failure.ts',
+      "export const isOpenAiRateLimitError = () => true;\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('a platform name in a core type is not a vendor name (#1439)', () => {
+  // Found by running the rule against the real repository, not by a fixture:
+  // `discord` is a platform in this multi-platform repo, so a core type may
+  // carry it legitimately. Only the SDK spelling is a vendor.
+  const f = fixture();
+  try {
+    f.write(
+      'packages/wispace-client/src/core/index.ts',
+      "export { ReengagementDiscordPayload } from '../types/reengagement.types';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.deepEqual(result.violations, []);
+  } finally {
+    f.close();
+  }
+});
+
 test('explicitly framework-bound packages remain available as outer adapters', () => {
   const f = fixture();
   try {

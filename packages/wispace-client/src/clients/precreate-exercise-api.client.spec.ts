@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { PrecreateExerciseApiClient } from './precreate-exercise-api.client';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { ShapeValidationError } from '../utils/validate-shape';

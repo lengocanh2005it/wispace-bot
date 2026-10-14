@@ -1,6 +1,6 @@
 {
-  "measuredAt": "2026-09-29",
-  "measuredAtCommit": "ded7f4b6",
+  "measuredAt": "2026-10-03",
+  "measuredAtCommit": "1ff87bb5",
   "note": "Each entry is a decision, not a measurement. `lines` is the ceiling that file may not exceed; `context`, `trackedBy` and `reason` say who holds the decision to keep it and why. `trackedBy` is the issue holding the decision, which is not always the issue that owns the decomposition, and not every entry has a decomposition owner at all - that is the intended steady state, since an entry is written when a decision names a file, not because a scan found it. Run `npm run file-size:report` to render this as the #778 index table, so the table is generated rather than retyped. See ADR-0044 and #1433.",
   "files": {
     "apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts": {
@@ -10,10 +10,10 @@
       "reason": "No duplication finding. Raised by #1450 from 973 to 981: the concrete Redis-backed `RedisUserDisplayNameCache` injection became a port token, which costs the import, the `@Inject()` and a short note on why the parameter carries no `@Optional()`. Eight lines of wiring, no new behaviour. Raised again by #1420 from 981 to 988: a rate-limited send returns through `onRateLimited` and never reaches `onError`, so the staged-reschedule cleanup the error path already performs had to be called there too — one call plus a three-line note on why that hook is not redundant. #1084 touches one optional-method cast and does not decompose it."
     },
     "packages/bot-metrics/src/bot-metrics.service.ts": {
-      "lines": 1412,
+      "lines": 1456,
       "context": "Shared kernel",
       "trackedBy": "#778",
-      "reason": "Largest candidate. No decomposition owner. Unlike the other four it has no extracted sibling to build a seam on."
+      "reason": "Largest candidate. No decomposition owner. Unlike the other four it has no extracted sibling to build a seam on. Raised by 1ff87bb5 from 1412 to 1456: `BotMetricsService` now implements `WebhookInboundMetricsPort`, which adds one import, three private field declarations, three metric registrations and three thin increment methods. That is the file's whole shape — it is a registry of counters and the increment methods that raise them — so the growth is the work and cannot be hoisted without inventing a second metrics class that the one seam this file lacks would have to be extracted into first. No duplication finding and no new behaviour: the counters observe a retention cron and the inline dispatch path that already existed."
     },
     "packages/chat-agent/src/agent/platform-agent.service.ts": {
       "lines": 972,

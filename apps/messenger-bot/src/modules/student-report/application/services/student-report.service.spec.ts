@@ -48,7 +48,6 @@ describe('StudentReportService', () => {
   }
 
   it('returns friendly message when Wispace has no score data (R1)', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(new StudentReportNoScoreDataError('psid-1')),
@@ -69,7 +68,6 @@ describe('StudentReportService', () => {
   });
 
   it('rethrows non-score errors', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(new InternalServerErrorException('API down')),
@@ -91,7 +89,6 @@ describe('StudentReportService', () => {
 
   it('throws StudentReportRetryableError on Wispace 5xx (R3)', async () => {
     jest.useFakeTimers();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(
@@ -124,7 +121,6 @@ describe('StudentReportService', () => {
   });
 
   it('returns unavailable message on Wispace 4xx (R3)', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(
@@ -147,7 +143,6 @@ describe('StudentReportService', () => {
   });
 
   it('falls back when LLM returns invalid report JSON shape', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() => Promise.resolve(capacityInput)),
     } as unknown as TaskScoreAverageApiService;
@@ -174,7 +169,6 @@ describe('StudentReportService', () => {
   });
 
   it('caches the daily report and serves repeats without a second LLM call', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() => Promise.resolve(capacityInput)),
     } as unknown as TaskScoreAverageApiService;
@@ -203,7 +197,6 @@ describe('StudentReportService', () => {
   });
 
   it('generateReportStatic builds a deterministic report without any LLM call', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() => Promise.resolve(capacityInput)),
     } as unknown as TaskScoreAverageApiService;

@@ -11,6 +11,12 @@
       "require": "./dist/core/index.js",
       "default": "./dist/core/index.js"
     },
+    "./utils": {
+      "import": "./dist/utils/index.js",
+      "types": "./dist/utils/index.d.ts",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
+    },
     "./adapters": {
       "import": "./dist/adapters/index.js",
       "types": "./dist/adapters/index.d.ts",
@@ -21,13 +27,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:types": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "format:check": "oxfmt --check",
     "format": "oxfmt",
     "test": "jest --maxWorkers=50%",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.json --noEmit",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify:local": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.0",

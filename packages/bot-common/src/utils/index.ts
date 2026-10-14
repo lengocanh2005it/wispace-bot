@@ -18,3 +18,4 @@ export {
   encryptAesGcm,
   decryptAesGcm,
 } from './aes-gcm.crypto';
+export { constantTimeEquals } from './constant-time-equals.crypto';

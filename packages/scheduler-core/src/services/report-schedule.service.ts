@@ -1,13 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import { rawDaysUntilExam } from '../utils/exam-date.utils';
 import { todayInTimezone } from '@wispace/date-utils';
 import { GOALS_DATA_PORT } from '../ports/goals-data.port';
 import type { GoalsDataPort } from '../ports/goals-data.port';
 import type { ReportSchedulePort } from '../ports/report-cron-seams.port';
 import type { ExamWindowResult } from '../types/report-schedule.types';
-
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 @Injectable()
 export class ReportScheduleService implements ReportSchedulePort {
@@ -57,9 +56,9 @@ export class ReportScheduleService implements ReportSchedulePort {
   }
 
   private getReportTimezone(): string {
-    return (
-      this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ||
-      DEFAULT_TIMEZONE
+    return resolveTimezone(
+      (key) => this.configService.get<string>(key),
+      LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
     );
   }
 

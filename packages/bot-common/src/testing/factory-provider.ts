@@ -29,6 +29,38 @@ function describeToken(token: unknown): string {
  * So the count is checked here rather than trusted from the call site: a spec
  * that forgets an argument now fails, and the message names the provider.
  */
+/**
+ * Finds the binding Nest actually resolves: when a module declares the same
+ * token twice, the **last** provider wins, not the first.
+ *
+ * #1507: all three bots spread `createRescheduleProviders(platform)` and then
+ * override `RescheduleRecoveryCronService` to add the confirmation transport.
+ * A `.find()`-based helper reads the shared binding and reports a correctly
+ * shaped cron with no transport, so the override can be deleted and the spec
+ * still passes. Assert against this one when the token is overridden.
+ */
+export function findEffectiveFactoryProvider(
+  module: object,
+  token: unknown,
+): FactoryProvider | undefined {
+  const providers = (Reflect.getMetadata('providers', module) ??
+    []) as unknown[];
+  const matches = providers.filter(
+    (candidate): candidate is FactoryProvider =>
+      typeof candidate === 'object' &&
+      candidate !== null &&
+      'provide' in candidate &&
+      candidate.provide === token &&
+      'useFactory' in candidate &&
+      typeof candidate.useFactory === 'function',
+  );
+  const provider = matches[matches.length - 1];
+  if (!provider) {
+    return undefined;
+  }
+  return withArityCheck(token, provider);
+}
+
 export function findFactoryProvider(
   module: object,
   token: unknown,
@@ -47,7 +79,13 @@ export function findFactoryProvider(
   if (!provider) {
     return undefined;
   }
+  return withArityCheck(token, provider);
+}
 
+function withArityCheck(
+  token: unknown,
+  provider: FactoryProvider,
+): FactoryProvider {
   const expected = provider.inject?.length ?? 0;
   const factory = provider.useFactory;
   return {

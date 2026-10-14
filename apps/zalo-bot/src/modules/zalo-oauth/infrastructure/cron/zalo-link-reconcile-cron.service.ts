@@ -10,7 +10,10 @@ import {
   type LinkReconcileContext,
   type PlatformLinkStatePort,
 } from '@wispace/account-link-core/core';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import {
   ZALO_LINK_VERIFY_RECORD_REPOSITORY,
@@ -28,9 +31,14 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloRelinkNotifier } from '../../application/services/zalo-relink-notifier.service';
 import { ZaloWelcomeService } from '../../application/services/zalo-welcome.service';
 
-const DEFAULT_RECONCILE_AGE_MS = 120_000;
-const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
-const ZALO_LINK_RECONCILE_LOCK = 884_200_937;
+// #1160: these match the Messenger/Discord reconcile baseline. Zalo previously
+// defaulted to a 2-minute stale window and a 10-minute crash-recovery window, so
+// the same flow gave up on a still-recoverable verify intent six times sooner on
+// this platform than on the other two. Widening the window only ever retains
+// more recoverable state, so the direction of the change is the safe one; the
+// env overrides remain available for an operator who wants a tighter window.
+const DEFAULT_RECONCILE_AGE_MS = 60_000;
+const DEFAULT_MAX_RECORD_AGE_MS = 60 * 60_000;
 const LINK_RECONCILE_EXPECTED_INTERVAL_MS = 5 * 60 * 1000;
 
 const reconcileRecordsTotal = new Counter({
@@ -114,8 +122,9 @@ export class ZaloLinkReconcileCronService {
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleReconcile(): Promise<void> {
-    const result = await this.pgLock.withLock(ZALO_LINK_RECONCILE_LOCK, () =>
-      this.runReconcileWithStatus(),
+    const result = await this.pgLock.withLock(
+      ADVISORY_LOCKS.ZALO_LINK_RECONCILE,
+      () => this.runReconcileWithStatus(),
     );
 
     if (result === null) {

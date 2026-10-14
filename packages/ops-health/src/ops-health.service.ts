@@ -99,7 +99,14 @@ export class OpsHealthService implements OpsHealthServicePort {
     }
 
     const platform = this.resolvePlatform(platformSnapshot);
-    if ((this.requirePlatform || platformSnapshot) && !platform.ready) {
+    if (
+      (this.requirePlatform || platformSnapshot) &&
+      !platform.ready &&
+      // A platform that was never configured is not an outage: there is no
+      // upstream to be unreachable from, and blocking on it stops deploys for
+      // a feature that was deliberately never switched on.
+      platform.reason !== 'not_configured'
+    ) {
       return {
         ready: false,
         status: 'error',
@@ -341,10 +348,20 @@ export class OpsHealthService implements OpsHealthServicePort {
       (this.requirePlatform || data.platform.name !== 'unknown') &&
       !data.platform.ready
     ) {
+      // A platform that was never configured is reported, but not as a
+      // critical outage: it does not block readiness and nothing is degraded.
+      // It is still surfaced so that provisioning an account and finding it
+      // silently not working cannot happen.
+      const notConfigured = data.platform.reason === 'not_configured';
       alerts.push({
-        code: 'PLATFORM_UNAVAILABLE',
-        severity: 'critical',
-        message: `Platform connectivity is not ready (${data.platform.reason})`,
+        code: notConfigured
+          ? 'PLATFORM_NOT_CONFIGURED'
+          : 'PLATFORM_UNAVAILABLE',
+        severity: notConfigured ? 'warn' : 'critical',
+        message: notConfigured
+          ? `Platform ${data.platform.name} has no credentials configured and ` +
+            `cannot receive messages`
+          : `Platform connectivity is not ready (${data.platform.reason})`,
       });
     }
 

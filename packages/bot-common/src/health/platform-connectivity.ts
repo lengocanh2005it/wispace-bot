@@ -12,7 +12,14 @@ export type PlatformConnectivityStatus =
   | 'reconnecting'
   | 'credential_invalid'
   | 'session_invalid'
-  | 'unavailable';
+  | 'unavailable'
+  /**
+   * No credentials were ever provisioned for this platform, so it has no
+   * upstream to be unreachable from. Distinct from `unavailable`: that means a
+   * configured platform is broken, which must block readiness, while this
+   * means the feature was never switched on.
+   */
+  | 'not_configured';
 
 export type PlatformConnectivityReason =
   | 'startup_pending'
@@ -27,7 +34,8 @@ export type PlatformConnectivityReason =
   | 'meta_validation_failed'
   | 'meta_token_rejected'
   | 'shutdown'
-  | 'platform_state_missing';
+  | 'platform_state_missing'
+  | 'not_configured';
 
 export interface PlatformConnectivitySnapshot {
   name: PlatformConnectivityName;

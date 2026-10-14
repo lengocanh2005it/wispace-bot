@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Jest mock assertions */
 import { DiscordReportCronService } from './discord-report-cron.service';
 
 const LINK = {
@@ -130,7 +129,6 @@ describe('DiscordReportCronService', () => {
       1,
       expect.objectContaining({ externalUserId: 'discord-1' }),
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-14',
@@ -140,7 +138,6 @@ describe('DiscordReportCronService', () => {
       2,
       expect.objectContaining({ externalUserId: 'discord-2' }),
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-14',
@@ -302,7 +299,6 @@ describe('DiscordReportCronService', () => {
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         allowUserIdLess: true,

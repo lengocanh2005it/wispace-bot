@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ReportOrchestrationService } from './report-orchestration.service';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
 import type { ReportDeliveryPort } from '../ports/report-delivery.port';

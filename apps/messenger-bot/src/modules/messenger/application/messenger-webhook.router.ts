@@ -79,13 +79,15 @@ export type WebhookAction =
       type: 'confirm_reschedule';
       psid: string;
       userId?: number;
-      approvalToken?: string;
+      /** ADR-0011: only a proposal carrying its one-time approval token may
+       * authorize a calendar write. */
+      approvalToken: string;
     }
   | {
       type: 'cancel_reschedule';
       psid: string;
       userId?: number;
-      approvalToken?: string;
+      approvalToken: string;
     }
   | {
       type: 'send_welcome';
@@ -416,42 +418,34 @@ function routePostback(
     return [{ type: 'send_reminder_preview', psid, userId }];
   }
 
-  if (
-    payload === CONFIRM_RESCHEDULE_POSTBACK ||
-    payload.startsWith(`${CONFIRM_RESCHEDULE_POSTBACK}:`)
-  ) {
+  // ADR-0011 / #1493: a proposal is the payload plus its non-empty one-time
+  // approval token. A bare payload — or a colon with nothing after it — carries
+  // no token, cannot authorize a calendar write, and falls through to the
+  // unknown-postback handling below.
+  const confirmToken = payload.startsWith(`${CONFIRM_RESCHEDULE_POSTBACK}:`)
+    ? payload.slice(CONFIRM_RESCHEDULE_POSTBACK.length + 1)
+    : '';
+  if (confirmToken) {
     return [
       {
         type: 'confirm_reschedule',
         psid,
         userId,
-        ...(payload.includes(':')
-          ? {
-              approvalToken:
-                payload.slice(CONFIRM_RESCHEDULE_POSTBACK.length + 1) ||
-                undefined,
-            }
-          : {}),
+        approvalToken: confirmToken,
       },
     ];
   }
 
-  if (
-    payload === CANCEL_RESCHEDULE_POSTBACK ||
-    payload.startsWith(`${CANCEL_RESCHEDULE_POSTBACK}:`)
-  ) {
+  const cancelToken = payload.startsWith(`${CANCEL_RESCHEDULE_POSTBACK}:`)
+    ? payload.slice(CANCEL_RESCHEDULE_POSTBACK.length + 1)
+    : '';
+  if (cancelToken) {
     return [
       {
         type: 'cancel_reschedule',
         psid,
         userId,
-        ...(payload.includes(':')
-          ? {
-              approvalToken:
-                payload.slice(CANCEL_RESCHEDULE_POSTBACK.length + 1) ||
-                undefined,
-            }
-          : {}),
+        approvalToken: cancelToken,
       },
     ];
   }

@@ -1,5 +1,8 @@
 import 'reflect-metadata';
-import { findFactoryProvider } from './factory-provider';
+import {
+  findEffectiveFactoryProvider,
+  findFactoryProvider,
+} from './factory-provider';
 
 const TOKEN = Symbol('SOME_TOKEN');
 
@@ -79,5 +82,50 @@ describe('findFactoryProvider', () => {
     expect(() => findFactoryProvider(module, TOKEN)!.useFactory(1)).toThrow(
       /declares 0 dependencies in inject but was called with 1 argument/,
     );
+  });
+});
+
+describe('findEffectiveFactoryProvider (#1507)', () => {
+  it('returns the last binding, which is the one Nest resolves', () => {
+    const module = moduleWith([
+      { provide: TOKEN, useFactory: () => 'shared', inject: [Other] },
+      { provide: TOKEN, useFactory: () => 'override', inject: [Other] },
+    ]);
+
+    expect(findFactoryProvider(module, TOKEN)!.useFactory(1)).toBe('shared');
+    expect(findEffectiveFactoryProvider(module, TOKEN)!.useFactory(1)).toBe(
+      'override',
+    );
+  });
+
+  it('still returns a single binding when there is no override', () => {
+    const module = moduleWith([
+      { provide: TOKEN, useFactory: () => 'only', inject: [Other] },
+    ]);
+
+    expect(findEffectiveFactoryProvider(module, TOKEN)!.useFactory(1)).toBe(
+      'only',
+    );
+  });
+
+  it('applies the same arity check to the override', () => {
+    const module = moduleWith([
+      { provide: TOKEN, useFactory: () => 'shared', inject: [Other] },
+      {
+        provide: TOKEN,
+        useFactory: () => 'override',
+        inject: [Other, Other],
+      },
+    ]);
+
+    expect(() =>
+      findEffectiveFactoryProvider(module, TOKEN)!.useFactory(1),
+    ).toThrow(/declares 2 dependencies in inject but was called with 1/);
+  });
+
+  it('returns undefined when the token is absent', () => {
+    const module = moduleWith([{ provide: Other, useFactory: () => ({}) }]);
+
+    expect(findEffectiveFactoryProvider(module, TOKEN)).toBeUndefined();
   });
 });

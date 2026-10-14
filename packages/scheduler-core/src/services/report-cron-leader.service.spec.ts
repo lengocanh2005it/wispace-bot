@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ConfigService } from '@nestjs/config';
 import { ReportCronLeaderService } from './report-cron-leader.service';
 import type { CronLeaderLeasePort } from '../ports/cron-leader-lease.port';

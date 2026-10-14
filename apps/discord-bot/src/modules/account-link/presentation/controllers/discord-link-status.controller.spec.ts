@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { Response } from 'express';
 import { DiscordLinkStatusController } from './discord-link-status.controller';
 import type { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';

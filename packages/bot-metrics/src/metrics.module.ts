@@ -15,8 +15,10 @@ import {
   InternalApiKeyGuard,
   INTERNAL_AUTH_METRICS_PORT,
 } from '@wispace/bot-common/guard';
+import { RETENTION_CLEANUP_METRICS_PORT } from '@wispace/bot-common/metrics';
 import { REDIS_OPERATION_METRICS_PORT } from '@wispace/bot-common/redis';
 import { BotMetricsService } from './bot-metrics.service';
+import { RetentionCleanupMetrics } from './retention-cleanup-metrics';
 
 /**
  * Factory for a global, platform-scoped metrics module (Messenger/Discord/
@@ -92,12 +94,23 @@ export function createMetricsModule(
         }),
         inject: [PlatformMetricsService],
       },
+      {
+        provide: RetentionCleanupMetrics,
+        useFactory: (metrics: InstanceType<typeof PlatformMetricsService>) =>
+          new RetentionCleanupMetrics(prefix, metrics.registry),
+        inject: [PlatformMetricsService],
+      },
+      {
+        provide: RETENTION_CLEANUP_METRICS_PORT,
+        useExisting: RetentionCleanupMetrics,
+      },
     ],
     exports: [
       PlatformMetricsService,
       BotMetricsService,
       INTERNAL_AUTH_METRICS_PORT,
       REDIS_OPERATION_METRICS_PORT,
+      RETENTION_CLEANUP_METRICS_PORT,
     ],
   })
   class PlatformMetricsModule {}

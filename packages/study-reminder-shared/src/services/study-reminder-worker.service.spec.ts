@@ -4,10 +4,7 @@ import {
   type PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { Logger } from '@nestjs/common';
-import {
-  StudyReminderWorkerService,
-  studyReminderLockSkipsTotal,
-} from './study-reminder-worker.service';
+import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import type { StudyReminderSyncService } from './study-reminder-sync.service';
 import type { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import type { StudyReminderScheduleService } from './study-reminder-schedule.service';
@@ -156,12 +153,10 @@ describe('StudyReminderWorkerService', () => {
       build();
       await service.onModuleInit();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(schedulerRegistry.addCronJob).toHaveBeenCalledWith(
         'study-reminder-evening-rollover',
         expect.anything(),
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
     });
 
@@ -226,7 +221,6 @@ describe('StudyReminderWorkerService', () => {
       build({ sync: 1, cleanup: 2, rollover: 3 }, { logLockSkips: true });
       await service.onModuleInit();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).not.toHaveBeenCalled();
     });
 
@@ -267,11 +261,9 @@ describe('StudyReminderWorkerService', () => {
 
       const result = await service.runEveningRollover();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.deleteSentJobs).toHaveBeenCalledWith('messenger');
       expect(result).toMatchObject({ deletedSent: 5 });
       expect(result.sync).toHaveProperty('upserted');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
     });
 
@@ -281,7 +273,6 @@ describe('StudyReminderWorkerService', () => {
 
       await service.handleCleanupCron();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.deleteTerminalJobsOlderThan).toHaveBeenCalledWith(
         'messenger',
         expect.any(Date),
@@ -296,9 +287,7 @@ describe('StudyReminderWorkerService', () => {
 
       expect(result).toHaveProperty('sync');
       expect(result).toHaveProperty('dispatch');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(dispatchService.dispatchDueReminders).toHaveBeenCalled();
     });
   });
@@ -309,7 +298,6 @@ describe('StudyReminderWorkerService', () => {
       await service.onModuleInit();
       service.onModuleDestroy();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
         'study-reminder-evening-rollover',
       );
@@ -351,7 +339,7 @@ describe('StudyReminderWorkerService', () => {
       lockSvc: MemoryLockService,
       platform: 'discord' | 'zalo' | 'messenger',
       lockIds?: { sync: number; cleanup: number; rollover: number },
-      options?: { logLockSkips?: boolean },
+      options?: { logLockSkips?: boolean; metrics?: typeof workerMetrics },
     ): {
       service: StudyReminderWorkerService;
       syncService: { syncUpcomingSessions: jest.Mock };
@@ -429,10 +417,6 @@ describe('StudyReminderWorkerService', () => {
       );
       return { service, syncService };
     }
-
-    beforeEach(() => {
-      studyReminderLockSkipsTotal.reset();
-    });
 
     it('runs two bots concurrently when each holds its own lock id', async () => {
       const lockSvc = new MemoryLockService();
@@ -529,9 +513,11 @@ describe('StudyReminderWorkerService', () => {
       warnSpy.mockRestore();
     });
 
-    it('increments the lock-skip counter per platform and scope', async () => {
+    it('reports lock skips through the per-bot metrics port', async () => {
       const lockSvc = new MemoryLockService();
-      const zalo = buildWorker(lockSvc, 'zalo');
+      const zalo = buildWorker(lockSvc, 'zalo', undefined, {
+        metrics: workerMetrics,
+      });
       lockSvc.withLock(
         ADVISORY_LOCKS.ZALO_STUDY_REMINDER_SYNC,
         () => new Promise(() => undefined),
@@ -544,15 +530,16 @@ describe('StudyReminderWorkerService', () => {
       await zalo.service.handleSyncCron();
       await zalo.service.handleCleanupCron();
 
-      const counts = (await studyReminderLockSkipsTotal.get()).values;
-      const sync = counts.find(
-        (v) => v.labels.platform === 'zalo' && v.labels.scope === 'sync',
+      expect(workerMetrics.incStudyReminderLockSkip).toHaveBeenNthCalledWith(
+        1,
+        'zalo',
+        'sync',
       );
-      const cleanup = counts.find(
-        (v) => v.labels.platform === 'zalo' && v.labels.scope === 'cleanup',
+      expect(workerMetrics.incStudyReminderLockSkip).toHaveBeenNthCalledWith(
+        2,
+        'zalo',
+        'cleanup',
       );
-      expect(sync?.value).toBe(1);
-      expect(cleanup?.value).toBe(1);
     });
   });
 });
