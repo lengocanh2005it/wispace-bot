@@ -63,10 +63,11 @@ describe('429-storm load test (#514)', () => {
       }),
     ).rejects.toThrow();
 
-    // maxAttempts=1 × failover=2/provider × N providers
-    // Total calls bounded — failover tries each provider up to 2 times
-    expect(callCount.total).toBeGreaterThanOrEqual(1);
-    expect(callCount.total).toBeLessThanOrEqual(10);
+    // maxAttempts=1 and no failover wrapper: the port re-invokes its callback
+    // once, so the adapter is reached exactly once. Transport-level retries
+    // are a separate concern — see openai-adapter.transport.spec.ts (#1473),
+    // which counts issued provider requests rather than adapter calls.
+    expect(callCount.total).toBe(1);
   });
 
   it('records retry attempts metric on exhaustion', async () => {

@@ -11,7 +11,6 @@ export class ZaloCalendarPort implements CalendarPort<string> {
 
   async listUpcomingEntries(
     zaloUserId: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _userId?: number,
     options?: { signal?: AbortSignal },
   ): Promise<CalendarEntryView[]> {

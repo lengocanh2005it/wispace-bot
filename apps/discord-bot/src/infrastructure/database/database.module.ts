@@ -24,6 +24,7 @@ import {
   ReportSendJobEntity,
   WebActivityEntity,
   UserNotificationPreferenceEntity,
+  RescheduleConfirmationAttemptEntity,
 } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
@@ -73,6 +74,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
       chatIdempotency: ChatIdempotencyEntity,
       webActivity: WebActivityEntity,
       notificationPreference: UserNotificationPreferenceEntity,
+      rescheduleConfirmationAttempt: RescheduleConfirmationAttemptEntity,
     },
     messageLog: DiscordMessageLogEntity,
   };

@@ -9,7 +9,12 @@ export interface ZaloInboundChatPort {
   handleIncomingMessage(
     zaloUserId: string,
     text: string,
-    idempotencyKey?: string,
+    /**
+     * Required (#1489). The dispatcher derives it from the webhook event, so a
+     * redelivery of the same event dedupes; an optional key would let a caller
+     * omit it and lose that guarantee at the quota reservation.
+     */
+    idempotencyKey: string,
   ): Promise<void>;
   handleFollow(zaloUserId: string): Promise<void>;
   handleUnsupportedMessage(zaloUserId: string): Promise<void>;

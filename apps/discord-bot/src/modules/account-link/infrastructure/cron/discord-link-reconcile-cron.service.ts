@@ -138,6 +138,7 @@ export class DiscordLinkReconcileCronService {
 
   private async runReconcileWithStatus(): Promise<LinkReconcileBatchResult> {
     return this.core.run({
+      consumeVerifyIntentAfterReconciled: true,
       staleAgeMs: readPositiveInteger(
         this.configService.get<string>('DISCORD_LINK_RECONCILE_AGE_MS'),
         DEFAULT_RECONCILE_AGE_MS,
@@ -215,6 +216,7 @@ export class DiscordLinkReconcileCronService {
           record.externalUserId,
         )}: ${errorMessage(error, record.externalUserId)}`,
       );
+      throw error;
     }
   }
 

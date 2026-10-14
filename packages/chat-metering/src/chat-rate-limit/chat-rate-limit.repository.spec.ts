@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { EntityManager, Repository } from 'typeorm';
 import type { ChatDailyUsageEntity } from '../entities/chat-daily-usage.entity';
 import type { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';

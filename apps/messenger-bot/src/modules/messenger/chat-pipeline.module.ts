@@ -10,15 +10,17 @@ import type {
   ReschedulePort,
 } from '@wispace/reschedule-confirm/core';
 import {
-  PlatformAgentService,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   ChatRuntimeConfig,
-  RedisChatQueueWorkerService,
   CLARIFICATION_STATE_STORE,
   LlmContentClassifier,
+  createPlatformChatProviders,
   readChatFlushRetrySettings,
   type ClarificationStateStore,
+  type PlatformChatAgentDynamicOptions,
+  type PlatformChatFlushSource,
+  type PlatformChatQueueReadySource,
 } from '@wispace/chat-agent';
 import {
   LlmSafetyEventEntity,
@@ -33,29 +35,25 @@ import {
   sanitizeUntrustedTextForLlm,
   buildWriteToolDailyBudgetMessage,
 } from '@wispace/llm-agent/core';
-import {
-  REDIS_CLIENT,
-  RedisUserDisplayNameCache,
-  type RedisClientPort,
-} from '@wispace/bot-common/redis';
+import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { WispaceConfigService } from '@wispace/wispace-client/adapters';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client/core';
 import {
   LearnerProfileEntity,
   PrivacyDataService,
   RescheduleConfirmationEntity,
+  RescheduleConfirmationAttemptEntity,
 } from '@wispace/database';
 import {
   TypeormRescheduleStore,
+  TypeormRescheduleAttemptStore,
+  RescheduleRecoveryCronService,
   createRescheduleProviders,
 } from '@wispace/reschedule-confirm/adapters';
 import {
-  LEARNER_PROFILE_STORE,
-  TypeOrmLearnerProfileStore,
-  createLearnerProfileRecorder,
-  createLearnerProfileSuffix,
-} from '@wispace/learner-profile';
-import type { LearnerProfileStorePort } from '@wispace/learner-profile';
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import { CommonModule } from '../../shared/common/common.module';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
@@ -130,6 +128,26 @@ import {
 } from '@messenger/shared/config/env-helpers';
 
 /**
+ * The agent options `createPlatformChatProviders` cannot read for itself: they
+ * close over services only this app resolves (identity lookup, tool metrics,
+ * the classifier, the execution port, the OTel span hook).
+ *
+ * Exported so `chat-pipeline-wiring.spec.ts` can reach this binding by token;
+ * the shared factory only carries it as the eighth `inject` entry, and reading
+ * it by position is the brittleness that spec already objects to elsewhere.
+ */
+export const MESSENGER_AGENT_OPTIONS = Symbol('MESSENGER_AGENT_OPTIONS');
+
+/**
+ * The queue worker's ready source. The legacy store names the ready listing
+ * `listPsidsReadyForFlush`, so the worker cannot take the store directly.
+ */
+const MESSENGER_CHAT_QUEUE_READY = Symbol('MESSENGER_CHAT_QUEUE_READY');
+
+/** The queue worker's flush source: this app's own chat processor. */
+const MESSENGER_CHAT_QUEUE_FLUSH = Symbol('MESSENGER_CHAT_QUEUE_FLUSH');
+
+/**
  * Self-contained module for the chat pipeline:
  * debounce → rate limit → LLM agent → send.
  *
@@ -158,6 +176,7 @@ import {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       RescheduleConfirmationEntity,
+      RescheduleConfirmationAttemptEntity,
       LearnerProfileEntity,
     ]),
   ],
@@ -226,24 +245,183 @@ import {
       useExisting: ChatHistoryStoreResolver,
     },
     {
-      provide: PlatformChatHistoryService,
+      // #1127: everything the shared factory cannot read for itself. The
+      // learner-profile recorder and the `learnerProfile` prompt part are the
+      // factory's now, so this object states only what is messenger's own.
+      provide: MESSENGER_AGENT_OPTIONS,
       useFactory: (
         configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        redisClient?: { getNativeClient(): unknown } | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat:history:' },
-          redisClient,
-          runtimeConfig,
-        ),
+        messengerTools: MessengerAgentToolsService,
+        userDisplayNameService: UserDisplayNameService,
+        metrics: BotMetricsService,
+        llmExecution: LlmExecutionService,
+        adapter: LlmProviderAdapter,
+        clarificationStore: ClarificationStateStore,
+        rescheduleConfirmationService: MessengerRescheduleConfirmationService,
+        currentIdentityProvider: (
+          externalUserId: string,
+        ) => Promise<{ userId: number; mappingVersion: string } | undefined>,
+      ): PlatformChatAgentDynamicOptions => {
+        // Always constructed (the constructor does no I/O). Whether it runs is
+        // decided by LLM_INPUT_CLASSIFIER_ENABLED inside PlatformAgentService —
+        // one source of truth for the flag (#649).
+        const classifierConfig = buildMessengerClassifierConfig((key) =>
+          configService.get<string>(key)?.trim(),
+        );
+        const classifierModel = resolveMessengerClassifierModel({
+          ...classifierConfig,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+        });
+        const contentClassifier = new LlmContentClassifier({
+          adapter,
+          execution: llmExecution,
+          executionEnabled: readEnvBoolean(
+            configService,
+            'LLM_EXECUTION_ENABLED',
+            true,
+          ),
+          model: classifierModel,
+          maxInputChars: Math.max(
+            1,
+            readEnvPositiveInt(
+              configService,
+              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
+              512,
+            ),
+          ),
+          timeoutMs: readEnvPositiveInt(
+            configService,
+            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
+            1200,
+          ),
+          onInputShape: (shape) =>
+            metrics.incClassifierInput(shape, 'messenger'),
+          logger: new Logger('LlmContentClassifier'),
+        });
+        return {
+          currentIdentityProvider,
+          clarificationStore,
+          // Chat flows through the same execution-control path as reports and
+          // reminders: limiter + circuit breaker + retry + deadline.
+          llmExecution,
+          // #389: ignored while `llmExecution` is injected directly, so this
+          // bot states absence rather than borrowing the default port's shape.
+          llmAdmissionMetrics: null,
+          contentClassifier,
+          classifierUsage: {
+            provider: adapter.providerName,
+            model: classifierModel,
+          },
+          metrics: {
+            timeLlmCall: (feature, model, round, fn) =>
+              metrics.timeLlmCall(feature, model, round, fn),
+            timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+            llmRoundOutcomeInc: (feature, outcome) =>
+              metrics.incRoundOutcome(feature, outcome),
+            observationOutcomeInc: (toolName, outcome) =>
+              metrics.incObservationOutcome(toolName, 'messenger', outcome),
+            toolPolicyDeniedInc: (toolName, reason) =>
+              metrics.incLlmToolPolicyDenied(toolName, 'messenger', reason),
+            degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
+            injectionBlockedInc: (source) =>
+              metrics.incLlmInjectionBlocked(source, 'messenger'),
+            promptCanaryHitInc: () =>
+              metrics.incLlmPromptCanaryHit('messenger'),
+            classifierVerdictInc: (label, mode) =>
+              metrics.incClassifierVerdict(label, mode, 'messenger'),
+            totalProviderAttemptsInc: (feature, attempts, outcome) =>
+              metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
+          },
+          clarificationOutcomeInc: (outcome) =>
+            metrics.incClarificationOutcome(outcome),
+          systemPromptSuffix: async (input) => {
+            const rawName = await userDisplayNameService.resolveDisplayName({
+              psid: input.externalUserId,
+              userId: input.userId,
+            });
+            const sanitized = sanitizeUntrustedTextForLlm(rawName, {
+              maxChars: 80,
+              unsafePlaceholder: 'Chào bạn nha',
+            });
+            const displayName = sanitized.text || 'Chào bạn nha';
+            return {
+              identityDisplayName: input.userId
+                ? `Học viên đã liên kết WISPACE. Tên gọi: ${displayName}.`
+                : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`,
+            };
+          },
+          onBeforeReply: (input) => {
+            const activeSpan = trace.getActiveSpan();
+            if (activeSpan) {
+              activeSpan.setAttributes({
+                'messenger.psid': input.externalUserId,
+                'messenger.user_id': input.userId ?? 0,
+                'llm.feature': 'FREE_FORM_CHAT',
+              });
+            }
+            return Promise.resolve();
+          },
+          tryFastReschedule: (ctx, userText, signal) =>
+            messengerTools.tryFastDefaultReschedule(ctx, userText, signal),
+          cancelPendingReschedule: (externalUserId, approvalToken) =>
+            rescheduleConfirmationService.cancelForUser(
+              externalUserId,
+              approvalToken,
+            ),
+        };
+      },
       inject: [
         ConfigService,
-        ChatRuntimeConfig,
-        { token: REDIS_CLIENT, optional: true },
+        MessengerAgentToolsService,
+        UserDisplayNameService,
+        BotMetricsService,
+        LlmExecutionService,
+        'LLM_PROVIDER_ADAPTER',
+        CLARIFICATION_STATE_STORE,
+        MessengerRescheduleConfirmationService,
+        MESSENGER_TOOL_IDENTITY_PROVIDER,
       ],
     },
+    {
+      provide: MESSENGER_CHAT_QUEUE_READY,
+      useFactory: (
+        queueStore: ChatQueueStorePort,
+      ): PlatformChatQueueReadySource => ({
+        listReadyExternalUserIds: (limit) =>
+          queueStore.listPsidsReadyForFlush(limit),
+        // Same conditional idiom as before: a store without `reconcile` gets no
+        // reconcile callback, so the worker never calls an absent method.
+        ...(queueStore.reconcile
+          ? { reconcile: () => queueStore.reconcile!() }
+          : {}),
+      }),
+      inject: [CHAT_QUEUE_STORE],
+    },
+    {
+      provide: MESSENGER_CHAT_QUEUE_FLUSH,
+      useFactory: (
+        processor: MessengerChatProcessorService,
+      ): PlatformChatFlushSource => ({
+        flushReady: (externalUserId) => processor.flushReady(externalUserId),
+      }),
+      inject: [MessengerChatProcessorService],
+    },
+    ...createPlatformChatProviders({
+      platform: 'messenger',
+      historyEnvPrefix: 'CHAT_HISTORY_',
+      historyKeyPrefix: 'chat:history:',
+      promptDir: join(__dirname, '../../../shared/prompts'),
+      promptFile: 'messenger-chat.system.txt',
+      toolExecutionTimeoutMs: 30_000,
+      appendHistory: false,
+      queueWorkerReady: MESSENGER_CHAT_QUEUE_READY,
+      queueWorkerFlush: MESSENGER_CHAT_QUEUE_FLUSH,
+      agentDynamicOptions: MESSENGER_AGENT_OPTIONS,
+    }),
     {
       // #1088: the chat processor depends on narrow seams; the concrete
       // history/privacy services stay bound to the same singletons.
@@ -339,186 +517,6 @@ import {
       provide: PlatformAgentToolsService,
       useExisting: MessengerAgentToolsService,
     },
-    {
-      provide: LEARNER_PROFILE_STORE,
-      useClass: TypeOrmLearnerProfileStore,
-    },
-    {
-      provide: PlatformAgentService,
-      useFactory: (
-        configService: ConfigService,
-        toolsService: PlatformAgentToolsService,
-        historyService: PlatformChatHistoryService,
-        usageRecorder: PlatformLlmUsageRecorderAdapter,
-        safetyEventService: PlatformLlmSafetyEventAdapter,
-        adapter: LlmProviderAdapter,
-        messengerTools: MessengerAgentToolsService,
-        userDisplayNameService: UserDisplayNameService,
-        metrics: BotMetricsService,
-        llmExecution: LlmExecutionService,
-        learnerProfileStore: LearnerProfileStorePort,
-        redisClient: RedisClientPort,
-        clarificationStore: ClarificationStateStore,
-        rescheduleConfirmationService: MessengerRescheduleConfirmationService,
-        currentIdentityProvider: (
-          externalUserId: string,
-        ) => Promise<{ userId: number; mappingVersion: string } | undefined>,
-      ) => {
-        const learnerProfileSuffix = createLearnerProfileSuffix(
-          learnerProfileStore,
-          'messenger',
-        );
-        // Always constructed (the constructor does no I/O). Whether it runs is
-        // decided by LLM_INPUT_CLASSIFIER_ENABLED inside PlatformAgentService —
-        // one source of truth for the flag (#649).
-        const classifierConfig = buildMessengerClassifierConfig((key) =>
-          configService.get<string>(key)?.trim(),
-        );
-        const classifierModel = resolveMessengerClassifierModel({
-          ...classifierConfig,
-          executionEnabled: readEnvBoolean(
-            configService,
-            'LLM_EXECUTION_ENABLED',
-            true,
-          ),
-        });
-        const contentClassifier = new LlmContentClassifier({
-          adapter,
-          execution: llmExecution,
-          executionEnabled: readEnvBoolean(
-            configService,
-            'LLM_EXECUTION_ENABLED',
-            true,
-          ),
-          model: classifierModel,
-          maxInputChars: Math.max(
-            1,
-            readEnvPositiveInt(
-              configService,
-              'LLM_INPUT_CLASSIFIER_MAX_INPUT_CHARS',
-              512,
-            ),
-          ),
-          timeoutMs: readEnvPositiveInt(
-            configService,
-            'LLM_INPUT_CLASSIFIER_TIMEOUT_MS',
-            1200,
-          ),
-          onInputShape: (shape) =>
-            metrics.incClassifierInput(shape, 'messenger'),
-          logger: new Logger('LlmContentClassifier'),
-        });
-        return new PlatformAgentService(
-          configService,
-          toolsService,
-          historyService,
-          usageRecorder,
-          safetyEventService,
-          adapter,
-          {
-            platform: 'messenger',
-            currentIdentityProvider,
-            clarificationStore,
-            promptDir: join(__dirname, '../../../shared/prompts'),
-            promptFile: 'messenger-chat.system.txt',
-            appendHistory: false,
-            maxLlmRetries: 0,
-            toolExecutionTimeoutMs: 30_000,
-            // Chat flows through the same execution-control path as reports
-            // and reminders: limiter + circuit breaker + retry + deadline.
-            llmExecution,
-            metrics: {
-              timeLlmCall: (feature, model, round, fn) =>
-                metrics.timeLlmCall(feature, model, round, fn),
-              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
-              llmRoundOutcomeInc: (feature, outcome) =>
-                metrics.incRoundOutcome(feature, outcome),
-              observationOutcomeInc: (toolName, outcome) =>
-                metrics.incObservationOutcome(toolName, 'messenger', outcome),
-              toolPolicyDeniedInc: (toolName, reason) =>
-                metrics.incLlmToolPolicyDenied(toolName, 'messenger', reason),
-              degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
-              injectionBlockedInc: (source) =>
-                metrics.incLlmInjectionBlocked(source, 'messenger'),
-              promptCanaryHitInc: () =>
-                metrics.incLlmPromptCanaryHit('messenger'),
-              classifierVerdictInc: (label, mode) =>
-                metrics.incClassifierVerdict(label, mode, 'messenger'),
-              totalProviderAttemptsInc: (feature, attempts, outcome) =>
-                metrics.incLlmTotalProviderAttempts(feature, attempts, outcome),
-            },
-            clarificationOutcomeInc: (outcome) =>
-              metrics.incClarificationOutcome(outcome),
-            onBeforeReply: (input) => {
-              const activeSpan = trace.getActiveSpan();
-              if (activeSpan) {
-                activeSpan.setAttributes({
-                  'messenger.psid': input.externalUserId,
-                  'messenger.user_id': input.userId ?? 0,
-                  'llm.feature': 'FREE_FORM_CHAT',
-                });
-              }
-              return Promise.resolve();
-            },
-            systemPromptSuffix: async (input) => {
-              const rawName = await userDisplayNameService.resolveDisplayName({
-                psid: input.externalUserId,
-                userId: input.userId,
-              });
-              const sanitized = sanitizeUntrustedTextForLlm(rawName, {
-                maxChars: 80,
-                unsafePlaceholder: 'Chào bạn nha',
-              });
-              const displayName = sanitized.text || 'Chào bạn nha';
-              const base = input.userId
-                ? `Học viên đã liên kết WISPACE. Tên gọi: ${displayName}.`
-                : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;
-              const profileSection = await learnerProfileSuffix(input);
-              return {
-                identityDisplayName: base,
-                learnerProfile: profileSection,
-              };
-            },
-            // Learner profile (#207 item 3): persist server-derived facts
-            // (band target, exam date) from successful tool results.
-            onToolResult: createLearnerProfileRecorder(
-              learnerProfileStore,
-              'messenger',
-            ),
-            tryFastReschedule: (ctx, userText, signal) =>
-              messengerTools.tryFastDefaultReschedule(ctx, userText, signal),
-            cancelPendingReschedule: (externalUserId, approvalToken) =>
-              rescheduleConfirmationService.cancelForUser(
-                externalUserId,
-                approvalToken,
-              ),
-            contentClassifier,
-            classifierUsage: {
-              provider: adapter.providerName,
-              model: classifierModel,
-            },
-          },
-          redisClient,
-        );
-      },
-      inject: [
-        ConfigService,
-        PlatformAgentToolsService,
-        PlatformChatHistoryService,
-        PlatformLlmUsageRecorderAdapter,
-        PlatformLlmSafetyEventAdapter,
-        'LLM_PROVIDER_ADAPTER',
-        MessengerAgentToolsService,
-        UserDisplayNameService,
-        BotMetricsService,
-        LlmExecutionService,
-        LEARNER_PROFILE_STORE,
-        REDIS_CLIENT,
-        CLARIFICATION_STATE_STORE,
-        MessengerRescheduleConfirmationService,
-        MESSENGER_TOOL_IDENTITY_PROVIDER,
-      ],
-    },
     RedisChatQueueStore,
     ChatQueueStoreStartupService,
     {
@@ -569,6 +567,45 @@ import {
       inject: [STUDY_REMINDER_OPERATIONS_PORT],
     },
     ...createRescheduleProviders('messenger'),
+    {
+      // #1418: Messenger override of the shared recovery cron, adding the
+      // transport that re-sends a confirmation whose delivery was deferred
+      // (a rate limit on our own outbound budget, not a learner problem).
+      // Declared after createRescheduleProviders so it replaces that instance.
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+        pgLock: PgAdvisoryLockService,
+        attemptStore: TypeormRescheduleAttemptStore,
+        outbound: MessengerOutboundService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          { pgLock, lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY },
+          attemptStore,
+          {
+            // #1507: the replay passes the canonical userId so it charges the
+            // same outbound budget the first delivery charged. Without it the
+            // replay buckets on the PSID and the learner effectively has two.
+            deliver: ({ externalId, scheduledTimeLabel, userId }) =>
+              outbound.sendTextViaPsid({
+                psid: externalId,
+                text: `Mình đã dời buổi học sang ${scheduledTimeLabel} cho bạn rồi nhé ✅`,
+                messageType: 'RESCHEDULE_CONFIRMED',
+                userId,
+              }),
+          },
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+        TypeormRescheduleAttemptStore,
+        MessengerOutboundService,
+      ],
+    },
     AgentReplyAdapter,
     {
       provide: AGENT_REPLY,
@@ -629,6 +666,7 @@ import {
         calendarPort: CalendarPort<string>,
         reschedulePort: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
+        attemptStore: TypeormRescheduleAttemptStore,
         writeToolBudget: PlatformWriteToolBudgetService,
         policyDeniedInc: (toolName: string, reason: string) => void,
       ) =>
@@ -637,6 +675,9 @@ import {
           reschedulePort,
           store,
           {
+            // #1418: without this the confirmation is not replay-safe — the
+            // staged request is deleted before the learner is told.
+            attemptStore,
             consumeRescheduleBudget: (userId: number, externalId: string) =>
               writeToolBudget.consumeDaily(
                 String(externalId),
@@ -656,6 +697,7 @@ import {
         'MessengerCalendarPort',
         'MessengerReschedulePort',
         TypeormRescheduleStore,
+        TypeormRescheduleAttemptStore,
         PlatformWriteToolBudgetService,
         MESSENGER_TOOL_POLICY_DENIED_INC,
       ],
@@ -667,28 +709,6 @@ import {
       useFactory: (sharedConfig: MessengerChatSharedConfigService) =>
         new PrivacyStateService(sharedConfig.getPrivacyConfirmTtlMs()),
       inject: [MessengerChatSharedConfigService],
-    },
-    {
-      provide: RedisChatQueueWorkerService,
-      useFactory: (
-        configService: ConfigService,
-        runtimeConfig: ChatRuntimeConfig,
-        queueStore: ChatQueueStorePort,
-        processor: MessengerChatProcessorService,
-      ) =>
-        new RedisChatQueueWorkerService(
-          configService,
-          (limit) => queueStore.listPsidsReadyForFlush(limit),
-          (externalUserId) => processor.flushReady(externalUserId),
-          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
-          runtimeConfig,
-        ),
-      inject: [
-        ConfigService,
-        ChatRuntimeConfig,
-        CHAT_QUEUE_STORE,
-        MessengerChatProcessorService,
-      ],
     },
   ],
   exports: [

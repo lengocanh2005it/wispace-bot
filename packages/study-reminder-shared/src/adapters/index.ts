@@ -35,7 +35,6 @@ export {
 } from '../services/study-reminder-dispatch.service';
 export {
   StudyReminderWorkerService,
-  studyReminderLockSkipsTotal,
   type StudyReminderWorkerLockIds,
   type StudyReminderWorkerMetrics,
   type StudyReminderWorkerOptions,

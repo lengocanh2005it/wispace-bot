@@ -21,29 +21,7 @@ import { MessengerOutboundModule } from './messenger-outbound.module';
 import { SchedulerModule } from '../scheduler/scheduler.module';
 import { MESSENGER_REPORT_SENT_READER } from './domain/repositories/messenger-report-sent-reader.port';
 import { MessengerReportSentReader } from './infrastructure/persistence/messenger-report-sent-reader';
-
-type FactoryProvider = {
-  provide: unknown;
-  useFactory?: (...args: unknown[]) => unknown;
-};
-
-function findFactoryProvider(
-  module: object,
-  token: unknown,
-): FactoryProvider | undefined {
-  const providers = (Reflect.getMetadata('providers', module) ?? []) as Array<
-    FactoryProvider | unknown
-  >;
-  return providers.find(
-    (provider): provider is FactoryProvider =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token &&
-      'useFactory' in provider &&
-      typeof provider.useFactory === 'function',
-  );
-}
+import { findFactoryProvider } from '@wispace/bot-common/testing';
 
 describe('Messenger report persistence wiring', () => {
   it('resolves stale-claim recovery from the owner adapter entrypoint', () => {

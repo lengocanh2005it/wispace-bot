@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ConfigService } from '@nestjs/config';
 import type { ChatQuotaRepositoryPort } from '../../domain/repositories/chat-quota.repository.port';
 import type { ChatBurstCounterPort } from '../../domain/repositories/chat-burst-counter.port';

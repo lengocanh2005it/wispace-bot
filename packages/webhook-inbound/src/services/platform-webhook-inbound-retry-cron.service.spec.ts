@@ -96,6 +96,25 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.markFailed).not.toHaveBeenCalled();
   });
 
+  it('reports cron dispatch lag through the per-bot metrics port', async () => {
+    const metrics = {
+      registerCron: jest.fn(),
+      recordCronSuccess: jest.fn(),
+      observeWebhookInboundDispatchLag: jest.fn(),
+    };
+    const options = buildOptions({ metrics });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([row()]);
+
+    await service.handleRetry();
+
+    expect(metrics.observeWebhookInboundDispatchLag).toHaveBeenCalledWith(
+      'messenger',
+      'cron',
+      expect.any(Number),
+    );
+  });
+
   it('records a bounded-backoff failure when processing throws', async () => {
     const options = buildOptions({
       processEvent: jest.fn().mockRejectedValue(new Error('WISPACE down')),

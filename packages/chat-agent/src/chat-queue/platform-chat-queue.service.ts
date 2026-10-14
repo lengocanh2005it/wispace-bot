@@ -10,12 +10,17 @@ import type { ChatQueueBatch } from '@wispace/chat-queue-core';
 import type {
   AgentPort,
   ChatPipelineHooks,
+  ChatPipelineResult,
   HistoryPort,
   OutboundPort,
   PipelineContext,
   RateLimiterPort,
 } from '@wispace/chat-pipeline';
-import { ChatPipeline } from '@wispace/chat-pipeline';
+import { ChatPipeline, isTerminalFlush } from '@wispace/chat-pipeline';
+import {
+  captureTraceContext,
+  withExtractedTraceContext,
+} from '@wispace/bot-common/tracing';
 import {
   errorMessage,
   maskExternalId,
@@ -38,24 +43,16 @@ const PENDING_MESSAGE =
 const DROPPED_MESSAGE =
   'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
 
-// All three are module-level, not instance fields — deliberate but worth
+// All module-level, not instance fields — deliberate but worth
 // knowing before you reuse them. Messenger's equivalent gate is a per-instance
 // `private readonly` Set (messenger-chat-processor.service.ts). These are safe
 // as module state only because one process runs exactly one platform; two
 // platforms sharing a process would collide on `externalUserId`.
 //
-// Entries are keyed per user and `handleFlush` clears all three on entry, so a
-// stale entry can never affect another learner. One path does outlive the
-// flush: when `onRateLimited` and `onError` both fire, the rate-limited branch
-// returns early and only the `finally` clears — which covers the other two but
-// not `fallbackSentThisCycle`. That entry survives until the same user's next
-// flush clears it on entry, i.e. it self-heals and stays user-scoped. Move to
-// instance fields if a process ever hosts more than one platform.
+// Entries are keyed per user and both `handleFlush` and its `finally` clear
+// them, so a stale entry can never affect another learner.
 /** Users who received a fallback in the current processing cycle. Prevents duplicate fallbacks on retry. Exported for testing. */
 export const fallbackSentThisCycle = new Set<string>();
-/** Distinguishes a delivery failure from a normal quota-denied false result. */
-const failedFlushThisCycle = new Set<string>();
-const rateLimitedFlushThisCycle = new Set<string>();
 
 interface QueueCtx {
   userId?: number;
@@ -128,7 +125,6 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
 
     const hooks: ChatPipelineHooks = {
       onError: async (ctx: PipelineContext) => {
-        failedFlushThisCycle.add(ctx.externalUserId);
         const refundError = ctx.refundError
           ? ` refundError=${maskExternalIdInText(
               errorMessage(ctx.refundError),
@@ -191,9 +187,6 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           );
         }
       },
-      onRateLimited: async (ctx: PipelineContext) => {
-        rateLimitedFlushThisCycle.add(ctx.externalUserId);
-      },
     };
 
     if (options.typingIndicator !== undefined) {
@@ -252,6 +245,13 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
                 .catch(() => {});
             }
           },
+          onFlushTimedOut: (externalUserId, timeoutMs) => {
+            this.logger.warn(
+              `Chat queue flush stalled for ${maskExternalId(
+                externalUserId,
+              )} after ${timeoutMs}ms; releasing the queue for buffered messages (handler may finish later)`,
+            );
+          },
           onShutdownRejected: (externalUserId) => {
             this.logger.warn(
               `Enqueue rejected during shutdown for ${maskExternalId(
@@ -301,13 +301,23 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const userText = text.trim();
     if (this.distributed) {
+      // The flush that eventually runs the LLM happens later — after the
+      // debounce, and possibly on another pod. Carrying the trace context in
+      // the buffer is what keeps the chat turn under the trace id the request
+      // opened, instead of starting an unrelated one.
+      const traceParent = captureTraceContext();
       await this.queueStore!.appendChatBuffer({
         externalUserId,
         userText,
         userId: ctx.userId,
         context:
-          ctx.isServerChannel !== undefined
-            ? { isServerChannel: ctx.isServerChannel }
+          ctx.isServerChannel !== undefined || traceParent !== undefined
+            ? {
+                ...(ctx.isServerChannel !== undefined
+                  ? { isServerChannel: ctx.isServerChannel }
+                  : {}),
+                ...(traceParent !== undefined ? { traceParent } : {}),
+              }
             : undefined,
         idempotencyKey,
         debounceMs: this.debounceMs,
@@ -406,11 +416,11 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   ): Promise<FlushOutcome> {
     // #406: clear the fallback gate for this processing cycle.
     fallbackSentThisCycle.delete(batch.externalUserId);
-    failedFlushThisCycle.delete(batch.externalUserId);
-    rateLimitedFlushThisCycle.delete(batch.externalUserId);
 
     try {
-      const context = batch.context as QueueCtx | undefined;
+      const context = batch.context as
+        | (QueueCtx & { traceParent?: string })
+        | undefined;
       const sharedSnapshot = 'lastIdempotencyKey' in batch;
       const flush = () =>
         this.pipeline.flush({
@@ -428,31 +438,37 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       // `chat_total` is the platform's chat-availability SLO series (#371) —
       // timed only when the app wired the closure, ok/error recorded by the
       // metrics helper itself.
-      const delivered = await (this.options.timeStep
-        ? this.options.timeStep('chat_total', flush)
-        : flush());
+      // Re-establish the request's trace before the LLM span opens, so the
+      // turn is a child of the request rather than a trace of its own.
+      const result: ChatPipelineResult = await withExtractedTraceContext(
+        context?.traceParent,
+        () =>
+          this.options.timeStep
+            ? this.options.timeStep('chat_total', flush)
+            : flush(),
+      );
 
-      if (!delivered) {
-        if (rateLimitedFlushThisCycle.has(batch.externalUserId)) {
+      switch (result.outcome) {
+        case 'delivered':
+        case 'denied':
+        case 'duplicate':
+          // Quota denial and duplicates are handled pipeline outcomes, not
+          // delivery failures. Do not retry or leave the Redis lease in-flight.
           return 'completed';
+        case 'failed': {
+          if (isTerminalFlush(result)) {
+            return 'completed';
+          }
+          const fallbackWasSent = fallbackSentThisCycle.has(
+            batch.externalUserId,
+          );
+          if (fallbackWasSent) {
+            fallbackSentThisCycle.delete(batch.externalUserId);
+            return 'completed';
+          }
+          return this.scheduleRetryForFailedBatch(batch);
         }
-        if (!failedFlushThisCycle.has(batch.externalUserId)) {
-          // Quota denial is a handled pipeline outcome, not a delivery
-          // failure. Do not retry or leave the Redis lease in-flight.
-          return 'completed';
-        }
-        const fallbackWasSent = fallbackSentThisCycle.has(batch.externalUserId);
-        if (fallbackWasSent) {
-          fallbackSentThisCycle.delete(batch.externalUserId);
-          failedFlushThisCycle.delete(batch.externalUserId);
-          return 'completed';
-        }
-        return this.scheduleRetryForFailedBatch(batch);
       }
-
-      // Success: clear the per-cycle fallback gate.
-      fallbackSentThisCycle.delete(batch.externalUserId);
-      return 'completed';
     } catch (error) {
       this.logger.error(
         `Chat queue flush failed for ${maskExternalId(
@@ -469,17 +485,14 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       const fallbackWasSent = fallbackSentThisCycle.has(userId);
       if (fallbackWasSent) {
         fallbackSentThisCycle.delete(userId);
-        failedFlushThisCycle.delete(userId);
         return 'completed';
       }
 
       fallbackSentThisCycle.delete(userId);
-      failedFlushThisCycle.delete(userId);
       return this.scheduleRetryForFailedBatch(batch);
     } finally {
       this.droppedNotified.delete(batch.externalUserId);
-      failedFlushThisCycle.delete(batch.externalUserId);
-      rateLimitedFlushThisCycle.delete(batch.externalUserId);
+      fallbackSentThisCycle.delete(batch.externalUserId);
     }
   }
 

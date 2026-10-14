@@ -62,7 +62,6 @@ describe('PlatformStudentReportService', () => {
   });
 
   it('creates StudentReportCore lazily on first generateReport call', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { StudentReportCore } = jest.requireMock('./student-report.service');
     const service = buildService();
 
@@ -72,7 +71,6 @@ describe('PlatformStudentReportService', () => {
   });
 
   it('reuses StudentReportCore on subsequent calls', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { StudentReportCore } = jest.requireMock('./student-report.service');
     const service = buildService();
 
@@ -88,7 +86,6 @@ describe('PlatformStudentReportService', () => {
     await service.generateReport('external-1');
 
     expect(mockGenerateReport).toHaveBeenCalledWith('external-1', {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       correlationId: expect.stringContaining('external-1:'),
     });
   });

@@ -1,4 +1,5 @@
 import type { Repository } from 'typeorm';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { LlmSafetyEventEntity } from '../entities/llm-safety-event.entity';
 import type {
   InsertLlmSafetyEvent,
@@ -34,13 +35,32 @@ export class LlmSafetyEventRepository implements LlmSafetyEventRepositoryPort {
   }
 
   async deleteOlderThan(before: Date): Promise<number> {
-    const result = await this.repo
-      .createQueryBuilder()
-      .delete()
-      .where('"platform" = :platform', { platform: this.platform })
-      .andWhere('"created_at" < :before', { before })
-      .execute();
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
 
-    return result.affected ?? 0;
+    for (;;) {
+      const deleted = extractQueryRows<{ id: string }>(
+        await this.repo.manager.query(
+          `
+            DELETE FROM llm_safety_events
+            WHERE id IN (
+              SELECT id FROM llm_safety_events
+              WHERE platform = $1 AND created_at < $2
+              LIMIT $3
+            )
+            RETURNING id
+          `,
+          [this.platform, before, BATCH_SIZE],
+        ),
+      );
+
+      totalDeleted += deleted.length;
+
+      if (deleted.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    return totalDeleted;
   }
 }

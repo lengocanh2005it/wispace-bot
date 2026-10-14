@@ -16,6 +16,11 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { readOptionalPositiveInt } from '@wispace/bot-common/config';
+import {
+  fullPageAsMappingPage,
+  iterateMappingPages,
+} from '@wispace/bot-common/utils';
 import { todayInTimezone } from '@wispace/wispace-client/core';
 import { runBatched } from '@wispace/scheduler-core/core';
 import type {
@@ -36,10 +41,12 @@ import {
 } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import type { Platform } from '@wispace/contracts';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import {
   buildLlmExecutionConfig,
   resolveBackgroundProducerConcurrency,
 } from '@wispace/llm-agent/core';
+import { MESSENGER_REPORT_PRODUCER } from '../../report-producer';
 
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -74,8 +81,11 @@ export class ReportCronService {
     );
     this.concurrency = resolveBackgroundProducerConcurrency(executionConfig, {
       enabled: executionConfig.enabled,
-      producerName: 'messenger report',
-      configuredConcurrency: this.readConfiguredConcurrency(),
+      producerName: MESSENGER_REPORT_PRODUCER.producerName,
+      configuredConcurrency: readOptionalPositiveInt(
+        (key) => this.configService.get<string>(key),
+        MESSENGER_REPORT_PRODUCER.concurrencyEnvKey,
+      ),
       onWarning: (message) => this.logger.warn(message),
     });
     this.metrics?.registerCron?.(
@@ -140,8 +150,10 @@ export class ReportCronService {
 
     const schedule = this.reportScheduleService.getExamReminderWindow();
     const reportDate = todayInTimezone(
-      this.configService.get<string>('CHAT_USAGE_TIMEZONE') ??
-        'Asia/Ho_Chi_Minh',
+      resolveTimezone(
+        (key) => this.configService.get<string>(key),
+        LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
+      ),
     );
 
     if (forceSend) {
@@ -169,78 +181,78 @@ export class ReportCronService {
 
     // Keyset pagination: fetch mappings in bounded pages instead of loading
     // all at once — prevents unbounded memory growth as linked users scale.
-    let cursor = 0;
-    for (;;) {
-      const page =
-        await this.messengerRepository.findActiveSubscribedMappingsPage(
-          cursor,
-          PAGE_SIZE,
+    // The scan ends when a page declares no continuation; see ADR-0049.
+    await iterateMappingPages<UserMessengerMapping, number>({
+      source: {
+        fetch: async (cursor, limit) =>
+          fullPageAsMappingPage(
+            await this.messengerRepository.findActiveSubscribedMappingsPage(
+              cursor ?? 0,
+              limit,
+            ),
+            limit,
+          ),
+      },
+      limit: PAGE_SIZE,
+      onPage: async (page): Promise<void | 'stop'> => {
+        let mappings = page;
+        if (psidFilter) {
+          mappings = mappings.filter((m) => m.psid === psidFilter);
+        }
+
+        // Skip web-dormant learners — but never for an operator forceSend, which
+        // is an explicit "send now" override (same posture as the exam-window gate).
+        if (!forceSend && this.webActivityService) {
+          const { active, suppressed } =
+            await this.webActivityService.partitionDormant(
+              mappings,
+              (m) => m.userId,
+            );
+          mappings = active;
+          if (suppressed > 0) {
+            this.metrics?.incScheduledSendSuppressed('report', suppressed);
+            skipped += suppressed;
+          }
+        }
+
+        totalMappings += mappings.length;
+        const canonicalPlatforms = this.canonicalPlatformService
+          ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+              ...new Set(
+                mappings.flatMap((mapping) =>
+                  mapping.userId === undefined ? [] : [mapping.userId],
+                ),
+              ),
+            ])
+          : undefined;
+
+        const settled = await runBatched(mappings, concurrency, (mapping) =>
+          this.processMappingForReport(mapping, {
+            forceSend,
+            skipAlreadySentToday,
+            reportDate,
+            canonicalPlatforms,
+          }),
         );
 
-      if (page.length === 0) break;
-
-      // Update cursor to the last ID in this page for next iteration
-      const lastId = page[page.length - 1]!.id;
-      cursor = lastId;
-
-      let mappings = page;
-      if (psidFilter) {
-        mappings = mappings.filter((m) => m.psid === psidFilter);
-      }
-
-      // Skip web-dormant learners — but never for an operator forceSend, which
-      // is an explicit "send now" override (same posture as the exam-window gate).
-      if (!forceSend && this.webActivityService) {
-        const { active, suppressed } =
-          await this.webActivityService.partitionDormant(
-            mappings,
-            (m) => m.userId,
-          );
-        mappings = active;
-        if (suppressed > 0) {
-          this.metrics?.incScheduledSendSuppressed('report', suppressed);
-          skipped += suppressed;
+        for (const r of settled) {
+          if (r.status === 'fulfilled') {
+            sent += r.value.sent;
+            skipped += r.value.skipped;
+            deferred += r.value.deferred;
+            windowClosed += r.value.windowClosed;
+            claimSkipped += r.value.claimSkipped;
+            retryQueued += r.value.retryQueued;
+            failures.push(...r.value.failures);
+          }
         }
-      }
 
-      totalMappings += mappings.length;
-      const canonicalPlatforms = this.canonicalPlatformService
-        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
-            ...new Set(
-              mappings.flatMap((mapping) =>
-                mapping.userId === undefined ? [] : [mapping.userId],
-              ),
-            ),
-          ])
-        : undefined;
-
-      const settled = await runBatched(mappings, concurrency, (mapping) =>
-        this.processMappingForReport(mapping, {
-          forceSend,
-          skipAlreadySentToday,
-          reportDate,
-          canonicalPlatforms,
-        }),
-      );
-
-      for (const r of settled) {
-        if (r.status === 'fulfilled') {
-          sent += r.value.sent;
-          skipped += r.value.skipped;
-          deferred += r.value.deferred;
-          windowClosed += r.value.windowClosed;
-          claimSkipped += r.value.claimSkipped;
-          retryQueued += r.value.retryQueued;
-          failures.push(...r.value.failures);
+        // If filtering by psid and we already found it, no need to scan remaining pages
+        if (psidFilter && mappings.length > 0) {
+          return 'stop';
         }
-      }
-
-      // If filtering by psid and we already found it, no need to scan remaining pages
-      if (psidFilter && mappings.length > 0) break;
-
-      // Partial page signals end of data
-      if (page.length < PAGE_SIZE) break;
-    }
+      },
+    });
 
     if (psidFilter && totalMappings === 0) {
       throw new BadRequestException(
@@ -334,16 +346,5 @@ export class ReportCronService {
       skipAlreadySentToday,
       examDateForOutbox,
     });
-  }
-
-  private readConfiguredConcurrency(): number | undefined {
-    const raw = this.configService
-      .get<string>('REPORT_SEND_CONCURRENCY')
-      ?.trim();
-    if (!raw) return undefined;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : undefined;
   }
 }

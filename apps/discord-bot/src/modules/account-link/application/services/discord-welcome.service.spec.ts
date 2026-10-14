@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock assertions */
 import type { ConfigService } from '@nestjs/config';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';

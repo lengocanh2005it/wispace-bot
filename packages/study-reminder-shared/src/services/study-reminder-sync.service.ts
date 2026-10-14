@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { iterateMappingPages } from '@wispace/bot-common/utils';
 import { runBatched } from '@wispace/scheduler-core/core';
 import {
   MAPPING_READER,
@@ -159,45 +160,53 @@ export class StudyReminderSyncService {
       }
     } else {
       // Keyset-paged full sync: bounded memory and bounded concurrency, so
-      // duration no longer grows one serial upstream fetch per user.
-      let afterId: string | undefined;
+      // duration no longer grows one serial upstream fetch per user. The scan
+      // ends when a mapping page declares no continuation; see ADR-0049.
       let pageNo = 0;
-      let pageProcessed: number;
-      do {
-        const page = await this.mappingReader.findActiveMappingsPage(platform, {
-          limit: DEFAULT_PAGE_SIZE,
-          afterId,
-        });
-        pageProcessed = page.items.length;
-        counters.mappings += pageProcessed;
-        pageNo += 1;
+      await iterateMappingPages<UserLink, string>({
+        source: {
+          fetch: (afterId, limit) =>
+            this.mappingReader.findActiveMappingsPage(platform, {
+              limit,
+              afterId,
+            }),
+        },
+        limit: DEFAULT_PAGE_SIZE,
+        onPage: async (items) => {
+          counters.mappings += items.length;
+          pageNo += 1;
 
-        const results = await runBatched(
-          page.items,
-          DEFAULT_SYNC_CONCURRENCY,
-          (mapping) =>
-            this.syncOneMapping(mapping, platform, opts, settings, horizonEnd),
-        );
+          const results = await runBatched(
+            items,
+            DEFAULT_SYNC_CONCURRENCY,
+            (mapping) =>
+              this.syncOneMapping(
+                mapping,
+                platform,
+                opts,
+                settings,
+                horizonEnd,
+              ),
+          );
 
-        let batchUpserted = 0;
-        let batchCancelled = 0;
-        for (const result of results) {
-          if (result.status !== 'fulfilled') {
-            counters.failed += 1;
-            continue;
+          let batchUpserted = 0;
+          let batchCancelled = 0;
+          for (const result of results) {
+            if (result.status !== 'fulfilled') {
+              counters.failed += 1;
+              continue;
+            }
+            const outcome = result.value as PerMappingOutcome;
+            batchUpserted += outcome.upserted;
+            batchCancelled += outcome.cancelled;
+            this.accumulate(outcome, counters);
           }
-          const outcome = result.value as PerMappingOutcome;
-          batchUpserted += outcome.upserted;
-          batchCancelled += outcome.cancelled;
-          this.accumulate(outcome, counters);
-        }
 
-        this.logger.log(
-          `Study reminder sync batch ${pageNo} (platform=${platform}): processed=${pageProcessed}, upserted=${batchUpserted}, cancelled=${batchCancelled}, totalProcessed=${counters.mappings}`,
-        );
-
-        afterId = page.nextId;
-      } while (afterId !== undefined && pageProcessed === DEFAULT_PAGE_SIZE);
+          this.logger.log(
+            `Study reminder sync batch ${pageNo} (platform=${platform}): processed=${items.length}, upserted=${batchUpserted}, cancelled=${batchCancelled}, totalProcessed=${counters.mappings}`,
+          );
+        },
+      });
     }
 
     this.logger.log(

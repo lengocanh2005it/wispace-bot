@@ -11,30 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { StudyReminderModule } from './study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
-
-type FactoryProvider = {
-  provide: unknown;
-  useFactory?: (...args: unknown[]) => unknown;
-  inject?: unknown[];
-};
-
-function findFactoryProvider(
-  module: object,
-  token: unknown,
-): FactoryProvider | undefined {
-  const providers = (Reflect.getMetadata('providers', module) ?? []) as Array<
-    FactoryProvider | unknown
-  >;
-  return providers.find(
-    (provider): provider is FactoryProvider =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token &&
-      'useFactory' in provider &&
-      typeof provider.useFactory === 'function',
-  );
-}
+import { findFactoryProvider } from '@wispace/bot-common/testing';
 
 describe('Messenger study-reminder calendar wiring', () => {
   const originalFetch = global.fetch;

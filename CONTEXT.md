@@ -190,6 +190,14 @@ _Avoid_: rescheduled session, completed reschedule
 The committed WISPACE write that changes a UserCalendar session, currently the reschedule flow. Staging a proposal or showing a confirmation prompt is not a calendar mutation.
 _Avoid_: calendar staging, calendar read
 
+**committed confirmation**:
+A calendar mutation that returned successfully and is recorded durably under the approval token the learner acted on, before the learner is told. It outlives the staged reschedule it consumed, so a later tap or a replay repeats the confirmation instead of reporting the change as never made. It is distinct from *delivering* that confirmation: a change may be committed and not yet confirmed, and the record must distinguish the two.
+_Avoid_: successful reschedule, confirmed reschedule, delivered confirmation
+
+**unknown-outcome attempt**:
+A calendar mutation that was attempted and whose result cannot be determined, because the attempt ended without a knowable outcome. It is neither a failed mutation nor an absent one, and it must never be re-run or re-armed: the upstream may already hold the change and the mutation is not idempotent. It ends by escalating to a human, not by guessing which of the two it was.
+_Avoid_: failed reschedule, partial reschedule, pending reschedule, unknown reschedule
+
 **calendar cache invalidation**:
 Removal of cached UserCalendar reads after a committed calendar mutation so the next read observes the latest WISPACE state.
 _Avoid_: calendar refresh, calendar sync
@@ -476,15 +484,15 @@ _Avoid_: chat service, AI service, "the OpenAI loop"
 
 **agent run**:
 One execution of the free-form agent for a learner interaction. It may contain multiple tool rounds and is one kind of LLM generation; a later queue flush replay is a new agent run.
-_Avoid_: provider call, chat turn — a chat turn can have more than one agent run when its flush is replayed
+_Avoid_: provider attempt, chat turn — a chat turn can have more than one agent run when its flush is replayed
 
 **LLM generation**:
 One top-level operation that asks an LLM to produce one feature result. A chat generation is an agent run; a report or reminder generation may have no tool rounds.
 _Avoid_: provider attempt, chat turn
 
 **08:00 report wave**:
-The set of scheduled-report jobs selected by one platform's 08:00 ICT report tick. Retry-dispatch jobs are later attempts, not part of the original wave.
-_Avoid_: report cron (which can also mean retry dispatch), report fan-out
+The set of scheduled-report jobs selected by one platform's 08:00 ICT report tick. Retry-dispatch jobs are later attempts, not part of the original wave. Its owner and its split from report content are `CONTEXT-MAP.md` boundary rule 7.
+_Avoid_: report cron (which can also mean retry dispatch), report fan-out, scheduler module
 
 **background producer concurrency**:
 The maximum number of report or study-reminder generations a producer starts at once before they contend for LLM admission. It is a producer-side cap, distinct from the admission queue's provider-execution limit.
@@ -538,12 +546,20 @@ _Avoid_: error message, retry status
 An operational target for when an 08:00 report wave should finish, separate from the rolling report-delivery SLO. The current target is 09:00 ICT; missing it is a latency signal even when the eventual delivery is successful.
 _Avoid_: report SLO, retry deadline
 
+**provider attempt**:
+One invocation of a configured provider's adapter that the shared provider-attempt budget has counted, whether it ends in a completion or a failure. It is the budget's unit of account. One provider attempt issues exactly one provider request; the two are not the same word.
+_Avoid_: provider call, provider request, request
+
+**provider request**:
+One HTTP call actually issued to a provider endpoint. It is the unit that costs money, so a test asserts `provider requests issued == provider attempts` to catch any layer that hides work below the adapter.
+_Avoid_: provider call, provider attempt, adapter invocation
+
 **shared provider-attempt budget**:
-The maximum number of actual provider calls allowed during one LLM generation, consumed across agent retry, execution retry, and provider failover. It counts the initial call, does not count admission/cooldown skips, and does not carry across queue flush replays.
-_Avoid_: retry count, quota, admission cap
+The maximum number of provider attempts allowed during one LLM generation, consumed across execution retry and provider failover. It counts the first attempt, does not count admission/cooldown skips, and does not carry across queue flush replays.
+_Avoid_: retry count, quota, admission cap, provider-request cap
 
 **budget exhaustion**:
-The condition in which an LLM generation has no remaining provider-call allowance. It stops the next retry or failover call while preserving the existing terminal cause, and is distinct from an abort, deadline, or provider exhaustion outcome.
+The condition in which an LLM generation has no remaining provider-attempt allowance. It stops the next retry or failover attempt while preserving the existing terminal cause, and is distinct from an abort, deadline, or provider exhaustion outcome.
 _Avoid_: timeout, provider exhaustion, quota
 
 **provider retry policy**:
@@ -611,12 +627,16 @@ A calendar read whose effective `limit` or `pastDays` is lower than its requeste
 _Avoid_: truncated complete list, exact result
 
 **result completeness**:
-Whether a tool result includes all records matching its query. Completeness is `incomplete` or `unknown`; returned count alone does not prove completeness.
+Whether a result includes all records matching its query. Completeness is `incomplete` or `unknown`; returned count alone does not prove completeness. It governs every paged read, whether a tool result or a mapping scan.
 _Avoid_: returned count, has-more inference
 
 **known remaining data**:
-Records that the upstream source confirms exist beyond the returned page. It is distinct from a capped result and cannot be inferred merely by reaching the cap.
+Records that the source confirms exist beyond the returned page. It is distinct from a capped result and cannot be inferred merely by reaching the cap.
 _Avoid_: hasMore, silent extra records
+
+**mapping page**:
+One bounded slice of platform mappings produced by a single step of a scan. A scan is complete only when a page states that no further pages exist; the size of a page never establishes this, and a page filled to its limit is not thereby the last one. A scan whose pages fail partway is `incomplete`, and the records it never reached are not thereby absent.
+_Avoid_: hasMore, last-page inference, page size as end signal
 
 **tool spec**:
 The platform-independent declaration of an agent tool: its name, description, tool schema, capability metadata, and derived-tool metadata. A tool spec describes what the tool is and how shared chat code classifies its result; it does not contain platform execution or dependency injection.
@@ -671,7 +691,7 @@ The identity used for per-learner LLM concurrency: the linked WISPACE `userId`, 
 _Avoid_: user ID, platform user ID
 
 **per-user in-flight cap**:
-The maximum number of concurrent free-form chat executions admitted for one learner admission key, including executions waiting for capacity or retrying a provider call. It protects interactive fairness and is distinct from the daily chat quota.
+The maximum number of concurrent free-form chat executions admitted for one learner admission key, including executions waiting for capacity or retrying a provider attempt. It protects interactive fairness and is distinct from the daily chat quota.
 _Avoid_: per-user rate limit, concurrency quota
 
 **user-saturated**:
@@ -687,7 +707,7 @@ The base URL that a configured LLM provider will actually use after applying an 
 _Avoid_: provider URL, API URL
 
 **endpoint allowlist**:
-The required set of exact hostnames permitted for LLM provider calls. Matching is case-insensitive and does not imply wildcard subdomains; this is distinct from the quota `whitelist`.
+The required set of exact hostnames permitted for LLM provider requests. Matching is case-insensitive and does not imply wildcard subdomains; this is distinct from the quota `whitelist`.
 _Avoid_: allowlist (without "endpoint"), trusted URL list
 
 **configured provider**:
@@ -699,11 +719,11 @@ A configured provider that may receive a request after an earlier provider in th
 _Avoid_: fallback provider, backup vendor
 
 **provider outcome**:
-The result of one actual call to a configured LLM provider: `success` when it returns a completion and `failure` when that call is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller cancellation and an execution deadline that expires before a provider call are not provider outcomes; a provider-side attempt timeout is a provider failure for the execution circuit even though it arrives as an abort. A cooldown skip is not an outcome because no provider call occurred.
+The result of one provider attempt on a configured LLM provider: `success` when it returns a completion and `failure` when that attempt is rejected or errors. Missing usage metadata does not change a successful completion into a failure. Caller cancellation and an execution deadline that expires before a provider attempt are not provider outcomes; a provider-side attempt timeout is a provider failure for the execution circuit even though it arrives as an abort. A cooldown skip is not an outcome because no provider attempt occurred.
 _Avoid_: request outcome, circuit state
 
 **deterministic request rejection**:
-A provider refusal caused by the learner's request or payload, represented by normalized reason `bad_request`. It is observable as a failed provider call but is not evidence that the shared provider is unhealthy.
+A provider refusal caused by the learner's request or payload, represented by normalized reason `bad_request`. It is observable as a failed provider attempt but is not evidence that the shared provider is unhealthy.
 _Avoid_: provider outage, upstream failure
 
 **upstream-health signal**:
@@ -719,11 +739,11 @@ Expiry of the bounded timeout for one provider attempt while the caller and glob
 _Avoid_: caller cancellation, global execution deadline
 
 **global execution deadline**:
-The single time budget for one LLM execution, covering admission, the optional shared slot, retries, backoff, and provider calls. Once it expires no new provider attempt starts; its failure is attributed to the provider only when a provider attempt was in flight.
+The single time budget for one LLM execution, covering admission, the optional shared slot, retries, backoff, and provider attempts. Once it expires no new provider attempt starts; its failure is attributed to the provider only when a provider attempt was in flight.
 _Avoid_: per-attempt timeout, caller cancellation
 
 **execution-circuit failure**:
-One terminally failed top-level LLM execution attributed to a provider call or to a global deadline expiring while a provider call was in flight. It increments the shared execution circuit once per execution, not once per retry attempt, and excludes admission, Redis, and caller-cancellation failures.
+One terminally failed top-level LLM execution attributed to a provider attempt or to a global deadline expiring while a provider attempt was in flight. It increments the shared execution circuit once per execution, not once per retry attempt, and excludes admission, Redis, and caller-cancellation failures.
 _Avoid_: retry attempt, provider circuit failure
 
 **long cooldown**:
@@ -755,7 +775,7 @@ The model used by the optional input-classifier tier to label a fresh learner me
 _Avoid_: moderation model, guard model
 
 **model override**:
-A model value supplied for one LLM request instead of the adapter's configured default. It is still subject to the same provider/model policy before any provider call.
+A model value supplied for one LLM request instead of the adapter's configured default. It is still subject to the same provider/model policy before any provider attempt.
 _Avoid_: per-request model, ad-hoc model
 
 **correlationId**:
@@ -763,7 +783,7 @@ Identifier that pairs an LLM call with its triggering event; when available, it 
 _Avoid_: trace ID, request ID
 
 **prompt injection**:
-Attack where malicious text tricks the LLM. Detected by `detectPromptInjection()` and blocked before the provider call. Carries a source — `user_input`, `tool_result` or `history` — because the payload does not have to come from the learner.
+Attack where malicious text tricks the LLM. Detected by `detectPromptInjection()` and blocked before the provider attempt. Carries a source — `user_input`, `tool_result` or `history` — because the payload does not have to come from the learner.
 _Avoid_: injection attack — use "prompt injection"
 
 **practice role**:
@@ -847,7 +867,7 @@ Event logged when an LLM response appears to hallucinate (not grounded in tool r
 _Avoid_: hallucination event
 
 **redact**:
-Replacing credential-shaped substrings with `REDACTED_PLACEHOLDER` (`'[REDACTED]'`). Applies on both sides of the model boundary — inbound text before the provider call, and outbound text before it reaches the learner — from one shared list of shapes (`CREDENTIAL_SHAPES`).
+Replacing credential-shaped substrings with `REDACTED_PLACEHOLDER` (`'[REDACTED]'`). Applies on both sides of the model boundary — inbound text before the provider request, and outbound text before it reaches the learner — from one shared list of shapes (`CREDENTIAL_SHAPES`).
 _Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection payloads) or with the excerpt-plus-hash storage rule for safety events
 
 **classifier / verdict**:
@@ -855,10 +875,10 @@ Second-tier input check admitted only after the tier-1 preflight: one fresh lear
 _Avoid_: moderation, filter — it decides nothing on its own
 
 **classifier invocation**:
-One attempt to obtain a classifier verdict after the classifier's skip guards have passed while execution control is enabled. Its hard deadline covers admission wait and provider execution; it may end before provider execution because the local circuit or shared admission rejects it, and it is distinct from the provider call itself.
+One attempt to obtain a classifier verdict after the classifier's skip guards have passed while execution control is enabled. Its hard deadline covers admission wait and provider execution; it may end before provider execution because the local circuit or shared admission rejects it, and it is distinct from the provider attempt it would spend.
 _Avoid_: provider attempt, chat turn
 
-**admitted classifier provider call**:
+**admitted classifier provider attempt**:
 A classifier invocation that passes shared local and fleet admission and reaches the provider once. It retains the classifier's hard deadline, no-retry behavior, and separate local circuit rather than inheriting the main chat circuit policy.
 _Avoid_: classifier invocation, chat generation
 
@@ -979,6 +999,10 @@ _Avoid_: self-scoring flow, one-shot rehash
 **ops**:
 Operations endpoints and scripts. Protected by `InternalApiKeyGuard`. Includes sync, send-reports, profile/setup, health checks, quota status.
 _Avoid_: admin, management
+
+**tracing**:
+OpenTelemetry span emission. Fail-open: with no `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans are no-ops and no exporter is contacted. Separate from metrics: Prometheus is the active emitter, and tracing currently has no collecting backend and no reader. Emitting a span is not the same as a span being read.
+_Avoid_: APM, observability agent, telemetry pipeline
 
 **INTERNAL_API_KEY**:
 Shared secret for authenticating ops HTTP endpoints. Sent via header `X-Internal-Api-Key` or `Authorization: Bearer`.
@@ -1127,8 +1151,12 @@ Implementation of a port, bridging domain interfaces and infrastructure services
 _Avoid_: implementation, service implementation
 
 **feature module**:
-A top-level directory under a bot's `modules` directory, owning one capability's four layers. Two feature modules in the same bot may depend on each other only through the target's ports or from a composition root; a concrete cross-feature import is a boundary violation. Unqualified, "feature" means a feature module — not the LLM feature tag.
-_Avoid_: feature (unqualified), package, context, module
+A top-level directory under a bot's `modules` directory, owning one capability's four layers. It is the directory form of a **bounded context**: a module that no context owns is a technical slice — a grouping by mechanism — and it does not become a boundary by being a directory. Two feature modules in the same bot may depend on each other only through the target's ports or from a composition root; a concrete cross-feature import is a boundary violation. Unqualified, "feature" means a feature module — not the LLM feature tag.
+_Avoid_: feature (unqualified), package, module, context (the boundary is a **bounded context**; a feature module is its directory form)
+
+**bounded context**:
+A domain boundary with its own language, invariants, and persistence, recorded in [CONTEXT-MAP.md](CONTEXT-MAP.md) both as a table row and — once it has a distinct language or invariant of its own — as a `<context>/CONTEXT.md`. A feature module is its directory form; the two are not interchangeable names.
+_Avoid_: feature module (the directory form, not the boundary), package, service
 
 **composition root**:
 The application wiring boundary where concrete adapters are bound to ports. A composition root may name infrastructure and platform services; feature application code may not.

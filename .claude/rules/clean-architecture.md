@@ -197,7 +197,7 @@ apps/messenger-bot/src/modules/<feature>/
 | `@Entity()` in `domain/`                                      | ORM entity in `infrastructure/database/entities/`                |
 | `StudyReminderModule` imports `MessengerModule`               | Import `MessengerOutboundModule` + port                          |
 | `MessengerService` in dispatch                                | `MESSAGE_SENDER` + `StudyReminderService`                        |
-| Reserve quota in webhook                                      | `ChatRateLimitService` in `MessengerChatProcessorService` flush  |
+| Reserve quota in webhook                                      | Reserve only inside `ChatPipeline.flush` (single quota owner, #465) |
 | New service in `apps/messenger-bot/src/messenger/*.ts` (flat) | Correct layer in `apps/messenger-bot/src/modules/messenger/...`  |
 | Import NestJS/TypeORM in `packages/llm-agent`                 | Package only uses port interface, app implements with Nest       |
 | Wispace API business logic in `packages/llm-agent`            | Tool handler stays in app, implements `ToolExecutorPort`         |

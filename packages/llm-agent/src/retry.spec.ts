@@ -1,6 +1,6 @@
-import { cappedExponentialBackoff, retryWithBackoff } from './retry.utils';
+import { cappedExponentialBackoff, retryWithBackoff } from './retry';
 
-describe('retry.utils', () => {
+describe('retry', () => {
   describe('cappedExponentialBackoff', () => {
     const backoff = cappedExponentialBackoff(1000, 8000);
 

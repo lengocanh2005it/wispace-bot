@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { HttpStatus, RequestMethod } from '@nestjs/common';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import type { BotMetricsService } from '@wispace/bot-metrics';

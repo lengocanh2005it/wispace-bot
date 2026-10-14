@@ -12,6 +12,10 @@ import { Repository } from 'typeorm';
 import { PlatformStudentReportService } from '@wispace/student-report/adapters';
 import { isStudentReportRetryableError } from '@wispace/student-report/core';
 import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
+import {
+  fullPageAsMappingPage,
+  iterateMappingPages,
+} from '@wispace/bot-common/utils';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core/core';
 import type { ClassifiedError } from '@wispace/scheduler-core/adapters';
 import {
@@ -125,66 +129,74 @@ export class ZaloReportCronService {
     let skipped = 0;
     let failed = 0;
     const errors: string[] = [];
-    let cursor: string | undefined;
     const startedAt = Date.now();
-    let hasMore = true;
 
-    while (hasMore) {
-      let page = await this.loadPage(cursor, forceSend);
-      if (page.length === 0) break;
-      // Pagination advances by the raw page — filtering must not shorten it.
-      const rawPageLen = page.length;
-      const lastId = page[page.length - 1].id;
+    // The scan ends when a page declares no continuation; see ADR-0049. The
+    // page is sized before any dormancy filter runs, so a full page that the
+    // filter empties still continues the scan.
+    await iterateMappingPages<ZaloAccountLinkEntity, string>({
+      source: {
+        fetch: async (cursor, limit) =>
+          fullPageAsMappingPage(
+            await this.loadPage(cursor, forceSend, limit),
+            limit,
+          ),
+      },
+      limit: PAGE_SIZE,
+      onPage: async (rawPage) => {
+        let page = rawPage;
 
-      // Skip web-dormant learners — never for an operator forceSend override.
-      if (!forceSend && this.webActivityService) {
-        const { active, suppressed } =
-          await this.webActivityService.partitionDormant(page, (l) => l.userId);
-        page = active;
-        if (suppressed > 0) {
-          this.metrics?.incScheduledSendSuppressed('report', suppressed);
-          skipped += suppressed;
+        // Skip web-dormant learners — never for an operator forceSend override.
+        if (!forceSend && this.webActivityService) {
+          const { active, suppressed } =
+            await this.webActivityService.partitionDormant(
+              page,
+              (l) => l.userId,
+            );
+          page = active;
+          if (suppressed > 0) {
+            this.metrics?.incScheduledSendSuppressed('report', suppressed);
+            skipped += suppressed;
+          }
         }
-      }
 
-      total += page.length;
-      const canonicalPlatforms = this.canonicalPlatformService
-        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
-            ...new Set(
-              page.flatMap((link) =>
-                link.userId == null ? [] : [link.userId],
+        total += page.length;
+        const canonicalPlatforms = this.canonicalPlatformService
+          ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+              ...new Set(
+                page.flatMap((link) =>
+                  link.userId == null ? [] : [link.userId],
+                ),
               ),
-            ),
-          ])
-        : undefined;
+            ])
+          : undefined;
 
-      const results = await runBatched(page, this.concurrency, (link) =>
-        this.sendReportForUser(
-          link,
-          reportDate,
-          sentUserIds,
-          forceSend,
-          canonicalPlatforms,
-        ),
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          const v = r.value as 'sent' | 'skipped' | 'error';
-          if (v === 'sent') sent++;
-          else if (v === 'skipped') skipped++;
-          else failed++;
-        } else {
-          failed++;
-          this.pushError(errors, errorMessage(r.reason));
+        const results = await runBatched(page, this.concurrency, (link) =>
+          this.sendReportForUser(
+            link,
+            reportDate,
+            sentUserIds,
+            forceSend,
+            canonicalPlatforms,
+          ),
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            const v = r.value as 'sent' | 'skipped' | 'error';
+            if (v === 'sent') sent++;
+            else if (v === 'skipped') skipped++;
+            else failed++;
+          } else {
+            failed++;
+            this.pushError(errors, errorMessage(r.reason));
+          }
         }
-      }
 
-      this.logger.log(
-        `Zalo report batch: total=${total} sent=${sent} skipped=${skipped} failed=${failed}`,
-      );
-      cursor = lastId;
-      hasMore = rawPageLen === PAGE_SIZE;
-    }
+        this.logger.log(
+          `Zalo report batch: total=${total} sent=${sent} skipped=${skipped} failed=${failed}`,
+        );
+      },
+    });
 
     this.logger.log(
       `Daily report done: total=${total} sent=${sent}, skipped(already-sent/claimed/48h/window)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''} (${Date.now() - startedAt}ms)`,
@@ -194,6 +206,7 @@ export class ZaloReportCronService {
   private async loadPage(
     cursor: string | undefined,
     includeUnsubscribed: boolean,
+    limit: number,
   ): Promise<ZaloAccountLinkEntity[]> {
     const qb = this.linkRepo
       .createQueryBuilder('link')
@@ -214,7 +227,7 @@ export class ZaloReportCronService {
       .andWhere("COALESCE(link.link_state, 'active') = 'active'")
       .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
       .orderBy('link.id', 'ASC')
-      .take(PAGE_SIZE);
+      .take(limit);
     if (!includeUnsubscribed) {
       // Reports are opt-in (#596): NULL consent row = not opted in.
       // forceSend (ops override) skips this gate.

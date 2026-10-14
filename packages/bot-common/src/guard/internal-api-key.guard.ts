@@ -9,8 +9,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { timingSafeEqual } from 'crypto';
 import { Request } from 'express';
+
+import { constantTimeEquals } from '../utils/constant-time-equals.crypto';
 
 export const INTERNAL_API_KEY_HEADER = 'x-internal-api-key';
 
@@ -57,7 +58,7 @@ export class InternalApiKeyGuard implements CanActivate {
 
     const a = Buffer.from(provided);
     const b = Buffer.from(expected);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    if (!constantTimeEquals(a, b)) {
       this.rejectUnauthorized();
     }
 

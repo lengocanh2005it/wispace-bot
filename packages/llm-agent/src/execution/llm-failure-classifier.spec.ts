@@ -1,10 +1,7 @@
 import { LlmAllProvidersExhaustedError } from '../provider/failover/failover.errors';
 import { LlmProviderCircuitOpenError } from './circuit-error';
 import { LlmOverloadError } from './bounded-admission';
-import {
-  classifyLlmFailure,
-  LlmRetryExhaustedError,
-} from './llm-failure-classifier';
+import { classifyLlmFailure } from './llm-failure-classifier';
 
 describe('classifyLlmFailure (#1380)', () => {
   it('classifies LlmAllProvidersExhaustedError as provider_exhausted', () => {
@@ -33,20 +30,6 @@ describe('classifyLlmFailure (#1380)', () => {
     const timeoutErr = new Error('Timeout');
     timeoutErr.name = 'TimeoutError';
     expect(classifyLlmFailure(timeoutErr)).toBe('timeout');
-  });
-
-  it('unwraps LlmRetryExhaustedError cause recursively', () => {
-    const rootCause = new LlmOverloadError('global_saturated');
-    const retryErr = new LlmRetryExhaustedError(3, rootCause);
-    expect(classifyLlmFailure(retryErr)).toBe('execution_overload');
-
-    const nestedRetryErr = new LlmRetryExhaustedError(2, retryErr);
-    expect(classifyLlmFailure(nestedRetryErr)).toBe('execution_overload');
-  });
-
-  it('classifies LlmRetryExhaustedError with non-Error cause as unknown', () => {
-    const retryErr = new LlmRetryExhaustedError(3, 'string cause');
-    expect(classifyLlmFailure(retryErr)).toBe('unknown');
   });
 
   it('classifies arbitrary or non-matching errors as unknown', () => {

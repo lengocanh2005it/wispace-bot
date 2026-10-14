@@ -3,7 +3,6 @@
 
 export {
   LlmAgentService,
-  LlmRetryExhaustedError,
   classifyLlmFailure,
   DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
 } from '../agent.service';
@@ -137,18 +136,11 @@ export {
   isStopIntent,
   normalizeScopeText,
   isDistressExpression,
-} from '../scope.utils';
-export { sanitizeReplyText } from '../text.utils';
-export {
-  sleep,
-  retryWithBackoff,
-  cappedExponentialBackoff,
-} from '../retry.utils';
+} from '../scope';
+export { sanitizeReplyText } from '../text';
+export { sleep, retryWithBackoff, cappedExponentialBackoff } from '../retry';
 export { loadSystemPromptFile } from '../load-system-prompt';
-export {
-  parseJsonObject,
-  readRequiredStringField,
-} from '../llm-json-output.utils';
+export { parseJsonObject, readRequiredStringField } from '../llm-json-output';
 export {
   canonicalizeToolObservation,
   fitToolObservation,
@@ -213,6 +205,8 @@ export type {
   BackgroundAdmissionCapacityConfig,
   BackgroundProducerConcurrencyOptions,
 } from '../execution/background-admission-capacity';
+export { collectLlmStartupViolations } from '../execution/startup-validation';
+export type { BackgroundProducerProbe } from '../execution/startup-validation';
 export { createLlmExecutionFailureTracker } from '../execution/failure-attribution';
 export type {
   LlmExecutionFailureClass,

@@ -17,11 +17,15 @@ jest.mock('@wispace/chat-queue-core', () => ({
   })),
 }));
 
-jest.mock('@wispace/chat-pipeline', () => ({
-  ChatPipeline: jest.fn().mockImplementation(() => ({
-    flush: jest.fn(),
-  })),
-}));
+jest.mock('@wispace/chat-pipeline', () => {
+  const actual = jest.requireActual('@wispace/chat-pipeline');
+  return {
+    ...actual,
+    ChatPipeline: jest.fn().mockImplementation(() => ({
+      flush: jest.fn(),
+    })),
+  };
+});
 
 describe('PlatformChatQueueService', () => {
   const configGet = jest.fn((key: string): string | undefined => {
@@ -444,7 +448,7 @@ describe('PlatformChatQueueService', () => {
       );
     const service = buildService(undefined, { timeStep });
     const pipeline = getPipelineMock(service);
-    pipeline.flush.mockResolvedValue(true);
+    pipeline.flush.mockResolvedValue({ outcome: 'delivered' });
     const flushCb = getFlushCallback();
 
     await flushCb({
@@ -461,7 +465,7 @@ describe('PlatformChatQueueService', () => {
   it('#371: still flushes when the timing closure is absent (no-op seam)', async () => {
     const service = buildService();
     const pipeline = getPipelineMock(service);
-    pipeline.flush.mockResolvedValue(true);
+    pipeline.flush.mockResolvedValue({ outcome: 'delivered' });
     const flushCb = getFlushCallback();
 
     await flushCb({
@@ -930,7 +934,7 @@ describe('PlatformChatQueueService', () => {
             externalUserId: input.externalUserId,
             error: new Error('delivery not confirmed'),
           });
-          return false;
+          return { outcome: 'failed', reason: 'delivery_not_confirmed' };
         });
       (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
         flush: pipelineFlush,
@@ -962,7 +966,11 @@ describe('PlatformChatQueueService', () => {
       });
       (
         service as unknown as { pipeline: { flush: jest.Mock } }
-      ).pipeline.flush.mockResolvedValue(false);
+      ).pipeline.flush.mockResolvedValue({
+        outcome: 'denied',
+        reason: 'DAILY_LIMIT',
+        limit: 30,
+      });
 
       await service.flushReady('discord-quota-denied');
 
@@ -993,14 +1001,11 @@ describe('PlatformChatQueueService', () => {
         leaseToken: 'lease-rate-limited',
       });
 
-      const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
-        onRateLimited: (ctx: unknown) => Promise<void>;
-      };
       (
         service as unknown as { pipeline: { flush: jest.Mock } }
-      ).pipeline.flush.mockImplementation(async () => {
-        await hooks.onRateLimited({ externalUserId: 'discord-rate-limited' });
-        return false;
+      ).pipeline.flush.mockResolvedValue({
+        outcome: 'failed',
+        reason: 'rate_limited',
       });
 
       await service.flushReady('discord-rate-limited');

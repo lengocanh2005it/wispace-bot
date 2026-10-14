@@ -66,11 +66,12 @@ import { DiscordReportOrchestrationService } from './application/services/discor
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import { WispaceModule } from '../wispace/wispace.module';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
-
-const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
 
 @Module({
   imports: [
@@ -144,7 +145,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
           reportSendScheduleService,
           {
             platform: 'discord',
-            lockId: DISCORD_REPORT_CLAIM_STALE_RESET_LOCK,
+            lockId: ADVISORY_LOCKS.DISCORD_REPORT_CLAIM_STALE_RESET,
             metrics,
           },
         ),

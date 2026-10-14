@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- typed mocks for port seams */
 import {
   ZaloLinkCompletionService,
   ZaloLinkTokenRejectedError,

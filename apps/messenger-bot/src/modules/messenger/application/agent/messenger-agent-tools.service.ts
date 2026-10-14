@@ -297,6 +297,10 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       throw new RescheduleStageAbortedError(signal.reason);
     }
 
+    // Same ownership as reschedule_study_session: this turn staged a proposal,
+    // so a failure while building its reply must release it (#1420).
+    ctx.stagedApprovalToken = staged.confirmationToken;
+
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
 
     return {
@@ -587,6 +591,12 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       }
       throw new RescheduleStageAbortedError(signal.reason);
     }
+
+    // The confirmation card travels in the next round's rich follow-ups, so the
+    // turn now owns this proposal until the reply is handed to delivery. If the
+    // second round fails there is no reply to carry the token, and the agent
+    // service releases it from here (#1420).
+    ctx.stagedApprovalToken = staged.confirmationToken;
 
     return withPlatformToolDecoration(
       {

@@ -11,7 +11,7 @@
     "check:types": "tsc -p tsconfig.build.json --noEmit",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "test": "jest --maxWorkers=50%",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.json --noEmit"
@@ -25,6 +25,7 @@
     "@wispace/chat-pipeline": "*",
     "@wispace/chat-queue-core": "*",
     "@wispace/contracts": "*",
+    "@wispace/learner-profile": "*",
     "@wispace/llm-agent": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",

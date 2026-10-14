@@ -84,6 +84,46 @@ describe('LinkCompletionCore', () => {
     });
   });
 
+  it('can retain a verify intent when post-commit work fails', async () => {
+    const consumeRecord = jest.fn();
+    const afterCommit = jest
+      .fn()
+      .mockRejectedValue(new Error('membership lookup unavailable'));
+    const errors: string[] = [];
+    const core = new LinkCompletionCore(
+      completionPorts({ consumeRecord, afterCommit }),
+      {
+        consumeVerifyIntentAfterCommit: true,
+        onBestEffortError: (step) => errors.push(step),
+      },
+    );
+
+    await expect(
+      core.complete({ input: undefined, linkToken: 'token' }),
+    ).resolves.toEqual({ status: 'linked' });
+    expect(consumeRecord).not.toHaveBeenCalled();
+    expect(errors).toEqual(['after-commit']);
+  });
+
+  it('consumes a deferred verify intent after post-commit work succeeds', async () => {
+    const calls: string[] = [];
+    const core = new LinkCompletionCore(
+      completionPorts({
+        consumeRecord: async () => {
+          calls.push('consume');
+        },
+        afterCommit: async () => {
+          calls.push('after-commit');
+        },
+      }),
+      { consumeVerifyIntentAfterCommit: true },
+    );
+
+    await core.complete({ input: undefined, linkToken: 'token' });
+
+    expect(calls).toEqual(['after-commit', 'consume']);
+  });
+
   it('rejects a token without writing an intent or mapping', async () => {
     const recordVerify = jest.fn();
     const upsertLink = jest.fn();
@@ -286,6 +326,28 @@ describe('LinkReconcileCronCore', () => {
       ...overrides,
     };
   }
+
+  it('retains a verify intent when deferred reconciled side effects fail', async () => {
+    const consumeRecord = jest.fn();
+    const core = new LinkReconcileCronCore({
+      listStaleRecords: async () => [record()],
+      findUserId: async () => 42,
+      upsertLink: async () => ({ relinked: false }),
+      consumeRecord,
+    });
+
+    await expect(
+      core.runBatch({
+        staleAgeMs: 1,
+        maxRecordAgeMs: 60 * 60 * 1000,
+        consumeVerifyIntentAfterReconciled: true,
+        onReconciled: async () => {
+          throw new Error('membership lookup unavailable');
+        },
+      }),
+    ).resolves.toMatchObject({ alreadyCommitted: 0, failed: 1 });
+    expect(consumeRecord).not.toHaveBeenCalled();
+  });
 
   it('reconciles records independently and retires ownership conflicts', async () => {
     const consumed: string[] = [];

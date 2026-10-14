@@ -1,6 +1,6 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import { sleep } from '@wispace/bot-common/utils';
+import { jitteredDelayMs, sleep } from '@wispace/bot-common/utils';
 import {
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
@@ -36,7 +36,13 @@ export interface PlatformStudyCalendarCommandOptions {
    * zalo skips this check.
    */
   enforceLeadTime?: boolean;
+  /** Injectable equal-jitter RNG for the bounded source-delete retries. */
+  rng?: () => number;
+  /** Injectable retry delay for deterministic tests. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+const SOURCE_DELETE_RETRY_DELAY_CAP_MS = 700;
 
 /**
  * Delete-recreate calendar reschedule flow + upcoming-session listing,
@@ -252,9 +258,15 @@ export class PlatformStudyCalendarCommandService {
     calendarId: number,
   ): Promise<void> {
     let lastError: unknown;
-    for (const delayMs of [0, 300, 700]) {
-      if (delayMs > 0) {
-        await sleep(delayMs);
+    for (const nominalDelayMs of [0, 300, 700]) {
+      if (nominalDelayMs > 0) {
+        const cappedDelayMs = Math.min(
+          nominalDelayMs,
+          SOURCE_DELETE_RETRY_DELAY_CAP_MS,
+        );
+        await (this.options.sleep ?? sleep)(
+          jitteredDelayMs(cappedDelayMs, this.options.rng),
+        );
       }
       try {
         await this.calendarService.deleteCalendar(externalUserId, calendarId);

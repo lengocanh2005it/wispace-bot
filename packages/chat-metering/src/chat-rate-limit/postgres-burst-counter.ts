@@ -1,5 +1,5 @@
 import { subMilliseconds } from 'date-fns';
-import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
+import { CHAT_BURST_WINDOW_MS } from './burst-window';
 import type { ChatRateLimitRepository } from './chat-rate-limit.repository';
 import type { BurstCounterPort } from './types';
 

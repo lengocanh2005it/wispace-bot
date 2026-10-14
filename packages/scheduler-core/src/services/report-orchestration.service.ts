@@ -14,8 +14,8 @@ import {
 import { REPORT_SEND_JOB_REPOSITORY } from '../ports/report-send-job.repository.port';
 import type {
   ClaimAndSendResult,
+  ClassifiedError,
   ReportMapping,
-  ReportRetryCause,
 } from '../types/report-send-job.types';
 import { ReportSendScheduleService } from './report-send-schedule.service';
 import type { ReportOrchestrationPort } from '../ports/report-cron-seams.port';
@@ -29,12 +29,6 @@ const ZERO: ClaimAndSendResult = {
   retryQueued: 0,
   failures: [],
 };
-
-export interface ClassifiedError {
-  kind: 'retryable' | 'window_closed' | 'skipped' | 'failure';
-  message: string;
-  retryCause?: ReportRetryCause;
-}
 
 /**
  * Shared claim lifecycle for scheduled report sends — used by Discord and Zalo.

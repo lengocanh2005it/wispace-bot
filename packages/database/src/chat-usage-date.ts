@@ -1,4 +1,4 @@
-const DEFAULT_CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 
 /**
  * Current chat usage date in the configured reporting timezone (ADR-0027).
@@ -10,8 +10,10 @@ const DEFAULT_CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
  */
 export function currentChatUsageDate(
   now = new Date(),
-  timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ||
-    DEFAULT_CHAT_USAGE_TIMEZONE,
+  timezone = resolveTimezone(
+    (key) => process.env[key],
+    LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
+  ),
 ): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,

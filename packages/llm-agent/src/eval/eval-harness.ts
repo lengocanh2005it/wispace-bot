@@ -1005,7 +1005,6 @@ export async function runEvalFixture(
 
   const agent = new LlmAgentService<Record<string, never>>(
     {
-      maxLlmRetries: 0,
       toolExecutionTimeoutMs: 5_000,
       globalAgentTimeoutMs: 30_000,
       maxOutputTokens: 1024,

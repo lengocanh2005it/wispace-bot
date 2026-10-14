@@ -22,6 +22,7 @@ class LlmUsageEventTarget {}
 class ChatIdempotencyTarget {}
 class WebActivityTarget {}
 class NotificationPreferenceTarget {}
+class RescheduleConfirmationAttemptTarget {}
 class MessageLogTarget {}
 
 describe('PrivacyDataService', () => {
@@ -58,6 +59,7 @@ describe('PrivacyDataService', () => {
     chatIdempotency: ChatIdempotencyTarget,
     webActivity: WebActivityTarget,
     notificationPreference: NotificationPreferenceTarget,
+    rescheduleConfirmationAttempt: RescheduleConfirmationAttemptTarget,
     messageLog: MessageLogTarget,
   } as const;
 
@@ -82,6 +84,7 @@ describe('PrivacyDataService', () => {
       chatIdempotency: targets.chatIdempotency,
       webActivity: targets.webActivity,
       notificationPreference: targets.notificationPreference,
+      rescheduleConfirmationAttempt: targets.rescheduleConfirmationAttempt,
     },
     messageLog: targets.messageLog,
     ...overrides,

@@ -30,6 +30,7 @@ import {
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
   WebActivityEntity,
+  RescheduleConfirmationAttemptEntity,
 } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 
@@ -75,6 +76,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
       chatIdempotency: ChatIdempotencyEntity,
       webActivity: WebActivityEntity,
       notificationPreference: UserNotificationPreferenceEntity,
+      rescheduleConfirmationAttempt: RescheduleConfirmationAttemptEntity,
     },
     messageLog: ZaloMessageLogEntity,
   };

@@ -28,6 +28,12 @@ export class ChatRateLimitStartupService implements OnModuleInit {
       );
     }
 
+    if (this.chatRateLimitConfigService.isBurstStoreValueUnsupported()) {
+      throw new InternalServerErrorException(
+        'CHAT_BURST_STORE must be redis or postgres — `memory` was retired in #1288, and an unrecognised value would otherwise be hidden by the postgres fallback',
+      );
+    }
+
     this.logger.log('CHAT_RATE_LIMIT_ENABLED is true in production runtime');
   }
 }

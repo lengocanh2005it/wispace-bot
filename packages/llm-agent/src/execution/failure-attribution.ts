@@ -97,7 +97,7 @@ export function createLlmExecutionFailureTracker({
         return classifyProviderFailure(error, adapter);
       }
       // A global deadline is provider-attributed only when its abort raced an
-      // in-flight provider call; admission, Redis, and backoff expiry stay
+      // in-flight provider attempt; admission, Redis, and backoff expiry stay
       // outside provider-circuit accounting.
       if (deadlineSignal.aborted && !deadlineExpiredDuringProvider) {
         return {

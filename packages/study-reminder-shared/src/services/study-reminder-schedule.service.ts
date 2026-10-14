@@ -4,6 +4,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { APP_TIMEZONE_ENV_KEY, DEFAULT_TIMEZONE } from '@wispace/contracts';
 import {
   computeRemindAt,
   formatScheduledTimeLabel,
@@ -12,7 +13,6 @@ import {
 } from '../utils/schedule';
 import { DEFAULT_STUDY_REMINDER_SYNC_HORIZON_HOURS } from '../utils/study-reminder-config';
 
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const DEFAULT_MINUTES_BEFORE = 30;
 const DEFAULT_MIN_LEAD_MINUTES = 5;
 const DEFAULT_POLL_MIN_MS = 30_000;
@@ -118,8 +118,11 @@ export class StudyReminderScheduleService {
       'STUDY_REMINDER_TIMEZONE',
       'CHAT_USAGE_TIMEZONE',
     ];
+    const get = (key: string) => this.configService.get<string>(key);
+    const app = get(APP_TIMEZONE_ENV_KEY)?.trim();
+    if (app) return app;
     for (const key of keys) {
-      const value = this.configService.get<string>(key)?.trim();
+      const value = get(key)?.trim();
       if (value) return value;
     }
     return DEFAULT_TIMEZONE;

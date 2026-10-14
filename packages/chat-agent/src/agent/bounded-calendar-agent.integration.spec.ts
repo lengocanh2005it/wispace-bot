@@ -112,7 +112,6 @@ function buildAgent(
 ): LlmAgentService<PlatformAgentToolContext> {
   return new LlmAgentService(
     {
-      maxLlmRetries: 0,
       maxInputTokens: 12_000,
     },
     {

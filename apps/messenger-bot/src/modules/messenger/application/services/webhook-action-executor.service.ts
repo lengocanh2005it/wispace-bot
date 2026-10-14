@@ -24,7 +24,6 @@ import {
   buildMessengerLinkHandoffFailedMessage,
   buildMessengerLinkVerifyFailedMessage,
 } from '../messages/messenger-link.messages';
-import { buildRescheduleSuccessRichFollowUp } from '../formatters/messenger-rich-message.builder';
 import type {
   MessengerLinkAttemptResult,
   MessengerLinkVerifyFailureReason,
@@ -156,13 +155,12 @@ export class WebhookActionExecutorService {
         break;
 
       case 'cancel_reschedule': {
-        const message =
-          action.approvalToken && isValidApprovalToken(action.approvalToken)
-            ? await this.rescheduleConfirmationService.cancel(
-                psid!,
-                action.approvalToken,
-              )
-            : RESCHEDULE_INVALID_TOKEN_MESSAGE;
+        const message = isValidApprovalToken(action.approvalToken)
+          ? await this.rescheduleConfirmationService.cancel(
+              psid!,
+              action.approvalToken,
+            )
+          : RESCHEDULE_INVALID_TOKEN_MESSAGE;
         await this.outbound.sendTextViaPsid({
           psid: psid!,
           userId: action.userId,
@@ -344,8 +342,8 @@ export class WebhookActionExecutorService {
 
   private async handleConfirmReschedulePostback(
     psid: string,
-    userId?: number,
-    approvalToken?: string,
+    userId: number | undefined,
+    approvalToken: string,
   ): Promise<void> {
     const mapping =
       await this.messengerRepository?.findActiveMappingByPsid(psid);
@@ -359,19 +357,29 @@ export class WebhookActionExecutorService {
       });
       return;
     }
-    const result = approvalToken
-      ? await this.rescheduleConfirmationService.confirm(
-          psid,
-          currentUserId,
-          approvalToken,
-          {
-            platform: 'messenger',
-            mappingVersion: mapping
-              ? `${mapping.id}:${mapping.updatedAt}`
-              : undefined,
-          },
-        )
-      : await this.rescheduleConfirmationService.confirm(psid, currentUserId);
+    // ADR-0011: the proposal token also carries the platform binding, so a
+    // confirmation without it could never reach the calendar write anyway.
+    const result = await this.rescheduleConfirmationService.confirm(
+      psid,
+      currentUserId,
+      approvalToken,
+      {
+        platform: 'messenger',
+        mappingVersion: mapping
+          ? `${mapping.id}:${mapping.updatedAt}`
+          : undefined,
+      },
+    );
+
+    if ('unknownOutcome' in result) {
+      // #1418: the calendar write was attempted and we cannot tell whether it
+      // landed. Any reply would be a guess, and the write is not idempotent, so
+      // the learner is told nothing and recovery escalates it to a human.
+      this.logger.error(
+        `reschedule confirm outcome unknown for ${maskExternalId(psid)}`,
+      );
+      return;
+    }
 
     if (!result.confirmed) {
       await this.outbound.sendTextViaPsid({
@@ -383,7 +391,7 @@ export class WebhookActionExecutorService {
       return;
     }
 
-    await this.outbound.sendTextViaPsid({
+    const outcome = await this.outbound.sendTextViaPsid({
       psid,
       userId: currentUserId,
       text: [
@@ -394,16 +402,13 @@ export class WebhookActionExecutorService {
       ].join('\n\n'),
       messageType: 'RESCHEDULE_CONFIRMED',
     });
-
-    await this.outbound.sendRichFollowUps({
-      psid,
-      userId: currentUserId,
-      followUps: [
-        buildRescheduleSuccessRichFollowUp({
-          scheduledTimeLabel: result.scheduledTimeLabel,
-        }),
-      ],
-    });
+    // #1418: a discarded delivery outcome is how a rate limit became
+    // indistinguishable from delivery, so every outcome is recorded explicitly.
+    if (approvalToken) {
+      await this.rescheduleConfirmationService
+        .recordConfirmationDelivery(psid, approvalToken, outcome)
+        .catch(() => undefined);
+    }
   }
 
   private async buildWelcomeMessage(

@@ -32,6 +32,7 @@ describe('Messenger LLM startup binding', () => {
       getFailoverCooldownShortMs: () => 5_000,
       getFailoverQuickRetryDelayMs: () => 150,
       getRetryMaxAttempts: () => 1,
+      getPerAttemptTimeoutMs: () => 10_000,
     };
     const configService = {
       get: (key: string) =>

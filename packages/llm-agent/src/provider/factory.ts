@@ -1,5 +1,5 @@
 import type { LlmProviderAdapter } from './llm-provider.adapter';
-import { OpenAiAdapter } from './openai/openai-adapter';
+import { OpenAiAdapter, type LlmClientOptions } from './openai/openai-adapter';
 import {
   FailoverLlmProviderAdapter,
   type FailoverCircuitEvent,
@@ -83,6 +83,7 @@ export function createLlmProviderAdapter(config: {
   policy?: LlmProviderPolicy;
   modelEnvKey?: string;
   baseUrlEnvKey?: string;
+  clientOptions?: LlmClientOptions;
 }): LlmProviderAdapter {
   const provider = assertSupportedLlmProvider(config.provider ?? 'openai');
 
@@ -119,6 +120,7 @@ export function createLlmProviderAdapter(config: {
     () => validated.baseUrl,
     provider,
     config.policy,
+    config.clientOptions,
   );
 }
 
@@ -202,6 +204,7 @@ export interface FailoverConfig {
     feature?: string,
   ) => void;
   onProviderNeverSucceeded?: (provider: string, feature?: string) => void;
+  clientOptions?: LlmClientOptions;
 }
 
 /**
@@ -232,7 +235,11 @@ export function createFailoverLlmProviderAdapter(
       entry.getApiKey(),
       entry.apiKeyEnvKey ?? 'API key',
     );
-    const adapter = createLlmProviderAdapter({ ...entry, policy });
+    const adapter = createLlmProviderAdapter({
+      ...entry,
+      policy,
+      clientOptions: failoverConfig?.clientOptions,
+    });
     return adapter;
   });
 

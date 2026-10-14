@@ -1,4 +1,5 @@
 export { isAbortError, sleep } from './abort.utils';
+export { iterateMappingPages, fullPageAsMappingPage } from './paging.utils';
 export { withTimeout } from './promise-timeout.utils';
 export { extractQueryRows } from './query-rows.utils';
 export { jitteredDelayMs } from './jitter.utils';
@@ -17,3 +18,4 @@ export {
   encryptAesGcm,
   decryptAesGcm,
 } from './aes-gcm.crypto';
+export { constantTimeEquals } from './constant-time-equals.crypto';

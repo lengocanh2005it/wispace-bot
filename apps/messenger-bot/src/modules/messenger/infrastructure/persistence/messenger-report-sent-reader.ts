@@ -1,6 +1,7 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 import { Repository } from 'typeorm';
 import {
   LearnerScheduledReportClaimEntity,
@@ -49,9 +50,10 @@ export class MessengerReportSentReader implements MessengerReportSentReaderPort 
       if (learnerClaim) return true;
     }
 
-    const timezone =
-      this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ||
-      'Asia/Ho_Chi_Minh';
+    const timezone = resolveTimezone(
+      (key) => this.configService.get<string>(key),
+      LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
+    );
     const startOfDay = startOfReportDate(reportDate, timezone);
     const endOfDay = startOfNextReportDate(reportDate, timezone);
     const count = await this.logRepo

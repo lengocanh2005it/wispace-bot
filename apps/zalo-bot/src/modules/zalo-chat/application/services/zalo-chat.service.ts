@@ -35,8 +35,9 @@ import {
   RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
   RESCHEDULE_EXPIRED_MESSAGE,
   RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  type ReschedulePendingState,
 } from '@wispace/reschedule-confirm/core';
-import type { ReschedulePendingState } from '@wispace/reschedule-confirm/core';
+
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
@@ -96,7 +97,7 @@ export class ZaloChatService {
   async handleIncomingMessage(
     zaloUserId: string,
     text: string,
-    idempotencyKey?: string,
+    idempotencyKey: string,
   ): Promise<void> {
     // Non-disclosure probe (#625): internal-details questions → standard
     // non-disclosure line, before intent detection.
@@ -191,11 +192,26 @@ export class ZaloChatService {
             },
           );
           if (result.confirmed) {
-            await this.outboundService.sendText(
+            // #1483: the calendar write has already committed, so the delivery
+            // of its confirmation is the only part still recoverable. Record
+            // the real outcome so a failed send is retried by the recovery cron
+            // instead of looking identical to a delivered one.
+            const outcome = await this.outboundService.sendText(
               zaloUserId,
               `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`,
               { userId },
             );
+            await this.rescheduleConfirmationService.recordConfirmationDelivery(
+              zaloUserId,
+              interaction.approvalToken,
+              outcome,
+            );
+            return;
+          }
+          // #1483: Zalo does not yet read the durable attempt record, so an
+          // unknown outcome has no honest reply to give. Say nothing rather
+          // than sending an undefined message.
+          if ('unknownOutcome' in result) {
             return;
           }
           await this.outboundService.sendText(zaloUserId, result.message, {
@@ -217,8 +233,12 @@ export class ZaloChatService {
         }
       }
 
-      const key = idempotencyKey ?? `zalo:${zaloUserId}:${Date.now()}`;
-      await this.chatQueueService.enqueue(zaloUserId, text, { userId }, key);
+      await this.chatQueueService.enqueue(
+        zaloUserId,
+        text,
+        { userId },
+        idempotencyKey,
+      );
     } catch (error) {
       this.logger.error(
         `Chat enqueue failed for zaloUserId=${maskExternalId(

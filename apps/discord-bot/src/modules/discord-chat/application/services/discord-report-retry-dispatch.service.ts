@@ -17,13 +17,15 @@ import {
   DISCORD_REPORT_ACCOUNT_READER,
   type DiscordReportAccountPageReaderPort,
 } from '../../domain/ports/discord-report-account-reader.port';
-import { subMilliseconds, addMinutes } from 'date-fns';
+import { subMilliseconds } from 'date-fns';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
 import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
+import { reportRetryAt } from '@wispace/scheduler-core/utils';
 
 const PLATFORM = 'discord' as const;
 const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
@@ -82,7 +84,16 @@ export class DiscordReportRetryDispatchService {
       name: 'discord-report-retry-dispatch',
       withLock: (run) =>
         this.pgLock.withLock(ADVISORY_LOCKS.DISCORD_REPORT_RETRY_DISPATCH, run),
-      run: async () => (await this.dispatchDueReportRetriesWithItems()).items,
+      // A cron with no human watching the request (#1458): the retry wave's
+      // LLM and WISPACE spans are already instrumented, and this gives them a
+      // parent trace so a single retry is followable end to end.
+      run: async () =>
+        withRootSpan(
+          BOT_SERVICE_NAMES.discord,
+          'discord.report_retry_dispatch',
+          {},
+          () => this.dispatchDueReportRetriesWithItems().then((r) => r.items),
+        ),
       metrics: this.metrics,
       logger: this.logger,
     });
@@ -144,7 +155,7 @@ export class DiscordReportRetryDispatchService {
               leaseToken,
               errorMessage: 'WISPACE link status temporarily unknown',
               retryCount: nextRetryCount,
-              nextRetryAt: addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
+              nextRetryAt: reportRetryAt(RETRY_BACKOFF_MINUTES),
               terminal: nextRetryCount >= job.maxRetries,
             });
             if (nextRetryCount < job.maxRetries) retryQueued += 1;
@@ -198,7 +209,7 @@ export class DiscordReportRetryDispatchService {
             leaseToken,
             errorMessage: 'Report claim exists for today',
             retryCount: job.retryCount,
-            nextRetryAt: addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
+            nextRetryAt: reportRetryAt(RETRY_BACKOFF_MINUTES),
             terminal: false,
           });
           retryQueued += 1;
@@ -215,7 +226,7 @@ export class DiscordReportRetryDispatchService {
             retryCount: nextRetryCount,
             nextRetryAt: terminal
               ? undefined
-              : addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
+              : reportRetryAt(RETRY_BACKOFF_MINUTES),
             terminal,
             retryCause: result.retryCause,
           });
@@ -248,7 +259,7 @@ export class DiscordReportRetryDispatchService {
           const rateLimited = error === 'outbound_rate_limited';
           const nextRetryAt = rateLimited
             ? undefined
-            : addMinutes(new Date(), 15);
+            : reportRetryAt(RETRY_BACKOFF_MINUTES);
           const nextRetryCount = job.retryCount + 1;
           await this.jobRepository.markFailed({
             jobId: job.id,
@@ -285,7 +296,7 @@ export class DiscordReportRetryDispatchService {
               retryCount: nextRetryCount,
               nextRetryAt: terminal
                 ? undefined
-                : addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
+                : reportRetryAt(RETRY_BACKOFF_MINUTES),
               terminal,
             });
           } catch (transitionError) {

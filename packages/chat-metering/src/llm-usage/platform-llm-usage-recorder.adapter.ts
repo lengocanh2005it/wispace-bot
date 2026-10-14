@@ -52,8 +52,8 @@ export interface PlatformRecordLlmUsageInput {
 /**
  * Thin NestJS adapter around `LlmUsageRecorderCore` — shared by Discord and
  * Zalo (replaces their near-identical per-app recorders). Platform
- * (`'discord'` / `'zalo'`) parameterizes the persisted event row. MVP:
- * direct fire-and-forget insert (no BullMQ queue/retry yet).
+ * (`'discord'` / `'zalo'`) parameterizes the persisted event row. Usage
+ * writes are fire-and-forget with one bounded retry and a final-error hook.
  */
 @Injectable()
 export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {

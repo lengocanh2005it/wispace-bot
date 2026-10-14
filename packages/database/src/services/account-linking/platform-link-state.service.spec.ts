@@ -299,4 +299,51 @@ describe('PlatformLinkStateService', () => {
 
     expect(maxActive).toBeGreaterThan(1);
   });
+
+  it('keeps paging when the caller asks for more rows than the query may return', async () => {
+    // listLinks caps its own LIMIT at 500. A requested pageSize above that cap
+    // must not size the page against a limit the query never used, or a capped
+    // page would read as the last one and the scan would stop silently.
+    const rows = Array.from({ length: 500 }, (_, index) => ({
+      id: String(index + 1),
+      platform: 'zalo',
+      externalUserId: `zalo-${index + 1}`,
+      userId: index + 1,
+      state: 'active',
+      generation: '1',
+      ownershipVersion: null,
+      lastVerifiedAt: null,
+      revokedAt: null,
+    }));
+    const listQuery = jest
+      .fn()
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([]);
+    const txQuery = jest.fn().mockResolvedValue(rows.slice(0, 1));
+    const dataSource = {
+      query: listQuery,
+      transaction: jest.fn(
+        (fn: (manager: { query: typeof txQuery }) => unknown) =>
+          fn({ query: txQuery }),
+      ),
+    } as unknown as DataSource;
+    const service = new PlatformLinkStateService(dataSource);
+    const getStatus = jest
+      .fn()
+      .mockResolvedValue({ kind: 'active', userId: 1 });
+
+    await service.reconcile(
+      'zalo',
+      { enabled: true, getStatus },
+      { pageSize: 9000 },
+    );
+
+    // The clamped limit (500) is what the page is sized against, so 500 rows
+    // read as a full page and the scan resumes from the last id.
+    expect(listQuery.mock.calls.map((call) => call[1])).toEqual([
+      ['zalo', '0', 500],
+      ['zalo', '500', 500],
+    ]);
+    expect(getStatus).toHaveBeenCalledTimes(500);
+  });
 });

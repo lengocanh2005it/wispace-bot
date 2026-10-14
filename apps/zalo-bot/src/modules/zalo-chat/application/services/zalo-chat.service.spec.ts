@@ -43,7 +43,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh');
+    await service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh', 'k');
 
     expect(findUserIdByZaloId).toHaveBeenCalledWith('zalo-1');
     expect(enqueue).toHaveBeenCalledWith(
@@ -75,7 +75,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'ok');
+    await service.handleIncomingMessage('zalo-1', 'ok', 'k');
 
     expect((reschedule.confirm as jest.Mock).mock.calls).toHaveLength(0);
     expect(enqueue).not.toHaveBeenCalled();
@@ -98,6 +98,7 @@ describe('ZaloChatService', () => {
       getPendingState: jest.fn().mockResolvedValue('pending'),
       confirm,
       cancel: jest.fn(),
+      recordConfirmationDelivery: jest.fn().mockResolvedValue(undefined),
     } as unknown as RescheduleConfirmationService<string>;
 
     const service = new ZaloChatService(
@@ -115,7 +116,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`);
+    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`, 'k');
 
     expect(confirm).toHaveBeenCalledWith('zalo-1', 42, token, {
       platform: 'zalo',
@@ -127,6 +128,83 @@ describe('ZaloChatService', () => {
       { userId: 42 },
     );
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('says nothing when the durable record leaves the outcome unknown (#1483/#1493)', async () => {
+    // The calendar write may already have committed, so any reply would be a
+    // guess — and re-arming the request is not an option.
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest
+        .fn()
+        .mockResolvedValue({ confirmed: false, unknownOutcome: true }),
+      cancel: jest.fn(),
+      recordConfirmationDelivery,
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findCurrentIdentity: jest.fn().mockResolvedValue({
+          userId: 42,
+          mappingVersion: 'mapping-1',
+        }),
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue: jest.fn() } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`, 'k');
+
+    expect(sendText).not.toHaveBeenCalled();
+    expect(recordConfirmationDelivery).not.toHaveBeenCalled();
+  });
+
+  it('records the real delivery outcome of a committed confirmation (#1483)', async () => {
+    // The calendar write has already committed by the time the confirmation is
+    // sent, so a send that did not land has to reach the record or the recovery
+    // cron has nothing to retry.
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue('rate_limited');
+    const recordConfirmationDelivery = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest.fn().mockResolvedValue({
+        confirmed: true,
+        scheduledTimeLabel: 'Ngày mai lúc 19:00',
+      }),
+      recordConfirmationDelivery,
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findCurrentIdentity: jest.fn().mockResolvedValue({
+          userId: 42,
+          mappingVersion: 'mapping-1',
+        }),
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`, 'k');
+
+    expect(recordConfirmationDelivery).toHaveBeenCalledWith(
+      'zalo-1',
+      token,
+      'rate_limited',
+    );
   });
 
   it('rejects a stale token when no proposal is pending', async () => {
@@ -149,7 +227,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', token);
+    await service.handleIncomingMessage('zalo-1', token, 'k');
 
     expect(reschedule.confirm).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -185,7 +263,7 @@ describe('ZaloChatService', () => {
         makePrefs(),
       );
 
-      await service.handleIncomingMessage('zalo-1', text);
+      await service.handleIncomingMessage('zalo-1', text, 'k');
 
       expect(reschedule.confirm).not.toHaveBeenCalled();
       expect(enqueue).not.toHaveBeenCalled();
@@ -217,7 +295,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', `${token} nhé`);
+    await service.handleIncomingMessage('zalo-1', `${token} nhé`, 'k');
 
     expect(reschedule.confirm).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -249,7 +327,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', `Mã: ${token}`);
+    await service.handleIncomingMessage('zalo-1', `Mã: ${token}`, 'k');
 
     expect((reschedule.confirm as jest.Mock).mock.calls).toHaveLength(0);
     expect(enqueue).not.toHaveBeenCalled();
@@ -284,7 +362,7 @@ describe('ZaloChatService', () => {
       { clearClarificationState } as unknown as ZaloClarificationAgentPort,
     );
 
-    await service.handleIncomingMessage('zalo-1', 'hủy');
+    await service.handleIncomingMessage('zalo-1', 'hủy', 'k');
 
     expect(cancel).toHaveBeenCalledWith('zalo-1');
     expect(clearClarificationState).toHaveBeenCalledWith('zalo-1');
@@ -311,7 +389,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'ok');
+    await service.handleIncomingMessage('zalo-1', 'ok', 'k');
 
     expect(sendText).toHaveBeenCalledWith(
       'zalo-1',
@@ -342,11 +420,11 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'hỏi mình bài tập nhé');
+    await service.handleIncomingMessage('zalo-1', 'hỏi mình bài tập nhé', 'k');
     expect(getPendingState).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalled();
 
-    await service.handleIncomingMessage('zalo-1', 'ok');
+    await service.handleIncomingMessage('zalo-1', 'ok', 'k');
     expect(getPendingState).toHaveBeenCalledWith('zalo-1');
     expect(sendText).toHaveBeenCalledWith(
       'zalo-1',
@@ -370,7 +448,7 @@ describe('ZaloChatService', () => {
     );
 
     await expect(
-      service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh'),
+      service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh', 'k'),
     ).rejects.toThrow('Redis unavailable');
     expect(sendText).toHaveBeenCalledTimes(1);
   });
@@ -388,7 +466,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'chào bạn');
+    await service.handleIncomingMessage('zalo-1', 'chào bạn', 'k');
 
     expect(sendText).toHaveBeenCalledWith(
       'zalo-1',
@@ -414,7 +492,7 @@ describe('ZaloChatService', () => {
         makePrefs(),
       );
 
-      await service.handleIncomingMessage('zalo-1', text);
+      await service.handleIncomingMessage('zalo-1', text, 'k');
 
       expect(sendText).toHaveBeenCalledWith(
         'zalo-1',
@@ -481,7 +559,7 @@ describe('ZaloChatService', () => {
       } as never,
     );
 
-    await service.handleIncomingMessage('zalo-1', 'Tắt nhắc học');
+    await service.handleIncomingMessage('zalo-1', 'Tắt nhắc học', 'k');
 
     const prefs = service['notificationPreferences'];
     expect(prefs.setReminderEnabled).toHaveBeenCalledWith(42, false);
@@ -513,7 +591,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'bật báo cáo');
+    await service.handleIncomingMessage('zalo-1', 'bật báo cáo', 'k');
 
     const prefs = service['notificationPreferences'];
     expect(prefs.setReportEnabled).toHaveBeenCalledWith(42, true);
@@ -534,7 +612,7 @@ describe('ZaloChatService', () => {
       makePrefs(),
     );
 
-    await service.handleIncomingMessage('zalo-1', 'bật báo cáo');
+    await service.handleIncomingMessage('zalo-1', 'bật báo cáo', 'k');
 
     expect(sendText).toHaveBeenCalledWith(
       'zalo-1',

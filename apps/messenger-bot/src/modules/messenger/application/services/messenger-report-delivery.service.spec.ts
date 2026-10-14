@@ -129,7 +129,6 @@ describe('MessengerReportDeliveryService', () => {
 
     it('re-throws StudentReportRetryableError', async () => {
       const { service, studentReportService } = buildService();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const cause = new Error('API error') as RetryableApiError;
       Object.defineProperty(cause, 'statusCode', { value: 502 });
       Object.defineProperty(cause, 'endpoint', { value: '/api/scores' });
@@ -176,7 +175,6 @@ describe('MessengerReportDeliveryService', () => {
 
     it('sends retry message on StudentReportRetryableError', async () => {
       const { service, studentReportService, outbound } = buildService();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const cause = new Error('API error') as RetryableApiError;
       Object.defineProperty(cause, 'statusCode', { value: 502 });
       Object.defineProperty(cause, 'endpoint', { value: '/api/scores' });

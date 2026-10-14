@@ -106,9 +106,7 @@ describe('StudyReminderSyncService', () => {
       await expect(service.syncUpcomingSessions()).rejects.toThrow(
         'requires an authoritative getSessions provider',
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.upsertPendingJobs).not.toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.cancelStaleJobsForExternalUserId).not.toHaveBeenCalled();
     });
 
@@ -142,7 +140,6 @@ describe('StudyReminderSyncService', () => {
         getSessions: jest.fn().mockResolvedValue([session]),
       });
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.upsertPendingJobs).toHaveBeenCalledWith(
         [
           {
@@ -151,7 +148,6 @@ describe('StudyReminderSyncService', () => {
             userId: 1,
             sessionKey: 'calendar:42',
             scheduledAt: session.scheduledAt,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             remindAt: expect.any(Date),
             topic: 'Toán',
             maxRetries: 3,
@@ -161,7 +157,6 @@ describe('StudyReminderSyncService', () => {
           reopenOnlyOnScheduleChange: true,
         },
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.cancelStaleJobsForExternalUserId).toHaveBeenCalledWith(
         'messenger',
         'ext-1',
@@ -251,17 +246,35 @@ describe('StudyReminderSyncService', () => {
 
       expect(result.mappings).toBe(150);
       expect(result.upserted).toBe(150);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mappingReader.findActiveMappingsPage).toHaveBeenCalledWith(
         'messenger',
         { limit: 100, afterId: undefined },
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mappingReader.findActiveMappingsPage).toHaveBeenCalledWith(
         'messenger',
         { limit: 100, afterId: '100' },
       );
       expect(getSessions).toHaveBeenCalledTimes(150);
+    });
+
+    it('ends the scan on a full page that declares no continuation', async () => {
+      const mappings = Array.from({ length: 100 }, (_, i) => ({
+        externalUserId: `ext-${i}`,
+        userId: i + 1,
+        platform: 'messenger' as const,
+      }));
+      // A page filled to the limit is not thereby the last one, and a page that
+      // says there is no continuation is authoritative even when it is full.
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: mappings,
+        nextId: undefined,
+      });
+      const getSessions = jest.fn().mockResolvedValue([makeSession()]);
+
+      const result = await service.syncUpcomingSessions({ getSessions });
+
+      expect(result.mappings).toBe(100);
+      expect(mappingReader.findActiveMappingsPage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -339,7 +352,6 @@ describe('StudyReminderSyncService', () => {
         staleCancelStatuses: ['pending', 'failed', 'processing'],
       });
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.cancelStaleJobsForExternalUserId).toHaveBeenCalledWith(
         'messenger',
         'ext-1',

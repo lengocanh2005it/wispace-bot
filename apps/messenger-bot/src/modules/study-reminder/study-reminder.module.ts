@@ -141,8 +141,10 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                     platform: platform as Platform,
                     mappingGeneration: m.mappingGeneration,
                   })),
+                // Sized on the raw page: filtering out rows without a psid must
+                // not make a full page read as the last one. See ADR-0049.
                 nextId:
-                  list.length > 0
+                  list.length > 0 && list.length === query.limit
                     ? String(list[list.length - 1].id)
                     : undefined,
               })),

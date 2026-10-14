@@ -6,7 +6,10 @@ import {
   CleanupCronService,
   PlatformLinkAuditCleanupService,
 } from '@wispace/cleanup-cron/adapters';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
@@ -38,6 +41,7 @@ import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MessengerReportModule } from './messenger-report.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
+import { MessengerOpsController } from './presentation/controllers/messenger-ops.controller';
 import { validateAndMapMessengerEvent } from './presentation/mappers/messenger-webhook.mapper';
 import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
@@ -69,7 +73,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       WebhookInboundEventEntity,
     ]),
   ],
-  controllers: [MessengerController],
+  controllers: [MessengerController, MessengerOpsController],
   providers: [
     MessengerService,
     MessengerWebhookDispatchService,
@@ -77,9 +81,14 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     MessengerWebhookStartupService,
     {
       provide: PlatformWebhookInboundEventService,
-      useFactory: (repo: Repository<WebhookInboundEventEntity>) =>
-        new PlatformWebhookInboundEventService('messenger', repo),
-      inject: [getRepositoryToken(WebhookInboundEventEntity)],
+      useFactory: (
+        repo: Repository<WebhookInboundEventEntity>,
+        metrics: BotMetricsService,
+      ) => new PlatformWebhookInboundEventService('messenger', repo, metrics),
+      inject: [
+        getRepositoryToken(WebhookInboundEventEntity),
+        BotMetricsService,
+      ],
     },
     {
       provide: WEBHOOK_INBOUND_EVENTS_PORT,
@@ -96,6 +105,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         inboundEvents: PlatformWebhookInboundEventService,
         dispatch: MessengerWebhookDispatchService,
         configService: ConfigService,
+        metrics: BotMetricsService,
       ) => {
         const retryConfig = readInboundRetryConfig((key) =>
           configService.get<string>(key),
@@ -107,12 +117,14 @@ import { BotMetricsService } from '@wispace/bot-metrics';
             );
           },
           retryConfig,
+          metrics,
         });
       },
       inject: [
         PlatformWebhookInboundEventService,
         MessengerWebhookDispatchService,
         ConfigService,
+        BotMetricsService,
       ],
     },
     {
@@ -169,7 +181,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       useFactory: (cleanupCron: CleanupCronService, dataSource: DataSource) =>
         new PlatformLinkAuditCleanupService(cleanupCron, dataSource, {
           platform: 'messenger',
-          advisoryLockId: 884_200_942,
+          advisoryLockId: ADVISORY_LOCKS.PLATFORM_LINK_AUDIT_CLEANUP,
         }),
       inject: [CleanupCronService, DataSource],
     },

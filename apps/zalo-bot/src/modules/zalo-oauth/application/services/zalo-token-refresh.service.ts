@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
+import { withRootSpan, BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
@@ -52,9 +53,22 @@ export class ZaloTokenRefreshService implements OnModuleInit {
   }
 
   async handleCron(): Promise<void> {
+    // A scheduled refresh with no human watching the request: a trace is the
+    // only place the failure shape is visible once the single-use refresh
+    // token is spent and a learner's linking flow is stuck (#1459).
+    // The swallow stays as it was — a failing refresh must not escape into
+    // the cron scheduler — but it happens outside the span, so the span still
+    // records the failure.
     try {
-      await this.tokenService.refreshNow();
-      this.metrics?.recordCronSuccess?.(CRON_JOB_NAME);
+      await withRootSpan(
+        BOT_SERVICE_NAMES.zalo,
+        'zalo.oa_token_refresh',
+        {},
+        async () => {
+          await this.tokenService.refreshNow();
+          this.metrics?.recordCronSuccess?.(CRON_JOB_NAME);
+        },
+      );
     } catch (error) {
       this.logger.error(
         `Zalo OA token refresh cron failed: ${errorMessage(error)}`,

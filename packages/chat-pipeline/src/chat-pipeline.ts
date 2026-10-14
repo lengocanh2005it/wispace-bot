@@ -3,6 +3,7 @@ import type {
   ChatPipelineConfig,
   ChatPipelineHooks,
   ChatPipelineInput,
+  ChatPipelineResult,
   HistoryPort,
   OutboundPort,
   PipelineContext,
@@ -48,6 +49,10 @@ function capUserTextParts(
  */
 export class ChatPipeline {
   private readonly mergedTextMaxChars: number;
+  private readonly timeStep?: <T>(
+    step: string,
+    fn: () => Promise<T>,
+  ) => Promise<T>;
 
   constructor(
     private readonly rateLimiter: RateLimiterPort,
@@ -59,13 +64,14 @@ export class ChatPipeline {
   ) {
     this.mergedTextMaxChars =
       config.mergedTextMaxChars ?? DEFAULT_MERGED_TEXT_MAX_CHARS;
+    this.timeStep = config.timeStep;
   }
 
   /**
    * Run the full flush pipeline for a batch of merged user texts.
-   * Returns true if the main reply was delivered.
+   * The single quota owner: reserves, refunds and finalizes here.
    */
-  async flush(input: ChatPipelineInput): Promise<boolean> {
+  async flush(input: ChatPipelineInput): Promise<ChatPipelineResult> {
     const mergedText = input.texts.join('\n').slice(0, this.mergedTextMaxChars);
     const userTextParts = capUserTextParts(
       input.userTextParts ?? input.texts,
@@ -89,21 +95,41 @@ export class ChatPipeline {
       // ── Reserve quota ─────────────────────────────────────────────────────
       await this.hooks.onStep?.('before_reserve', ctx);
 
-      if (input.idempotencyKey && input.reservedUsageDate === undefined) {
-        const reserveResult: ReserveResult = await this.rateLimiter.reserve(
-          input.externalUserId,
-          input.idempotencyKey,
-          { userId: input.userId },
-        );
+      const idempotencyKey = input.idempotencyKey;
+      if (idempotencyKey) {
+        const reserve = (): Promise<ReserveResult> =>
+          this.rateLimiter.reserve(input.externalUserId, idempotencyKey, {
+            userId: input.userId,
+          });
+        const reserveResult = this.timeStep
+          ? await this.timeStep('rate_limit_reserve', reserve)
+          : await reserve();
 
         if (!reserveResult.allowed) {
-          return false;
+          if (reserveResult.reason === 'IDEMPOTENCY_CONFLICT') {
+            return { outcome: 'duplicate' };
+          }
+          try {
+            await this.hooks.onQuotaDenied?.({
+              ...ctx,
+              ...(reserveResult.reason !== undefined
+                ? { reason: reserveResult.reason }
+                : {}),
+              limit: reserveResult.limit,
+            });
+          } catch {
+            // Deny messaging must never turn a handled drop into a retry.
+          }
+          return {
+            outcome: 'denied',
+            ...(reserveResult.reason !== undefined
+              ? { reason: reserveResult.reason }
+              : {}),
+            limit: reserveResult.limit,
+          };
         }
 
         usageDate = reserveResult.usageDate;
-        ctx.usageDate = usageDate;
-      } else if (input.idempotencyKey) {
-        usageDate = input.reservedUsageDate;
         ctx.usageDate = usageDate;
       }
 
@@ -170,7 +196,7 @@ export class ChatPipeline {
         } catch {
           // Rate-limit handling must never turn a handled drop into a retry.
         }
-        return false;
+        return { outcome: 'failed', reason: 'rate_limited' };
       }
 
       if (!delivered && !ctx.partialDelivery) {
@@ -192,9 +218,9 @@ export class ChatPipeline {
         try {
           await this.hooks.onError?.(ctx);
         } catch {
-          // Error hooks own their delivery-failure logging; preserve the false result.
+          // Error hooks own their delivery-failure logging; preserve the failed outcome.
         }
-        return false;
+        return { outcome: 'failed', reason: 'delivery_not_confirmed' };
       }
 
       // ── Canned clarification turns never consume quota (#959/#661) ────────
@@ -215,7 +241,7 @@ export class ChatPipeline {
           }
         }
         await this.hooks.onStep?.('after_send', ctx);
-        return true;
+        return { outcome: 'delivered' };
       }
 
       // ── Persist delivery before history/quota finalization ───────────────
@@ -253,7 +279,7 @@ export class ChatPipeline {
         await this.hooks.onAfterSend?.(ctx);
       }
 
-      return delivered;
+      return { outcome: 'delivered' };
     } catch (error) {
       ctx.deliveryAmbiguous =
         this.outbound.isAmbiguousDeliveryError?.(error) === true;

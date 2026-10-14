@@ -7,6 +7,7 @@ import {
   PLATFORM_DATABASE_EXPORTS,
   UserNotificationPreferenceEntity,
   WebActivityEntity,
+  RescheduleConfirmationAttemptEntity,
   type PrivacyEntityRegistry,
   UserPlatformMappingEntity as CanonicalUserPlatformMappingEntity,
   DiscordAccountLinkEntity,
@@ -54,6 +55,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
       chatIdempotency: ChatIdempotencyEntity,
       webActivity: WebActivityEntity,
       notificationPreference: UserNotificationPreferenceEntity,
+      rescheduleConfirmationAttempt: RescheduleConfirmationAttemptEntity,
     },
     messageLog: MessageLogEntity,
   };

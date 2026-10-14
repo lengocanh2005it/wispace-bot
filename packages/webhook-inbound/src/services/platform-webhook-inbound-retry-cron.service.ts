@@ -11,12 +11,12 @@ import { runLockedTick } from '@wispace/bot-common/cron';
 import type { LockedTickItem } from '@wispace/bot-common/cron';
 import { readEnvPositiveInt } from '@wispace/bot-common/config';
 import { runBatched } from '@wispace/scheduler-core/core';
+import type { WebhookInboundMetricsPort } from '@wispace/bot-common/metrics';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
   type InboundEventRow,
 } from '../adapters/platform-webhook-inbound-event.service';
-import { webhookInboundDispatchLagSeconds } from './inline-webhook-inbound-dispatcher';
 
 const DEFAULT_RETRY_LIMIT = 20;
 const DEFAULT_RETRY_CONCURRENCY = 5;
@@ -46,7 +46,7 @@ export interface WebhookInboundRetryCronOptions {
   metrics?: {
     registerCron(name: string, expectedIntervalMs: number): void;
     recordCronSuccess(name: string): void;
-  };
+  } & Pick<WebhookInboundMetricsPort, 'observeWebhookInboundDispatchLag'>;
   /** Stable per-platform metric label/name for the retry cron. */
   cronName?: string;
 }
@@ -197,8 +197,9 @@ export class PlatformWebhookInboundRetryCronService {
     }
 
     const lagSeconds = (Date.now() - row.createdAt.getTime()) / 1000;
-    webhookInboundDispatchLagSeconds.observe(
-      { platform: row.platform, trigger: 'cron' },
+    this.options.metrics?.observeWebhookInboundDispatchLag(
+      row.platform,
+      'cron',
       lagSeconds,
     );
 

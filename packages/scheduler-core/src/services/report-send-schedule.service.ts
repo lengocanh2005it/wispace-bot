@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { LEGACY_TIMEZONE_ENV_KEYS, resolveTimezone } from '@wispace/contracts';
 
 @Injectable()
 export class ReportSendScheduleService {
@@ -30,9 +31,10 @@ export class ReportSendScheduleService {
           2 * 60 * 60 * 1000,
         ),
       ),
-      timezone:
-        this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ||
-        'Asia/Ho_Chi_Minh',
+      timezone: resolveTimezone(
+        (key) => this.configService.get<string>(key),
+        LEGACY_TIMEZONE_ENV_KEYS.chatUsage,
+      ),
     };
   }
 

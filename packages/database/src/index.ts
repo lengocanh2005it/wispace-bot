@@ -7,6 +7,7 @@ export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.en
 export { LearnerScheduledReportClaimEntity } from './entities/learner-scheduled-report-claim.entity';
 export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
+export { RescheduleConfirmationAttemptEntity } from './entities/reschedule-confirmation-attempt.entity';
 export { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 export { LearnerProfileEntity } from './entities/learner-profile.entity';
 export { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';

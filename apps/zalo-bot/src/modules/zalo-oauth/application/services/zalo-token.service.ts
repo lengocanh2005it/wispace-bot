@@ -6,6 +6,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { PlatformConnectivityState } from '@wispace/bot-common/health';
 import {
@@ -68,6 +69,8 @@ export class ZaloTokenService implements OnModuleInit {
     private readonly platformState?: PlatformConnectivityState,
     @Optional()
     private readonly metrics?: BotMetricsService,
+    @Optional()
+    private readonly config?: ConfigService,
   ) {}
 
   onModuleInit(): void {
@@ -224,6 +227,54 @@ export class ZaloTokenService implements OnModuleInit {
     }
   }
 
+  /**
+   * True when this deployment has deliberately switched the Zalo platform off.
+   *
+   * An explicit flag, not an inference. Credentials can be present as stale
+   * placeholders while no OA account was ever bootstrapped, so their presence
+   * says nothing about whether the platform is in use. Someone states it.
+   *
+   * Defaults to false so an absent flag keeps the previous fail-closed
+   * behaviour: only an explicit opt-out relaxes readiness.
+   */
+  private isPlatformExplicitlyDisabled(): boolean {
+    const raw = this.config
+      ?.get<string>('ZALO_PLATFORM_ENABLED')
+      ?.trim()
+      .toLowerCase();
+    return raw === 'false' || raw === '0';
+  }
+
+  /**
+   * True when no OA credentials were supplied at all, which means the platform
+   * was never wired up rather than having lost a token.
+   */
+  private hasNoOaCredentials(): boolean {
+    // Without a config service the answer is unknown, and unknown must not be
+    // read as "switched off": that would silently stop reporting a real
+    // missing-token failure.
+    if (!this.config) return false;
+    const read = (key: string): string | undefined =>
+      this.config?.get<string>(key)?.trim();
+    return !read('ZALO_APP_ID') || !read('ZALO_APP_SECRET_KEY');
+  }
+
+  private markNotConfigured(): void {
+    this.logger.warn(
+      'Zalo OA platform is not enabled for this deployment ' +
+        '(ZALO_PLATFORM_ENABLED is off or OA credentials are absent) — ' +
+        'reported as not_configured and does not block readiness',
+    );
+    const current = this.platformState?.getSnapshot();
+    this.platformState?.transition({
+      status: 'not_configured',
+      ready: false,
+      reason: 'not_configured',
+      lastConnectedAt: current?.lastConnectedAt ?? null,
+      lastVerifiedAt: current?.lastVerifiedAt ?? null,
+    });
+  }
+
   private markConnected(): void {
     const now = new Date().toISOString();
     this.platformState?.transition({
@@ -236,6 +287,13 @@ export class ZaloTokenService implements OnModuleInit {
   }
 
   private markTokenMissing(): void {
+    // Decided here rather than at each caller: the startup health probe and
+    // the cron both end up here, and the two must never disagree about whether
+    // an absent row means "not switched on" or "data loss".
+    if (this.isPlatformExplicitlyDisabled() || this.hasNoOaCredentials()) {
+      this.markNotConfigured();
+      return;
+    }
     this.markUnavailable('token_missing');
     this.metrics?.incTokenRefreshFailure('missing');
   }
@@ -243,6 +301,15 @@ export class ZaloTokenService implements OnModuleInit {
   private markUnavailable(
     reason: 'token_missing' | 'token_refresh_failed' | 'token_refresh_rejected',
   ): void {
+    // Every unavailability path funnels through here, so an explicitly disabled
+    // platform is reported as not configured whichever way the token flow
+    // failed. Production had an expired row plus stale placeholder credentials,
+    // so it reported token_refresh_failed rather than a missing row, and a
+    // guard that only covered the missing-row path never ran.
+    if (this.isPlatformExplicitlyDisabled()) {
+      this.markNotConfigured();
+      return;
+    }
     const current = this.platformState?.getSnapshot();
     const cachedTokenUsable =
       this.lastKnownAccessTokenExpiresAt - EXPIRY_BUFFER_MS > Date.now();

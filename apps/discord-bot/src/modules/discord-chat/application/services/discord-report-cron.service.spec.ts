@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Jest mock assertions */
 import { DiscordReportCronService } from './discord-report-cron.service';
 
 const LINK = {
@@ -130,7 +129,6 @@ describe('DiscordReportCronService', () => {
       1,
       expect.objectContaining({ externalUserId: 'discord-1' }),
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-14',
@@ -140,7 +138,6 @@ describe('DiscordReportCronService', () => {
       2,
       expect.objectContaining({ externalUserId: 'discord-2' }),
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-14',
@@ -194,6 +191,78 @@ describe('DiscordReportCronService', () => {
     );
   });
 
+  it('keeps paging when the dormancy gate filters a full page down to nothing', async () => {
+    const links = Array.from({ length: 300 }, (_, i) => ({
+      ...LINK,
+      id: String(i + 1),
+      externalUserId: `discord-${i + 1}`,
+      userId: 100 + i,
+    }));
+    const pageMock = createPageMock([links.slice(0, 200), links.slice(200)]);
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue(ZERO_RESULT),
+    };
+    const webActivityService = {
+      partitionDormant: jest
+        .fn()
+        .mockResolvedValueOnce({ active: [], suppressed: 200 })
+        .mockResolvedValueOnce({ active: links.slice(200), suppressed: 0 }),
+    };
+
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      {
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true, daysUntilExam: 3 }),
+      } as never,
+      orchestrationService as never,
+      pageMock,
+      undefined,
+      webActivityService as never,
+    );
+
+    const result = await service.sendScheduledReports();
+
+    // The continuation is decided by the raw page. A page that was full but
+    // entirely suppressed must not be mistaken for the last one.
+    expect(pageMock.findActiveAccountsPage).toHaveBeenCalledTimes(2);
+    expect(result.total).toBe(100);
+    expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(100);
+  });
+
+  it('pays for one confirming fetch when the last page was full', async () => {
+    const links = Array.from({ length: 200 }, (_, i) => ({
+      ...LINK,
+      id: String(i + 1),
+      externalUserId: `discord-${i + 1}`,
+      userId: 100 + i,
+    }));
+    const pageMock = createPageMock([links, []]);
+
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      {
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true, daysUntilExam: 3 }),
+      } as never,
+      { claimAndSend: jest.fn().mockResolvedValue(ZERO_RESULT) } as never,
+      pageMock,
+    );
+
+    const result = await service.sendScheduledReports();
+
+    // A full page cannot prove it was the last one, so the source is asked
+    // again and the scan ends on the empty fetch.
+    expect(pageMock.findActiveAccountsPage).toHaveBeenCalledTimes(2);
+    expect(result.total).toBe(200);
+  });
+
   it('skips users outside the exam window without claiming', async () => {
     const { service, orchestrationService } = buildService({
       links: [LINK],
@@ -230,7 +299,6 @@ describe('DiscordReportCronService', () => {
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         allowUserIdLess: true,

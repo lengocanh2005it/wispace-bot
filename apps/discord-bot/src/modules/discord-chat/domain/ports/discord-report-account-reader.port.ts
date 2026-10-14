@@ -4,6 +4,8 @@ export interface ReportAccountRow {
   externalUserId: string;
   userId: number | null;
   platform: string;
+  /** Undefined on rows written before the one-time opt-out footer (#596). */
+  optoutNoticeSentAt?: Date | null;
 }
 
 /**

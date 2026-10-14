@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { SchedulerController } from '@messenger/modules/scheduler/presentation/controllers/scheduler.controller';
+import { MessengerOpsController } from '@messenger/modules/messenger/presentation/controllers/messenger-ops.controller';
 import { ReportCronService } from '@messenger/modules/scheduler/application/services/report-cron.service';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared/adapters';
 import { StudyReminderWorkerService } from '@wispace/study-reminder-shared/adapters';
@@ -17,7 +18,7 @@ import { MessengerChatEnqueueService } from '@messenger/modules/messenger/applic
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 import { createContractApp } from './helpers';
 
-/** Minimal mocks for SchedulerController — only what the DI container needs. */
+/** Minimal mocks for the two ops controllers — only what the DI container needs. */
 function buildControllerProviders() {
   const noop = jest.fn();
   // The controller injects the PRIVACY_DATA / AGENT_REPLY tokens, not the
@@ -81,7 +82,10 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
       .useValue as typeof privacyService;
 
     app = await createContractApp({
-      controllers: [SchedulerController],
+      // The privacy and clarification routes moved to the messenger feature's
+      // own controller in #1446; both share the `messenger` path prefix, so
+      // the URLs under test are unchanged.
+      controllers: [SchedulerController, MessengerOpsController],
       providers,
     });
   });

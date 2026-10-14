@@ -119,6 +119,7 @@ export class DiscordLinkCompletionService {
       afterCommit: (context) => this.afterCommit(context),
     };
     const core = new LinkCompletionCore(adapter, {
+      consumeVerifyIntentAfterCommit: true,
       onBestEffortError: (step, error) => {
         this.logger.warn(`Discord link ${step} failed: ${errorMessage(error)}`);
       },

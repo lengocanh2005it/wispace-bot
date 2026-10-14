@@ -19,6 +19,7 @@ import { StudyReminderModule } from './modules/study-reminder/study-reminder.mod
 import { ChatRateLimitModule } from './modules/chat-rate-limit/chat-rate-limit.module';
 import { LlmUsageModule } from './modules/llm-usage/llm-usage.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
+import { BOT_SERVICE_NAMES } from '@wispace/bot-common/tracing';
 import { OpsHealthModule } from '@wispace/ops-health/adapters';
 
 @Module({
@@ -53,7 +54,7 @@ import { OpsHealthModule } from '@wispace/ops-health/adapters';
     WebActivityModule,
     ChatRateLimitModule,
     LlmUsageModule,
-    createMetricsModule('messenger', 'messenger-ai-for-student'),
+    createMetricsModule('messenger', BOT_SERVICE_NAMES.messenger),
     OpsHealthModule.forPlatform('messenger', MessengerModule),
   ],
   controllers: [AppController, HealthController],

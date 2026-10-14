@@ -12,6 +12,7 @@ import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.en
 import { LearnerScheduledReportClaimEntity } from './entities/learner-scheduled-report-claim.entity';
 import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
+import { RescheduleConfirmationAttemptEntity } from './entities/reschedule-confirmation-attempt.entity';
 import { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 import { LearnerProfileEntity } from './entities/learner-profile.entity';
 import { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';
@@ -62,6 +63,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   LearnerScheduledReportClaimEntity,
   ReportSendJobEntity,
   RescheduleConfirmationEntity,
+  RescheduleConfirmationAttemptEntity,
   CronLeaderLeaseEntity,
   LearnerProfileEntity,
   UserNotificationPreferenceEntity,

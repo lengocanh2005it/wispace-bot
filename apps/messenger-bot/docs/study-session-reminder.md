@@ -463,7 +463,7 @@ Cố lên nhé! 💪
 
 ## 7. Code Structure
 
-The reminder core lives in **`@wispace/study-reminder-shared`** (framework-agnostic, shared by Messenger/Discord/Zalo); `apps/messenger-bot` wires it via `StudyReminderModule` and the `MESSAGE_SENDER` port. Clean Architecture — see [AGENTS.md](../../../AGENTS.md#clean-architecture):
+The reminder core lives in **`@wispace/study-reminder-shared`** (framework-agnostic, shared by Messenger/Discord/Zalo); `apps/messenger-bot` wires it via `StudyReminderModule` and the `MESSAGE_SENDER` port. Clean Architecture — see [architecture-boundaries.md](../../../docs/architecture-boundaries.md) and `.claude/rules/clean-architecture.md`:
 
 ```
 packages/study-reminder-shared/src/

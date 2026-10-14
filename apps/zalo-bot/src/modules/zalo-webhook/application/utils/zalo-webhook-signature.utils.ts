@@ -1,4 +1,5 @@
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash } from 'crypto';
+import { constantTimeEquals } from '@wispace/bot-common/utils';
 
 const MAX_WEBHOOK_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
@@ -40,9 +41,5 @@ export function verifyZaloWebhookSignature(params: {
   const expectedBuf = Buffer.from(expected, 'utf8');
   const actualBuf = Buffer.from(signatureHeader, 'utf8');
 
-  if (expectedBuf.length !== actualBuf.length) {
-    return false;
-  }
-
-  return timingSafeEqual(expectedBuf, actualBuf);
+  return constantTimeEquals(expectedBuf, actualBuf);
 }

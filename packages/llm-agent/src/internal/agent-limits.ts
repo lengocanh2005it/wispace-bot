@@ -13,8 +13,6 @@ const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
 const DEFAULT_GLOBAL_AGENT_TIMEOUT_MS = 60_000;
-const DEFAULT_MAX_LLM_RETRIES = 3;
-const DEFAULT_RETRY_BASE_DELAY_MS = 100;
 
 /**
  * Shared, conservative text estimate used by every context decision.
@@ -37,12 +35,6 @@ function positive(value: number | undefined, fallback: number): number {
   return normalized > 0 ? normalized : fallback;
 }
 
-function nonNegative(value: number | undefined, fallback: number): number {
-  return value !== undefined && Number.isFinite(value) && value >= 0
-    ? Math.floor(value)
-    : fallback;
-}
-
 function positiveInteger(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isInteger(value) && value > 0
     ? value
@@ -56,9 +48,7 @@ export class AgentLimits {
   readonly maxToolRunsPerNamePerTurn: number;
   readonly staleObservationRounds: number;
   readonly maxContextChars: number;
-  readonly maxLlmRetries: number;
   readonly maxTotalProviderAttempts: number;
-  readonly retryBaseDelayMs: number;
   readonly maxOutputTokens: number;
   readonly toolExecutionTimeoutMs: number;
   readonly globalAgentTimeoutMs: number;
@@ -89,17 +79,9 @@ export class AgentLimits {
       config.maxContextChars,
       DEFAULT_MAX_CONTEXT_CHARS,
     );
-    this.maxLlmRetries = nonNegative(
-      config.maxLlmRetries,
-      DEFAULT_MAX_LLM_RETRIES,
-    );
     this.maxTotalProviderAttempts = normalizeMaxTotalProviderAttempts(
       config.maxTotalProviderAttempts ??
         DEFAULT_LLM_MAX_TOTAL_PROVIDER_ATTEMPTS,
-    );
-    this.retryBaseDelayMs = positive(
-      config.retryBaseDelayMs,
-      DEFAULT_RETRY_BASE_DELAY_MS,
     );
     this.maxOutputTokens = positive(
       config.maxOutputTokens,

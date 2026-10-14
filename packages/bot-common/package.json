@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:types": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives-severity=error",
     "format:check": "oxfmt --check",
     "format": "oxfmt",
     "test": "jest --maxWorkers=50%",
@@ -21,6 +21,15 @@
     "@nestjs/platform-express": "^12.1.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^12.0.1",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.8.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/instrumentation-http": "^0.222.0",
+    "@opentelemetry/instrumentation-pg": "^0.74.0",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "@wispace/contracts": "*",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -30,6 +39,7 @@
     "typeorm": "^1.1.1"
   },
   "devDependencies": {
+    "@opentelemetry/context-async-hooks": "^2.8.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.6.2",
     "jest": "^30.5.2",
@@ -103,15 +113,30 @@
       "require": "./dist/health/index.js",
       "types": "./dist/health/index.d.ts"
     },
+    "./metrics": {
+      "import": "./dist/metrics/index.js",
+      "require": "./dist/metrics/index.js",
+      "types": "./dist/metrics/index.d.ts"
+    },
     "./secrets": {
       "import": "./dist/secrets/index.js",
       "require": "./dist/secrets/index.js",
       "types": "./dist/secrets/index.d.ts"
     },
+    "./testing": {
+      "import": "./dist/testing/index.js",
+      "require": "./dist/testing/index.js",
+      "types": "./dist/testing/index.d.ts"
+    },
     "./bootstrap": {
       "import": "./dist/bootstrap/index.js",
       "require": "./dist/bootstrap/index.js",
       "types": "./dist/bootstrap/index.d.ts"
+    },
+    "./tracing": {
+      "import": "./dist/tracing/index.js",
+      "require": "./dist/tracing/index.js",
+      "types": "./dist/tracing/index.d.ts"
     }
   }
 }

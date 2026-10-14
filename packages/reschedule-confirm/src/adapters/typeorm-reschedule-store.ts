@@ -212,28 +212,63 @@ export class TypeormRescheduleStore<
   }
 
   /**
-   * Resets processing rows whose lease has expired back to pending.
-   * Called by the recovery cron to handle crash-stranded confirmations.
+   * #1418: stale in-flight rows are listed rather than bulk-reset, because the
+   * recovery cron must first ask whether a calendar write was attempted. A row
+   * whose attempt never started is safe to re-arm; one whose outcome is unknown
+   * must never be.
    */
-  async recoverStaleProcessing(staleAfterMs: number): Promise<number> {
-    const rows = extractQueryRows(
+  async listStaleProcessing(
+    staleAfterMs: number,
+  ): Promise<Array<{ id: number; externalId: TExternalId; nonce: string }>> {
+    return extractQueryRows(
       await this.repo.query(
         `
+      SELECT id, external_id AS "externalId", nonce
+      FROM reschedule_confirmations
+      WHERE status = 'processing'
+        AND processing_started_at < now() - ($1::int * interval '1 millisecond')
+        AND lease_token IS NOT NULL
+      ORDER BY id ASC
+      LIMIT 200
+    `,
+        [staleAfterMs],
+      ),
+    );
+  }
+
+  /** Puts one stale row back to pending with a fresh TTL. */
+  async revertStaleRow(id: number): Promise<void> {
+    await this.repo.query(
+      `
       UPDATE reschedule_confirmations
       SET status = 'pending',
           lease_token = NULL,
           processing_started_at = NULL,
           expires_at = now() + interval '10 minutes',
           updated_at = now()
-      WHERE status = 'processing'
-        AND processing_started_at < now() - ($1::int * interval '1 millisecond')
-        AND lease_token IS NOT NULL
-      RETURNING 1
+      WHERE id = $1 AND status = 'processing'
     `,
-        [staleAfterMs],
-      ),
+      [id],
     );
-    return rows.length;
+  }
+
+  /**
+   * Releases a stale row whose mutation outcome is unknown, so the learner is
+   * not blocked from staging a new request. The row is cancelled rather than
+   * re-armed: the write may already have committed.
+   */
+  async cancelStaleRow(id: number): Promise<void> {
+    await this.repo.query(
+      `
+      UPDATE reschedule_confirmations
+      SET status = 'cancelled',
+          lease_token = NULL,
+          processing_started_at = NULL,
+          updated_at = now()
+      WHERE id = $1 AND status = 'processing'
+    `,
+      [id],
+    );
   }
 
   async hasPending(externalId: TExternalId): Promise<boolean> {

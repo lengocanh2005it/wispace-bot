@@ -1368,7 +1368,12 @@ async function rescheduleConfirmationSuite() {
      WHERE external_id = $1`,
     ['messenger:smoke-reschedule-stale'],
   );
-  assert.equal(await store.recoverStaleProcessing(1_000), 1);
+  // The store lists stale rows and the caller reverts each one, so that the
+  // attempt record can escalate an unknown outcome instead of silently
+  // re-arming. Mirror the recovery cron's own call sequence.
+  const stale = await store.listStaleProcessing(1_000);
+  assert.equal(stale.length, 1);
+  await store.revertStaleRow(stale[0].id);
   assert.equal(await store.save(pending('smoke-reschedule-stale', 41)), true);
   await store.cancelClaimed('smoke-reschedule-stale', staleLease.leaseToken);
   const replacement = await repo.findOne({

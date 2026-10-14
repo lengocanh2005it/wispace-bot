@@ -183,30 +183,4 @@ describe('TypeormRescheduleStore', () => {
       expect(params).toContain('my-lease');
     });
   });
-
-  describe('recoverStaleProcessing', () => {
-    it('counts RETURNING 1 rows as the recovery count', async () => {
-      const repo = mockRepo();
-      repo.query.mockResolvedValue([[{ 1: 1 }, { 1: 1 }], 2]);
-      const store = new TypeormRescheduleStore('messenger', repo as never);
-
-      const recovered = await store.recoverStaleProcessing(300_000);
-
-      const sql = repo.query.mock.calls[0][0] as string;
-      expect(sql).toContain("status = 'pending'");
-      expect(sql).toContain('processing_started_at <');
-      expect(sql).toContain('lease_token IS NOT NULL');
-      expect(sql).toContain('RETURNING 1');
-      expect(recovered).toBe(2);
-    });
-
-    it('reports 0 when no stale processing rows matched ([[], 0] tuple)', async () => {
-      const repo = mockRepo();
-      repo.query.mockResolvedValue([[], 0]);
-      const store = new TypeormRescheduleStore('messenger', repo as never);
-
-      const recovered = await store.recoverStaleProcessing(300_000);
-      expect(recovered).toBe(0);
-    });
-  });
 });

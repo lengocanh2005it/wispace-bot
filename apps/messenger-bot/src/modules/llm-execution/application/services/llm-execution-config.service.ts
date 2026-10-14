@@ -5,6 +5,7 @@ import {
   readEnvPositiveInt,
 } from '@messenger/shared/config/env-helpers';
 import { readMaxTotalProviderAttempts } from '@wispace/llm-agent/core';
+import { LLM_EXECUTION_DEFAULTS } from '@wispace/llm-agent/execution';
 
 @Injectable()
 export class LlmExecutionConfigService {
@@ -62,7 +63,7 @@ export class LlmExecutionConfigService {
     return readEnvPositiveInt(
       this.configService,
       'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
-      1,
+      LLM_EXECUTION_DEFAULTS.retryMaxAttempts,
     );
   }
 
@@ -100,7 +101,7 @@ export class LlmExecutionConfigService {
     return readEnvPositiveInt(
       this.configService,
       'LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS',
-      10_000,
+      LLM_EXECUTION_DEFAULTS.perAttemptTimeoutMs,
     );
   }
 

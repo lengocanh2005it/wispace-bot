@@ -11,7 +11,7 @@ loop around that action.
 | Caller cancellation                    | Abort the provider/tool call; send the fixed chat fallback. Do not append the failed assistant turn.                                                                                             | Abort the current generation; keep the job retryable in its outbox when delivery is still known not to have happened.                                                                   | Caller signal; no retry and no execution-circuit failure. |
 | Deterministic request rejection       | Return the existing bounded request/fallback response; do not retry or open the shared execution circuit.                                                                                     | Keep the generation on its existing terminal/retry policy; do not treat the learner's payload as provider health.                                                                        | Normalized `bad_request`; observable as a low-cardinality failure class. |
 | Provider-side attempt timeout          | Let the execution boundary consult the provider classifier and retry budget; after exhaustion, use the fixed chat fallback without appending the failed turn.                                   | Use the bounded provider attempt/failover policy; if generation still fails, keep the durable job retryable when delivery is known not to have happened.                                | Per-attempt cap; one terminal execution-circuit failure after the top-level execution fails. |
-| Global execution deadline              | Abort and use the fixed chat fallback; do not start another provider attempt.                                                                                                                   | Abort the generation; preserve the existing durable outbox retry policy.                                                                                                               | Covers admission, Redis, backoff, and provider work; counts the execution circuit only when a provider call was in flight. |
+| Global execution deadline              | Abort and use the fixed chat fallback; do not start another provider attempt.                                                                                                                   | Abort the generation; preserve the existing durable outbox retry policy.                                                                                                               | Covers admission, Redis, backoff, and provider work; counts the execution circuit only when a provider attempt was in flight. |
 | Rate limit                             | Bounded same-operation retry, then approved-provider failover; if all fail, fixed fallback.                                                                                                      | Bounded provider attempt/failover; generation or delivery is recorded for the durable job retry.                                                                                        | Execution port/provider adapter; no caller retry on top. |
 | Auth or configuration error            | Fail closed; no retry or tool execution; fixed fallback at runtime.                                                                                                                              | Configuration fails startup; a runtime auth failure is terminal for the attempt and requires operator correction.                                                                       | Provider factory/circuit; no automatic replay.           |
 | Provider exhaustion                    | Fixed Vietnamese service-unavailable response; no stale context, history append, or user-visible partial model content.                                                                          | Keep generation retryable in `report_send_jobs` / `study_reminder_jobs`; do not send an ungrounded report/reminder.                                                                     | Report/reminder outbox and bounded retry count.          |
@@ -26,15 +26,15 @@ loop around that action.
 ## Budgets and ownership
 
 - `LLM_MAX_CONCURRENT`, `LLM_MAX_QUEUE_DEPTH`, and the interactive/background
-  admission wait budgets bound work before a provider call.
+  admission wait budgets bound work before a provider attempt.
 - The caller signal and one `LLM_REQUEST_TIMEOUT_MS` execution deadline cover
   admission, the optional Redis-global slot, provider attempts, failover, and
   backoff. A separate per-attempt timeout can expire without cancelling the
   global execution budget, so the provider classifier may decide whether the
   next execution attempt is allowed.
 - The shared execution circuit counts one terminal execution-circuit failure per
-  top-level execution, not one per retry attempt. Only a provider-call failure
-  or a global deadline expiring while a provider call is in flight counts;
+  top-level execution, not one per retry attempt. Only a provider-attempt
+  failure or a global deadline expiring while a provider attempt is in flight counts;
   deterministic request rejection, admission, Redis, backoff-only expiry, and
   caller cancellation do not. If failover exhausts multiple candidates, any
   upstream-health signal makes the generation count; all-deterministic
@@ -43,20 +43,28 @@ loop around that action.
   attempt timeout is handled by the shared execution boundary and does not add a
   second failover retry or cooldown policy.
 - Provider retry and failover are bounded by `LLM_OPENAI_RETRY_MAX_ATTEMPTS`
-  and the approved order in `LLM_PROVIDER_FAILOVER_ORDER`. A listed provider
-  must be known and configured; unknown names and incomplete entries fail
-  startup. A single configured provider emits a startup warning because no
-  redundancy is available.
+  (default 1) and the approved order in `LLM_PROVIDER_FAILOVER_ORDER`. A listed
+  provider must be known and configured; unknown names and incomplete entries
+  fail startup. A single configured provider emits a startup warning because no
+  redundancy is available. The OpenAI client is constructed with `maxRetries: 0`
+  and its own request timeout set from `LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS`, so the
+  SDK contributes no transport retry of its own and cannot outlive the
+  execution deadline (#1473).
 - Provider adapters normalize request-validation statuses `400` and `422` to
   `bad_request` after quota, auth, and rate-limit precedence. Other provider
   classifications remain upstream-health signals by default; an exhausted
   failover chain carries all normalized reasons so one health signal is enough
   to count the terminal execution.
 - `LLM_MAX_TOTAL_PROVIDER_ATTEMPTS` (default `6`, explicit range `1..8`) is
-  the shared actual-provider-call allowance for one chat generation or one
-  report/reminder generation. It spans tool rounds, local retries, and
+  the shared provider-attempt allowance for one chat generation or one
+  report/reminder generation. It spans tool rounds, execution retry, and
   failover; admission/circuit/cooldown skips do not consume it. Queue replay
-  starts a fresh generation. Invalid values fail startup.
+  starts a fresh generation. Invalid values fail startup. One provider attempt
+  issues exactly one provider request, so this allowance is also the ceiling on
+  provider requests per generation. Worst case is therefore
+  `min(N, LLM_MAX_TOTAL_PROVIDER_ATTEMPTS)` provider requests, where `N` is the
+  length of the failover order — `min(3, 6) = 3` for a three-provider order at
+  the shipped default, measured under a total outage (#1473).
 - Active providers also require non-empty `LLM_ALLOWED_BASE_URLS` (exact host
   names) and `LLM_ALLOWED_MODELS` (exact `provider:model` pairs). Explicit and
   vendor-default endpoints are validated before the SDK is created; a bad
@@ -115,7 +123,7 @@ raising retry counts first.
 2. To shed LLM work immediately, keep `LLM_EXECUTION_ENABLED=true` and lower
    the bounded admission controls, then restart/redeploy so the environment is
    loaded:
-   - lower `LLM_MAX_CONCURRENT` to cap in-flight provider calls;
+   - lower `LLM_MAX_CONCURRENT` to cap in-flight provider attempts;
    - lower `LLM_MAX_QUEUE_DEPTH` to reject excess queued work;
    - lower `LLM_ADMISSION_WAIT_MS` so interactive requests stop waiting sooner;
    - lower `LLM_BACKGROUND_ADMISSION_WAIT_MS` first so reports/reminders shed
@@ -124,7 +132,7 @@ raising retry counts first.
      to cap aggregate work across pods and bots.
    Keep these caps and wait budgets positive; zero/invalid values fall back to
    their documented defaults. Lower `LLM_REQUEST_TIMEOUT_MS` as a complement
-   when slow in-flight provider calls also need to be cut off. Do not set
+   when slow in-flight provider attempts also need to be cut off. Do not set
    `LLM_EXECUTION_ENABLED=false` for load shedding: it bypasses the controls
    above while the callback/provider path can continue without them. To remove
    one provider, edit the approved failover order and redeploy; do not leave an

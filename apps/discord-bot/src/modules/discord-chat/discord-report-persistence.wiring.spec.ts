@@ -12,25 +12,7 @@ import {
   REPORT_SEND_JOB_REPOSITORY,
 } from '@wispace/scheduler-core/core';
 import { DiscordReportModule } from './discord-report.module';
-
-function findFactoryProvider(module: object, token: unknown) {
-  const providers = (Reflect.getMetadata('providers', module) ??
-    []) as Array<unknown>;
-  return providers.find(
-    (
-      provider,
-    ): provider is {
-      provide: unknown;
-      useFactory: (...args: unknown[]) => unknown;
-    } =>
-      typeof provider === 'object' &&
-      provider !== null &&
-      'provide' in provider &&
-      provider.provide === token &&
-      'useFactory' in provider &&
-      typeof provider.useFactory === 'function',
-  );
-}
+import { findFactoryProvider } from '@wispace/bot-common/testing';
 
 describe('Discord report persistence wiring', () => {
   it('resolves claim and stale-recovery adapters from the owner entrypoint', () => {

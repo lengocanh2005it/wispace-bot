@@ -18,6 +18,7 @@ const mockQueueCallbacks: Array<{
     pendingCount: number,
   ) => void;
   onPendingDropped: (externalUserId: string, droppedCount: number) => void;
+  onFlushTimedOut?: (externalUserId: string, timeoutMs: number) => void;
 }> = [];
 const mockQueueFlushCallbacks: Array<
   (batch: {
@@ -124,7 +125,6 @@ describe('MessengerChatEnqueueService', () => {
       sendSenderActionOptional,
       sendTextViaPsid,
       process,
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       flushReady: processor.flushReady,
 
       appendChatBuffer,
