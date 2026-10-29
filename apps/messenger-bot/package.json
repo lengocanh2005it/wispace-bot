@@ -82,7 +82,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^1.1.1",
-    "undici": "^8.11.2"
+    "undici": "^8.12.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.8",
